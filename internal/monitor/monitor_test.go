@@ -166,6 +166,9 @@ func TestMessagesShowTheirTargets(t *testing.T) {
 	fake.store(bus.GeneralChannel(), 2, alice.sign(t, bus.GeneralChannel(), "a request", "lib-x@bob", "docs@carol"))
 
 	messages := waitForMessages(t, runMonitor(t, fake), "general", 2)
+	if messages[1].To != "general" {
+		t.Errorf("destination = %q, want general", messages[1].To)
+	}
 	if !slices.Equal(messages[1].Targets, []string{"lib-x@bob", "docs@carol"}) {
 		t.Errorf("targets = %v", messages[1].Targets)
 	}
@@ -191,7 +194,12 @@ func TestChannelsMembersAndMergedDM(t *testing.T) {
 	if !slices.Equal(texts, []string{"ping", "pong", "ping again"}) {
 		t.Errorf("DM conversation = %v, want both agents' messages in stream order", texts)
 	}
-	waitForMessages(t, monitor, "group:lib-x", 1)
+	if dm[0].From != alice.id || dm[0].To != bob.id || dm[1].From != bob.id || dm[1].To != alice.id {
+		t.Errorf("DM directions = %s>%s, %s>%s", dm[0].From, dm[0].To, dm[1].From, dm[1].To)
+	}
+	if group := waitForMessages(t, monitor, "group:lib-x", 1); group[0].To != "lib-x" {
+		t.Errorf("group destination = %q", group[0].To)
+	}
 
 	var ids []string
 	for _, channel := range monitor.Channels() {

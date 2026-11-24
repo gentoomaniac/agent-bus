@@ -49,6 +49,7 @@
   .message .reason { color: var(--muted); font-size: 12px; margin-top: 2px; }
   .pill { font-size: 11px; border: 1px solid var(--border); border-radius: 9px; padding: 0 7px; color: var(--muted); }
   .pill.target { color: var(--accent); border-color: var(--accent); }
+  .pill.me { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
   .pill.all { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); font-weight: 600; }
   .targets-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
   #targets { flex-wrap: wrap; align-items: center; font-size: 12px; }
@@ -108,6 +109,7 @@
 
 // Messages are untrusted: everything is put on the page with textContent, never as HTML.
 const ALL = "@all";
+const MAX_ID_CHARS = 28;
 const MESSAGE_TYPES = ["message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"];
 const REFRESH_MS = 5000;
 const PAGE_SIZE = 500;
@@ -228,15 +230,31 @@ function renderHeader() {
   $("channel-description").textContent = channel ? channel.description || "" : "";
 }
 
+// Long agent IDs are cut for the one-line header; the full ID stays in the tooltip.
+function shorten(id) {
+  return id.length > MAX_ID_CHARS ? id.slice(0, MAX_ID_CHARS - 1) + "\u2026" : id;
+}
+
+// "-> recipient" for a direct message (the envelope's to is an agent), "-> #channel" otherwise.
+function destination(message) {
+  const isDM = message.channel.startsWith("dm:");
+  const label = isDM ? message.to : "#" + message.to;
+  return el("span", { class: "muted", title: label }, "\u2192 " + shorten(label));
+}
+
 function renderMessage(message, channel) {
   const meta = el("div", { class: "meta" },
-    el("span", { class: "from" }, message.from || "unknown sender"),
-    ...(channel && channel.kind === "dm" && message.to ? [el("span", { class: "muted" }, "to " + message.to)] : []),
+    el("span", { class: "from", title: message.from || "" }, shorten(message.from || "unknown sender")),
+    ...(message.to ? [destination(message)] : []),
     el("span", { class: "muted", title: message.time || "" }, message.time ? new Date(message.time).toLocaleString() : ""),
     ...(message.type ? [el("span", { class: "pill" }, message.type)] : []),
     el("span", { class: "badge " + message.status }, STATUS_LABEL[message.status] || message.status),
     el("span", { class: "muted" }, "#" + message.sequence));
-  const targets = (message.targets || []).map((target) => el("span", { class: "pill " + (target === ALL ? "all" : "target") }, target));
+  const targets = (message.targets || []).map((target) => {
+    const mine = target === state.status.agent;
+    const pill = el("span", { class: "pill " + (target === ALL ? "all" : mine ? "me" : "target"), title: target }, shorten(target));
+    return pill;
+  });
   return el("div", { class: "message" }, meta,
     ...(targets.length ? [el("div", { class: "targets-row" }, ...targets)] : []),
     ...(message.title ? [el("div", { class: "title" }, message.title)] : []),
