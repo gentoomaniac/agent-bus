@@ -38,9 +38,16 @@ type Server struct {
 	MonitorURL string // the server's local monitoring endpoint, for example http://127.0.0.1:8222
 }
 
-// WriteAdminAuth writes both authorization files with the admin users' password hashes. An
-// existing auth.conf keeps its agents and their grants. It does not reload a running server.
+// WriteAdminAuth writes both authorization files with the admin users' password hashes, under the
+// same lock as UpdateAuth. An existing auth.conf keeps its agents and their grants. It does not
+// reload a running server.
 func (server Server) WriteAdminAuth(busAdminHash, controlAdminHash string) error {
+	unlock, err := server.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	body, generation := busAuth{adminHash: busAdminHash}.render(nil), 0
 	if current, err := os.ReadFile(server.path(authFile)); err == nil {
 		currentBody, currentGeneration := splitGeneration(string(current))
@@ -109,6 +116,9 @@ func (server Server) UpdateAuth(ctx context.Context, edit func(currentBody strin
 func (server Server) path(name string) string { return filepath.Join(server.Dir, name) }
 
 func (server Server) lock() (unlock func(), err error) {
+	if err := os.MkdirAll(server.Dir, files.DirMode); err != nil { // admin init runs before the directory exists
+		return nil, err
+	}
 	lock, err := os.OpenFile(server.path(lockFile), os.O_CREATE|os.O_RDWR, files.SecretMode)
 	if err != nil {
 		return nil, err
@@ -203,11 +213,19 @@ func (server Server) confirmReload(ctx context.Context, loadedBefore time.Time) 
 
 // writeAuthFile replaces the file atomically with the body under a generation header, mode 0600.
 func writeAuthFile(path string, generation int, body string) error {
-	temporary := path + ".new"
-	if err := files.Write(temporary, []byte(withGeneration(generation, body)), files.SecretMode, true); err != nil {
+	temporary, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp") // mode 0600
+	if err != nil {
 		return err
 	}
-	return os.Rename(temporary, path)
+	defer os.Remove(temporary.Name())
+	if _, err := temporary.WriteString(withGeneration(generation, body)); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporary.Name(), path)
 }
 
 func withGeneration(generation int, body string) string {
