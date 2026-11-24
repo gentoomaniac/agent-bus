@@ -23,15 +23,13 @@
   body { background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif; }
   :root { --sidebar-w: 260px; --members-w: 220px; --handle-w: 6px; }
   #app { display: grid; grid-template-columns: var(--sidebar-w) var(--handle-w) minmax(0, 1fr) var(--handle-w) var(--members-w); height: 100%; }
-  #app.sidebar-hidden { --sidebar-w: 0px; }
-  #app.members-hidden { --members-w: 0px; }
   aside { min-width: 0; overflow-x: hidden; }
   .handle { background: var(--panel); cursor: col-resize; touch-action: none; position: relative; }
   .handle::after { content: ""; position: absolute; inset: 0 2px; background: var(--border); }
   .handle:hover::after, .handle:focus-visible::after, .handle.dragging::after { background: var(--accent); }
   .handle.collapsed { cursor: default; pointer-events: none; }
   body.resizing { cursor: col-resize; user-select: none; }
-  .toggle { padding: 1px 8px; font-size: 12px; background: var(--bg); color: var(--text); border-color: var(--border); }
+  .toggle { flex: none; padding: 1px 8px; font-size: 12px; background: var(--bg); color: var(--text); border-color: var(--border); }
   .toggle[aria-pressed=false] { color: var(--muted); }
   aside, main { background: var(--panel); min-height: 0; display: flex; flex-direction: column; }
   #sidebar, #members-panel { overflow-y: auto; }
@@ -45,6 +43,7 @@
   .cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   li.item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   li.item .unread { flex: none; }
+  li.item .label.pair { display: flex; flex-direction: column; }
   li.member { padding: 4px 12px; cursor: pointer; }
   li.member:hover { background: var(--hover); }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; flex: none; background: var(--muted); }
@@ -77,6 +76,7 @@
   #results { flex: 1; overflow-y: auto; padding: 8px 16px; min-height: 0; }
   .hit { padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
   .hit:hover { background: var(--hover); }
+  .hit .title { font-weight: 600; margin-top: 2px; }
   .hit .snippet { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
   mark { background: var(--warn-bg); color: var(--warn); border-radius: 2px; font-weight: 600; }
   .message.flash { animation: flash 2s ease-out; }
@@ -87,10 +87,10 @@
   .chip.empty-type { opacity: .55; }
   #messages { flex: 1; overflow-y: auto; padding: 8px 16px; min-height: 0; }
   .message { padding: 8px 0; border-bottom: 1px solid var(--border); }
-  .message .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
-  .message .meta > * { white-space: nowrap; }
-  .message .meta > .cut { max-width: min(30ch, 100%); }
-  .message .from { font-weight: 600; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+  .meta > * { white-space: nowrap; }
+  .meta > .cut { max-width: min(30ch, 100%); }
+  .from { font-weight: 600; }
   .message .title { font-weight: 600; margin-top: 2px; }
   .message .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
   .message .reason { color: var(--muted); font-size: 12px; margin-top: 2px; }
@@ -107,10 +107,10 @@
   .badge.verified { background: var(--ok-bg); color: var(--ok); }
   .badge.unknown_sender { background: var(--warn-bg); color: var(--warn); }
   .badge.rejected { background: var(--bad-bg); color: var(--bad); }
-  form { border-top: 1px solid var(--border); padding: 10px 16px; display: grid; gap: 6px; }
-  form .row { display: flex; gap: 6px; }
+  form { border-top: 1px solid var(--border); padding: 10px 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  form .row { display: flex; flex-wrap: wrap; gap: 6px; }
   form .row > * { min-width: 0; }
-  form input[name=title] { flex: 1; }
+  form input[name=title] { flex: 1 1 10ch; }
   select, input, textarea, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
   textarea { width: 100%; resize: vertical; min-height: 56px; }
   button { background: var(--accent); color: var(--accent-text); border-color: var(--accent); cursor: pointer; }
@@ -239,20 +239,23 @@ function saveSetting(key, value) {
 const LAYOUT_KEY = "bus-monitor-layout";
 const MIN_MAIN_PX = 280;
 const PANELS = {
-  sidebar: { min: 160, max: 520, fallback: 260, side: 1 },
-  members: { min: 140, max: 420, fallback: 220, side: -1 },
+  sidebar: { min: 160, max: 520, fallback: 260, side: 1, hideBelowPx: 640 },
+  members: { min: 140, max: 420, fallback: 220, side: -1, hideBelowPx: 900 },
 };
-// Narrow windows start without the members panel.
-const layout = { sidebar: PANELS.sidebar.fallback, members: PANELS.members.fallback, sidebarHidden: false, membersHidden: innerWidth < 900 };
+// A panel the visitor has not hidden or shown yet follows the window: narrow ones go without it.
+const layout = { sidebar: PANELS.sidebar.fallback, members: PANELS.members.fallback };
 
 Object.assign(layout, loadSetting(LAYOUT_KEY, {}));
+
+function isHidden(name) {
+  return layout[name + "Hidden"] ?? innerWidth < PANELS[name].hideBelowPx;
+}
 
 function applyLayout() {
   const app = $("app");
   for (const name of Object.keys(PANELS)) {
-    const hidden = layout[name + "Hidden"];
-    app.style.setProperty("--" + name + "-w", layout[name] + "px");
-    app.classList.toggle(name + "-hidden", hidden);
+    const hidden = isHidden(name);
+    app.style.setProperty("--" + name + "-w", hidden ? "0px" : clampWidth(name, layout[name]) + "px");
     $(name + "-handle").classList.toggle("collapsed", hidden);
     $("toggle-" + name).setAttribute("aria-pressed", String(!hidden));
   }
@@ -263,7 +266,7 @@ function applyLayout() {
 function clampWidth(name, width) {
   const panel = PANELS[name];
   const other = name === "sidebar" ? "members" : "sidebar";
-  const otherUsed = layout[other + "Hidden"] ? 0 : layout[other];
+  const otherUsed = isHidden(other) ? 0 : layout[other];
   const room = innerWidth - otherUsed - MIN_MAIN_PX - 2 * 6;
   return Math.round(Math.max(panel.min, Math.min(panel.max, room, width)));
 }
@@ -293,9 +296,9 @@ for (const [name, panel] of Object.entries(PANELS)) {
     const step = { ArrowLeft: -16, ArrowRight: 16 }[event.key];
     if (step) { event.preventDefault(); resize(layout[name] + panel.side * step); }
   });
-  $("toggle-" + name).addEventListener("click", () => { layout[name + "Hidden"] = !layout[name + "Hidden"]; applyLayout(); });
+  $("toggle-" + name).addEventListener("click", () => { layout[name + "Hidden"] = !isHidden(name); applyLayout(); });
 }
-addEventListener("resize", () => { for (const name of Object.keys(PANELS)) layout[name] = clampWidth(name, layout[name]); applyLayout(); });
+addEventListener("resize", applyLayout);
 applyLayout();
 
 // ---- login ----
@@ -466,13 +469,18 @@ function renderDetail() {
     el("h2", {}, "Recent activity"), ...(recent.length ? recent : [el("div", { class: "entry muted" }, "none")]));
 }
 
+// The two agents of a DM on a line each, so a long first name cannot hide the second.
+function pairLabel(agents) {
+  return el("span", { class: "label pair" }, el("span", { class: "cut" }, agents[0]), el("span", { class: "cut" }, "\u2194 " + agents[1]));
+}
+
 function renderSidebar() {
   const channelItems = state.channels.filter((c) => c.kind !== "dm");
   const dmItems = state.channels.filter((c) => c.kind === "dm");
   const item = (channel) => {
     const unread = state.unread.get(channel.id);
     return el("li", { class: "item" + (channel.id === state.selected ? " selected" : ""), title: describeChannel(channel) + (channel.description ? ": " + channel.description : ""), onclick: () => select(channel.id) },
-      el("span", { class: "label" }, describeChannel(channel)), unread ? el("span", { class: "unread" }, String(unread)) : "");
+      channel.kind === "dm" ? pairLabel(channel.agents) : el("span", { class: "label" }, describeChannel(channel)), unread ? el("span", { class: "unread" }, String(unread)) : "");
   };
   $("channels").replaceChildren(...channelItems.map(item));
   $("dms").replaceChildren(...(dmItems.length ? dmItems.map(item) : [el("li", { class: "empty" }, "none yet")]));
@@ -627,7 +635,7 @@ function renderHit(hit) {
   const channel = state.channels.find((c) => c.id === hit.channel);
   const where = channel ? describeChannel(channel) : hit.channel;
   return el("div", { class: "hit", onclick: () => openHit(hit) },
-    el("div", { class: "meta message" },
+    el("div", { class: "meta" },
       el("span", { class: "cut", title: where }, where),
       el("span", { class: "from cut", title: hit.from || "" }, hit.from || ""),
       el("span", { class: "muted", title: hit.time || "" }, hit.time ? new Date(hit.time).toLocaleString() : ""),
