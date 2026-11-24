@@ -1,0 +1,28 @@
+// Package broker is the NATS JetStream binding of the bus (design.md §4a). It implements the
+// interfaces of package bus, and it is the only package that imports the NATS client library
+// (the integration test aside).
+package broker
+
+import "git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+
+// The accounts and streams of design.md §4a.
+const (
+	busStream    = "BUS"
+	ledgerStream = "LEDGER"
+	registryKV   = "registry"
+	catalogueKV  = "catalogue"
+)
+
+// consumerName is the durable consumer that holds an agent's read cursor on a channel (§4a).
+// The parts split at "__" because no token or channel name contains it. A DM channel is always
+// the agent's own.
+func consumerName(agentToken string, channel bus.Channel) string {
+	switch channel.Kind {
+	case bus.General:
+		return agentToken + "__general"
+	case bus.Group:
+		return agentToken + "__g__" + channel.Name
+	default:
+		return agentToken + "__dm"
+	}
+}
