@@ -46,6 +46,11 @@ func (h *harness) startAdapter(t *testing.T, agentID string, groups ...string) (
 	return session, stop
 }
 
+// sayTo is a message aimed at agents, so a targeted-mode adapter delivers it.
+func sayTo(text string, targets ...string) adapter.Outgoing {
+	return adapter.Outgoing{Type: "message", Body: envelope.Body{Text: text}, Targets: targets}
+}
+
 func say(text string) adapter.Outgoing {
 	return adapter.Outgoing{Type: "message", Body: envelope.Body{Text: text}}
 }
@@ -132,7 +137,7 @@ func TestMilestone2(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		postID, err := a.Publish(ctx, "general", say("hello everyone"))
+		postID, err := a.Publish(ctx, "general", sayTo("hello everyone", bob))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,7 +178,7 @@ func TestMilestone2(t *testing.T) {
 		a, _ := h.startAdapter(t, alice)
 		b, _ := h.startAdapter(t, bob, "lib-x")
 
-		postID, err := a.Publish(timeout(t), "lib-x", say("hello lib-x"))
+		postID, err := a.Publish(timeout(t), "lib-x", sayTo("hello lib-x", bob))
 		if err != nil {
 			t.Fatal(err)
 		}
