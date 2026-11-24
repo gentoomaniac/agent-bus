@@ -4,8 +4,6 @@ import (
 	"cmp"
 	"context"
 	"crypto/ed25519"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -510,6 +508,10 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 	if ok, retryAfter := limiter.allow(now); !ok {
 		return "", &RateLimitError{Limit: adapter.config.RateLimit, Window: rateWindow, RetryAfter: retryAfter}
 	}
+	signed, err := envelope.Parse(payload)
+	if err != nil {
+		return "", err
+	}
 	sequence, err := adapter.config.Transport.Publish(ctx, to, id, payload)
 	if err != nil {
 		return "", err
@@ -524,17 +526,12 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 	// channel is not delivered to the agent again.
 	err = adapter.handled.add(handledEntry{
 		Kind: entryMessage, Destination: to.String(), Sequence: sequence, From: adapter.config.AgentID, ID: id,
-		Digest: digestOf(payload), Thread: thread, Hops: hops, At: now,
+		Digest: signed.Digest(), Thread: thread, Hops: hops, At: now,
 	})
 	if err != nil {
 		return id, fmt.Errorf("message %s was sent but could not be recorded: %w", id, err)
 	}
 	return id, nil
-}
-
-func digestOf(payload []byte) string {
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:])
 }
 
 // Poll fetches each channel once and verifies what it got. It returns the errors of channels that
@@ -672,7 +669,7 @@ func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delive
 		}
 	}
 
-	digest := digestOf(delivery.Payload)
+	digest := signed.Digest()
 	if entry, handled := adapter.handled.message(destination, env.From, env.ID); handled {
 		if entry.Digest != digest {
 			return adapter.reject(ctx, channel, delivery, fmt.Errorf("ID %s of %s was handled with another payload", env.ID, env.From))

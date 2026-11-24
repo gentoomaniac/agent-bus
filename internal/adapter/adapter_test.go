@@ -3,6 +3,7 @@ package adapter
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -341,6 +342,42 @@ func TestDuplicateRecordIsSkippedAndAcked(t *testing.T) {
 	poll(t, bobAdapter) // the copy comes back after the ack: handled set skips it
 	if len(inboxOf(t, bobAdapter)) != 0 || bobTransport.acks != 2 {
 		t.Errorf("after the ack the duplicate came back or was not acked (acks %d)", bobTransport.acks)
+	}
+}
+
+// TestDuplicateWrittenDifferentlyIsStillTheSameMessage: whitespace and an unsigned addition to
+// the record change the transport bytes, not the signed envelope, so it is no ID collision.
+func TestDuplicateWrittenDifferentlyIsStillTheSameMessage(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, bobTransport := b.open(bob, deliverAll)
+	ctx := context.Background()
+	if _, err := a.Send(ctx, bob, text("once")); err != nil {
+		t.Fatal(err)
+	}
+	var outer map[string]json.RawMessage
+	if err := json.Unmarshal(b.broker.records[0].payload, &outer); err != nil {
+		t.Fatal(err)
+	}
+	outer["transport_note"] = json.RawMessage(`"added on the way"`)
+	rewritten, err := json.MarshalIndent(outer, "", "    ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.broker.records = append(b.broker.records, fakeRecord{b.broker.records[0].channel, 2, rewritten})
+
+	poll(t, bobAdapter) // buffered copy
+	if err := bobAdapter.Ack(ctx, []string{b.idOfFirst(t)}); err != nil {
+		t.Fatal(err)
+	}
+	poll(t, bobAdapter) // handled copy
+	if _, err := os.Stat(filepath.Join(b.configDir, bob, alertsFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the rewritten duplicate raised an alert: %v", err)
+	}
+	if len(inboxOf(t, bobAdapter)) != 0 || bobTransport.acks != 2 {
+		t.Errorf("the rewritten duplicate was delivered or not acked (acks %d)", bobTransport.acks)
 	}
 }
 

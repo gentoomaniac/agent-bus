@@ -6,7 +6,9 @@ package envelope
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -116,12 +118,10 @@ func NewID(now time.Time) string {
 	return string(id[:])
 }
 
-// Sign returns the record to publish. It refuses invalid targets and a body or record over the size limits.
+// Sign returns the record to publish. It refuses an envelope that Validate would refuse and a
+// record over the size limit.
 func Sign(env Envelope, key ed25519.PrivateKey) ([]byte, error) {
-	if err := env.CheckTargets(); err != nil {
-		return nil, err
-	}
-	if err := env.checkBodySize(); err != nil {
+	if err := env.Validate(); err != nil {
 		return nil, err
 	}
 	raw, err := json.Marshal(env)
@@ -277,6 +277,14 @@ func MentionedTargets(text string) []string {
 		}
 	}
 	return targets
+}
+
+// Digest identifies the signed envelope: a hash of its canonical form, so the same message in
+// differently written JSON (whitespace, escapes, key order, unsigned additions to the record) has
+// the same digest.
+func (signed *Signed) Digest() string {
+	sum := sha256.Sum256(signed.canonical)
+	return hex.EncodeToString(sum[:])
 }
 
 func (signed *Signed) Verify(key ed25519.PublicKey) bool {
