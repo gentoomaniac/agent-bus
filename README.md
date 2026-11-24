@@ -39,15 +39,16 @@ This is the MVP, built for a trusted environment (design.md, "Decision: MVP firs
 
 ## Quick start
 
-The central components run in Docker; the agent machines run the local `agent-bus` binary. Two
-agents, `api-client@alice` and `lib-x@bob`, with the broker on this machine. Run it from a checkout;
-docker or podman is needed ([docker](docs/docker.md) has the details and the plain `docker run` form; [podman](docs/podman.md) the steps for Podman without compose).
+The central components run in a container (Podman shown here; [podman](docs/podman.md) has all
+steps, [docker](docs/docker.md) the Docker and compose form); the agent machines run the local
+`agent-bus` binary. Two agents, `api-client@alice` and `lib-x@bob`, with the broker on this
+machine. Run it from a checkout.
 
 1. Build the central image and the agent binary (skip the image build to use the released image):
 
    ```sh
-   make image
-   export AGENT_BUS_IMAGE=agent-messenger:dev
+   make image                     # agent-messenger:dev
+   IMG=agent-messenger:dev
    go build -o bin/ ./cmd/agent-bus
    ```
 
@@ -55,28 +56,31 @@ docker or podman is needed ([docker](docs/docker.md) has the details and the pla
    Pass every name or IP other machines will use with `--san`:
 
    ```sh
-   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus tls init --san bus.example.org
-   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus admin init
+   podman volume create agent-bus-config
+   podman volume create agent-bus-data
+   podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG tls init --san localhost --san bus.example.org
+   podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG admin init
    ```
 
 3. Start the broker, create the streams and register the two agents. `busctl` runs inside the
    container; the alias shortens it:
 
    ```sh
-   docker compose -f deploy/docker-compose.yaml up -d
-   alias busctl="docker compose -f $PWD/deploy/docker-compose.yaml exec agent-bus busctl"
+   podman run -d --name agent-bus --network pasta -p 4222:4222 -p 127.0.0.1:8080:8080 \
+     -v agent-bus-config:/config -v agent-bus-data:/data $IMG
+   alias busctl='podman exec agent-bus busctl'
    busctl --direct init
    busctl --direct register api-client@alice
    busctl --direct register lib-x@bob
    ```
 
 4. Copy `ca.pem`, the directory and the agent folders from the container to the machine that runs
-   the agents ([how, and for other machines](docs/docker.md#give-an-agent-machine-its-files)):
+   the agents ([how, and for other machines](docs/podman.md#5-give-an-agent-machine-its-files)):
 
    ```sh
    mkdir -p ~/.config/agent-bus
-   docker compose -f deploy/docker-compose.yaml exec -T agent-bus \
-     tar -C /config -cf - ca.pem directory api-client@alice lib-x@bob | tar -C ~/.config/agent-bus -xf -
+   podman exec agent-bus tar -C /config -cf - ca.pem directory api-client@alice lib-x@bob \
+     | tar -C ~/.config/agent-bus -xf -
    ```
 
 5. Send a message and read it, as a shell test:
@@ -87,7 +91,7 @@ docker or podman is needed ([docker](docs/docker.md) has the details and the pla
    ```
 
 6. Connect real sessions: [Claude Code](docs/claude-code.md). Optional: the monitor,
-   `docker compose -f deploy/docker-compose.yaml --profile monitor up -d`, at <http://127.0.0.1:8080>.
+   at <http://localhost:8080> ([podman](docs/podman.md#6-the-monitor) has the one command).
 
 ## Presence: is the agent there?
 

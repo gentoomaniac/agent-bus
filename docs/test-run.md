@@ -6,8 +6,7 @@ hour. Sections 1 to 5 need one machine; 6 and 7 are optional.
 
 The bus side of section 5 (messages, presence, broker restart, agent removal) was run against a
 scratch config directory, with `agent-bus mcp` sessions and hook events simulated from a shell.
-The broker, `busctl` and monitor setup of sections 2 and 4 was run in a container (podman, with
-the compose commands replaced by their `podman run` equivalents). What no one has tried yet is the real thing: Claude Code starting the MCP
+The broker, `busctl` and monitor setup of sections 2 and 4 was run as written, with Podman. What no one has tried yet is the real thing: Claude Code starting the MCP
 server, firing the hooks and showing the mail to the model, a second machine and OpenCode.
 
 Placeholders, used throughout:
@@ -24,8 +23,8 @@ Placeholders, used throughout:
 
 ## 1. What you need
 
-- Docker (or podman) with the compose plugin, for the central components: the broker, `busctl` and
-  the monitor run in the image from this repository's compose file.
+- Podman, for the central components: the broker, `busctl` and the monitor run in the image built
+  from this repository (with Docker, see [docker.md](docker.md) for the same steps).
 - Go (the version in `go.mod`) to build the image and `agent-bus`, or a release `agent-bus` and the
   released image (then skip the build in section 2).
 - Linux: the hooks find their session through `/proc`.
@@ -37,15 +36,12 @@ Nothing here touches your Claude Code settings by itself: you paste the config i
 
 ## 2. One-machine setup
 
-Using Podman without a compose provider? Follow [podman.md](podman.md) for sections 2 and 4, then continue with section 3.
-
-The broker, its state and `busctl` live in Docker volumes; the agents run on the host and keep
-their files in `~/.config/agent-bus/`. To keep a trial apart from a later real setup, set
-`export BUS_CONFIG_DIR=~/bus-trial` in every shell that runs `agent-bus` or Claude Code, and use
-the compose project name `bus-trial` (`export COMPOSE_PROJECT_NAME=bus-trial`) so the trial gets its
-own volumes. Default ports are `4222` (broker) and `8080` (monitor page). If `4222` is taken,
-change the published port in `deploy/docker-compose.yaml` and see
-[broker.md](broker.md#settings-and-ports): `BUS_BROKER` must then be set in every shell.
+The broker, its state and `busctl` live in the Podman volumes `agent-bus-config` and
+`agent-bus-data`; the agents run on the host and keep their files in `~/.config/agent-bus/`. To
+keep a trial apart from a later real setup, set `export BUS_CONFIG_DIR=~/bus-trial` in every shell
+that runs `agent-bus` or Claude Code, and use other volume names. Default ports are `4222` (broker)
+and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14222:4222`) and set
+`BUS_BROKER=localhost:14222` in every shell ([broker.md](broker.md#settings-and-ports)).
 
 1. Build the central image and the `agent-bus` binary, and put the binary on your path. The hooks
    and `claude mcp add` call `agent-bus` by name, so it must be on the `PATH` of the shell that
@@ -54,13 +50,13 @@ change the published port in `deploy/docker-compose.yaml` and see
    ```sh
    cd <repo>
    make image
-   export AGENT_BUS_IMAGE=agent-messenger:dev
+   IMG=agent-messenger:dev
    go build -o bin/ ./cmd/agent-bus
    export PATH="$PWD/bin:$PATH"
    ```
 
-   With the released image, skip `make image` and the `AGENT_BUS_IMAGE` line. `make image` uses
-   docker, or podman when docker is absent.
+   With the released image, skip `make image` and set `IMG=ghcr.io/gentoomaniac/agent-messenger:latest`.
+   `make image` uses podman unless a docker daemon is running.
 
 2. Create the certificates and admin credentials, once, as one-off containers on the config volume.
    If clients will ever connect by another name or IP than `localhost` (a second machine, section
@@ -68,26 +64,30 @@ change the published port in `deploy/docker-compose.yaml` and see
    `localhost`, `127.0.0.1`, `::1` and the container's host name:
 
    ```sh
-   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus tls init
-   # for section 6 instead: ... tls init --san bus.example.org --san 192.168.1.10
-   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus admin init
+   podman volume create agent-bus-config
+   podman volume create agent-bus-data
+   podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG tls init --san localhost
+   # for section 6 instead: ... tls init --san localhost --san bus.example.org --san 192.168.1.10
+   podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG admin init
    ```
 
-3. Start the broker. It listens on all interfaces; to keep it on this machine change the port line
-   of the compose file to `127.0.0.1:4222:4222`:
+3. Start the broker. It listens on all interfaces; to keep it on this machine publish
+   `-p 127.0.0.1:4222:4222` instead. `--network pasta` avoids a rootless-network error on some
+   systems:
 
    ```sh
-   docker compose -f deploy/docker-compose.yaml up -d
-   docker compose -f deploy/docker-compose.yaml logs agent-bus | tail -3
+   podman run -d --name agent-bus --network pasta -p 4222:4222 -p 127.0.0.1:8080:8080 \
+     -v agent-bus-config:/config -v agent-bus-data:/data $IMG
+   podman logs agent-bus | tail -3
    ```
 
    Expected last line: `Server is ready`.
 
-4. `busctl` runs inside the container. This alias (in every shell you use below; give the absolute
-   path of the compose file) is what the plain `busctl` commands of this document mean:
+4. `busctl` runs inside the container. This alias (in every shell you use below) is what the plain
+   `busctl` commands of this document mean:
 
    ```sh
-   alias busctl='docker compose -f <repo>/deploy/docker-compose.yaml exec agent-bus busctl'
+   alias busctl='podman exec agent-bus busctl'
    ```
 
    Create the streams, then register the two agents and the identity of the monitor. The monitor
@@ -126,8 +126,7 @@ change the published port in `deploy/docker-compose.yaml` and see
 
    ```sh
    mkdir -p "${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}"
-   docker compose -f deploy/docker-compose.yaml exec -T agent-bus \
-     tar -C /config -cf - ca.pem directory lib-x@<owner> api-client@<owner> \
+   podman exec agent-bus tar -C /config -cf - ca.pem directory lib-x@<owner> api-client@<owner> \
      | tar -C "${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}" -xf -
    ```
 
@@ -248,13 +247,15 @@ Do this once per project folder. The two sessions must be two different identiti
 
 ## 4. Start the monitor
 
-The monitor runs in the image as the compose `monitor` profile, with the broker's network and
-config volume. It reads with the admin credentials and has no login, so the compose file publishes
-it on `127.0.0.1` only. To let it post as `monitor@<owner>`, uncomment `BUS_AGENT: monitor@<owner>`
-in the `monitor` service first, then:
+The monitor runs from the same image in the broker's network namespace, with the config volume.
+It reads with the admin credentials and has no login; the broker container publishes its port on
+`127.0.0.1` only. `BUS_AGENT` lets the page post as `monitor@<owner>` (leave it out for read-only):
 
 ```sh
-docker compose -f deploy/docker-compose.yaml --profile monitor up -d
+podman run -d --name agent-bus-monitor --network container:agent-bus \
+  -v agent-bus-config:/config --entrypoint bus-monitor \
+  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_AGENT=monitor@<owner> \
+  $IMG
 ```
 
 Open <http://127.0.0.1:8080> (the port must be 8080; another host port gives `unexpected Host
@@ -337,7 +338,7 @@ the hook when that session's turn ends, or by `inbox` when you ask for it.
 
    ```sh
    cd <repo>
-   docker compose -f deploy/docker-compose.yaml stop agent-bus
+   podman stop agent-bus
    ```
 
 2. Monitor: "bus disconnected, reconnecting...". In a session, `send` fails with "bus unavailable,
@@ -346,7 +347,7 @@ the hook when that session's turn ends, or by `inbox` when you ask for it.
 3. Start it again and wait up to 30 seconds (the retry wait doubles from 1 s to 30 s):
 
    ```sh
-   docker compose -f deploy/docker-compose.yaml start agent-bus
+   podman start agent-bus
    ```
 
 4. Monitor back to "live". Ask a session to send something: it works. Mail that was unread before
@@ -360,7 +361,7 @@ the hook when that session's turn ends, or by `inbox` when you ask for it.
    ```sh
    busctl --direct agent remove api-client@<owner>
    busctl --direct directory export /config/directory
-   docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -cf - directory \
+   podman exec agent-bus tar -C /config -cf - directory \
      | tar -C "${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}" -xf -
    ```
 
@@ -396,8 +397,9 @@ reached by, and `other` for the second machine.
    all of them, also back to the sessions of section 3 (they restart):
 
    ```sh
-   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus tls init --force --san bus.example.org --san 192.168.1.10
-   docker compose -f deploy/docker-compose.yaml restart agent-bus
+   podman stop agent-bus
+   podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG tls init --force --san localhost --san bus.example.org --san 192.168.1.10
+   podman start agent-bus
    ```
 
 2. Copy into `other:~/.config/agent-bus/` (or its `BUS_CONFIG_DIR`):
@@ -411,8 +413,7 @@ reached by, and `other` for the second machine.
 
    ```sh
    ssh other 'mkdir -p ~/.config/agent-bus'
-   docker compose -f deploy/docker-compose.yaml exec -T agent-bus \
-     tar -C /config -cf - ca.pem directory api-client@<owner> \
+   podman exec agent-bus tar -C /config -cf - ca.pem directory api-client@<owner> \
      | ssh other 'tar -C ~/.config/agent-bus -xf -'
    ```
 
@@ -477,12 +478,12 @@ Where to look:
 
 | What                         | Where                                                                  |
 |------------------------------|------------------------------------------------------------------------|
-| Broker                       | `docker compose -f deploy/docker-compose.yaml logs agent-bus` |
+| Broker                       | `podman logs agent-bus`                                                |
 | An agent's rejected mail     | `${BUS_CONFIG_DIR:-~/.config/agent-bus}/<agent-id>/alerts.log` on the agent's machine |
 | An adapter's own messages (connect, reconnect) | Claude Code's MCP log: `claude --debug`, or `/mcp` |
-| The monitor                  | `docker compose -f deploy/docker-compose.yaml logs monitor`, and `curl -s http://127.0.0.1:8080/api/status` |
+| The monitor                  | `podman logs agent-bus-monitor`, and `curl -s http://127.0.0.1:8080/api/status` |
 | Presence as stored           | `curl -s http://127.0.0.1:8080/api/presence`                           |
 
 Stop everything when you are done: close the sessions and run
-`docker compose -f deploy/docker-compose.yaml --profile monitor down` (add `-v` to delete the trial's volumes: certificates,
-credentials and messages).
+`podman rm -f agent-bus-monitor agent-bus` (add `podman volume rm agent-bus-config agent-bus-data`
+to delete the trial's state: certificates, credentials and messages).
