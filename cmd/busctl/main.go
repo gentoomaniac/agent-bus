@@ -7,7 +7,6 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"github.com/alecthomas/kong"
-	"github.com/twmb/franz-go/pkg/kadm"
 )
 
 type CLI struct {
@@ -16,6 +15,10 @@ type CLI struct {
 	CACert    string `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
 
 	Init InitCmd `cmd:"" help:"Create the system topics. Safe to repeat."`
+
+	Topic struct {
+		Create TopicCreateCmd `cmd:"" help:"Create a topic and add it to the topic catalogue."`
+	} `cmd:"" help:"Group topics."`
 
 	TLS struct {
 		Init TLSInitCmd `cmd:"" help:"Create the private CA and the broker certificate."`
@@ -35,7 +38,7 @@ func (cli *CLI) caCertPath() string {
 }
 
 // adminClient connects to the broker as the admin principal created by `busctl admin init`.
-func (cli *CLI) adminClient() (*kadm.Client, error) {
+func (cli *CLI) adminClient() (*broker.Admin, error) {
 	password, err := creds.ReadPassword(creds.AdminDir(cli.ConfigDir))
 	if err != nil {
 		return nil, err

@@ -2,6 +2,7 @@
 package broker
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -20,8 +21,15 @@ type Connection struct {
 	Password   string
 }
 
-// NewClient connects lazily; the first request opens the TLS connection.
-func NewClient(conn Connection, extraOpts ...kgo.Opt) (*kgo.Client, error) {
+// Admin manages topics, ACLs and SCRAM users and publishes records, as the principal it connected with.
+// Closing it closes the connection.
+type Admin struct {
+	*kadm.Client
+	kafka *kgo.Client
+}
+
+// NewAdmin connects lazily; the first request opens the TLS connection.
+func NewAdmin(conn Connection) (*Admin, error) {
 	caPEM, err := os.ReadFile(conn.CACertPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading CA certificate: %w", err)
@@ -30,19 +38,19 @@ func NewClient(conn Connection, extraOpts ...kgo.Opt) (*kgo.Client, error) {
 	if !roots.AppendCertsFromPEM(caPEM) {
 		return nil, fmt.Errorf("%s contains no certificate", conn.CACertPath)
 	}
-	opts := []kgo.Opt{
+	kafka, err := kgo.NewClient(
 		kgo.SeedBrokers(conn.Address),
 		kgo.DialTLSConfig(&tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}),
 		kgo.SASL(scram.Auth{User: conn.User, Pass: conn.Password}.AsSha256Mechanism()),
-	}
-	return kgo.NewClient(append(opts, extraOpts...)...)
-}
-
-// NewAdmin is NewClient wrapped for topic, ACL and SCRAM user management. Closing it closes the client.
-func NewAdmin(conn Connection) (*kadm.Client, error) {
-	client, err := NewClient(conn)
+	)
 	if err != nil {
 		return nil, err
 	}
-	return kadm.NewClient(client), nil
+	return &Admin{Client: kadm.NewClient(kafka), kafka: kafka}, nil
+}
+
+// Publish writes one record and waits until the broker has stored it.
+func (admin *Admin) Publish(ctx context.Context, topic string, key string, value []byte) error {
+	record := &kgo.Record{Topic: topic, Key: []byte(key), Value: value}
+	return admin.kafka.ProduceSync(ctx, record).FirstErr()
 }

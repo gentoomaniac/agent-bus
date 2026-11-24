@@ -28,3 +28,6 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
    registry, requests and topic catalogue, infinite for `agents.general`. All topics have one
    partition. Safe to repeat. `busctl` connects to `--broker` (`BUS_BROKER`, default
    `localhost:9092`) as the admin, trusting `--ca-cert`.
+6. `bin/busctl topic create <name> --description "..."` creates the one-partition topic
+   `agents.topic.<name>` (infinite retention) and writes the description to the compacted
+   `agents.topics` catalogue, keyed by name. Repeating it updates the description.

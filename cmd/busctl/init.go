@@ -18,7 +18,7 @@ func (cmd *InitCmd) Run(cli *CLI) error {
 	defer admin.Close()
 
 	for _, topic := range broker.SystemTopics {
-		created, err := broker.CreateTopic(context.Background(), admin, topic)
+		created, err := broker.CreateTopic(context.Background(), admin.Client, topic)
 		if err != nil {
 			return fmt.Errorf("creating %s: %w", topic.Name, err)
 		}
