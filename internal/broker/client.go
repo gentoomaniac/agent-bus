@@ -53,9 +53,12 @@ func NewClient(conn Connection, extraOpts ...kgo.Opt) (*kgo.Client, error) {
 	return kgo.NewClient(append(opts, extraOpts...)...)
 }
 
-// NewAdmin connects like NewClient, for the admin principal's management calls.
+// NewAdmin connects like NewClient, for the admin principal's management calls. Its producer is
+// not idempotent: an idempotent producer ignores cancellation and RecordDeliveryTimeout once a
+// write's outcome is uncertain, so busctl could hang on a broker that went away mid-write. The admin
+// only writes keyed records to compacted topics, where a duplicate from a retry does no harm.
 func NewAdmin(conn Connection) (*Admin, error) {
-	kafka, err := NewClient(conn)
+	kafka, err := NewClient(conn, kgo.DisableIdempotentWrite())
 	if err != nil {
 		return nil, err
 	}
