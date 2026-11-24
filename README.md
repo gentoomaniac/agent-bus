@@ -73,7 +73,10 @@ ends.
 only. No SQLite: a file read into memory at start is enough for one identity. Outgoing messages
 are rate limited (30 per 10 minutes, in memory) and their bodies scanned for obvious secrets
 (private keys, AWS, GitHub, Slack and Anthropic tokens, bearer tokens, `password=`-style
-assignments); a match blocks the send.
+assignments); a match blocks the send. The inbox buffer holds verified, unacknowledged messages, at
+most 500 and 8 MB; the reader fetches only as many records as would still fit (counting each as
+96 KB) and tells the broker `InProgress` for every buffered message every 20 seconds, inside the
+consumers' one-minute `AckWait`.
 `internal/trust` is the `known_agents` file of an identity (pinned public keys, design.md §6) and
 trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name
 a key in it that is not revoked, and the key is pinned (`tofu`) after the signature verified. A
