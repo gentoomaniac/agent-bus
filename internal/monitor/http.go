@@ -166,7 +166,8 @@ func (monitor *Monitor) serveSend(w http.ResponseWriter, r *http.Request) {
 // serveEvents streams every new message as a server-sent event named "message" and every presence
 // change as one named "presence". The stream ends when the client leaves, falls too far behind or
 // its login session ends; the browser then reconnects and reads what it missed from
-// /api/v1/messages and /api/v1/presence.
+// /api/v1/messages and /api/v1/presence. Events carry an id, but nothing is replayed after a
+// reconnect: Last-Event-ID is ignored, the client re-reads the state (snapshot and reconnect).
 func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request, loggedIn func() bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -201,7 +202,7 @@ func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request, logg
 			if err != nil {
 				return
 			}
-			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+			fmt.Fprintf(w, "id: %s#%d\nevent: message\ndata: %s\n\n", message.Channel, message.Sequence, data)
 		case view, open := <-views:
 			if !open {
 				return
@@ -210,7 +211,7 @@ func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request, logg
 			if err != nil {
 				return
 			}
-			fmt.Fprintf(w, "event: presence\ndata: %s\n\n", data)
+			fmt.Fprintf(w, "id: presence:%s@%d\nevent: presence\ndata: %s\n\n", view.Agent, time.Now().UnixNano(), data)
 		}
 		flusher.Flush()
 	}

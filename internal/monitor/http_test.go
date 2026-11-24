@@ -156,11 +156,17 @@ func TestEventStreamDeliversNewMessages(t *testing.T) {
 
 	fake.store(bus.GeneralChannel(), 1, alice.sign(t, bus.GeneralChannel(), "live"))
 	found := make(chan Message, 1)
+	eventID := make(chan string, 1)
 	go func() {
+		var id string
 		for lines.Scan() {
+			if value, isID := strings.CutPrefix(lines.Text(), "id: "); isID {
+				id = value
+			}
 			if data, isData := strings.CutPrefix(lines.Text(), "data: "); isData {
 				var message Message
 				if json.Unmarshal([]byte(data), &message) == nil {
+					eventID <- id
 					found <- message
 					return
 				}
@@ -171,6 +177,9 @@ func TestEventStreamDeliversNewMessages(t *testing.T) {
 	case message := <-found:
 		if message.Text != "live" || message.Status != Verified {
 			t.Errorf("event = %+v", message)
+		}
+		if id := <-eventID; id != "general#1" {
+			t.Errorf("event id = %q, want general#1", id)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no event arrived")
