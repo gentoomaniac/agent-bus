@@ -14,6 +14,10 @@ type CLI struct {
 	TLS struct {
 		Init TLSInitCmd `cmd:"" help:"Create the private CA and the broker certificate."`
 	} `cmd:"" help:"TLS setup."`
+
+	Admin struct {
+		Init AdminInitCmd `cmd:"" help:"Create the admin credentials the broker starts with."`
+	} `cmd:"" help:"Admin principal."`
 }
 
 // caCertPath is where the CA certificate lives, unless --ca-cert says otherwise.

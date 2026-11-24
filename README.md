@@ -13,3 +13,6 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
    (`broker.pem`, `broker.key`). It is valid for `localhost`, `127.0.0.1`, `::1` and this
    machine's hostname; use `--san` (repeatable) to set other names or IPs. It refuses to
    overwrite existing files unless `--force`. Clients trust only `ca.pem` (`--ca-cert`).
+3. `bin/busctl admin init` creates the admin (SCRAM superuser) password in
+   `~/.config/agent-bus/admin/password` (mode 0600). The broker is bootstrapped with it and
+   busctl connects with it. It never lives in the repo.
