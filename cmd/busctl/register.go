@@ -39,7 +39,23 @@ func (cmd *RegisterCmd) Run(cli *CLI) (err error) {
 	if err := os.MkdirAll(cli.ConfigDir, files.DirMode); err != nil {
 		return err
 	}
+	admin, err := cli.adminClient()
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+	ctx := context.Background()
+
 	if err := os.Mkdir(dir, files.DirMode); errors.Is(err, fs.ErrExist) {
+		// The SCRAM user is created last, so without it the earlier registration did not complete.
+		registered, err := admin.HasSCRAMUser(ctx, cmd.AgentID)
+		if err != nil {
+			return err
+		}
+		if !registered {
+			return fmt.Errorf("an earlier registration of %s did not complete: %s exists but the broker has no such user; "+
+				"remove %s and run register again", cmd.AgentID, dir, dir)
+		}
 		return fmt.Errorf("%s already has a key on this machine in %s", cmd.AgentID, dir)
 	} else if err != nil {
 		return err
@@ -61,15 +77,6 @@ func (cmd *RegisterCmd) Run(cli *CLI) (err error) {
 		}
 	}()
 
-	admin, err := cli.adminClient()
-	if err != nil {
-		return err
-	}
-	defer admin.Close()
-	ctx := context.Background()
-
-	// The SCRAM user is created last, so it marks a completed registration; a registration that
-	// failed half way can simply be run again.
 	registered, err := admin.HasSCRAMUser(ctx, cmd.AgentID)
 	if err != nil {
 		return err

@@ -39,7 +39,8 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
    ID that exists on this machine or on the bus is an error. `human@<owner>` is not supported yet.
    A registration that fails before the SCRAM user is sent removes its directory again. After that
    point the broker may have applied the user even if the answer was lost, so the directory is kept
-   and the error says so.
+   and the error says so. If the directory exists but the broker has no such user, the earlier
+   registration did not complete: the error names the directory to remove before rerunning.
 
 ## Tests
 
