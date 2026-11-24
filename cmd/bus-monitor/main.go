@@ -38,6 +38,19 @@ type CLI struct {
 	ConfigDir string `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
 	Broker    string `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
 	CACert    string `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
+
+	ReconnectInitial time.Duration `help:"The first wait before reconnecting to the broker; it doubles for each failed attempt." default:"1s" env:"BUS_RECONNECT_INITIAL"`
+	ReconnectMax     time.Duration `help:"The longest wait between reconnect attempts." default:"30s" env:"BUS_RECONNECT_MAX"`
+}
+
+// connection says how to reach the broker as a user. The monitor outlives the broker: it starts
+// without it and reconnects after an outage.
+func (cli *CLI) connection(caCert, user, password string) broker.Connection {
+	return broker.Connection{
+		Address: cli.Broker, CACertPath: caCert, User: user, Password: password,
+		Reconnect: &broker.Backoff{Initial: cli.ReconnectInitial, Max: cli.ReconnectMax},
+		Log:       func(format string, args ...any) { log.Printf("bus-monitor: "+format, args...) },
+	}
 }
 
 func (cli *CLI) Run() error {
@@ -50,7 +63,7 @@ func (cli *CLI) Run() error {
 	}
 	connection := func(user string) (broker.Connection, error) {
 		password, err := creds.ReadPassword(creds.AdminDir(cli.ConfigDir, user))
-		return broker.Connection{Address: cli.Broker, CACertPath: caCert, User: user, Password: password}, err
+		return cli.connection(caCert, user, password), err
 	}
 	busConn, err := connection(broker.BusAdminUser)
 	if err != nil {
@@ -117,7 +130,7 @@ func (cli *CLI) openSender(caCert string) (sender monitor.Sender, readOnlyNote s
 	if err != nil {
 		return nil, "", closeSender, err
 	}
-	transport, err := broker.NewTransport(broker.Connection{Address: cli.Broker, CACertPath: caCert, User: bus.AgentToken(cli.Agent), Password: password}, cli.Agent)
+	transport, err := broker.NewTransport(cli.connection(caCert, bus.AgentToken(cli.Agent), password), cli.Agent)
 	if err != nil {
 		return nil, "", closeSender, err
 	}

@@ -41,6 +41,9 @@ type CLI struct {
 	Deliver   string        `help:"Which messages reach the agent's inbox: targeted (DMs and messages aimed at it or at @all, the default) or all (every message in its channels)." default:"targeted" enum:"targeted,all" env:"BUS_DELIVER"`
 	Timeout   time.Duration `help:"Give up after this long (not for mcp, which runs until its client closes it)." default:"30s" env:"BUS_TIMEOUT"`
 
+	ReconnectInitial time.Duration `help:"mcp only: the first wait before reconnecting to the broker; it doubles for each failed attempt." default:"1s" env:"BUS_RECONNECT_INITIAL"`
+	ReconnectMax     time.Duration `help:"mcp only: the longest wait between reconnect attempts." default:"30s" env:"BUS_RECONNECT_MAX"`
+
 	Send    SendCmd    `cmd:"" help:"Send a message to one agent."`
 	Publish PublishCmd `cmd:"" help:"Post to general or a group channel."`
 	Inbox   InboxCmd   `cmd:"" help:"Fetch new mail and print the unread messages as JSON."`
@@ -171,7 +174,7 @@ func main() {
 
 	kongCtx.BindTo(ctx, (*context.Context)(nil))
 	if kongCtx.Command() != "pending" {
-		session, closeSession, err := cli.open()
+		session, closeSession, err := cli.open(kongCtx.Command() == "mcp")
 		kongCtx.FatalIfErrorf(err)
 		defer closeSession()
 		kongCtx.Bind(session)
@@ -179,8 +182,9 @@ func main() {
 	kongCtx.FatalIfErrorf(kongCtx.Run())
 }
 
-// open connects as the agent and takes the identity. closeSession releases both.
-func (cli *CLI) open() (session *adapter.Adapter, closeSession func(), err error) {
+// open connects as the agent and takes the identity. closeSession releases both. A long-running
+// session keeps reconnecting when the broker is down, also at start; a command fails at once.
+func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession func(), err error) {
 	if cli.Agent == "" {
 		return nil, nil, errors.New("--agent is required")
 	}
@@ -196,7 +200,12 @@ func (cli *CLI) open() (session *adapter.Adapter, closeSession func(), err error
 	if caCert == "" {
 		caCert = filepath.Join(cli.ConfigDir, "ca.pem")
 	}
-	transport, err := broker.NewTransport(broker.Connection{Address: cli.Broker, CACertPath: caCert, User: bus.AgentToken(cli.Agent), Password: password}, cli.Agent)
+	connection := broker.Connection{Address: cli.Broker, CACertPath: caCert, User: bus.AgentToken(cli.Agent), Password: password}
+	if longRunning {
+		connection.Reconnect = &broker.Backoff{Initial: cli.ReconnectInitial, Max: cli.ReconnectMax}
+		connection.Log = func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) }
+	}
+	transport, err := broker.NewTransport(connection, cli.Agent)
 	if err != nil {
 		return nil, nil, err
 	}
