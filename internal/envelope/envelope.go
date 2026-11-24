@@ -121,12 +121,8 @@ func Sign(env Envelope, key ed25519.PrivateKey) ([]byte, error) {
 	if err := env.CheckTargets(); err != nil {
 		return nil, err
 	}
-	body, err := json.Marshal(env.Body)
-	if err != nil {
+	if err := env.checkBodySize(); err != nil {
 		return nil, err
-	}
-	if len(body) > MaxBodyBytes {
-		return nil, fmt.Errorf("body is %d bytes, over the limit of %d; send a reference instead", len(body), MaxBodyBytes)
 	}
 	raw, err := json.Marshal(env)
 	if err != nil {
@@ -146,7 +142,7 @@ func Sign(env Envelope, key ed25519.PrivateKey) ([]byte, error) {
 	return payload, nil
 }
 
-// Parse checks size and version and prepares the signature check. It runs before anything else
+// Parse checks size, version and schema and prepares the signature check. It runs before anything else
 // is done with a record (§6 steps 0 and 1).
 func Parse(payload []byte) (*Signed, error) {
 	if len(payload) > MaxRecordBytes {
@@ -180,10 +176,58 @@ func Parse(payload []byte) (*Signed, error) {
 	if env.Version != Version {
 		return nil, fmt.Errorf("unsupported envelope version %d", env.Version)
 	}
-	if err := env.CheckTargets(); err != nil {
+	if err := env.Validate(); err != nil {
 		return nil, err
 	}
 	return &Signed{Envelope: env, canonical: canonical, signature: signature}, nil
+}
+
+// idShape is a ULID: 26 Crockford base32 characters, the first at most 7 (48 bits of time).
+var idShape = regexp.MustCompile(`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`)
+
+// maxThreadBytes bounds a thread name; the adapter's own are ULIDs, an agent may choose its own.
+const maxThreadBytes = 128
+
+// Validate checks the schema of a v1 envelope that was read from the wire: every required field
+// is present and well formed. A field this version does not know is ignored (it is still signed),
+// so a field that receivers must understand needs a new version (design.md §5).
+func (env Envelope) Validate() error {
+	if !idShape.MatchString(env.ID) {
+		return fmt.Errorf("id %q is not a ULID", env.ID)
+	}
+	if env.Thread == "" || len(env.Thread) > maxThreadBytes {
+		return fmt.Errorf("thread must be 1 to %d bytes", maxThreadBytes)
+	}
+	if env.TS.IsZero() {
+		return errors.New("ts is missing")
+	}
+	if err := bus.ValidateAgentID(env.From); err != nil {
+		return fmt.Errorf("invalid from: %w", err)
+	}
+	if (env.To.Kind != ToAgent && env.To.Kind != ToGroup) || env.To.Name == "" {
+		return fmt.Errorf("invalid to: kind %q, name %q", env.To.Kind, env.To.Name)
+	}
+	if !slices.Contains(Types, env.Type) {
+		return fmt.Errorf("unknown message type %q", env.Type)
+	}
+	if env.Hops < 0 {
+		return fmt.Errorf("negative hops %d", env.Hops)
+	}
+	if err := env.CheckTargets(); err != nil {
+		return err
+	}
+	return env.checkBodySize()
+}
+
+func (env Envelope) checkBodySize() error {
+	body, err := json.Marshal(env.Body)
+	if err != nil {
+		return err
+	}
+	if len(body) > MaxBodyBytes {
+		return fmt.Errorf("body is %d bytes, over the limit of %d; send a reference instead", len(body), MaxBodyBytes)
+	}
+	return nil
 }
 
 // CheckTargets accepts agent IDs without duplicates, or the single value "@all". Every message

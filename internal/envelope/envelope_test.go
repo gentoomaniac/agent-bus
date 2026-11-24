@@ -281,7 +281,7 @@ func TestSignRefusesInvalidAndMissingTargets(t *testing.T) {
 
 func TestParseRefusesInvalidTargets(t *testing.T) {
 	_, private := identity.Generate()
-	raw := `{"v":1,"id":"X","ts":"2026-11-24T10:00:00Z","from":"a@o","to":{"kind":"agent","name":"b@o"},"type":"message","targets":["@all","a@o"],"thread":"T","reply_to":null,"hops":0,"key_fp":"F","body":{}}`
+	raw := `{"v":1,"id":"01JD8Z0000000000000000000A","ts":"2026-11-24T10:00:00Z","from":"a@o","to":{"kind":"agent","name":"b@o"},"type":"message","targets":["@all","a@o"],"thread":"T","reply_to":null,"hops":0,"key_fp":"F","body":{}}`
 	canonical, _ := canonicalize([]byte(raw))
 	record, _ := json.Marshal(map[string]any{"envelope": json.RawMessage(raw), "sig": base64.StdEncoding.EncodeToString(ed25519.Sign(private, canonical))})
 	if _, err := Parse(record); err == nil || !strings.Contains(err.Error(), "target") {
@@ -292,7 +292,7 @@ func TestParseRefusesInvalidTargets(t *testing.T) {
 func TestParseRefusesMissingAndEmptyTargets(t *testing.T) {
 	_, private := identity.Generate()
 	for _, field := range []string{``, `"targets":[],`, `"targets":null,`} {
-		raw := `{"v":1,"id":"X","ts":"2026-11-24T10:00:00Z","from":"a@o","to":{"kind":"agent","name":"b@o"},"type":"message",` + field + `"thread":"T","reply_to":null,"hops":0,"key_fp":"F","body":{}}`
+		raw := `{"v":1,"id":"01JD8Z0000000000000000000A","ts":"2026-11-24T10:00:00Z","from":"a@o","to":{"kind":"agent","name":"b@o"},"type":"message",` + field + `"thread":"T","reply_to":null,"hops":0,"key_fp":"F","body":{}}`
 		canonical, _ := canonicalize([]byte(raw))
 		record, _ := json.Marshal(map[string]any{"envelope": json.RawMessage(raw), "sig": base64.StdEncoding.EncodeToString(ed25519.Sign(private, canonical))})
 		if _, err := Parse(record); err == nil || !strings.Contains(err.Error(), "targets") {
@@ -318,5 +318,51 @@ func TestMentionedTargets(t *testing.T) {
 		if got := MentionedTargets(text); !slices.Equal(got, want) {
 			t.Errorf("%q: got %v, want %v", text, got, want)
 		}
+	}
+}
+
+// recordOf signs the envelope JSON exactly as written, so a test can feed Parse any envelope.
+func recordOf(raw string) []byte {
+	_, private := identity.Generate()
+	canonical, err := canonicalize([]byte(raw))
+	if err != nil {
+		panic(err)
+	}
+	record, _ := json.Marshal(map[string]any{"envelope": json.RawMessage(raw), "sig": base64.StdEncoding.EncodeToString(ed25519.Sign(private, canonical))})
+	return record
+}
+
+const validEnvelope = `{"v":1,"id":"01JD8Z0000000000000000000A","ts":"2026-11-24T10:00:00Z","from":"a@o","to":{"kind":"agent","name":"b@o"},"type":"message","targets":["b@o"],"thread":"T","reply_to":null,"hops":0,"key_fp":"F","body":{"text":"x"}}`
+
+func TestParseValidatesTheSchema(t *testing.T) {
+	if _, err := Parse(recordOf(validEnvelope)); err != nil {
+		t.Fatalf("the valid envelope was refused: %v", err)
+	}
+	for name, change := range map[string][2]string{
+		"missing id":      {`"id":"01JD8Z0000000000000000000A",`, ``},
+		"id not a ULID":   {`01JD8Z0000000000000000000A`, `not-a-ulid`},
+		"id too big":      {`01JD8Z0000000000000000000A`, `Z1JD8Z0000000000000000000A`},
+		"missing thread":  {`"thread":"T",`, ``},
+		"empty thread":    {`"thread":"T"`, `"thread":""`},
+		"missing ts":      {`"ts":"2026-11-24T10:00:00Z",`, ``},
+		"zero ts":         {`2026-11-24T10:00:00Z`, `0001-01-01T00:00:00Z`},
+		"ts not RFC 3339": {`2026-11-24T10:00:00Z`, `yesterday`},
+		"missing from":    {`"from":"a@o",`, ``},
+		"invalid from":    {`"from":"a@o"`, `"from":"Not An ID"`},
+		"missing to":      {`"to":{"kind":"agent","name":"b@o"},`, ``},
+		"unknown to kind": {`"kind":"agent"`, `"kind":"planet"`},
+		"unknown type":    {`"type":"message"`, `"type":"gossip"`},
+		"missing type":    {`"type":"message",`, ``},
+		"negative hops":   {`"hops":0`, `"hops":-1`},
+		"body over limit": {`"text":"x"`, `"text":"` + strings.Repeat("x", MaxBodyBytes) + `"`},
+	} {
+		raw := strings.Replace(validEnvelope, change[0], change[1], 1)
+		if _, err := Parse(recordOf(raw)); err == nil {
+			t.Errorf("%s: the envelope was parsed", name)
+		}
+	}
+	// A field this version does not know is ignored, and still covered by the signature.
+	if _, err := Parse(recordOf(strings.Replace(validEnvelope, `"hops":0`, `"hops":0,"future":{"x":1}`, 1))); err != nil {
+		t.Errorf("an unknown field was refused: %v", err)
 	}
 }
