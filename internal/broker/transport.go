@@ -86,6 +86,15 @@ func (transport *Transport) History(ctx context.Context, from bus.Channel, after
 	if err != nil {
 		return nil, fmt.Errorf("reading the history of %s: %w", from, transport.session.explain(err))
 	}
+	// Each read creates a consumer on the server; delete it at once, or a reader that polls (the
+	// monitor) piles them up until the server refuses new ones.
+	defer func() {
+		if info := consumer.CachedInfo(); info != nil {
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), requestExpiry)
+			_ = transport.session.stream.DeleteConsumer(cleanup, busStream, info.Name)
+			cancel()
+		}
+	}()
 	batch, err := consumer.Fetch(limit, jetstream.FetchMaxWait(requestExpiry))
 	if err != nil {
 		return nil, fmt.Errorf("reading the history of %s: %w", from, transport.session.explain(err))
