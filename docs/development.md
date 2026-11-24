@@ -104,7 +104,7 @@ install`), then starts and stops its own server (temporary config directory, ran
   delivered once (the copy that arrives next to the buffered original gets `InProgress`, then is
   acked after redelivery); ack B before A and restart: A comes back, B does not; a second adapter on
   one identity fails every operation until the first session ends; two auto-repliers stop at 6
-  hops, also alternating `send` and `publish`; the secret scan blocks a send.
+  hops, also alternating `send` and `publish` (each with an explicit `reply_to`); the secret scan blocks a send.
 - `agent-bus mcp` as a real stdio process (`mcp_test.go`): alice's `send` reaches bob's
   `wait_for_messages` framed as untrusted and bob acks it; a second server on one identity fails
   every tool and names the holder; SIGTERM ends a server and frees the identity.

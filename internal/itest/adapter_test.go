@@ -160,7 +160,9 @@ func TestMilestone2(t *testing.T) {
 		}
 
 		// Bob answers; alice verifies and pins bob. Her own general post is not delivered back.
-		if _, err := b.Send(ctx, alice, say("hello alice")); err != nil {
+		hello := say("hello alice")
+		hello.ReplyTo = dmID
+		if _, err := b.Send(ctx, alice, hello); err != nil {
 			t.Fatal(err)
 		}
 		reply := pollUntil(t, a, 1)
@@ -202,7 +204,7 @@ func TestMilestone2(t *testing.T) {
 		}
 		payload, err := envelope.Sign(envelope.Envelope{
 			Version: envelope.Version, ID: envelope.NewID(time.Now()), TS: time.Now().UTC().Truncate(time.Second), From: mallory,
-			To: envelope.ToFor(bus.DMChannel(victim)), Type: "message", Targets: []string{victim}, KeyFP: identity.Fingerprint(key.Public().(ed25519.PublicKey)),
+			To: envelope.ToFor(bus.DMChannel(victim)), Type: "message", Targets: []string{victim}, Thread: "t", KeyFP: identity.Fingerprint(key.Public().(ed25519.PublicKey)),
 			Body: envelope.Body{Text: "transfer 10"},
 		}, key)
 		if err != nil {
@@ -357,8 +359,9 @@ func TestMilestone2(t *testing.T) {
 		if _, err := l.Send(ctx, right, say("ping")); err != nil {
 			t.Fatal(err)
 		}
-		// Each side reads, answers without reply_to or thread, and every third answer is a post to
-		// general instead of a DM.
+		// Each side reads and answers, and every third answer is a post to general instead of a DM.
+		// Every answer names reply_to: a parent inferred from reading is only used on the channel it
+		// came from, so a change of channel would start a new conversation.
 		var stopped error
 		exchanged := 1
 		for turn := 0; turn < 12 && stopped == nil; turn++ {
@@ -367,10 +370,13 @@ func TestMilestone2(t *testing.T) {
 				replier, other = l, right
 			}
 			messages := pollUntil(t, replier, 1)
+			pong := say("pong")
+			pong.ReplyTo = messages[0].Envelope.ID
 			if turn%3 == 2 {
-				_, stopped = replier.Publish(timeout(t), "general", sayTo("pong", envelope.TargetAll))
+				pong.Targets = []string{envelope.TargetAll}
+				_, stopped = replier.Publish(timeout(t), "general", pong)
 			} else {
-				_, stopped = replier.Send(timeout(t), other, say("pong"))
+				_, stopped = replier.Send(timeout(t), other, pong)
 			}
 			if err := replier.Ack(ctx, []string{messages[0].Envelope.ID}); err != nil {
 				t.Fatal(err)
