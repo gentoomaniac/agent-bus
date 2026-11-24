@@ -31,6 +31,7 @@ type CLI struct {
 
 	Channel struct {
 		Create ChannelCreateCmd `cmd:"" help:"Create a group channel and add it to the catalogue."`
+		Join   ChannelJoinCmd   `cmd:"" help:"Let a registered agent read a group channel from now on."`
 	} `cmd:"" help:"Group channels."`
 
 	TLS struct {

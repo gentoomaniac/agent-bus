@@ -35,3 +35,42 @@ func (cmd *ChannelCreateCmd) Run(ctx context.Context, cli *CLI) error {
 	}
 	return nil
 }
+
+type ChannelJoinCmd struct {
+	AgentID string `arg:"" name:"agent-id" help:"The registered agent that joins."`
+	Name    string `arg:"" help:"Group channel name."`
+}
+
+// Run creates the agent's read cursor on the group, starting at the current end of the log, so it
+// reads what is posted from now on. The agent's grants for the cursor exist already: they come
+// with `channel create`. Repeating it leaves the cursor where it is.
+func (cmd *ChannelJoinCmd) Run(ctx context.Context, cli *CLI) error {
+	if err := bus.ValidateAgentID(cmd.AgentID); err != nil {
+		return err
+	}
+	if err := bus.ValidateGroupName(cmd.Name); err != nil {
+		return err
+	}
+	admin, err := cli.adminClient()
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
+	registered, err := admin.AccountExists(ctx, cmd.AgentID)
+	if err != nil {
+		return err
+	}
+	if !registered {
+		return fmt.Errorf("%s is not registered", cmd.AgentID)
+	}
+	last, err := admin.LastSequence(ctx)
+	if err != nil {
+		return err
+	}
+	if err := admin.CreateReadCursor(ctx, cmd.AgentID, bus.GroupChannel(cmd.Name), last); err != nil {
+		return err
+	}
+	fmt.Printf("%s reads %s from now on\n", cmd.AgentID, cmd.Name)
+	return nil
+}

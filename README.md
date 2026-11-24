@@ -58,11 +58,16 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
    confirmation failed, so the directory is kept and the error says so. If the directory exists but
    the bus has no such account, the earlier registration did not complete: the error names the
    directory to remove before rerunning.
+8. `bin/busctl --direct channel join <agent-id> <group>` creates the agent's read cursor
+   `<token>__g__<group>` (the same fixed configuration) at the current end of the log, so the agent
+   reads the group's posts from now on; repeating it keeps the cursor. The agent's grants for it
+   came with `channel create`, and the group is not checked against the catalogue, so create it
+   first. Then start the adapter with `--groups <group>`.
 
 ## Using the adapter from a shell
 
 `go build -o bin/ ./cmd/agent-bus`. After `busctl --direct register <agent-id>` (and
-`channel create` for groups), `bin/agent-bus --agent <agent-id> send <to> --text "..."`,
+`channel create` and `channel join` for groups), `bin/agent-bus --agent <agent-id> send <to> --text "..."`,
 `publish general|<group> --text "..."`, `inbox` (fetches once, prints the unread messages as JSON
 lines) and `ack <id>...` act as that identity. `--groups a,b` adds group channels to read;
 `--config-dir`, `--broker`, `--ca-cert` as for busctl. Every command is its own process holding the
@@ -144,7 +149,8 @@ install`), then starts and stops its own server (temporary config directory, ran
   disconnected, an invalid candidate is refused before it replaces `auth.conf`, and each reload is
   confirmed by the monitoring endpoint's config load time.
 - The adapter on a real broker (`adapter_test.go`, one fresh bus per case): two agents exchange a DM
-  and a `general` post and both pin the other; a message altered after signing is rejected, alerted
+  and a `general` post and both pin the other; an agent joined to a group with `channel join` reads
+  another agent's post there; a message altered after signing is rejected, alerted
   and acked on the broker; a repeated publish ID is stored once and a replayed signed record is
   delivered once (the copy that arrives next to the buffered original gets `InProgress`, then is
   acked after redelivery); ack B before A and restart: A comes back, B does not; a second adapter on

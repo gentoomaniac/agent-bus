@@ -22,14 +22,14 @@ import (
 
 // startAdapter runs the adapter of a registered agent on the real broker. stop gives the identity
 // and the connection up, like ending a session; it is also called at the end of the test.
-func (h *harness) startAdapter(t *testing.T, agentID string) (session *adapter.Adapter, stop func()) {
+func (h *harness) startAdapter(t *testing.T, agentID string, groups ...string) (session *adapter.Adapter, stop func()) {
 	t.Helper()
 	dir := creds.AgentDir(h.configDir, agentID)
 	transport, err := broker.NewTransport(h.agentConnection(agentID), agentID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err = adapter.Open(adapter.Config{AgentID: agentID, Dir: dir, Transport: transport, Directory: trust.DirectoryPath(h.configDir)})
+	session, err = adapter.Open(adapter.Config{AgentID: agentID, Dir: dir, Transport: transport, Directory: trust.DirectoryPath(h.configDir), Groups: groups})
 	if err != nil {
 		transport.Close()
 		t.Fatal(err)
@@ -164,6 +164,22 @@ func TestMilestone2(t *testing.T) {
 		}
 		if !strings.Contains(h.readFile(t, alice, "known_agents"), bob+" "+b.Fingerprint()) {
 			t.Errorf("alice did not pin bob: %q", h.readFile(t, alice, "known_agents"))
+		}
+	})
+
+	t.Run("an agent joined to a group receives a post of another agent", func(t *testing.T) {
+		h := startBus(t)
+		h.run(t, h.busctl, "--direct", "channel", "join", bob, "lib-x")
+		a, _ := h.startAdapter(t, alice)
+		b, _ := h.startAdapter(t, bob, "lib-x")
+
+		postID, err := a.Publish(timeout(t), "lib-x", say("hello lib-x"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		messages := pollUntil(t, b, 1)
+		if messages[0].Envelope.ID != postID || messages[0].Channel != bus.GroupChannel("lib-x") {
+			t.Errorf("bob's inbox = %v", summaries(messages))
 		}
 	})
 
