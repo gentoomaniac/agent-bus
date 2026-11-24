@@ -52,6 +52,12 @@ func (server Server) WriteAdminAuth(busAdminHash, controlAdminHash string) error
 	return writeAuthFile(server.path(controlAuthFile), 1, renderControlAuth(controlAdminHash))
 }
 
+// NewServer describes this host's nats-server, which deploy/nats.sh configures under
+// <configDir>/nats.
+func NewServer(configDir, binary, monitorURL string) Server {
+	return Server{Dir: filepath.Join(configDir, "nats"), Binary: binary, MonitorURL: monitorURL}
+}
+
 // hasAgent says whether auth.conf lists the agent.
 func (server Server) hasAgent(agentToken string) (bool, error) {
 	current, err := os.ReadFile(server.path(authFile))

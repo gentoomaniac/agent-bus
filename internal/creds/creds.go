@@ -1,5 +1,6 @@
-// Package creds stores SCRAM passwords in the per-principal directories of the config directory.
-// The user name is not stored: it is "admin" for the admin and the agent ID for an agent.
+// Package creds stores passwords in the per-principal directories of the config directory.
+// The user name is not stored: it is the admin user's name for an admin and the agent token for
+// an agent.
 package creds
 
 import (
@@ -14,8 +15,6 @@ import (
 )
 
 const (
-	AdminUser = "admin"
-
 	passwordFile  = "password"
 	passwordBytes = 32
 )
@@ -29,9 +28,9 @@ func NewPassword() string {
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-// AdminDir holds the admin principal's credentials.
-func AdminDir(configDir string) string {
-	return filepath.Join(configDir, AdminUser)
+// AdminDir holds the credentials of one admin user (bus-admin or control-admin).
+func AdminDir(configDir, adminUser string) string {
+	return filepath.Join(configDir, adminUser)
 }
 
 // AgentDir holds an agent's private key and credentials.

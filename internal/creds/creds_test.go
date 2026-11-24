@@ -18,7 +18,7 @@ func TestNewPasswordIsRandomAndShellSafe(t *testing.T) {
 }
 
 func TestPasswordRoundTripWithPrivateMode(t *testing.T) {
-	dir := AdminDir(t.TempDir())
+	dir := AdminDir(t.TempDir(), "bus-admin")
 	if err := WritePassword(dir, "s3cret", false); err != nil {
 		t.Fatal(err)
 	}
