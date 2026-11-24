@@ -6,11 +6,17 @@
 
 ## Setup order
 
-Run these once, in this order, on the broker's host:
+`busctl` runs in the broker's container ([docker.md](docker.md)). The commands below are written
+as plain `busctl`; with the alias from [docker.md](docker.md#set-it-up) (or its long form
+`docker compose -f deploy/docker-compose.yaml exec agent-bus busctl ...`) they run as shown, and the
+`bin/busctl` of the examples means that alias. `tls init` and `admin init` run before the broker
+exists, as one-off containers (`docker compose ... run --rm --no-deps --entrypoint busctl agent-bus ...`).
+
+Run these once, in this order:
 
 1. `busctl tls init`: certificates ([broker.md](broker.md#tls)).
 2. `busctl admin init`: admin credentials and authorization files.
-3. `deploy/nats.sh install` and `deploy/nats.sh up`: the broker ([broker.md](broker.md)).
+3. `docker compose -f deploy/docker-compose.yaml up -d`: the broker ([docker.md](docker.md)).
 4. `busctl --direct init`: streams and buckets.
 5. `busctl --direct channel create <name>`: group channels (optional).
 6. `busctl --direct register <agent-id>`: one per agent.
@@ -178,10 +184,13 @@ Writes the registry's record of every agent, removed ones included, to a directo
 bin/busctl --direct directory export /tmp/directory
 ```
 
-To sync it to another machine, export and copy it over that machine's directory in one line:
+To sync it to another machine, export it into the container's own `/config/directory` and stream
+that to the machine's directory ([docker.md](docker.md#keep-the-directory-fresh)):
 
 ```sh
-bin/busctl --direct directory export /tmp/directory && rsync -a /tmp/directory/ other:~/.config/agent-bus/directory/
+bin/busctl --direct directory export /config/directory
+docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -cf - directory \
+  | ssh other 'tar -C ~/.config/agent-bus -xf -'
 ```
 
 A running `agent-bus mcp` re-reads its directory every minute (`--directory-refresh`) and on

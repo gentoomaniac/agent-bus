@@ -71,8 +71,9 @@ the host's loopback only:
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 ```
 
-Open <http://127.0.0.1:8080>. To send, set `BUS_AGENT` in the service to an identity registered in
-the container (`docker exec agent-bus busctl --direct register monitor@alice`). Without compose,
+Open <http://127.0.0.1:8080>; the port must be 8080, or the monitor answers `unexpected Host header`.
+To send, set `BUS_AGENT` in the service to an identity registered in
+the container (`docker compose -f deploy/docker-compose.yaml exec agent-bus busctl --direct register monitor@alice`). Without compose,
 start a second container on the same volume and network:
 
 ```sh

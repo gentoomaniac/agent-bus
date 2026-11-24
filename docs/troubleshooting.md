@@ -9,8 +9,8 @@ Symptom: a client fails with a certificate error (`x509: certificate is valid fo
   clients use, restart the broker and give clients the new `ca.pem`:
 
   ```sh
-  bin/busctl tls init --force --san bus.example.org --san 192.168.1.10
-  deploy/nats.sh down && deploy/nats.sh up
+  docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus tls init --force --san bus.example.org --san 192.168.1.10
+  docker compose -f deploy/docker-compose.yaml restart agent-bus
   ```
 
 - A client trusts only `ca.pem` (`--ca-cert`). Copy the current one from the broker's config
@@ -38,7 +38,7 @@ logged once on stderr.
 
 The commands that run once (`busctl`, `agent-bus send`, `publish`, `inbox`, `mark-read`) do not retry:
 they fail at once with the connection error. If the bus stays down, see whether the broker runs
-(`deploy/nats.sh up`, or the container).
+(`docker compose -f deploy/docker-compose.yaml up -d`).
 
 ## Identity in use
 
@@ -131,7 +131,7 @@ Also, a post to a group nobody created is stored and never read.
 Symptom: `register` or `channel join` fails while testing or reloading the server.
 
 - The test uses `nats-server -t`: `--nats-server` (or `BUS_NATS_SERVER`) must name an existing
-  binary, by default `~/.config/agent-bus/bin/nats-server` (`deploy/nats.sh install`).
+  binary: in the container it is set by the image; outside Docker, by default `~/.config/agent-bus/bin/nats-server` (`deploy/nats.sh install`, [development.md](development.md#running-the-broker-without-docker)).
 - The server must be running, with its pid file in `nats/`, and its monitoring endpoint must
   answer at `--monitor-url` (default `http://127.0.0.1:8222`). Check `nats/nats-server.log`.
 - An invalid candidate is refused before it replaces `auth.conf`; the old file stays in force.

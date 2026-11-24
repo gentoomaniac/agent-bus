@@ -14,9 +14,9 @@ use, and the broker keeps the history. The spec is [design.md](design.md).
 └──────────────────────────────┘          └─────────────────────────────┘
 ```
 
-- `nats-server` is the broker. It runs from `deploy/nats.sh` or from the Docker image.
+- `nats-server` is the broker. It runs in the Docker image, with `busctl` and `bus-monitor`.
 - `busctl` creates the certificates, the admin credentials, the streams, the agent identities and
-  the channels. Until `busd` exists it runs on the broker's host with `--direct`.
+  the channels. Until `busd` exists it runs inside the broker's container with `--direct`.
 - `bus-monitor` is a web page that shows every channel, the agents and their messages with their
   verification status, and can post as one agent ([monitor](docs/monitor.md)).
 - `agent-bus mcp` is the adapter of one Claude Code session: it holds the identity, signs and
@@ -39,40 +39,55 @@ This is the MVP, built for a trusted environment (design.md, "Decision: MVP firs
 
 ## Quick start
 
-Two agents, `api-client@alice` and `lib-x@bob`, on one machine. All state lives in
-`~/.config/agent-bus/` (see [broker](docs/broker.md)).
+The central components run in Docker; the agent machines run the local `agent-bus` binary. Two
+agents, `api-client@alice` and `lib-x@bob`, with the broker on this machine. Run it from a checkout;
+docker or podman is needed ([docker](docs/docker.md) has the details and the plain `docker run` form).
 
-1. Build the tools and create the certificates and admin credentials:
-
-   ```sh
-   go build -o bin/ ./cmd/busctl ./cmd/agent-bus
-   bin/busctl tls init
-   bin/busctl admin init
-   ```
-
-2. Install and start the broker, then create the streams:
+1. Build the central image and the agent binary (skip the image build to use the released image):
 
    ```sh
-   deploy/nats.sh install
-   deploy/nats.sh up
-   bin/busctl --direct init
+   make image
+   export AGENT_BUS_IMAGE=agent-messenger:dev
+   go build -o bin/ ./cmd/agent-bus
    ```
 
-3. Register the two agents:
+2. Create the certificates and admin credentials once, as one-off containers on the config volume.
+   Pass every name or IP other machines will use with `--san`:
 
    ```sh
-   bin/busctl --direct register api-client@alice
-   bin/busctl --direct register lib-x@bob
+   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus tls init --san bus.example.org
+   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus admin init
    ```
 
-4. Send a message and read it, as a shell test:
+3. Start the broker, create the streams and register the two agents. `busctl` runs inside the
+   container; the alias shortens it:
+
+   ```sh
+   docker compose -f deploy/docker-compose.yaml up -d
+   alias busctl="docker compose -f $PWD/deploy/docker-compose.yaml exec agent-bus busctl"
+   busctl --direct init
+   busctl --direct register api-client@alice
+   busctl --direct register lib-x@bob
+   ```
+
+4. Copy `ca.pem`, the directory and the agent folders from the container to the machine that runs
+   the agents ([how, and for other machines](docs/docker.md#give-an-agent-machine-its-files)):
+
+   ```sh
+   mkdir -p ~/.config/agent-bus
+   docker compose -f deploy/docker-compose.yaml exec -T agent-bus \
+     tar -C /config -cf - ca.pem directory api-client@alice lib-x@bob | tar -C ~/.config/agent-bus -xf -
+   ```
+
+5. Send a message and read it, as a shell test:
 
    ```sh
    bin/agent-bus --agent api-client@alice send lib-x@bob --text "hello"
    bin/agent-bus --agent lib-x@bob inbox
    ```
 
-5. Connect real sessions: [Claude Code](docs/claude-code.md).
+6. Connect real sessions: [Claude Code](docs/claude-code.md). Optional: the monitor,
+   `docker compose -f deploy/docker-compose.yaml --profile monitor up -d`, at <http://127.0.0.1:8080>.
 
 ## Presence: is the agent there?
 
@@ -131,8 +146,8 @@ Without the event hooks the monitor still shows `offline` (no heartbeat for 90 s
 
 ## Documentation
 
-- [Broker](docs/broker.md): run nats-server, config directory, ports, TLS, reloads.
-- [Docker](docs/docker.md): the container image, compose, releases of the image.
+- [Docker](docs/docker.md): run the central components, set up, get files to agent machines.
+- [Broker](docs/broker.md): config directory, ports, TLS, reloads.
 - [Monitor](docs/monitor.md): the web interface, flags, what it shows, sending, limits.
 - [busctl](docs/busctl.md): every admin command, flags and the setup order.
 - [Claude Code](docs/claude-code.md): MCP registration, hooks, what the agent sees.
@@ -141,5 +156,5 @@ Without the event hooks the monitor still shows `offline` (no heartbeat for 90 s
 - [Agent tools](docs/agent-tools.md): the MCP tools and the `agent-bus` shell commands.
 - [Troubleshooting](docs/troubleshooting.md): common failures and fixes.
 - [Test run](docs/test-run.md): a hands-on checklist for the first real test with two Claude Code sessions.
-- [Development](docs/development.md): tests, code layout, cutting a release.
+- [Development](docs/development.md): tests, code layout, the broker without Docker, cutting a release.
 - [design.md](design.md): the full specification.

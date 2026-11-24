@@ -4,9 +4,10 @@ A hands-on checklist for the owner: set up the bus on one machine, connect two r
 sessions, watch them in the monitor, break things on purpose, and report back. Plan for about an
 hour. Sections 1 to 5 need one machine; 6 and 7 are optional.
 
-Sections 2 and 4, and the bus side of section 5 (messages, presence, broker restart, agent removal), were
-run as written against a scratch config directory, with `agent-bus mcp` sessions and hook events
-simulated from a shell. What no one has tried yet is the real thing: Claude Code starting the MCP
+The bus side of section 5 (messages, presence, broker restart, agent removal) was run against a
+scratch config directory, with `agent-bus mcp` sessions and hook events simulated from a shell.
+The broker, `busctl` and monitor setup of sections 2 and 4 was run in a container (podman, with
+the compose commands replaced by their `podman run` equivalents). What no one has tried yet is the real thing: Claude Code starting the MCP
 server, firing the hooks and showing the mail to the model, a second machine and OpenCode.
 
 Placeholders, used throughout:
@@ -14,12 +15,19 @@ Placeholders, used throughout:
 - `<owner>`: your owner name in agent IDs, lowercase `[a-z0-9-]`, for example `marco`. Agent IDs
   are `<name>@<owner>`.
 - `<repo>`: the path of this repository's checkout.
-- `<lib-x>`, `<api-client>`: two project folders (any two repositories, or empty folders).
+- `<lib-x>`, `<api-client>`: two project folders (any two repositories, or empty folders). The
+  agents are named after them, `lib-x@<owner>` and `api-client@<owner>`; the group channel is
+  `lib-x-help`, so a channel and an agent never share a name.
+- `<broker-host>`: the name or IP of the machine that runs the broker (this one, in sections 2 to
+  5). Section 6 uses `bus.example.org` and `192.168.1.10` as examples for it, and `other` for the
+  second machine (an SSH host name).
 
 ## 1. What you need
 
-- Go (the version in `go.mod`) to build, or a release build of `busctl`, `agent-bus` and
-  `bus-monitor` (then skip the build in section 2 and put them on your path).
+- Docker (or podman) with the compose plugin, for the central components: the broker, `busctl` and
+  the monitor run in the image from this repository's compose file.
+- Go (the version in `go.mod`) to build the image and `agent-bus`, or a release `agent-bus` and the
+  released image (then skip the build in section 2).
 - Linux: the hooks find their session through `/proc`.
 - Claude Code, with two terminals for two sessions, plus a third terminal for the shell.
 - `curl` and a browser for the monitor.
@@ -29,42 +37,58 @@ Nothing here touches your Claude Code settings by itself: you paste the config i
 
 ## 2. One-machine setup
 
-All state goes to `~/.config/agent-bus/`. To keep a trial apart from a later real setup, set
-`export BUS_CONFIG_DIR=~/bus-trial` in every shell you use below (also the ones that start
-Claude Code). Default ports are `4222` (broker) and `8222` (broker monitoring); the monitor page
-uses `8080`. If one is taken, see [broker.md](broker.md#settings-and-ports): the matching
-`BUS_BROKER` and `BUS_MONITOR_URL` variables must then be set in every shell.
+The broker, its state and `busctl` live in Docker volumes; the agents run on the host and keep
+their files in `~/.config/agent-bus/`. To keep a trial apart from a later real setup, set
+`export BUS_CONFIG_DIR=~/bus-trial` in every shell that runs `agent-bus` or Claude Code, and use
+the compose project name `bus-trial` (`export COMPOSE_PROJECT_NAME=bus-trial`) so the trial gets its
+own volumes. Default ports are `4222` (broker) and `8080` (monitor page). If `4222` is taken,
+change the published port in `deploy/docker-compose.yaml` and see
+[broker.md](broker.md#settings-and-ports): `BUS_BROKER` must then be set in every shell.
 
-1. Build the tools and put them on your path. The hooks and `claude mcp add` call `agent-bus` by
-   name, so it must be on the `PATH` of the shell that starts Claude Code:
+1. Build the central image and the `agent-bus` binary, and put the binary on your path. The hooks
+   and `claude mcp add` call `agent-bus` by name, so it must be on the `PATH` of the shell that
+   starts Claude Code:
 
    ```sh
    cd <repo>
-   go build -o bin/ ./cmd/busctl ./cmd/agent-bus ./cmd/bus-monitor
+   make image
+   export AGENT_BUS_IMAGE=agent-messenger:dev
+   go build -o bin/ ./cmd/agent-bus
    export PATH="$PWD/bin:$PATH"
    ```
 
-2. Create the certificates and admin credentials. If clients will ever connect by another name or
-   IP than `localhost` (a second machine, section 6), list it now with `--san`, repeatable; the
-   certificate is otherwise valid only for `localhost`, `127.0.0.1`, `::1` and this host's name:
+   With the released image, skip `make image` and the `AGENT_BUS_IMAGE` line. `make image` uses
+   docker, or podman when docker is absent.
+
+2. Create the certificates and admin credentials, once, as one-off containers on the config volume.
+   If clients will ever connect by another name or IP than `localhost` (a second machine, section
+   6), list it now with `--san`, repeatable; the certificate is otherwise valid only for
+   `localhost`, `127.0.0.1`, `::1` and the container's host name:
 
    ```sh
-   busctl tls init
-   # for section 6 instead: busctl tls init --san bus.example.org --san 192.168.1.10
-   busctl admin init
+   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus tls init
+   # for section 6 instead: ... tls init --san bus.example.org --san 192.168.1.10
+   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus admin init
    ```
 
-3. Build the pinned `nats-server` and start the broker. `up` listens on all interfaces; to keep it
-   on this machine run `export BUS_LISTEN_IP=127.0.0.1` first:
+3. Start the broker. It listens on all interfaces; to keep it on this machine change the port line
+   of the compose file to `127.0.0.1:4222:4222`:
 
    ```sh
-   deploy/nats.sh install
-   deploy/nats.sh up
+   docker compose -f deploy/docker-compose.yaml up -d
+   docker compose -f deploy/docker-compose.yaml logs agent-bus | tail -3
    ```
 
-   Expected last line: `broker ready on port 4222`.
+   Expected last line: `Server is ready`.
 
-4. Create the streams, then register the two agents and the identity of the monitor. The monitor
+4. `busctl` runs inside the container. This alias (in every shell you use below; give the absolute
+   path of the compose file) is what the plain `busctl` commands of this document mean:
+
+   ```sh
+   alias busctl='docker compose -f <repo>/deploy/docker-compose.yaml exec agent-bus busctl'
+   ```
+
+   Create the streams, then register the two agents and the identity of the monitor. The monitor
    gets its own identity because an identity is held by one process at a time:
 
    ```sh
@@ -78,21 +102,32 @@ uses `8080`. If one is taken, see [broker.md](broker.md#settings-and-ports): the
    its groups at start:
 
    ```sh
-   busctl --direct channel create lib-x --description "Questions about lib-x"
-   busctl --direct channel join lib-x@<owner> lib-x
-   busctl --direct channel join api-client@<owner> lib-x
+   busctl --direct channel create lib-x-help --description "Questions about lib-x"
+   busctl --direct channel join lib-x@<owner> lib-x-help
+   busctl --direct channel join api-client@<owner> lib-x-help
    ```
 
-6. Write the directory (every agent's public record, the catalogue of channels). On this machine
-   `register` and `channel join` already wrote it to `~/.config/agent-bus/directory/`; the export
-   is what you copy to other machines (section 6) and what you repeat after `agent remove`:
+6. Write the directory (every agent's public record, the catalogue of channels). `register` and
+   `channel join` already keep `/config/directory` in the container current; the export also
+   writes tombstones, and is what you repeat after `agent remove`:
 
    ```sh
-   busctl --direct directory export /tmp/directory
+   busctl --direct directory export /config/directory
    busctl --direct agent list
    ```
 
-   Expect three agents, all `active`, and in `/tmp/directory` one `.json` per agent plus `channels`.
+   Expect three agents, all `active`.
+
+7. Copy `ca.pem`, the directory and the two agent folders out of the container into the agents'
+   config directory (`$BUS_CONFIG_DIR`, default `~/.config/agent-bus`); `monitor@<owner>` stays in
+   the container. Repeat it whenever the directory changes ([docker.md](docker.md#keep-the-directory-fresh)):
+
+   ```sh
+   mkdir -p "${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}"
+   docker compose -f deploy/docker-compose.yaml exec -T agent-bus \
+     tar -C /config -cf - ca.pem directory lib-x@<owner> api-client@<owner> \
+     | tar -C "${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}" -xf -
+   ```
 
 ## 3. Connect two Claude Code sessions
 
@@ -205,26 +240,29 @@ Do this once per project folder. The two sessions must be two different identiti
    ```
 
    `agent-bus` must be `connected`. Then ask the session: "Call the agent-bus tool whoami." You
-   should see its own identity, the channels `DM <id>`, `general` and `channel lib-x`, and
+   should see its own identity, the channels `DM <id>`, `general` and `channel lib-x-help`, and
    `auto_accept: true`. If a tool says "the identity is in use by another session", you started
    the same identity twice.
 
 ## 4. Start the monitor
 
-In the shell terminal, with the same `BUS_CONFIG_DIR`. It reads with the admin credentials and has
-no login, so it listens on `127.0.0.1` only:
+The monitor runs in the image as the compose `monitor` profile, with the broker's network and
+config volume. It reads with the admin credentials and has no login, so the compose file publishes
+it on `127.0.0.1` only. To let it post as `monitor@<owner>`, uncomment `BUS_AGENT: monitor@<owner>`
+in the `monitor` service first, then:
 
 ```sh
-bus-monitor --agent monitor@<owner>
+docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 ```
 
-Open <http://127.0.0.1:8080>. You should see "live", the channels `general` and `lib-x`, and under
+Open <http://127.0.0.1:8080> (the port must be 8080; another host port gives `unexpected Host
+header`). You should see "live", the channels `general` and `lib-x-help`, and under
 Agents `lib-x`, `api-client` and `monitor`. The two with a session show `idle`; the monitor's own
-identity shows `offline` (no session runs it). Without `--agent` the page is read-only; with
+identity shows `offline` (no session runs it). Without `BUS_AGENT` the page is read-only; with
 it the composer posts as `monitor@<owner>`.
 
-To watch a broker on another machine, tunnel the page to your own (the monitor itself runs on the
-broker's host, because it needs that host's config directory):
+To watch a broker on another machine, tunnel the page to your own (the monitor itself runs next to
+the broker):
 
 ```sh
 ssh -L 8080:127.0.0.1:8080 <broker-host>
@@ -293,11 +331,11 @@ the hook when that session's turn ends, or by `inbox` when you ask for it.
 
 ### 5.6 Stop and start the broker during a session
 
-1. In a third terminal, with the same `BUS_CONFIG_DIR`:
+1. In a third terminal:
 
    ```sh
    cd <repo>
-   deploy/nats.sh down
+   docker compose -f deploy/docker-compose.yaml stop agent-bus
    ```
 
 2. Monitor: "bus disconnected, reconnecting...". In a session, `send` fails with "bus unavailable,
@@ -306,7 +344,7 @@ the hook when that session's turn ends, or by `inbox` when you ask for it.
 3. Start it again and wait up to 30 seconds (the retry wait doubles from 1 s to 30 s):
 
    ```sh
-   deploy/nats.sh up
+   docker compose -f deploy/docker-compose.yaml start agent-bus
    ```
 
 4. Monitor back to "live". Ask a session to send something: it works. Mail that was unread before
@@ -314,15 +352,15 @@ the hook when that session's turn ends, or by `inbox` when you ask for it.
 
 ### 5.7 Remove an agent
 
-1. On the broker's host:
+1. Remove it in the container, export the directory and copy it to the agents' machine (the
+   `tar` of section 2, item 7, with only `directory`; for another machine see section 6):
 
    ```sh
    busctl --direct agent remove api-client@<owner>
-   busctl --direct directory export "${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}/directory"
+   busctl --direct directory export /config/directory
+   docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -cf - directory \
+     | tar -C "${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}" -xf -
    ```
-
-   The second command refreshes this machine's directory (the export directory is the same one the
-   sessions read); on another machine you copy it (section 6).
 
 2. The `api-client` session loses its bus connection (the account is closed). Monitor: after about
    5 seconds `api-client` is greyed and marked "removed", and shows `offline` as its heartbeat
@@ -346,34 +384,37 @@ Do not run up a limit on purpose.
 
 ## 6. Add a second machine (optional)
 
-The machine needs `agent-bus` (and `bus-monitor` if you want a monitor there; it must run on the
-broker's host) and a route to the broker's port.
+The machine needs `agent-bus` and a route to the broker's port (Docker only on the broker's
+host). Examples below use `bus.example.org` and `192.168.1.10` for the names the broker is
+reached by, and `other` for the second machine.
 
 1. The broker certificate must be valid for the name or IP the second machine uses. If you made it
-   without `--san` in section 2, make a new one, restart the broker and copy the new `ca.pem` to
-   everyone (also back to the sessions of section 3, which restart):
+   without `--san` in section 2, make a new one and restart the broker. `--force` creates a new
+   CA, so every client that does not get the new `ca.pem` stops trusting the broker: copy it to
+   all of them, also back to the sessions of section 3 (they restart):
 
    ```sh
-   busctl tls init --force --san bus.example.org --san 192.168.1.10
-   deploy/nats.sh down && deploy/nats.sh up
+   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus tls init --force --san bus.example.org --san 192.168.1.10
+   docker compose -f deploy/docker-compose.yaml restart agent-bus
    ```
 
-2. Copy from the broker's host to `other:~/.config/agent-bus/` (use your `BUS_CONFIG_DIR` instead
-   of `~/.config/agent-bus` if you set one):
+2. Copy into `other:~/.config/agent-bus/` (or its `BUS_CONFIG_DIR`):
 
    - `ca.pem` and nothing else of the CA (never `ca.key`),
-   - `directory/` with every agent record and the `channels` snapshot (export first, as in section 2, item 6),
+   - `directory/` with every agent record and the `channels` snapshot (export first, as in
+     section 2, item 6),
    - the agent folder `<agent-id>/` (`key` and `password`) of each agent that runs on the other
      machine. Until `busd` and enrollment exist this is the only way to get an identity there;
      run such an identity on one machine only. It is untested.
 
    ```sh
    ssh other 'mkdir -p ~/.config/agent-bus'
-   busctl --direct directory export /tmp/directory
-   rsync -a ~/.config/agent-bus/ca.pem other:~/.config/agent-bus/
-   rsync -a /tmp/directory/ other:~/.config/agent-bus/directory/
-   rsync -a --exclude lock ~/.config/agent-bus/api-client@<owner>/ other:~/.config/agent-bus/api-client@<owner>/
+   docker compose -f deploy/docker-compose.yaml exec -T agent-bus \
+     tar -C /config -cf - ca.pem directory api-client@<owner> \
+     | ssh other 'tar -C ~/.config/agent-bus -xf -'
    ```
+
+   The same pipe later refreshes only the directory (`... tar -C /config -cf - directory`).
 
 3. On the other machine register the MCP server with the broker's name, and add the hooks and
    CLAUDE.md as in section 3:
@@ -405,7 +446,7 @@ Not tried live yet; the plugin was only run against made-up events
    }
    ```
 
-   Register that identity first (`busctl --direct register opencode-1@<owner>`, join, export).
+   Register that identity first (`busctl --direct register opencode-1@<owner>`, join, export, copy its folder out as in section 2).
 
 2. Install the plugin into the project:
 
@@ -434,11 +475,12 @@ Where to look:
 
 | What                         | Where                                                                  |
 |------------------------------|------------------------------------------------------------------------|
-| Broker                       | `~/.config/agent-bus/nats/nats-server.log`                             |
-| An agent's rejected mail     | `~/.config/agent-bus/<agent-id>/alerts.log`                            |
+| Broker                       | `docker compose -f deploy/docker-compose.yaml logs agent-bus` |
+| An agent's rejected mail     | `${BUS_CONFIG_DIR:-~/.config/agent-bus}/<agent-id>/alerts.log` on the agent's machine |
 | An adapter's own messages (connect, reconnect) | Claude Code's MCP log: `claude --debug`, or `/mcp` |
-| The monitor                  | its terminal, and `curl -s http://127.0.0.1:8080/api/status`           |
+| The monitor                  | `docker compose -f deploy/docker-compose.yaml logs monitor`, and `curl -s http://127.0.0.1:8080/api/status` |
 | Presence as stored           | `curl -s http://127.0.0.1:8080/api/presence`                           |
 
-Stop everything when you are done: close the sessions, stop the monitor with Ctrl-C and run
-`deploy/nats.sh down` (add `--purge` to delete the trial's messages).
+Stop everything when you are done: close the sessions and run
+`docker compose -f deploy/docker-compose.yaml --profile monitor down` (add `-v` to delete the trial's volumes: certificates,
+credentials and messages).

@@ -115,6 +115,36 @@ install`), then starts and stops its own server (temporary config directory, ran
 - The registry and catalogue hold what `register` and `channel create` wrote; `busctl` needs
   `--direct`, refuses a second registration and gives up on a dead broker.
 
+## Running the broker without Docker
+
+`deploy/nats.sh` runs the pinned `nats-server` as a plain background process, for development and
+the integration tests. It is not how the bus is run for real ([docker.md](docker.md)). State
+lives in `~/.config/agent-bus/` (or `BUS_CONFIG_DIR`), and `busctl` runs on the host:
+
+```sh
+go build -o bin/ ./cmd/busctl ./cmd/agent-bus
+bin/busctl tls init
+bin/busctl admin init
+deploy/nats.sh install    # builds nats-server v2.15.3 with go install into <config-dir>/bin/
+deploy/nats.sh up         # renders nats/nats-server.conf, tests it, starts the server, waits until ready
+bin/busctl --direct init
+deploy/nats.sh down       # keeps the data; `down --purge` deletes it too
+```
+
+The pid file and `nats-server.log` are in `<config-dir>/nats/`. Environment variables of the script:
+
+| Variable           | Default                          | Meaning                                         |
+|--------------------|----------------------------------|-------------------------------------------------|
+| `BUS_CONFIG_DIR`   | `~/.config/agent-bus`            | config directory                                |
+| `BUS_NATS_SERVER`  | `$BUS_CONFIG_DIR/bin/nats-server`| the server binary (must be named `nats-server`) |
+| `BUS_NATS_PORT`    | `4222`                           | client port (TLS only)                          |
+| `BUS_MONITOR_PORT` | `8222`                           | monitoring port, 127.0.0.1 only                 |
+| `BUS_LISTEN_IP`    | `0.0.0.0`                        | address of the client port                      |
+| `BUS_DATA_DIR`     | `$BUS_CONFIG_DIR/nats/data`      | JetStream storage                               |
+
+`busctl` finds the server binary for its reload test at `<config-dir>/bin/nats-server`
+(`--nats-server`).
+
 ## Cutting a release
 
 `.github/workflows/release.yaml` runs on GitHub Actions (github.com/gentoomaniac/agent-messenger).
@@ -139,6 +169,7 @@ To try the build locally:
 
 ```sh
 goreleaser release --snapshot --clean --skip=publish
+make image    # only the image, for this machine's architecture: agent-messenger:dev
 ```
 
 The agents' binary (`agent-bus`) is in the archives; the image is for the central components

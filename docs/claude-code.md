@@ -204,7 +204,7 @@ A sender is pinned on first contact from `<config-dir>/directory/<token>.json`, 
 agent, which `register` writes on the machine it runs on. Agents cannot read the registry on the
 broker (design.md §4a) and `busd` does not exist yet, so to use an agent from another machine,
 copy that `directory/` there, together with `ca.pem`, and again after agents are added or removed
-([busctl.md](busctl.md#directory-export)). A recipient with no entry in the directory
+([docker.md](docker.md#give-an-agent-machine-its-files), [busctl.md](busctl.md#directory-export)). A recipient with no entry in the directory
 fails with "unknown agent" ([troubleshooting.md](troubleshooting.md#unknown-agent)).
 
 ## Known limitations
