@@ -83,6 +83,8 @@ func (transport *fakeTransport) History(context.Context, bus.Channel, uint64, in
 
 func (transport *fakeTransport) Close() {}
 
+func (transport *fakeTransport) Unavailable() error { return nil }
+
 // testBus is a config directory with a registry directory and a clock the tests can move.
 type testBus struct {
 	t         *testing.T

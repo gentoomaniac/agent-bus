@@ -30,6 +30,8 @@ type fakeBus struct {
 
 func (*fakeBus) Close() {}
 
+func (*fakeBus) Unavailable() error { return nil }
+
 func (fake *fakeBus) Agents(context.Context) ([]bus.AgentRecord, error) {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()

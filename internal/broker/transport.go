@@ -35,9 +35,14 @@ func NewTransport(conn Connection, agentID string) (*Transport, error) {
 
 func (transport *Transport) Close() { transport.session.close() }
 
+func (transport *Transport) Unavailable() error { return transport.session.unavailable() }
+
 // Publish sets the message ID to the destination subject plus the envelope ID, so an ID reused on
 // another channel is not mistaken for a duplicate. The stream drops a repeat within its window.
 func (transport *Transport) Publish(ctx context.Context, to bus.Channel, id string, payload []byte) (uint64, error) {
+	if err := transport.Unavailable(); err != nil {
+		return 0, err
+	}
 	destination := subject(to)
 	ack, err := transport.session.stream.Publish(ctx, destination, payload, jetstream.WithMsgID(destination+"/"+id))
 	if err != nil {
@@ -48,6 +53,9 @@ func (transport *Transport) Publish(ctx context.Context, to bus.Channel, id stri
 
 // Fetch returns the deliveries it could read, together with an error for each message it skipped.
 func (transport *Transport) Fetch(ctx context.Context, from bus.Channel, max int) ([]bus.Delivery, error) {
+	if err := transport.Unavailable(); err != nil {
+		return nil, err
+	}
 	consumer, err := transport.session.stream.Consumer(ctx, busStream, consumerName(transport.agentToken, from))
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", from, transport.session.explain(err))
@@ -77,6 +85,9 @@ func (transport *Transport) Fetch(ctx context.Context, from bus.Channel, max int
 // History works only with admin credentials until busd exists (milestone 3): an agent has no
 // access to the stream itself, only to its own consumers.
 func (transport *Transport) History(ctx context.Context, from bus.Channel, afterSequence uint64, limit int) ([]bus.Record, error) {
+	if err := transport.Unavailable(); err != nil {
+		return nil, err
+	}
 	config := jetstream.OrderedConsumerConfig{FilterSubjects: []string{subject(from)}, DeliverPolicy: jetstream.DeliverAllPolicy}
 	if afterSequence > 0 {
 		config.DeliverPolicy = jetstream.DeliverByStartSequencePolicy

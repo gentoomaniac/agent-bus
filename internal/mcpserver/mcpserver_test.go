@@ -76,6 +76,8 @@ func (fakeTransport) History(context.Context, bus.Channel, uint64, int) ([]bus.R
 
 func (fakeTransport) Close() {}
 
+func (fakeTransport) Unavailable() error { return nil }
+
 type testBus struct {
 	t         *testing.T
 	configDir string

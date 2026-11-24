@@ -1,6 +1,13 @@
 package bus
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrUnavailable is the error of a call that needs the broker while the connection to it is down
+// and being re-established.
+var ErrUnavailable = errors.New("bus unavailable, reconnecting")
 
 // Transport is one agent's message path to the broker (design.md §2): publish to a channel,
 // consume channels with explicit acknowledgement, and read history without touching a read cursor.
@@ -17,6 +24,10 @@ type Transport interface {
 	// History reads up to limit records of a channel after the given sequence, oldest first.
 	// It does not move any read cursor. Until busd exists, only the admin's connection may use it.
 	History(ctx context.Context, from Channel, afterSequence uint64, limit int) ([]Record, error)
+	// Unavailable is nil while the broker is reachable, and an error wrapping ErrUnavailable while
+	// the connection is down and being re-established. The three calls above return it then at
+	// once instead of waiting for the broker.
+	Unavailable() error
 	Close()
 }
 
