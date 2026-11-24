@@ -108,6 +108,9 @@ func agentPermissions(token string, groups []string) (publish, subscribe []strin
 			"$JS.API.CONSUMER.INFO."+busStream+"."+consumer,
 			"$JS.ACK."+busStream+"."+consumer+".>")
 	}
+	// Presence: write its own record, read anyone's (design.md §7). A core publish needs no
+	// JetStream API grant; the stream stores whatever arrives on its subjects.
+	publish = append(publish, presenceSubject(token), presenceReadSubject("*"))
 	for _, method := range agentBusdMethods {
 		publish = append(publish, "busd."+method)
 	}

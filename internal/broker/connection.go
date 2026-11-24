@@ -174,3 +174,32 @@ func (s *session) explain(err error) error {
 func isTimeout(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, nats.ErrTimeout) || errors.Is(err, jetstream.ErrNoStreamResponse)
 }
+
+// publishPresence stores the agent's own record. It is a plain publish: the permissions allow only
+// the agent's own subject, and the server drops anything else.
+func (s *session) publishPresence(agentToken string, record []byte) error {
+	if err := s.unavailable(); err != nil {
+		return err
+	}
+	return s.conn.Publish(presenceSubject(agentToken), record)
+}
+
+// readPresence returns the last record published for the agent, or nil when there is none, also
+// on a broker that has no PRESENCE stream yet.
+func (s *session) readPresence(ctx context.Context, agentToken string) ([]byte, error) {
+	if err := s.unavailable(); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, requestExpiry)
+	defer cancel()
+	reply, err := s.conn.RequestWithContext(ctx, presenceReadSubject(agentToken), nil)
+	switch {
+	case errors.Is(err, nats.ErrNoResponders):
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("reading presence of %s: %w", bus.AgentIDFromToken(agentToken), s.explain(err))
+	case reply.Header.Get("Status") != "":
+		return nil, nil // 404: the agent never published
+	}
+	return reply.Data, nil
+}

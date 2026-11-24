@@ -28,11 +28,12 @@ const (
 
 // fakeBroker is a shared message log that redelivers whatever an agent has not acked.
 type fakeBroker struct {
-	mu      sync.Mutex
-	records []bus.Record
-	to      []bus.Channel
-	acked   map[string]bool // agent|sequence
-	failAck bool            // the broker does not confirm acks
+	mu       sync.Mutex
+	records  []bus.Record
+	to       []bus.Channel
+	acked    map[string]bool   // agent|sequence
+	failAck  bool              // the broker does not confirm acks
+	presence map[string][]byte // last record by agent ID
 }
 
 type fakeTransport struct {
@@ -80,6 +81,19 @@ func (fakeTransport) History(context.Context, bus.Channel, uint64, int) ([]bus.R
 	return nil, nil
 }
 
+func (transport fakeTransport) PublishPresence(record []byte) error {
+	transport.broker.mu.Lock()
+	defer transport.broker.mu.Unlock()
+	transport.broker.presence[transport.agent] = record
+	return nil
+}
+
+func (transport fakeTransport) Presence(_ context.Context, agentID string) ([]byte, error) {
+	transport.broker.mu.Lock()
+	defer transport.broker.mu.Unlock()
+	return transport.broker.presence[agentID], nil
+}
+
 func (fakeTransport) Close() {}
 
 func (fakeTransport) Unavailable() error { return nil }
@@ -91,7 +105,7 @@ type testBus struct {
 }
 
 func newTestBus(t *testing.T, agents ...string) *testBus {
-	b := &testBus{t: t, configDir: t.TempDir(), broker: &fakeBroker{acked: map[string]bool{}}}
+	b := &testBus{t: t, configDir: t.TempDir(), broker: &fakeBroker{acked: map[string]bool{}, presence: map[string][]byte{}}}
 	for _, agentID := range agents {
 		public, private := identity.Generate()
 		if err := identity.WritePrivateKey(filepath.Join(b.configDir, agentID), private); err != nil {

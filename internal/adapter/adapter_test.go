@@ -86,6 +86,10 @@ func (transport *fakeTransport) History(context.Context, bus.Channel, uint64, in
 	return nil, errors.New("not needed")
 }
 
+func (transport *fakeTransport) PublishPresence([]byte) error { return nil }
+
+func (transport *fakeTransport) Presence(context.Context, string) ([]byte, error) { return nil, nil }
+
 func (transport *fakeTransport) Close() {}
 
 func (transport *fakeTransport) Unavailable() error { return transport.down }

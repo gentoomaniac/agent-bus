@@ -27,6 +27,33 @@ type fakeBus struct {
 	holders map[string][]string
 	records map[string][]bus.Record
 	down    error // what Unavailable returns
+
+	presence map[string][]byte
+	watchers []func(agentID string, record []byte)
+}
+
+func (fake *fakeBus) Presence(_ context.Context, agentID string) ([]byte, error) {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	return fake.presence[agentID], nil
+}
+
+func (fake *fakeBus) WatchPresence(handler func(agentID string, record []byte)) (func(), error) {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	fake.watchers = append(fake.watchers, handler)
+	return func() {}, nil
+}
+
+// publishPresence stores the record and tells the watchers, as the broker does.
+func (fake *fakeBus) publishPresence(agentID string, record []byte) {
+	fake.mu.Lock()
+	fake.presence[agentID] = record
+	watchers := slices.Clone(fake.watchers)
+	fake.mu.Unlock()
+	for _, watcher := range watchers {
+		watcher(agentID, record)
+	}
 }
 
 func (*fakeBus) Close() {}
@@ -76,7 +103,7 @@ type testAgent struct {
 
 func newFakeBus(t *testing.T, registered ...*testAgent) *fakeBus {
 	t.Helper()
-	fake := &fakeBus{holders: map[string][]string{}, records: map[string][]bus.Record{}}
+	fake := &fakeBus{holders: map[string][]string{}, records: map[string][]bus.Record{}, presence: map[string][]byte{}}
 	for _, agent := range registered {
 		public := agent.key.Public().(ed25519.PublicKey)
 		fake.agents = append(fake.agents, bus.AgentRecord{

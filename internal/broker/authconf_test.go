@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -39,6 +40,9 @@ func TestBusAuthRoundTripsAndGrantsPerAgent(t *testing.T) {
 	// or any subject of CONTROL.
 	publish, subscribe := agentPermissions("lib-x_bob", []string{"lib-x"})
 	for _, subject := range append(publish, subscribe...) {
+		if subject == presenceReadSubject("*") {
+			continue // any agent's presence may be read: the one direct get an agent has
+		}
 		for _, forbidden := range []string{"alice", "CONSUMER.CREATE", "CONSUMER.DELETE", "DURABLE", "DIRECT", "$KV", "ledger", "private", "busd.>", "busd.agent.register"} {
 			if strings.Contains(subject, forbidden) {
 				t.Errorf("agent permission %q contains %q", subject, forbidden)
@@ -46,6 +50,23 @@ func TestBusAuthRoundTripsAndGrantsPerAgent(t *testing.T) {
 		}
 		if strings.HasSuffix(subject, "*") && subject != "dm.*" && subject != "topic.*" {
 			t.Errorf("agent permission %q is a wildcard", subject)
+		}
+	}
+}
+
+func TestAgentMayPublishOnlyItsOwnPresenceAndReadAnyones(t *testing.T) {
+	publish, subscribe := agentPermissions("lib-x_bob", nil)
+	for _, want := range []string{"presence.lib-x_bob", presenceReadSubject("*")} {
+		if !slices.Contains(publish, want) {
+			t.Errorf("publish grants lack %q", want)
+		}
+	}
+	for _, subject := range append(publish, subscribe...) {
+		if strings.HasPrefix(subject, "presence.") && subject != "presence.lib-x_bob" {
+			t.Errorf("grant %q reaches another agent's presence", subject)
+		}
+		if strings.Contains(subject, "DIRECT") && subject != presenceReadSubject("*") {
+			t.Errorf("grant %q is a direct get outside PRESENCE", subject)
 		}
 	}
 }

@@ -123,3 +123,13 @@ func (transport *Transport) History(ctx context.Context, from bus.Channel, after
 	}
 	return records, transport.session.explain(batch.Error())
 }
+
+// PublishPresence publishes the agent's own presence record, replacing the last.
+func (transport *Transport) PublishPresence(record []byte) error {
+	return transport.session.publishPresence(transport.agentToken, record)
+}
+
+// Presence reads the last record of any agent.
+func (transport *Transport) Presence(ctx context.Context, agentID string) ([]byte, error) {
+	return transport.session.readPresence(ctx, bus.AgentToken(agentID))
+}

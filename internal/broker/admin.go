@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -64,6 +66,20 @@ func (admin *Admin) Setup(ctx context.Context) error {
 	})
 	if err != nil {
 		return fmt.Errorf("creating stream %s: %w", busStream, admin.bus.explain(err))
+	}
+
+	// Only the last record of each agent's presence is kept; direct get lets agents read it
+	// without a consumer.
+	_, err = admin.bus.stream.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
+		Name:              presenceStream,
+		Subjects:          []string{"presence.*"},
+		Storage:           jetstream.FileStorage,
+		Retention:         jetstream.LimitsPolicy,
+		MaxMsgsPerSubject: 1,
+		AllowDirect:       true,
+	})
+	if err != nil {
+		return fmt.Errorf("creating stream %s: %w", presenceStream, admin.bus.explain(err))
 	}
 
 	// The ledger is a plain stream, not KV: KV keeps at most 64 revisions per key.
@@ -286,4 +302,22 @@ func listControlRecords[T any](ctx context.Context, admin *Admin, bucket string)
 		records = append(records, record)
 	}
 	return records, nil
+}
+
+func (admin *Admin) Presence(ctx context.Context, agentID string) ([]byte, error) {
+	return admin.bus.readPresence(ctx, bus.AgentToken(agentID))
+}
+
+func (admin *Admin) WatchPresence(handler func(agentID string, record []byte)) (func(), error) {
+	subscription, err := admin.bus.conn.Subscribe(presenceSubject("*"), func(message *nats.Msg) {
+		token, _ := strings.CutPrefix(message.Subject, presenceSubject(""))
+		handler(bus.AgentIDFromToken(token), message.Data)
+	})
+	if err == nil {
+		err = admin.bus.conn.Flush() // so the server knows the subscription before this returns
+	}
+	if err != nil {
+		return nil, err
+	}
+	return func() { _ = subscription.Unsubscribe() }, nil
 }

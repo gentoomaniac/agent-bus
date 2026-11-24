@@ -24,6 +24,11 @@ type Transport interface {
 	// History reads up to limit records of a channel after the given sequence, oldest first.
 	// It does not move any read cursor. Until busd exists, only the admin's connection may use it.
 	History(ctx context.Context, from Channel, afterSequence uint64, limit int) ([]Record, error)
+	// PublishPresence replaces the agent's own presence record, which the broker keeps for
+	// readers (design.md §7). An agent can write no one else's.
+	PublishPresence(record []byte) error
+	// Presence returns the last presence record of an agent, or nil if it never published one.
+	Presence(ctx context.Context, agentID string) ([]byte, error)
 	// Unavailable is nil while the broker is reachable, and an error wrapping ErrUnavailable while
 	// the connection is down and being re-established. The three calls above return it then at
 	// once instead of waiting for the broker.
@@ -77,6 +82,10 @@ type Admin interface {
 	// ReadCursorHolders lists the agent IDs that have a read cursor on the channel, that is the
 	// agents that read it. A DM channel has the one holder it is named after.
 	ReadCursorHolders(ctx context.Context, channel Channel) ([]string, error)
+	// Presence returns the last presence record of an agent, or nil if it never published one.
+	Presence(ctx context.Context, agentID string) ([]byte, error)
+	// WatchPresence calls handler with every presence record published from now on, until stop.
+	WatchPresence(handler func(agentID string, record []byte)) (stop func(), err error)
 	// LastSequence is the sequence of the newest record of all conversation channels together.
 	LastSequence(ctx context.Context) (uint64, error)
 	Close()

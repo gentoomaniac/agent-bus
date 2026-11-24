@@ -11,10 +11,11 @@ import (
 
 // The accounts and streams of design.md §4a.
 const (
-	busStream    = "BUS"
-	ledgerStream = "LEDGER"
-	registryKV   = "registry"
-	catalogueKV  = "catalogue"
+	busStream      = "BUS"
+	presenceStream = "PRESENCE"
+	ledgerStream   = "LEDGER"
+	registryKV     = "registry"
+	catalogueKV    = "catalogue"
 )
 
 // subject is the one place that maps a channel to the subject it is stored under in stream BUS.
@@ -27,6 +28,15 @@ func subject(channel bus.Channel) string {
 	default:
 		return "dm." + bus.AgentToken(channel.Name)
 	}
+}
+
+// presenceSubject is where an agent publishes its presence; the stream PRESENCE keeps only the last
+// record of each subject.
+func presenceSubject(agentToken string) string { return "presence." + agentToken }
+
+// presenceReadSubject is the direct get that returns the last record published for the agent.
+func presenceReadSubject(agentToken string) string {
+	return "$JS.API.DIRECT.GET." + presenceStream + "." + presenceSubject(agentToken)
 }
 
 // consumerName is the durable consumer that holds an agent's read cursor on a channel (§4a).
