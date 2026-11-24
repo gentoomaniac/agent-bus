@@ -17,24 +17,23 @@ func TestValidateAgentID(t *testing.T) {
 	}
 }
 
-func TestValidateTopicName(t *testing.T) {
+func TestValidateGroupName(t *testing.T) {
 	for _, name := range []string{"lib-x", "release", "v2"} {
-		if err := ValidateTopicName(name); err != nil {
-			t.Errorf("ValidateTopicName(%q) = %v, want nil", name, err)
+		if err := ValidateGroupName(name); err != nil {
+			t.Errorf("ValidateGroupName(%q) = %v, want nil", name, err)
 		}
 	}
 	for _, name := range []string{"", "Lib", "a.b", "a_b", "a@b", "a b"} {
-		if ValidateTopicName(name) == nil {
-			t.Errorf("ValidateTopicName(%q) = nil, want error", name)
+		if ValidateGroupName(name) == nil {
+			t.Errorf("ValidateGroupName(%q) = nil, want error", name)
 		}
 	}
 }
 
-func TestTopicMapping(t *testing.T) {
-	if got, want := DMTopic("lib-x@bob"), "agents.dm.lib-x.bob"; got != want {
-		t.Errorf("DMTopic = %q, want %q", got, want)
-	}
-	if got, want := GroupTopic("release"), "agents.topic.release"; got != want {
-		t.Errorf("GroupTopic = %q, want %q", got, want)
+func TestAgentToken(t *testing.T) {
+	for agentID, want := range map[string]string{"lib-x@bob": "lib-x_bob", "human@alice": "human_alice"} {
+		if got := AgentToken(agentID); got != want {
+			t.Errorf("AgentToken(%q) = %q, want %q", agentID, got, want)
+		}
 	}
 }

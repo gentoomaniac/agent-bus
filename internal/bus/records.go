@@ -2,14 +2,14 @@ package bus
 
 import "time"
 
-// TopicRecord is the value of a record in `agents.topics`, keyed by topic name.
+// TopicRecord is the catalogue entry of a group channel, keyed by channel name.
 type TopicRecord struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// AgentRecord is the value of a record in `agents.registry`, keyed by agent ID. PublicKey and
+// AgentRecord is the registry entry of an agent, keyed by its agent token. PublicKey and
 // Fingerprint always name the current key, the last entry of Keys. A reader treats a record without
 // Keys (written before key history existed) as a history of one key: PublicKey and Fingerprint.
 type AgentRecord struct {
