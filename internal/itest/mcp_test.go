@@ -31,7 +31,9 @@ func (h *harness) startMCPServer(t *testing.T, agentBus, agentID string, groups 
 
 func (h *harness) connectMCP(t *testing.T, cmd *exec.Cmd) *mcpServer {
 	t.Helper()
-	cmd.Env = h.env
+	if cmd.Env == nil {
+		cmd.Env = h.env
+	}
 	client, err := mcp.NewClient(&mcp.Implementation{Name: "itest"}, nil).Connect(timeout(t), &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
 		t.Fatal(err)

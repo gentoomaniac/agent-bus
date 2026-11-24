@@ -139,7 +139,8 @@ func TestBrokerOutage(t *testing.T) {
 				t.Errorf("%s: %s", tool, text)
 			}
 		}
-		if text, isError := bobServer.call(t, "wait_for_messages", map[string]any{"timeout_s": 1}); isError || !strings.Contains(text, "before the outage") {
+		// The inbox call above already returned the buffered message, so wait has nothing new.
+		if text, isError := bobServer.call(t, "wait_for_messages", map[string]any{"timeout_s": 1}); isError || strings.Contains(text, "before the outage") {
 			t.Errorf("wait_for_messages during the outage: error=%v %s", isError, text)
 		}
 		eventually(t, "the monitor to show the outage", func() bool { return busState(web) == monitor.BusReconnecting })
