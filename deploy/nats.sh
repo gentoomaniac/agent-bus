@@ -13,12 +13,14 @@
 #   BUS_NATS_PORT      default 4222
 #   BUS_MONITOR_PORT   default 8222, served on 127.0.0.1 only
 #   BUS_LISTEN_IP      default 0.0.0.0, the LAN; 127.0.0.1 keeps the broker on this machine
+#   BUS_DATA_DIR       default $BUS_CONFIG_DIR/nats/data, the JetStream storage
 set -euo pipefail
 
 export BUS_CONFIG_DIR="${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}"
 export BUS_NATS_PORT="${BUS_NATS_PORT:-4222}"
 export BUS_MONITOR_PORT="${BUS_MONITOR_PORT:-8222}"
 export BUS_LISTEN_IP="${BUS_LISTEN_IP:-0.0.0.0}"
+export BUS_DATA_DIR="${BUS_DATA_DIR:-$BUS_CONFIG_DIR/nats/data}"
 readonly natsServer="${BUS_NATS_SERVER:-$BUS_CONFIG_DIR/bin/nats-server}"
 
 readonly natsServerVersion=v2.15.3
@@ -65,8 +67,8 @@ up() {
     exit 1
   fi
 
-  mkdir -p "$natsDir/data"
-  envsubst '${BUS_LISTEN_IP} ${BUS_NATS_PORT} ${BUS_MONITOR_PORT} ${BUS_CONFIG_DIR}' <"$template" >"$conf"
+  mkdir -p "$BUS_DATA_DIR"
+  envsubst '${BUS_LISTEN_IP} ${BUS_NATS_PORT} ${BUS_MONITOR_PORT} ${BUS_CONFIG_DIR} ${BUS_DATA_DIR}' <"$template" >"$conf"
   "$natsServer" -t -c "$conf" >/dev/null
   nohup "$natsServer" -c "$conf" -P "$pidFile" >>"$logFile" 2>&1 &
   local server=$!
@@ -99,7 +101,7 @@ down() {
   fi
   rm -f "$pidFile"
   if [[ "${1:-}" == "--purge" ]]; then
-    rm -rf "$natsDir/data"
+    rm -rf "$BUS_DATA_DIR"
   fi
 }
 

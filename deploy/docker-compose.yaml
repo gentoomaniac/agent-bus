@@ -1,0 +1,18 @@
+# Example: the central components in one container. See docs/docker.md.
+services:
+  agent-bus:
+    image: git.srv.gentoomaniac.net/marco/agent-messenger:latest
+    restart: unless-stopped
+    ports:
+      - "4222:4222"
+    volumes:
+      - config:/config
+      - data:/data
+    # environment:
+    #   BUS_LISTEN_IP: 0.0.0.0
+    #   BUS_NATS_PORT: 4222
+    #   BUS_MONITOR_PORT: 8222
+
+volumes:
+  config:
+  data:
