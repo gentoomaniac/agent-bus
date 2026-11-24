@@ -25,8 +25,15 @@ const (
 //go:embed web/index.html
 var web embed.FS
 
-// Status says whether the monitor can send, and why not.
+// The states of the monitor's connection to the bus.
+const (
+	BusLive         = "live"
+	BusReconnecting = "reconnecting" // the broker is down or unreachable; the monitor keeps trying
+)
+
+// Status says whether the monitor reaches the bus, whether it can send, and why not.
 type Status struct {
+	Bus     string `json:"bus"`
 	Agent   string `json:"agent,omitempty"` // the identity messages are sent as
 	CanSend bool   `json:"can_send"`
 	Note    string `json:"note,omitempty"` // why it cannot send

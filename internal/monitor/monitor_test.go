@@ -26,11 +26,12 @@ type fakeBus struct {
 	groups  []bus.TopicRecord
 	holders map[string][]string
 	records map[string][]bus.Record
+	down    error // what Unavailable returns
 }
 
 func (*fakeBus) Close() {}
 
-func (*fakeBus) Unavailable() error { return nil }
+func (fake *fakeBus) Unavailable() error { return fake.down }
 
 func (fake *fakeBus) Agents(context.Context) ([]bus.AgentRecord, error) {
 	fake.mu.Lock()

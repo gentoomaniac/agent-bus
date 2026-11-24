@@ -122,7 +122,7 @@ func (monitor *Monitor) Run(ctx context.Context) {
 	defer monitor.followers.Wait()
 	for {
 		if err := monitor.discover(ctx); err != nil && ctx.Err() == nil {
-			monitor.config.Report(err)
+			monitor.report(err)
 		}
 		select {
 		case <-ctx.Done():
@@ -132,7 +132,18 @@ func (monitor *Monitor) Run(ctx context.Context) {
 	}
 }
 
+// report passes on an error unless it is the bus being unavailable: the connection tells of that
+// itself, once, and the readers retry every few seconds.
+func (monitor *Monitor) report(err error) {
+	if !errors.Is(err, bus.ErrUnavailable) {
+		monitor.config.Report(err)
+	}
+}
+
 func (monitor *Monitor) discover(ctx context.Context) error {
+	if err := monitor.config.History.Unavailable(); err != nil {
+		return err
+	}
 	agents, registryErr := monitor.registry.refresh(ctx)
 	groups, groupsErr := monitor.config.Admin.GroupChannels(ctx)
 
@@ -165,7 +176,7 @@ func (monitor *Monitor) follow(ctx context.Context, source bus.Channel) {
 		records, err := monitor.config.History.History(ctx, source, after, historyPageSize)
 		if err != nil {
 			if ctx.Err() == nil {
-				monitor.config.Report(err)
+				monitor.report(err)
 			}
 			sleep(ctx, failedReadPause)
 			continue
@@ -314,11 +325,15 @@ func dmAgents(id string) ([]string, bool) {
 
 // Status says what the monitor can do besides reading.
 func (monitor *Monitor) Status() Status {
+	busState := BusLive
+	if monitor.config.History.Unavailable() != nil {
+		busState = BusReconnecting
+	}
 	sender := monitor.config.Sender
 	if sender == nil {
-		return Status{Note: cmp.Or(monitor.config.ReadOnlyNote, "read-only: the monitor was started without --agent")}
+		return Status{Bus: busState, Note: cmp.Or(monitor.config.ReadOnlyNote, "read-only: the monitor was started without --agent")}
 	}
-	status := Status{Agent: sender.AgentID()}
+	status := Status{Bus: busState, Agent: sender.AgentID()}
 	if err := sender.Ready(); err != nil {
 		status.Note = err.Error()
 		return status
