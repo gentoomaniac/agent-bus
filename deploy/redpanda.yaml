@@ -43,6 +43,8 @@ data:
     kafka_enable_authorization: true
     auto_create_topics_enabled: false
     default_topic_replications: 1
+    # Consumer group offsets never expire: agents may be offline for a long time (design.md §4).
+    group_offset_retention_sec: null
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

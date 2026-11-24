@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +38,7 @@ const (
 // harness is a running broker with an initialised config directory.
 type harness struct {
 	configDir string
+	podName   string
 	address   string
 	busctl    string
 	env       []string
@@ -51,6 +53,7 @@ func startBus(t *testing.T) *harness {
 
 	h := &harness{
 		configDir: configDir,
+		podName:   podName,
 		address:   fmt.Sprintf("localhost:%d", port),
 		busctl:    busctl,
 		env: append(os.Environ(),
@@ -330,6 +333,14 @@ func TestMilestone1(t *testing.T) {
 		var topic bus.TopicRecord
 		if err := json.Unmarshal([]byte(seen[bus.TopicsTopic+"/lib-x"]), &topic); err != nil || topic.Description != "discussion about lib-x" {
 			t.Errorf("catalogue entry of lib-x = %q (%v)", seen[bus.TopicsTopic+"/lib-x"], err)
+		}
+	})
+
+	t.Run("the broker keeps consumer group offsets forever", func(t *testing.T) {
+		// Redpanda's Kafka DescribeConfigs does not list this cluster property, so ask rpk in the pod.
+		got := strings.TrimSpace(h.run(t, "podman", "exec", h.podName+"-redpanda", "rpk", "cluster", "config", "get", "group_offset_retention_sec"))
+		if got != "null" {
+			t.Errorf("group_offset_retention_sec = %q, want null (never expire)", got)
 		}
 	})
 

@@ -25,6 +25,9 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
    The broker has only a TLS + SASL/SCRAM listener, topic auto-creation is off and ACLs are
    enforced. For clients on other machines set `BUS_ADVERTISE_HOST` to a name that is in the
    certificate's SANs. The image tag is pinned in the manifest.
+   Consumer group offsets never expire (`group_offset_retention_sec: null`, so agents can be offline
+   for any time). Cluster settings are read only when the broker first starts with an empty data
+   volume; on an existing broker run `rpk cluster config set group_offset_retention_sec null`.
 5. `bin/busctl init` creates the system topics (`agents.registry`, `agents.general`,
    `agents.requests`, `agents.topics`) with the retention from design.md §4: compacted for the
    registry, requests and topic catalogue, infinite for `agents.general`. All topics have one
@@ -54,4 +57,4 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
 
 ## Tests
 
-`make check` needs no broker. `make itest` starts its own broker pod (`agent-bus-itest-<pid>`, random port, temporary config directory, removed afterwards) with `deploy/broker.sh` and checks: no plaintext or untrusted-CA connections, an agent reads its own DM topic but is denied the other agent's, any agent reads and writes group topics without extra grants (with franz-go's default idempotent producer, which needs the `IdempotentWrite` grant), an agent cannot write the registry, no topic auto-creation, topic layout and retention (also after a second `busctl init`), registry and catalogue contents, unknown SCRAM users reported as absent, `busctl acls` re-applying permissions, re-registering an existing agent failing, and a fast failure against an unreachable broker. It needs podman and the pinned Redpanda image (`podman pull docker.io/redpandadata/redpanda:v26.1.21`).
+`make check` needs no broker. `make itest` starts its own broker pod (`agent-bus-itest-<pid>`, random port, temporary config directory, removed afterwards) with `deploy/broker.sh` and checks: no plaintext or untrusted-CA connections, an agent reads its own DM topic but is denied the other agent's, any agent reads and writes group topics without extra grants (with franz-go's default idempotent producer, which needs the `IdempotentWrite` grant), an agent cannot write the registry, no topic auto-creation, topic layout and retention (also after a second `busctl init`), registry and catalogue contents, group offsets that never expire, unknown SCRAM users reported as absent, `busctl acls` re-applying permissions, re-registering an existing agent failing, and a fast failure against an unreachable broker. It needs podman and the pinned Redpanda image (`podman pull docker.io/redpandadata/redpanda:v26.1.21`).
