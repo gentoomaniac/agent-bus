@@ -48,6 +48,10 @@ type CLI struct {
 		Join   ChannelJoinCmd   `cmd:"" help:"Let a registered agent read a group channel from now on."`
 	} `cmd:"" help:"Group channels."`
 
+	Monitor struct {
+		Password MonitorPasswordCmd `cmd:"" help:"Set the password of the web monitor: prompts, or reads one line from standard input."`
+	} `cmd:"" help:"The web monitor."`
+
 	TLS struct {
 		Init TLSInitCmd `cmd:"" help:"Create the private CA and the broker certificate."`
 	} `cmd:"" help:"TLS setup."`

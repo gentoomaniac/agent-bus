@@ -7,6 +7,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/nats-io/nats.go v1.56.0
 	golang.org/x/crypto v0.59.0
+	golang.org/x/term v0.48.0
 )
 
 require (

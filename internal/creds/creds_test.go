@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestNewPasswordIsRandomAndShellSafe(t *testing.T) {
@@ -14,6 +16,30 @@ func TestNewPasswordIsRandomAndShellSafe(t *testing.T) {
 	}
 	if !regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`).MatchString(first) {
 		t.Errorf("password %q has an unexpected shape", first)
+	}
+}
+
+func TestMonitorPasswordIsStoredAsAHash(t *testing.T) {
+	dir := t.TempDir()
+	if hash, err := ReadMonitorPasswordHash(dir); hash != nil || err != nil {
+		t.Fatalf("before any password: %q, %v", hash, err)
+	}
+	if err := WriteMonitorPassword(dir, "short"); err == nil {
+		t.Error("a short password was accepted")
+	}
+	if err := WriteMonitorPassword(dir, "correct horse battery"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteMonitorPassword(dir, "another password"); err != nil {
+		t.Fatalf("replacing the password: %v", err)
+	}
+	hash, err := ReadMonitorPasswordHash(dir)
+	if err != nil || bcrypt.CompareHashAndPassword(hash, []byte("another password")) != nil {
+		t.Errorf("hash %q does not match the new password (%v)", hash, err)
+	}
+	info, _ := os.Stat(filepath.Join(dir, monitorPasswordFile))
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v, want 0600", info.Mode().Perm())
 	}
 }
 

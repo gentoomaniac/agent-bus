@@ -6,17 +6,23 @@ package creds
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
 )
 
 const (
-	passwordFile  = "password"
-	passwordBytes = 32
+	passwordFile        = "password"
+	passwordBytes       = 32
+	monitorPasswordFile = "monitor/password.bcrypt"
+	// MinMonitorPasswordBytes keeps out the passwords that are guessed in a few tries.
+	MinMonitorPasswordBytes = 8
 )
 
 // NewPassword returns a random password that is safe in URLs, shell words and `user:password` pairs.
@@ -50,4 +56,28 @@ func ReadPassword(dir string) (string, error) {
 		return "", fmt.Errorf("reading credentials: %w", err)
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+// WriteMonitorPassword stores the bcrypt hash of the web monitor's password, replacing the old one.
+func WriteMonitorPassword(configDir, password string) error {
+	if len(password) < MinMonitorPasswordBytes {
+		return fmt.Errorf("the password must have at least %d characters", MinMonitorPasswordBytes)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err // for example longer than bcrypt's 72 bytes
+	}
+	return files.Write(filepath.Join(configDir, monitorPasswordFile), append(hash, '\n'), files.SecretMode, true)
+}
+
+// ReadMonitorPasswordHash returns the stored hash, or nil when no password is set.
+func ReadMonitorPasswordHash(configDir string) ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(configDir, monitorPasswordFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading the monitor password: %w", err)
+	}
+	return []byte(strings.TrimSpace(string(data))), nil
 }

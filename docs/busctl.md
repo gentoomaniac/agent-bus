@@ -200,6 +200,19 @@ a removed agent fails with "agent removed", and `list_agents` leaves it out. Run
 after every `agent remove` and `register`. An automatic refresh over the bus comes with `busd`
 and enrollment (design.md §4c).
 
+### monitor password
+
+Sets the password of the [web monitor](monitor.md#login), stored as a bcrypt hash in
+`monitor/password.bcrypt` of the config directory. On a terminal it asks twice without echo;
+otherwise it reads one line from standard input. At least 8 characters, at most 72 bytes. It needs
+no broker. Restart `bus-monitor` afterwards: it reads the hash at start, and a restart ends every
+login session.
+
+```sh
+busctl monitor password                       # prompts
+printf '%s\n' "$PASSWORD" | busctl monitor password   # from a script
+```
+
 ## Not built yet
 
 `busctl alerts` (alerts go to `<agent-dir>/alerts.log` only) and every command that needs `busd`.
