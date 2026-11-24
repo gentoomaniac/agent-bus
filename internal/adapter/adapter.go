@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -166,9 +167,19 @@ func (adapter *Adapter) AgentID() string { return adapter.config.AgentID }
 
 func (adapter *Adapter) Fingerprint() string { return adapter.keyFP }
 
-// Send sends a message to one agent's DM channel.
+// Send sends a message to one agent's DM channel. The agent must be in the local directory. A
+// group name is not checked against the catalogue, which agents cannot read until busd exists, so
+// a post to an unknown group is stored and never read.
 func (adapter *Adapter) Send(ctx context.Context, to string, message Outgoing) (string, error) {
 	if err := bus.ValidateAgentID(to); err != nil {
+		return "", err
+	}
+	if err := adapter.ready(); err != nil {
+		return "", err
+	}
+	if _, err := adapter.config.Directory.Lookup(ctx, to); errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("unknown agent %s: it has no entry in the directory", to)
+	} else if err != nil {
 		return "", err
 	}
 	return adapter.post(ctx, bus.DMChannel(to), message)

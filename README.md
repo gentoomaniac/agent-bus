@@ -68,6 +68,9 @@ lines) and `ack <id>...` act as that identity. `--groups a,b` adds group channel
 `--config-dir`, `--broker`, `--ca-cert` as for busctl. Every command is its own process holding the
 identity lock while it runs, so this is a test harness: a message fetched by `inbox` and not acked
 is redelivered only after the consumer's one-minute `AckWait`. The MCP server comes in milestone 4.
+`send` to an agent with no entry in `<config-dir>/directory` fails with "unknown agent". Group names
+are checked only for form (and `general` is reserved): agents cannot read the catalogue until busd
+exists, so a post to a group nobody created is stored and never read.
 A sender is first-contact pinned from `<config-dir>/directory`, which `register` fills on the
 machine it runs on; copy it to other machines (design.md §6, and `internal/trust` above).
 

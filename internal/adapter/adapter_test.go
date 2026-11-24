@@ -235,6 +235,7 @@ func TestMessageCopiedIntoAnotherChannelIsRejected(t *testing.T) {
 	b := newTestBus(t)
 	b.register(alice)
 	b.register(bob)
+	b.register("someone@else")
 	a, _ := b.open(alice)
 	bobAdapter, _ := b.open(bob)
 	if _, err := a.Send(context.Background(), "someone@else", text("meant for someone else")); err != nil {
@@ -366,6 +367,7 @@ func TestSecondAdapterOnTheSameIdentityFailsEveryOperation(t *testing.T) {
 func TestSecretIsBlockedAndNothingIsSent(t *testing.T) {
 	b := newTestBus(t)
 	b.register(alice)
+	b.register(bob)
 	a, _ := b.open(alice)
 	_, err := a.Send(context.Background(), bob, text("-----BEGIN OPENSSH PRIVATE KEY-----"))
 	if err == nil || !strings.Contains(err.Error(), "private key") || len(b.broker.records) != 0 {
@@ -438,6 +440,7 @@ func TestHopLimitStopsTwoAutoRepliers(t *testing.T) {
 func TestReplyToUnknownMessageIsRefusedAndExplicitReplyCountsHops(t *testing.T) {
 	b := newTestBus(t)
 	b.register(alice)
+	b.register(bob)
 	a, _ := b.open(alice)
 	ctx := context.Background()
 	if _, err := a.Send(ctx, bob, Outgoing{Type: "message", Body: envelope.Body{Text: "x"}, ReplyTo: "INVENTED"}); err == nil {
@@ -487,5 +490,15 @@ func TestInboxBufferPausesFetchingWhenFull(t *testing.T) {
 	poll(t, bobAdapter)
 	if got := len(inboxOf(t, bobAdapter)); got != 2 {
 		t.Errorf("after draining, %d of the remaining 2 arrived", got)
+	}
+}
+
+func TestSendToAnUnknownAgentIsRefused(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	a, _ := b.open(alice)
+	_, err := a.Send(context.Background(), bob, text("anyone there?"))
+	if err == nil || !strings.Contains(err.Error(), "unknown agent") || len(b.broker.records) != 0 {
+		t.Errorf("err = %v, %d records", err, len(b.broker.records))
 	}
 }
