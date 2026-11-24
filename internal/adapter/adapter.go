@@ -60,9 +60,12 @@ type Config struct {
 	Deliver       string // DeliverTargeted (default) or DeliverAll
 	InboxMessages int    // default DefaultInboxMessages
 	InboxBytes    int    // default DefaultInboxBytes
-	RateLimit     int    // sends per 10 minutes, default 30
-	MaxHops       int    // default 6
-	Now           func() time.Time
+	// ContextMessages caps the mail that does not target the agent (--deliver=all); default
+	// DefaultContextMessages.
+	ContextMessages int
+	RateLimit       int // sends per 10 minutes, default 30
+	MaxHops         int // default 6
+	Now             func() time.Time
 }
 
 // Outgoing is what the agent chooses about a message; the adapter fills in the rest.
@@ -109,7 +112,9 @@ type Adapter struct {
 	rate   rateLimiter
 
 	notifications notifications
-	acked         map[string]bool // IDs of the messages this agent sent an ack reply to
+	// contextDropped counts the context messages dropped for room since TakeContextDropped.
+	contextDropped int
+	acked          map[string]bool // IDs of the messages this agent sent an ack reply to
 	// unknownSenders maps a sender with no directory record to the deliveries (destination and
 	// sequence) of its messages waiting for one.
 	unknownSenders map[string]map[string]bool
@@ -134,6 +139,7 @@ func Open(config Config) (*Adapter, error) {
 	}
 	config.InboxMessages = cmp.Or(config.InboxMessages, DefaultInboxMessages)
 	config.InboxBytes = cmp.Or(config.InboxBytes, DefaultInboxBytes)
+	config.ContextMessages = cmp.Or(config.ContextMessages, DefaultContextMessages)
 	config.RateLimit = cmp.Or(config.RateLimit, defaultRateLimit)
 	config.MaxHops = cmp.Or(config.MaxHops, defaultMaxHops)
 	adapter := &Adapter{config: config}
@@ -168,7 +174,7 @@ func (adapter *Adapter) load() (err error) {
 		return err
 	}
 	adapter.alertsPath = filepath.Join(config.Dir, alertsFile)
-	adapter.inbox = inbox{maxMessages: config.InboxMessages, maxBytes: config.InboxBytes}
+	adapter.inbox = inbox{maxMessages: config.InboxMessages, maxBytes: config.InboxBytes, maxContext: config.ContextMessages}
 	adapter.rate = rateLimiter{limit: config.RateLimit, window: rateWindow}
 	adapter.channels = []bus.Channel{bus.DMChannel(config.AgentID), bus.GeneralChannel()}
 	for _, group := range config.Groups {
@@ -614,8 +620,39 @@ func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delive
 		}
 		return delivery.Ack(ctx)
 	}
+	if !message.TargetsMe {
+		if oldest := adapter.inbox.contextFull(); oldest != nil {
+			if err := adapter.dropContext(ctx, oldest); err != nil {
+				return err
+			}
+		}
+	}
 	adapter.inbox.add(message)
 	return nil
+}
+
+// dropContext handles and acks a context message the agent never read, to make room for newer
+// context. The caller holds mu.
+func (adapter *Adapter) dropContext(ctx context.Context, message *Message) error {
+	if err := adapter.handled.add(adapter.handledEntry(message)); err != nil {
+		return err
+	}
+	if err := message.delivery.Ack(ctx); err != nil {
+		return err
+	}
+	adapter.inbox.remove(message)
+	adapter.contextDropped++
+	return nil
+}
+
+// TakeContextDropped returns how many context messages were dropped unread since the last call,
+// for the agent to be told.
+func (adapter *Adapter) TakeContextDropped() int {
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	dropped := adapter.contextDropped
+	adapter.contextDropped = 0
+	return dropped
 }
 
 // targetsMe is the rule of §5: this agent's ID or "@all" in the targets. The sender put the

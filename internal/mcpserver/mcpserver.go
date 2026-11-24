@@ -361,12 +361,13 @@ type messagesOut struct {
 	Messages       []message `json:"messages"`
 	UnknownSenders string    `json:"unknown_senders,omitempty"`
 	ContextOmitted int       `json:"context_omitted,omitempty"` // messages not aimed at the agent, left out
+	ContextDropped int       `json:"context_dropped,omitempty"` // context discarded unread because the buffer was full
 }
 
 // framed lists the messages compactly. Text is cut at maxTextBytes unless full is set, and at most
 // maxContextMsgs messages that do not target the agent are listed.
 func (t tools) framed(unread []adapter.Message, full bool) messagesOut {
-	out := messagesOut{Messages: []message{}, UnknownSenders: t.unknownSenders()}
+	out := messagesOut{Messages: []message{}, UnknownSenders: t.unknownSenders(), ContextDropped: t.session.TakeContextDropped()}
 	if len(unread) == 0 {
 		return out
 	}

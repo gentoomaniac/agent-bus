@@ -257,3 +257,30 @@ func TestInboxListsTargetedMailFirstAndLimitsAfterwards(t *testing.T) {
 		t.Errorf("untargeted mail should list last: %v", all)
 	}
 }
+
+func TestContextOverflowDropsTheOldestContextAndNeverBlocksTargetedMail(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	b.register(carol)
+	a, _ := b.open(alice, func(config *Config) { config.RateLimit = 100 })
+	bobAdapter, bobTransport := b.open(bob, deliverAll, func(config *Config) { config.ContextMessages = 3; config.InboxMessages = 4 })
+	var chatter []string
+	for i := 0; i < 6; i++ {
+		chatter = append(chatter, publishTo(t, a, "general", aimedAt("message", "chatter", carol)))
+	}
+	for i := 0; i < 3; i++ {
+		poll(t, bobAdapter)
+	}
+	if got := inboxIDs(t, bobAdapter); !slices.Equal(got, chatter[3:]) {
+		t.Errorf("inbox = %v, want the newest 3 context messages", got)
+	}
+	if bobTransport.acks != 3 || bobAdapter.TakeContextDropped() != 3 || bobAdapter.TakeContextDropped() != 0 {
+		t.Errorf("acks %d: the dropped context was not acked, or its count is wrong", bobTransport.acks)
+	}
+	request := publishTo(t, a, "general", aimedAt("request", "do it", bob))
+	poll(t, bobAdapter)
+	if got := inboxIDs(t, bobAdapter); got[0] != request {
+		t.Errorf("inbox = %v, want the request first", got)
+	}
+}

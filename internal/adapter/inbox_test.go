@@ -10,10 +10,11 @@ import (
 
 func buffered(id string, size int, inProgress *int) *Message {
 	return &Message{
-		Envelope: envelope.Envelope{ID: id, From: "a@o"},
-		Channel:  bus.GeneralChannel(),
-		size:     size,
-		delivery: bus.Delivery{InProgress: func(context.Context) error { *inProgress++; return nil }},
+		Envelope:  envelope.Envelope{ID: id, From: "a@o"},
+		TargetsMe: true,
+		Channel:   bus.GeneralChannel(),
+		size:      size,
+		delivery:  bus.Delivery{InProgress: func(context.Context) error { *inProgress++; return nil }},
 	}
 }
 

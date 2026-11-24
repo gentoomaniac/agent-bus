@@ -13,6 +13,9 @@ import (
 const (
 	DefaultInboxMessages = 500
 	DefaultInboxBytes    = 8 << 20
+	// DefaultContextMessages caps the mail that does not target the agent (--deliver=all), so
+	// context can never keep targeted mail from being fetched.
+	DefaultContextMessages = 100
 )
 
 // Message is a verified message waiting for the agent.
@@ -34,20 +37,46 @@ type Message struct {
 	size     int
 }
 
-// inbox holds verified, unacknowledged messages in arrival order, bounded by count and bytes. A
-// message leaves it only when the agent acknowledges it.
+// inbox holds verified, unacknowledged messages in arrival order. Mail that targets the agent is
+// bounded by count and bytes and leaves only when the agent acknowledges it. Context (mail that
+// does not target the agent) has a count cap of its own: the adapter drops the oldest to make room.
 type inbox struct {
-	maxMessages, maxBytes int
-	messages              []*Message
-	bytes                 int
+	maxMessages, maxBytes, maxContext int
+	messages                          []*Message
+	bytes                             int
 }
 
-// fetchBatch is how many records the reader may fetch now. Records are not known in size before
-// they arrive, so the byte room counts each as the largest a record can be; the buffer then never
-// exceeds its byte bound.
+// fetchBatch is how many records the reader may fetch now, counting targeted mail only: context
+// makes room for itself. Records are not known in size before they arrive, so the byte room
+// counts each as the largest a record can be; targeted mail then never exceeds its byte bound.
 func (buffer *inbox) fetchBatch() int {
-	room := min(buffer.maxMessages-len(buffer.messages), (buffer.maxBytes-buffer.bytes)/envelope.MaxRecordBytes)
+	targeted, targetedBytes := 0, 0
+	for _, message := range buffer.messages {
+		if message.TargetsMe {
+			targeted++
+			targetedBytes += message.size
+		}
+	}
+	room := min(buffer.maxMessages-targeted, (buffer.maxBytes-targetedBytes)/envelope.MaxRecordBytes)
 	return max(room, 0)
+}
+
+// contextFull returns the oldest buffered context message when the context cap is reached, else nil.
+func (buffer *inbox) contextFull() *Message {
+	var oldest *Message
+	count := 0
+	for _, message := range buffer.messages {
+		if !message.TargetsMe {
+			if oldest == nil {
+				oldest = message
+			}
+			count++
+		}
+	}
+	if count < buffer.maxContext {
+		return nil
+	}
+	return oldest
 }
 
 func (buffer *inbox) add(message *Message) {
