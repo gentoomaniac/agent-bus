@@ -23,3 +23,8 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
    The broker has only a TLS + SASL/SCRAM listener, topic auto-creation is off and ACLs are
    enforced. For clients on other machines set `BUS_ADVERTISE_HOST` to a name that is in the
    certificate's SANs. The image tag is pinned in the manifest.
+5. `bin/busctl init` creates the system topics (`agents.registry`, `agents.general`,
+   `agents.requests`, `agents.topics`) with the retention from design.md §4: compacted for the
+   registry, requests and topic catalogue, infinite for `agents.general`. All topics have one
+   partition. Safe to repeat. `busctl` connects to `--broker` (`BUS_BROKER`, default
+   `localhost:9092`) as the admin, trusting `--ca-cert`.
