@@ -67,4 +67,30 @@ client library (`internal/itest` also does, to test against a real server).
 
 ## Tests
 
-`make check` needs no broker. `make itest` is added with the integration test.
+`make check` needs no broker. `make itest` builds the pinned nats-server into `bin/` (`deploy/nats.sh
+install`), then starts and stops its own server (temporary config directory, random ports, TLS) with
+`deploy/nats.sh` and checks, at the raw NATS level and through `busctl --direct`:
+
+- TLS only: no plaintext, no untrusted CA, no wrong password; the two admin users are distinct and
+  each sees only its own account.
+- Two-account isolation: an agent cannot publish, subscribe or call JetStream for anything in
+  `CONTROL`; even `bus-admin` (all subjects) cannot see it. Every JetStream API an agent holds,
+  called with a reply subject of `$KV.registry.<key>`, `$KV.catalogue.<key>`, `ledger.<x>` or a
+  `busd.*` subject, delivers inside `BUS` only and leaves `CONTROL` untouched. A pulled record sent
+  to a reply subject is delivered but not stored again; a JetStream API response sent to one is
+  stored anew with a new stream sequence.
+- Per-role grants: an agent cannot pull from, inspect or ack another agent's consumer, read its DM
+  channel, direct-get a message, subscribe to another agent's inbox prefix or to `busd.>`, publish
+  to `private.*`, `$KV.*`, `ledger.*` or an owner-only busd method, or create, update or delete a
+  consumer, its own included; what it is granted works.
+- Consumers: `register` creates `<token>__dm` and `<token>__general` with the fixed configuration
+  (`MaxDeliver` -1, `MaxAckPending` 500 holding back the 501st unacknowledged message, `AckWait` 1
+  minute); a group cursor starts after the boundary it is given; the stream sequence is in the
+  delivery metadata; history moves no cursor; `LastSequence` reads the stream's last sequence.
+- `Nats-Msg-Id` dedupe keyed by destination subject and envelope ID; `LEDGER` refuses a stale
+  `Nats-Expected-Last-Subject-Sequence`.
+- Reloads: a grant added or revoked takes effect on a live connection, a removed user is
+  disconnected, an invalid candidate is refused before it replaces `auth.conf`, and each reload is
+  confirmed by the monitoring endpoint's config load time.
+- The registry and catalogue hold what `register` and `channel create` wrote; `busctl` needs
+  `--direct`, refuses a second registration and gives up on a dead broker.
