@@ -490,8 +490,9 @@ func (adapter *Adapter) alert(format string, args ...any) error {
 	return errors.Join(err, file.Close())
 }
 
-// Inbox lists the verified messages the agent has not acked, oldest first. Reading them makes the
-// newest one the parent of the agent's next reply (§8 rule 3).
+// Inbox lists the verified messages the agent has not acked: those that target it first, each
+// group oldest first. Reading them makes the newest targeted one (or else the newest) the parent
+// of the agent's next reply (§8 rule 3).
 func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 	if err := adapter.Ready(); err != nil {
 		return nil, err
@@ -500,9 +501,6 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 	defer adapter.mu.Unlock()
 	var listed []Message
 	for _, message := range adapter.inbox.messages {
-		if query.Limit > 0 && len(listed) == query.Limit {
-			break
-		}
 		if len(query.Types) > 0 && !slices.Contains(query.Types, message.Envelope.Type) {
 			continue
 		}
@@ -511,8 +509,25 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 		}
 		listed = append(listed, *message)
 	}
+	slices.SortStableFunc(listed, func(a, b Message) int {
+		switch {
+		case a.TargetsMe == b.TargetsMe:
+			return 0
+		case a.TargetsMe:
+			return -1
+		}
+		return 1
+	})
+	if query.Limit > 0 && len(listed) > query.Limit {
+		listed = listed[:query.Limit]
+	}
 	if len(listed) > 0 {
-		adapter.recent.id, adapter.recent.at = listed[len(listed)-1].Envelope.ID, adapter.config.Now()
+		// Targeted messages come first, so the one before the first other is the newest of them.
+		parent := len(listed) - 1
+		if lastTargeted := slices.IndexFunc(listed, func(m Message) bool { return !m.TargetsMe }) - 1; lastTargeted >= 0 {
+			parent = lastTargeted
+		}
+		adapter.recent.id, adapter.recent.at = listed[parent].Envelope.ID, adapter.config.Now()
 	}
 	return listed, nil
 }

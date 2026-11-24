@@ -106,6 +106,50 @@ func TestReplyToOwnMessageTargetsMeAfterARestart(t *testing.T) {
 	}
 }
 
+func TestHooksTellOnlyOfMailThatTargetsTheAgent(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob, deliverAll)
+	publishTo(t, a, "general", text("chatter"))
+	request := publishTo(t, a, "general", Outgoing{Type: "request", Body: envelope.Body{Text: "do xyz"}, Targets: []string{bob}})
+	poll(t, bobAdapter)
+
+	fresh, unread, err := bobAdapter.NewMail()
+	if err != nil || len(fresh) != 1 || fresh[0].Envelope.ID != request || unread != 2 {
+		t.Errorf("new mail = %v, %d unread, %v", fresh, unread, err)
+	}
+	summary, err := bobAdapter.UnreadSummary()
+	if err != nil || len(summary) != 1 || summary[0].Envelope.ID != request {
+		t.Errorf("summary = %v, %v", summary, err)
+	}
+}
+
+func TestInboxListsTargetedMailFirstAndLimitsAfterwards(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob, deliverAll)
+	publishTo(t, a, "general", text("chatter"))
+	first := publishTo(t, a, "general", Outgoing{Type: "request", Body: envelope.Body{Text: "one"}, Targets: []string{bob}})
+	second := publishTo(t, a, "general", Outgoing{Type: "request", Body: envelope.Body{Text: "two"}, Targets: []string{bob}})
+	poll(t, bobAdapter)
+
+	messages, err := bobAdapter.Inbox(InboxQuery{Limit: 2})
+	if err != nil || len(messages) != 2 || messages[0].Envelope.ID != first || messages[1].Envelope.ID != second {
+		t.Errorf("inbox = %v, %v", messages, err)
+	}
+	if bobAdapter.recent.id != second {
+		t.Errorf("the reply parent is %s, want the newest targeted message %s", bobAdapter.recent.id, second)
+	}
+	all := inboxOf(t, bobAdapter)
+	if len(all) != 3 || all[2].TargetsMe {
+		t.Errorf("untargeted mail should list last: %v", all)
+	}
+}
+
 func TestInvalidTargetsAreRefusedOnSend(t *testing.T) {
 	b := newTestBus(t)
 	b.register(alice)
