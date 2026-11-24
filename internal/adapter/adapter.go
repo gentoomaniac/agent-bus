@@ -239,7 +239,7 @@ var ErrBadTargets = errors.New("invalid targets")
 // recipient; in a channel they are the ones given, else the mentions in the text, plus the author
 // of the message being answered; a request or question with none goes to @all. Anything else
 // aimed at nobody is refused.
-func (adapter *Adapter) targetsFor(ctx context.Context, to bus.Channel, message Outgoing, replied *parent) ([]string, error) {
+func (adapter *Adapter) targetsFor(ctx context.Context, to bus.Channel, message Outgoing, replied *parent, explicitReply bool) ([]string, error) {
 	if to.Kind == bus.DM {
 		if message.Targets != nil && !slices.Equal(message.Targets, []string{to.Name}) {
 			return nil, fmt.Errorf("%w: a DM targets its recipient %s", ErrBadTargets, to.Name)
@@ -250,7 +250,10 @@ func (adapter *Adapter) targetsFor(ctx context.Context, to bus.Channel, message 
 	if targets == nil {
 		targets = envelope.MentionedTargets(message.Body.Text)
 	}
-	if replied != nil && replied.author != adapter.config.AgentID && !slices.Contains(targets, envelope.TargetAll) && !slices.Contains(targets, replied.author) {
+	// A parent inferred from recent reading (no explicit reply_to) only binds closing messages
+	// (ack, answer, status, plain messages); a new question or request is a new topic for @all.
+	bindsAuthor := explicitReply || !slices.Contains(envelope.ResponseBearingTypes, message.Type)
+	if replied != nil && bindsAuthor && replied.author != adapter.config.AgentID && !slices.Contains(targets, envelope.TargetAll) && !slices.Contains(targets, replied.author) {
 		targets = append(slices.Clone(targets), replied.author)
 	}
 	if len(targets) == 0 && slices.Contains(envelope.ResponseBearingTypes, message.Type) {
@@ -301,7 +304,7 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 		}
 	}
 
-	targets, err := adapter.targetsFor(ctx, to, message, inherited)
+	targets, err := adapter.targetsFor(ctx, to, message, inherited, message.ReplyTo != "")
 	if err != nil {
 		return "", err
 	}

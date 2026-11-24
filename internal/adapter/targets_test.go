@@ -71,10 +71,18 @@ func TestSendingFillsImplicitTargets(t *testing.T) {
 	reply := publishTo(t, bobAdapter, "general", Outgoing{Type: "answer", Body: envelope.Body{Text: "me"}, ReplyTo: question})
 	explicit := publishTo(t, bobAdapter, "general", Outgoing{Type: "answer", Body: envelope.Body{Text: "me too"}, ReplyTo: question, Targets: []string{carol}})
 	toAllReply := publishTo(t, bobAdapter, "general", Outgoing{Type: "answer", Body: envelope.Body{Text: "hello"}, ReplyTo: question, Targets: []string{envelope.TargetAll}})
+	// Without reply_to, a parent inferred from recent reading binds an ack to its author, but a
+	// new question is a new topic for @all.
+	if _, err := bobAdapter.Inbox(InboxQuery{}); err != nil { // reading sets the recent parent
+		t.Fatal(err)
+	}
+	inferredAck := publishTo(t, bobAdapter, "general", Outgoing{Type: "ack", Body: envelope.Body{Text: "on it"}})
+	newQuestion := publishTo(t, bobAdapter, "general", Outgoing{Type: "question", Body: envelope.Body{Text: "unrelated?"}})
 
 	want := map[string][]string{
 		dm: {bob}, question: {envelope.TargetAll}, mentioned: {carol},
 		reply: {alice}, explicit: {carol, alice}, toAllReply: {envelope.TargetAll},
+		inferredAck: {alice}, newQuestion: {envelope.TargetAll},
 	}
 	for id, targets := range want {
 		var got []string
