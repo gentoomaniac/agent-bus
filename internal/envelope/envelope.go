@@ -140,6 +140,11 @@ func Parse(payload []byte) (*Signed, error) {
 	if len(payload) > MaxRecordBytes {
 		return nil, fmt.Errorf("record is %d bytes, over the limit of %d", len(payload), MaxRecordBytes)
 	}
+	// Go's decoder keeps the last of duplicate keys while other readers may keep the first, so a
+	// record with a duplicate key could verify one value and show another: refuse it outright.
+	if err := checkNoDuplicateKeys(payload); err != nil {
+		return nil, fmt.Errorf("not a record: %w", err)
+	}
 	var stored record
 	if err := json.Unmarshal(payload, &stored); err != nil {
 		return nil, fmt.Errorf("not a record: %w", err)

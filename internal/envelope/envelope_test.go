@@ -185,3 +185,28 @@ func TestSignedRecordIsPlainJSON(t *testing.T) {
 		t.Errorf("unexpected record %s (%v)", payload, err)
 	}
 }
+
+func TestDuplicateKeysAreRefused(t *testing.T) {
+	public, private := identity.Generate()
+	payload, err := Sign(testEnvelope(public), private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	altered := strings.Replace(string(payload), `"body":`, `"body":{"title":"unsigned"},"body":`, 1)
+	if _, err := Parse([]byte(altered)); err == nil {
+		t.Fatal("a record with a duplicate key was accepted")
+	}
+}
+
+func TestCheckNoDuplicateKeys(t *testing.T) {
+	for _, ok := range []string{`{"a":{"x":1},"b":{"x":2}}`, `[{"a":1},{"a":2}]`, `{"a":[1,2,{"b":null}]}`} {
+		if err := checkNoDuplicateKeys([]byte(ok)); err != nil {
+			t.Errorf("%s: %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{`{"a":1,"a":2}`, `{"a":{"b":1,"b":2}}`, `[{"a":1,"a":1}]`, `{"body":1,"Body":2}`, `{"a":1} {}`} {
+		if checkNoDuplicateKeys([]byte(bad)) == nil {
+			t.Errorf("%s: nil, want error", bad)
+		}
+	}
+}

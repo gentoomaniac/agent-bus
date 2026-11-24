@@ -8,6 +8,7 @@ import (
 	"io"
 	"slices"
 	"strconv"
+	"strings"
 	"unicode/utf16"
 )
 
@@ -116,4 +117,57 @@ func writeString(out *bytes.Buffer, text string) {
 		}
 	}
 	out.WriteByte('"')
+}
+
+// checkNoDuplicateKeys walks the JSON value in raw and fails if any object repeats a key.
+func checkNoDuplicateKeys(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := walkNoDuplicates(decoder); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("unexpected data after the JSON value")
+	}
+	return nil
+}
+
+func walkNoDuplicates(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delim {
+	case '{':
+		seen := map[string]bool{}
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			// encoding/json matches struct fields case-insensitively, so "body" and "Body"
+			// count as the same key.
+			key, _ := keyToken.(string)
+			key = strings.ToLower(key)
+			if seen[key] {
+				return fmt.Errorf("duplicate key %q", key)
+			}
+			seen[key] = true
+			if err := walkNoDuplicates(decoder); err != nil {
+				return err
+			}
+		}
+	case '[':
+		for decoder.More() {
+			if err := walkNoDuplicates(decoder); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = decoder.Token() // the closing delimiter
+	return err
 }
