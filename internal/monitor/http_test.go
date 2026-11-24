@@ -45,41 +45,65 @@ func TestAPI(t *testing.T) {
 	defer server.Close()
 
 	var channels []Channel
-	getJSON(t, server, "/api/channels", &channels)
+	getJSON(t, server, "/api/v1/channels", &channels)
 	if len(channels) != 1 || channels[0].ID != "general" || channels[0].Messages != 1 {
 		t.Errorf("channels = %+v", channels)
 	}
 	var agents []Agent
-	getJSON(t, server, "/api/agents", &agents)
+	getJSON(t, server, "/api/v1/agents", &agents)
 	if len(agents) != 1 || agents[0].ID != alice.id {
 		t.Errorf("agents = %+v", agents)
 	}
 	var members []string
-	getJSON(t, server, "/api/members?channel=general", &members)
+	getJSON(t, server, "/api/v1/members?channel=general", &members)
 	if len(members) != 1 || members[0] != alice.id {
 		t.Errorf("members = %v", members)
 	}
 	var messages []Message
-	getJSON(t, server, "/api/messages?channel=general", &messages)
+	getJSON(t, server, "/api/v1/messages?channel=general", &messages)
 	if len(messages) != 1 || messages[0].Status != Verified || messages[0].Text != "hello" {
 		t.Errorf("messages = %+v", messages)
 	}
 	messages = nil
-	getJSON(t, server, "/api/messages?channel=general&after=1", &messages)
+	getJSON(t, server, "/api/v1/messages?channel=general&after=1", &messages)
 	if len(messages) != 0 {
 		t.Errorf("messages after the last = %+v", messages)
 	}
 	var status Status
-	getJSON(t, server, "/api/status", &status)
+	getJSON(t, server, "/api/v1/status", &status)
 	if status.CanSend || status.Note == "" {
 		t.Errorf("status = %+v, want read-only with a note", status)
 	}
 
-	if code := getJSON(t, server, "/api/members?channel=group:nope", &members).StatusCode; code != http.StatusNotFound {
+	if code := getJSON(t, server, "/api/v1/members?channel=group:nope", &members).StatusCode; code != http.StatusNotFound {
 		t.Errorf("members of an unknown channel: status %d, want 404", code)
 	}
-	if code := getJSON(t, server, "/api/messages?channel=general&after=x", &messages).StatusCode; code != http.StatusBadRequest {
+	if code := getJSON(t, server, "/api/v1/messages?channel=general&after=x", &messages).StatusCode; code != http.StatusBadRequest {
 		t.Errorf("messages with a bad cursor: status %d, want 400", code)
+	}
+}
+
+func TestErrorsAreJSONWithACode(t *testing.T) {
+	server := serve(runMonitor(t, newFakeBus(t)))
+	defer server.Close()
+	for path, want := range map[string]struct {
+		status int
+		code   string
+	}{
+		"/api/v1/members?channel=group:nope": {http.StatusNotFound, "unknown_channel"},
+		"/api/v1/messages?after=x":           {http.StatusBadRequest, "bad_request"},
+		"/api/status":                        {http.StatusNotFound, "not_found"}, // the unversioned paths are gone
+	} {
+		response, err := http.Get(server.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body struct{ Error, Code string }
+		json.NewDecoder(response.Body).Decode(&body)
+		response.Body.Close()
+		if response.StatusCode != want.status || body.Code != want.code || body.Error == "" {
+			t.Errorf("GET %s: status %d, body %+v, want %d %s with a message", path, response.StatusCode, body, want.status, want.code)
+		}
 	}
 }
 
@@ -106,7 +130,7 @@ func TestEventStreamDeliversNewMessages(t *testing.T) {
 	server := serve(monitor)
 	defer server.Close()
 
-	response, err := http.Get(server.URL + "/api/events")
+	response, err := http.Get(server.URL + "/api/v1/events")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +178,7 @@ func TestHandlerRefusesAForeignHostHeader(t *testing.T) {
 		"localhost":                     http.StatusForbidden,
 		"127.0.0.1:1":                   http.StatusForbidden,
 	} {
-		request, _ := http.NewRequest("GET", server.URL+"/api/status", nil)
+		request, _ := http.NewRequest("GET", server.URL+"/api/v1/status", nil)
 		request.Host = host
 		response, err := http.DefaultClient.Do(request)
 		if err != nil {

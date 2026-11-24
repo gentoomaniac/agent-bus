@@ -17,12 +17,12 @@ func TestRemovedAgentIsMarkedAndNotAMemberOfGeneral(t *testing.T) {
 	defer server.Close()
 
 	var agents []Agent
-	getJSON(t, server, "/api/agents", &agents)
+	getJSON(t, server, "/api/v1/agents", &agents)
 	if len(agents) != 2 || agents[0].Removed || !agents[1].Removed {
 		t.Errorf("agents = %+v, want only %s removed", agents, bob.id)
 	}
 	var members []string
-	getJSON(t, server, "/api/members?channel=general", &members)
+	getJSON(t, server, "/api/v1/members?channel=general", &members)
 	if len(members) != 1 || members[0] != alice.id {
 		t.Errorf("members = %v", members)
 	}

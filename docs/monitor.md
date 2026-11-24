@@ -55,7 +55,7 @@ Every flag has an environment variable, like the other commands.
 | `--reconnect-max`     | `BUS_RECONNECT_MAX`     | `30s`       | longest wait between reconnect attempts                  |
 
 The monitor starts even if the broker is down, and reconnects after every outage. While it is
-disconnected, `/api/status` says `"bus": "reconnecting"` and the page shows "bus disconnected,
+disconnected, `/api/v1/status` says `"bus": "reconnecting"` and the page shows "bus disconnected,
 reconnecting..." instead of "live"; what it has read stays visible. After the reconnect it reads on
 from the last sequence it stored, so nothing is missed or shown twice
 ([troubleshooting.md](troubleshooting.md#when-the-bus-is-down)).
@@ -164,14 +164,14 @@ JSON under `/api`, for the page and for `curl`.
 
 | Request                                                | Answer                                                       |
 |--------------------------------------------------------|--------------------------------------------------------------|
-| `GET /api/status`                                      | `bus` (`live` or `reconnecting`), `agent`, `can_send`, and a `note` when it cannot |
-| `GET /api/channels`                                    | channels with `id`, `kind`, `name`, message count            |
-| `GET /api/agents`                                      | registered agents                                            |
-| `GET /api/presence`                                    | every agent's `state`, `since`, `activity`, `workers`, `recent`, `pending` |
-| `GET /api/members?channel=<id>`                        | agent IDs                                                    |
-| `GET /api/messages?channel=<id>&after=<seq>&limit=<n>` | messages after a stream sequence, oldest first (max 1000)    |
-| `GET /api/events`                                      | server-sent events: `message` for every new message, `presence` for every presence record and every agent that went offline |
-| `POST /api/send`                                       | `{"to":{"kind":"agent\|group","name":...},"type":...,"targets":[...],"title":...,"text":...}` |
+| `GET /api/v1/status`                                      | `bus` (`live` or `reconnecting`), `agent`, `can_send`, and a `note` when it cannot |
+| `GET /api/v1/channels`                                    | channels with `id`, `kind`, `name`, message count            |
+| `GET /api/v1/agents`                                      | registered agents                                            |
+| `GET /api/v1/presence`                                    | every agent's `state`, `since`, `activity`, `workers`, `recent`, `pending` |
+| `GET /api/v1/members?channel=<id>`                        | agent IDs                                                    |
+| `GET /api/v1/messages?channel=<id>&after=<seq>&limit=<n>` | messages after a stream sequence, oldest first (max 1000)    |
+| `GET /api/v1/events`                                      | server-sent events: `message` for every new message, `presence` for every presence record and every agent that went offline |
+| `POST /api/v1/send`                                       | `{"to":{"kind":"agent\|group","name":...},"type":...,"targets":[...],"title":...,"text":...}` |
 
 Channel IDs are `general`, `group:<name>` and `dm:<agent>:<agent>` (the two agents in sorted order).
 

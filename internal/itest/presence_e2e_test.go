@@ -36,7 +36,7 @@ func (h *harness) runEvent(t *testing.T, agentBus, kind, hookJSON string) {
 
 func presenceFor(t *testing.T, server *httptest.Server, agentID string) monitor.Presence {
 	t.Helper()
-	for _, view := range getJSON[[]monitor.Presence](t, server, "/api/presence") {
+	for _, view := range getJSON[[]monitor.Presence](t, server, "/api/v1/presence") {
 		if view.Agent == agentID {
 			return view
 		}

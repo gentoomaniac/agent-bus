@@ -39,31 +39,41 @@ type Status struct {
 	Note    string `json:"note,omitempty"` // why it cannot send
 }
 
-// Handler serves the JSON API under /api and the event stream on the listen address. It has no
+// Handler serves the JSON API under /api/v1 and the event stream on the listen address. It has no
 // login: it shows all traffic and belongs on localhost (docs/monitor.md). It answers only requests
 // whose Host header is the listen address, localhost or 127.0.0.1 (with the port), so a web page
 // cannot reach it through a DNS name it controls that resolves to this machine (DNS rebinding).
 func (monitor *Monitor) Handler(listen string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, web, "web/index.html") })
-	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Status()) })
-	mux.HandleFunc("GET /api/channels", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Channels()) })
-	mux.HandleFunc("GET /api/agents", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Agents()) })
-	mux.HandleFunc("GET /api/presence", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Presences()) })
-	mux.HandleFunc("GET /api/members", monitor.serveMembers)
-	mux.HandleFunc("GET /api/messages", monitor.serveMessages)
-	mux.HandleFunc("GET /api/events", monitor.serveEvents)
-	mux.HandleFunc("POST /api/send", monitor.serveSend)
+	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Status()) })
+	mux.HandleFunc("GET /api/v1/channels", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Channels()) })
+	mux.HandleFunc("GET /api/v1/agents", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Agents()) })
+	mux.HandleFunc("GET /api/v1/presence", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Presences()) })
+	mux.HandleFunc("GET /api/v1/members", monitor.serveMembers)
+	mux.HandleFunc("GET /api/v1/messages", monitor.serveMessages)
+	mux.HandleFunc("GET /api/v1/events", monitor.serveEvents)
+	mux.HandleFunc("POST /api/v1/send", monitor.serveSend)
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
+	})
 
 	_, port, _ := net.SplitHostPort(listen)
 	allowedHosts := []string{strings.ToLower(listen), "localhost:" + port, "127.0.0.1:" + port}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !slices.Contains(allowedHosts, strings.ToLower(r.Host)) {
-			http.Error(w, "unexpected Host header", http.StatusForbidden)
+			writeError(w, http.StatusForbidden, "forbidden_host", "unexpected Host header")
 			return
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+// writeError answers with the API's one error shape: a message for people and a stable code for programs.
+func writeError(w http.ResponseWriter, status int, code string, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": message, "code": code})
 }
 
 func writeJSON(w http.ResponseWriter, value any) {
@@ -74,11 +84,11 @@ func writeJSON(w http.ResponseWriter, value any) {
 func (monitor *Monitor) serveMembers(w http.ResponseWriter, r *http.Request) {
 	members, err := monitor.Members(r.Context(), r.URL.Query().Get("channel"))
 	if errors.Is(err, ErrUnknownChannel) {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "unknown_channel", err.Error())
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeError(w, http.StatusBadGateway, "bus_unavailable", err.Error())
 		return
 	}
 	writeJSON(w, members)
@@ -91,7 +101,7 @@ func (monitor *Monitor) serveMessages(w http.ResponseWriter, r *http.Request) {
 	after, afterErr := parseUint(query.Get("after"), 0)
 	limit, limitErr := parseUint(query.Get("limit"), defaultMessageLimit)
 	if err := errors.Join(afterErr, limitErr); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 	messages := monitor.Messages(query.Get("channel"), after, int(min(limit, maxMessageLimit)))
@@ -112,24 +122,24 @@ func parseUint(text string, fallback uint64) (uint64, error) {
 // page on another origin cannot send without the browser asking this server first.
 func (monitor *Monitor) serveSend(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-Type") != "application/json" {
-		http.Error(w, "send wants Content-Type: application/json", http.StatusUnsupportedMediaType)
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "send wants Content-Type: application/json")
 		return
 	}
 	var request SendRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSendBytes))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 	id, err := monitor.Send(r.Context(), request)
 	switch {
 	case errors.Is(err, ErrReadOnly):
-		http.Error(w, err.Error(), http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "read_only", err.Error())
 	case errors.Is(err, ErrInvalidRequest):
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	case err != nil:
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeError(w, http.StatusBadGateway, "bus_unavailable", err.Error())
 	default:
 		writeJSON(w, map[string]string{"id": id})
 	}
@@ -137,11 +147,11 @@ func (monitor *Monitor) serveSend(w http.ResponseWriter, r *http.Request) {
 
 // serveEvents streams every new message as a server-sent event named "message" and every presence
 // change as one named "presence". The stream ends when the client leaves or falls too far behind;
-// the browser then reconnects and reads what it missed from /api/messages and /api/presence.
+// the browser then reconnects and reads what it missed from /api/v1/messages and /api/v1/presence.
 func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming is not supported", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "streaming is not supported")
 		return
 	}
 	messages, unsubscribe := monitor.Subscribe()

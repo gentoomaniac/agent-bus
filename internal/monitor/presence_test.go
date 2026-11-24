@@ -129,7 +129,7 @@ func TestPresenceIsServedAndStreamed(t *testing.T) {
 	server := serve(monitor)
 	defer server.Close()
 
-	response, err := http.Get(server.URL + "/api/events")
+	response, err := http.Get(server.URL + "/api/v1/events")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,8 +163,8 @@ func TestPresenceIsServedAndStreamed(t *testing.T) {
 	}
 
 	var views []Presence
-	getJSON(t, server, "/api/presence", &views)
+	getJSON(t, server, "/api/v1/presence", &views)
 	if len(views) != 1 || views[0].State != presence.Working {
-		t.Errorf("/api/presence = %+v", views)
+		t.Errorf("/api/v1/presence = %+v", views)
 	}
 }

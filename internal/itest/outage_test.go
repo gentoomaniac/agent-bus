@@ -60,7 +60,7 @@ func (h *harness) startMonitor(t *testing.T, busMonitor string) *httptest.Server
 
 // busState is what the monitor says about its connection to the bus, or "" while it does not answer.
 func busState(server *httptest.Server) string {
-	response, err := http.Get(server.URL + "/api/status")
+	response, err := http.Get(server.URL + "/api/v1/status")
 	if err != nil {
 		return ""
 	}
@@ -144,7 +144,7 @@ func TestBrokerOutage(t *testing.T) {
 			t.Errorf("wait_for_messages during the outage: error=%v %s", isError, text)
 		}
 		eventually(t, "the monitor to show the outage", func() bool { return busState(web) == monitor.BusReconnecting })
-		if shown := getJSON[[]monitor.Message](t, web, "/api/messages?channel="+monitorChannel); len(shown) != 1 {
+		if shown := getJSON[[]monitor.Message](t, web, "/api/v1/messages?channel="+monitorChannel); len(shown) != 1 {
 			t.Errorf("the monitor shows %d messages during the outage, want the one it had read", len(shown))
 		}
 	})

@@ -153,7 +153,10 @@ function el(tag, props = {}, ...children) {
 
 async function api(path, options) {
   const response = await fetch(path, options);
-  if (!response.ok) throw new Error((await response.text()).trim() || response.statusText);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || response.statusText);
+  }
   return response.json();
 }
 
@@ -162,7 +165,7 @@ async function api(path, options) {
 async function loadMessages(channelId) {
   const list = [];
   for (let after = 0; ; ) {
-    const page = await api(`/api/messages?channel=${encodeURIComponent(channelId)}&after=${after}&limit=${PAGE_SIZE}`);
+    const page = await api(`/api/v1/messages?channel=${encodeURIComponent(channelId)}&after=${after}&limit=${PAGE_SIZE}`);
     list.push(...page);
     if (page.length < PAGE_SIZE) break;
     after = page[page.length - 1].sequence;
@@ -184,9 +187,9 @@ function insertMessage(list, message) {
 async function refresh() {
   try {
     let views;
-    [state.channels, state.agents, state.status, views] = await Promise.all([api("/api/channels"), api("/api/agents"), api("/api/status"), api("/api/presence")]);
+    [state.channels, state.agents, state.status, views] = await Promise.all([api("/api/v1/channels"), api("/api/v1/agents"), api("/api/v1/status"), api("/api/v1/presence")]);
     state.presence = new Map(views.map((view) => [view.agent, view]));
-    if (state.selected) state.members = await api(`/api/members?channel=${encodeURIComponent(state.selected)}`).catch(() => []);
+    if (state.selected) state.members = await api(`/api/v1/members?channel=${encodeURIComponent(state.selected)}`).catch(() => []);
   } catch (error) {
     $("live").textContent = "error: " + error.message;
     return;
@@ -396,7 +399,7 @@ document.forms.composer.addEventListener("submit", async (event) => {
   const note = $("send-note");
   note.classList.remove("error");
   try {
-    await api("/api/send", {
+    await api("/api/v1/send", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to: { kind, name: nameParts.join(":") }, type: form.type.value, targets: form.target.value.startsWith("agent:") ? [] : [...state.picked], title: form.title.value, text: form.text.value }),
     });
@@ -421,7 +424,7 @@ function showLive() {
 }
 
 function connectEvents() {
-  const source = new EventSource("/api/events");
+  const source = new EventSource("/api/v1/events");
   source.onopen = async () => {
     state.feedOpen = true;
     showLive();

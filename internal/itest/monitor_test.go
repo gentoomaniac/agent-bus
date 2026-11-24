@@ -64,7 +64,7 @@ func waitForMonitorMessages(t *testing.T, server *httptest.Server, channel strin
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
 	for {
-		messages := getJSON[[]monitor.Message](t, server, "/api/messages?channel="+channel)
+		messages := getJSON[[]monitor.Message](t, server, "/api/v1/messages?channel="+channel)
 		if len(messages) >= n {
 			return messages
 		}
@@ -132,14 +132,14 @@ func TestMonitor(t *testing.T) {
 	t.Run("lists channels, agents and members", func(t *testing.T) {
 		waitForMonitorMessages(t, server, "general", 2)
 		var channels []string
-		for _, channel := range getJSON[[]monitor.Channel](t, server, "/api/channels") {
+		for _, channel := range getJSON[[]monitor.Channel](t, server, "/api/v1/channels") {
 			channels = append(channels, channel.ID)
 		}
 		if want := []string{"general", "group:lib-x", "dm:" + alice + ":" + bob}; !slices.Equal(channels, want) {
 			t.Errorf("channels = %v, want %v", channels, want)
 		}
 		var agents []string
-		for _, agent := range getJSON[[]monitor.Agent](t, server, "/api/agents") {
+		for _, agent := range getJSON[[]monitor.Agent](t, server, "/api/v1/agents") {
 			agents = append(agents, agent.ID)
 		}
 		if want := []string{alice, bob, monitorAgent}; !slices.Equal(agents, want) {
@@ -150,7 +150,7 @@ func TestMonitor(t *testing.T) {
 			"group:lib-x":             {bob},
 			"dm:" + alice + ":" + bob: {alice, bob},
 		} {
-			if members := getJSON[[]string](t, server, "/api/members?channel="+channel); !slices.Equal(members, want) {
+			if members := getJSON[[]string](t, server, "/api/v1/members?channel="+channel); !slices.Equal(members, want) {
 				t.Errorf("members of %s = %v, want %v", channel, members, want)
 			}
 		}
@@ -192,11 +192,11 @@ func TestMonitor(t *testing.T) {
 	})
 
 	t.Run("sending reaches the agent's inbox and shows as verified", func(t *testing.T) {
-		if status := getJSON[monitor.Status](t, server, "/api/status"); !status.CanSend || status.Agent != monitorAgent {
+		if status := getJSON[monitor.Status](t, server, "/api/v1/status"); !status.CanSend || status.Agent != monitorAgent {
 			t.Fatalf("status = %+v", status)
 		}
 		request := `{"to":{"kind":"agent","name":"` + bob + `"},"type":"question","title":"from the monitor","text":"are you there?"}`
-		response, err := http.Post(server.URL+"/api/send", "application/json", strings.NewReader(request))
+		response, err := http.Post(server.URL+"/api/v1/send", "application/json", strings.NewReader(request))
 		if err != nil {
 			t.Fatal(err)
 		}

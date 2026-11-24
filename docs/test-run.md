@@ -274,8 +274,8 @@ ssh -L 8080:127.0.0.1:8080 <broker-host>
 Check the API when the page looks wrong:
 
 ```sh
-curl -s http://127.0.0.1:8080/api/status
-curl -s http://127.0.0.1:8080/api/presence
+curl -s http://127.0.0.1:8080/api/v1/status
+curl -s http://127.0.0.1:8080/api/v1/presence
 ```
 
 ## 5. Scenarios
@@ -481,8 +481,8 @@ Where to look:
 | Broker                       | `podman logs agent-bus`                                                |
 | An agent's rejected mail     | `${BUS_CONFIG_DIR:-~/.config/agent-bus}/<agent-id>/alerts.log` on the agent's machine |
 | An adapter's own messages (connect, reconnect) | Claude Code's MCP log: `claude --debug`, or `/mcp` |
-| The monitor                  | `podman logs agent-bus-monitor`, and `curl -s http://127.0.0.1:8080/api/status` |
-| Presence as stored           | `curl -s http://127.0.0.1:8080/api/presence`                           |
+| The monitor                  | `podman logs agent-bus-monitor`, and `curl -s http://127.0.0.1:8080/api/v1/status` |
+| Presence as stored           | `curl -s http://127.0.0.1:8080/api/v1/presence`                           |
 
 Stop everything when you are done: close the sessions and run
 `podman rm -f agent-bus-monitor agent-bus` (add `podman volume rm agent-bus-config agent-bus-data`

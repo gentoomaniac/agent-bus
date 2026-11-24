@@ -151,7 +151,7 @@ host's loopback only.
 
 ```sh
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
-curl -s http://127.0.0.1:8080/api/status
+curl -s http://127.0.0.1:8080/api/v1/status
 ```
 
 Open <http://127.0.0.1:8080>. Use host port 8080: the monitor only answers requests whose `Host`

@@ -148,7 +148,7 @@ func TestSendEndpoint(t *testing.T) {
 	server := serve(monitorWithSender(t, sender))
 	defer server.Close()
 	post := func(contentType, body string) (*http.Response, string) {
-		response, err := http.Post(server.URL+"/api/send", contentType, bytes.NewBufferString(body))
+		response, err := http.Post(server.URL+"/api/v1/send", contentType, bytes.NewBufferString(body))
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -113,7 +113,7 @@ func TestAgentRemoval(t *testing.T) {
 
 		var removed []string
 		for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline) && len(removed) == 0; time.Sleep(100 * time.Millisecond) {
-			for _, agent := range getJSON[[]monitor.Agent](t, server, "/api/agents") {
+			for _, agent := range getJSON[[]monitor.Agent](t, server, "/api/v1/agents") {
 				if agent.Removed {
 					removed = append(removed, agent.ID)
 				}
