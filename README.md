@@ -67,6 +67,10 @@ client library (`internal/itest` also does, to test against a real server).
 `internal/identity` also reads the private key back and takes the identity lock (design.md §3): an
 exclusive `flock` on `<agent-dir>/lock` holding the owner's PID, released by the OS when the process
 ends.
+`internal/adapter` is the adapter core. Its handled set (design.md §4) is the append-only file
+`<agent-dir>/handled.jsonl`, synced to disk before the broker is acked: verified messages by
+(destination, sender, ID) with a digest of the signed record, rejected deliveries by stream sequence
+only. No SQLite: a file read into memory at start is enough for one identity.
 `internal/trust` is the `known_agents` file of an identity (pinned public keys, design.md §6) and
 trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name
 a key in it that is not revoked, and the key is pinned (`tofu`) after the signature verified. A
