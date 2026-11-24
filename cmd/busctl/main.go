@@ -34,6 +34,11 @@ type CLI struct {
 
 	Register RegisterCmd `cmd:"" help:"Register an agent identity: key, credentials, read cursors, access and registry entry."`
 
+	Agent struct {
+		List   AgentListCmd   `cmd:"" help:"List the registered agents with their status, active or removed."`
+		Remove AgentRemoveCmd `cmd:"" help:"Remove an agent: delete its account and consumers and revoke its key. The ID is never reused."`
+	} `cmd:"" help:"Registered agents."`
+
 	Channel struct {
 		Create ChannelCreateCmd `cmd:"" help:"Create a group channel and add it to the catalogue."`
 		Join   ChannelJoinCmd   `cmd:"" help:"Let a registered agent read a group channel from now on."`

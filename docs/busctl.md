@@ -102,7 +102,8 @@ It
   ([broker.md](broker.md#reloads)).
 
 Keys are per machine and never copied: registering an ID that exists on this machine or on the bus
-is an error. `human@<owner>` is not supported yet.
+is an error, and so is the ID of a removed agent (see [agent remove](#agent-remove)).
+`human@<owner>` is not supported yet.
 
 The account is created last. A registration that fails before it is requested removes its
 directory again. After that point the server may have applied the account even if the
@@ -133,6 +134,36 @@ the catalogue, so create the channel first. Then start the adapter with `--group
 ```sh
 bin/busctl --direct channel join api-client@alice lib-x
 ```
+
+### agent list
+
+Lists the registered agents with their status and key fingerprint: `active`, or `removed`
+(a tombstone, see below).
+
+```sh
+bin/busctl --direct agent list
+```
+
+### agent remove
+
+Removes an agent. It does three things, each safe to repeat:
+
+- marks the agent's current key `revoked` (with `revoked_at`) and the record `removed_at` in the
+  `registry`. The record and the key history stay as a tombstone and are never deleted, so the ID
+  is never registered again and receivers learn that the key is revoked,
+- deletes the agent's account from `auth.conf` and waits for the server to confirm the reload,
+  which closes the agent's live connection,
+- deletes its read cursors (DM, `general` and every group channel).
+
+It reports the removal complete only when all three succeeded. After a partial failure it names
+the steps that are left; run the same command again. Messages the agent sent stay in the log.
+
+```sh
+bin/busctl --direct agent remove api-client@alice
+```
+
+Other agents keep trusting the removed key until they refresh their directory
+([directory export](#directory-export)).
 
 ## Not built yet
 

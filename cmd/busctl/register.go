@@ -44,6 +44,10 @@ func (cmd *RegisterCmd) Run(ctx context.Context, cli *CLI) (err error) {
 	}
 	defer admin.Close()
 
+	if err := refuseRemoved(ctx, admin, cmd.AgentID); err != nil {
+		return err
+	}
+
 	if err := os.Mkdir(dir, files.DirMode); errors.Is(err, fs.ErrExist) {
 		// The account is created last, so without it the earlier registration did not complete.
 		registered, err := admin.AccountExists(ctx, cmd.AgentID)
