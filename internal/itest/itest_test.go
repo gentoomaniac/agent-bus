@@ -301,11 +301,13 @@ func TestMilestone1a(t *testing.T) {
 	h := startBus(t)
 
 	t.Run("the server accepts TLS clients that trust the bus CA only", func(t *testing.T) {
-		if _, err := nats.Connect(h.address, nats.UserInfo(bus.AgentToken(alice), "x"), nats.NoReconnect()); err == nil {
-			t.Error("a client without the CA connected")
+		// Valid credentials, so only the certificate check can be what refuses the connection.
+		var unknownAuthority x509.UnknownAuthorityError
+		if err := h.connectTrusting(nil); !errors.As(err, &unknownAuthority) {
+			t.Errorf("a client trusting the system's CAs only: %v, want a certificate verification error", err)
 		}
-		if err := h.connectTrusting(x509.NewCertPool()); err == nil {
-			t.Error("a client with an empty trust pool connected")
+		if err := h.connectTrusting(x509.NewCertPool()); !errors.As(err, &unknownAuthority) {
+			t.Errorf("a client with an empty trust pool: %v, want a certificate verification error", err)
 		}
 		bad := h.agentConnection(alice)
 		bad.Password = "wrong"
@@ -979,9 +981,7 @@ func TestMilestone1a(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if agent.pullNoWait(groupConsumer) {
-			t.Error("the revoked grant still works on the live connection")
-		}
+		agent.denyRequest(t, "$JS.API.CONSUMER.MSG.NEXT.BUS."+groupConsumer, `{"batch":1,"no_wait":true}`)
 		if !agent.pullNoWait("erin_alice__dm") {
 			t.Error("the revoke took away a grant it should not")
 		}
@@ -1025,7 +1025,8 @@ func TestMilestone1a(t *testing.T) {
 // connectTrusting tries to connect trusting only the given pool and returns the error, or nil if
 // it connected.
 func (h *harness) connectTrusting(pool *x509.CertPool) error {
-	conn, err := nats.Connect(h.address, nats.UserInfo(bus.AgentToken(alice), "x"), nats.NoReconnect(),
+	connection := h.agentConnection(alice)
+	conn, err := nats.Connect(h.address, nats.UserInfo(connection.User, connection.Password), nats.NoReconnect(),
 		nats.Secure(&tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}))
 	if err == nil {
 		conn.Close()
