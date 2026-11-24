@@ -37,3 +37,7 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
    `agents.dm.<name>.<owner>`, the SCRAM user, the ACLs from design.md §4, and publishes the public
    key and fingerprint to `agents.registry`. Keys are per machine and never copied: registering an
    ID that exists on this machine or on the bus is an error. `human@<owner>` is not supported yet.
+
+## Tests
+
+`make check` needs no broker. `make itest` starts its own broker pod (`agent-bus-itest-<pid>`, random port, temporary config directory, removed afterwards) with `deploy/broker.sh` and checks: no plaintext or untrusted-CA connections, an agent reads its own DM topic but is denied the other agent's, no topic auto-creation, topic layout, registry and catalogue contents. It needs podman and the pinned Redpanda image (`podman pull docker.io/redpandadata/redpanda:v26.1.21`).

@@ -28,8 +28,8 @@ type Admin struct {
 	kafka *kgo.Client
 }
 
-// NewAdmin connects lazily; the first request opens the TLS connection.
-func NewAdmin(conn Connection) (*Admin, error) {
+// NewClient connects lazily; the first request opens the TLS connection.
+func NewClient(conn Connection, extraOpts ...kgo.Opt) (*kgo.Client, error) {
 	caPEM, err := os.ReadFile(conn.CACertPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading CA certificate: %w", err)
@@ -38,11 +38,17 @@ func NewAdmin(conn Connection) (*Admin, error) {
 	if !roots.AppendCertsFromPEM(caPEM) {
 		return nil, fmt.Errorf("%s contains no certificate", conn.CACertPath)
 	}
-	kafka, err := kgo.NewClient(
+	opts := []kgo.Opt{
 		kgo.SeedBrokers(conn.Address),
 		kgo.DialTLSConfig(&tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}),
 		kgo.SASL(scram.Auth{User: conn.User, Pass: conn.Password}.AsSha256Mechanism()),
-	)
+	}
+	return kgo.NewClient(append(opts, extraOpts...)...)
+}
+
+// NewAdmin connects like NewClient, for the admin principal's management calls.
+func NewAdmin(conn Connection) (*Admin, error) {
+	kafka, err := NewClient(conn)
 	if err != nil {
 		return nil, err
 	}
