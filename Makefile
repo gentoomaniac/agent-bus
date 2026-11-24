@@ -26,6 +26,7 @@ CONTAINER ?= $(shell command -v docker || command -v podman)
 IMAGE_PLATFORM := linux/$(shell go env GOARCH)
 
 image:
+	@test -n "$(CONTAINER)" || { echo "make image needs docker or podman" >&2; exit 1; }
 	rm -rf bin/image
 	mkdir -p bin/image/$(IMAGE_PLATFORM) bin/image/deploy
 	CGO_ENABLED=0 GOOS=linux go build -trimpath -o bin/image/$(IMAGE_PLATFORM)/ ./cmd/busctl ./cmd/agent-bus ./cmd/bus-monitor

@@ -578,7 +578,8 @@ func (adapter *Adapter) Run(ctx context.Context, report func(error)) error {
 			report(err)
 		}
 		// The connection buffers nothing while it is down, so an InProgress would only fail with
-		// "outbound buffer limit exceeded"; it is sent at the first pass after the reconnect.
+		// "outbound buffer limit exceeded"; the next keep-alive after the reconnect is sent when its
+		// interval is due. A drop between this check and the send is reported once.
 		if time.Since(lastKeepAlive) >= keepAliveInterval && adapter.config.Transport.Unavailable() == nil {
 			adapter.mu.Lock()
 			err := adapter.inbox.keepAlive(ctx)

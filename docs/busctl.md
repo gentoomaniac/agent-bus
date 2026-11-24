@@ -181,7 +181,7 @@ Writes the registry's record of every agent, removed ones included, to a directo
 `<token>.json`. It is the source of the agents' local `directory/`.
 
 ```sh
-bin/busctl --direct directory export /tmp/directory
+busctl --direct directory export /config/directory   # inside the container (the alias); the files land on the config volume
 ```
 
 To sync it to another machine, export it into the container's own `/config/directory` and stream

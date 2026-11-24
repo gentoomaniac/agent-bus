@@ -131,7 +131,7 @@ Also, a post to a group nobody created is stored and never read.
 Symptom: `register` or `channel join` fails while testing or reloading the server.
 
 - The test uses `nats-server -t`: `--nats-server` (or `BUS_NATS_SERVER`) must name an existing
-  binary: in the container it is set by the image; outside Docker, by default `~/.config/agent-bus/bin/nats-server` (`deploy/nats.sh install`, [development.md](development.md#running-the-broker-without-docker)).
+  binary: in the container it is set by the image; outside Docker, see [development.md](development.md#running-the-broker-without-docker).
 - The server must be running, with its pid file in `nats/`, and its monitoring endpoint must
   answer at `--monitor-url` (default `http://127.0.0.1:8222`). Check `nats/nats-server.log`.
 - An invalid candidate is refused before it replaces `auth.conf`; the old file stays in force.
