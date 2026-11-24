@@ -21,10 +21,20 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body { background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif; }
-  #app { display: grid; grid-template-columns: 260px minmax(0, 1fr) 220px; height: 100%; }
+  :root { --sidebar-w: 260px; --members-w: 220px; --handle-w: 6px; }
+  #app { display: grid; grid-template-columns: var(--sidebar-w) var(--handle-w) minmax(0, 1fr) var(--handle-w) var(--members-w); height: 100%; }
+  #app.sidebar-hidden { --sidebar-w: 0px; }
+  #app.members-hidden { --members-w: 0px; }
+  aside { min-width: 0; overflow-x: hidden; }
+  .handle { background: var(--panel); cursor: col-resize; touch-action: none; position: relative; }
+  .handle::after { content: ""; position: absolute; inset: 0 2px; background: var(--border); }
+  .handle:hover::after, .handle:focus-visible::after, .handle.dragging::after { background: var(--accent); }
+  .handle.collapsed { cursor: default; pointer-events: none; }
+  body.resizing { cursor: col-resize; user-select: none; }
+  .toggle { padding: 1px 8px; font-size: 12px; background: var(--bg); color: var(--text); border-color: var(--border); }
+  .toggle[aria-pressed=false] { color: var(--muted); }
   aside, main { background: var(--panel); min-height: 0; display: flex; flex-direction: column; }
-  #sidebar { border-right: 1px solid var(--border); overflow-y: auto; }
-  #members-panel { border-left: 1px solid var(--border); overflow-y: auto; }
+  #sidebar, #members-panel { overflow-y: auto; }
   h1, h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 16px 12px 6px; }
   h1 { margin-top: 12px; color: var(--text); font-size: 14px; text-transform: none; letter-spacing: 0; }
   ul { list-style: none; margin: 0; padding: 0; }
@@ -91,12 +101,9 @@
   #login-form { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: min(320px, 90vw); }
   #login-note { font-size: 12px; color: var(--bad); min-height: 1.4em; }
   #banner { background: var(--warn-bg); color: var(--warn); padding: 4px 16px; font-size: 12px; }
-  header .right { display: flex; gap: 12px; align-items: baseline; }
+  header .right, header .left { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+  header .left { flex: 1; }
   #logout { padding: 1px 8px; font-size: 12px; background: var(--bg); color: var(--text); border-color: var(--border); }
-  @media (max-width: 900px) {
-    #app { grid-template-columns: 200px minmax(0, 1fr); }
-    #members-panel { display: none; }
-  }
 </style>
 </head>
 <body>
@@ -115,11 +122,16 @@
     <h2>Direct messages</h2><ul id="dms"></ul>
     <h2>Agents</h2><ul id="agents"></ul>
   </aside>
+  <div class="handle" id="sidebar-handle" role="separator" aria-orientation="vertical" aria-label="Resize the channel list" tabindex="0" title="Drag to resize, double-click to reset"></div>
   <main>
     <div id="banner" hidden>No password set: anyone who can reach this page sees all traffic. Set one with <code>busctl monitor password</code>.</div>
     <header>
-      <div><span class="title" id="channel-title">Select a channel</span> <span class="muted" id="channel-description"></span></div>
-      <div class="right"><span id="live">connecting...</span><button id="logout" type="button" hidden>Log out</button></div>
+      <div class="left">
+        <button class="toggle" id="toggle-sidebar" type="button" title="Show or hide the channel list" aria-pressed="true">Channels</button>
+        <div><span class="title" id="channel-title">Select a channel</span> <span class="muted" id="channel-description"></span></div>
+      </div>
+      <div class="right"><span id="live">connecting...</span><button id="logout" type="button" hidden>Log out</button>
+        <button class="toggle" id="toggle-members" type="button" title="Show or hide the members panel" aria-pressed="true">Members</button></div>
     </header>
     <div id="messages"></div>
     <form id="composer">
@@ -133,6 +145,7 @@
       <div class="row"><button type="submit">Send</button><span id="send-note"></span></div>
     </form>
   </main>
+  <div class="handle" id="members-handle" role="separator" aria-orientation="vertical" aria-label="Resize the members panel" tabindex="0" title="Drag to resize, double-click to reset"></div>
   <aside id="members-panel">
     <h2>Members</h2><ul id="members"></ul>
     <div id="agent-detail"></div>
@@ -181,6 +194,72 @@ async function api(path, options) {
   }
   return response.json();
 }
+
+// ---- layout ----
+
+// The side panels' widths and whether they are shown are kept in this browser. The page works
+// without the storage (private window, blocked site data).
+const LAYOUT_KEY = "bus-monitor-layout";
+const MIN_MAIN_PX = 280;
+const PANELS = {
+  sidebar: { min: 160, max: 520, fallback: 260, side: 1 },
+  members: { min: 140, max: 420, fallback: 220, side: -1 },
+};
+// Narrow windows start without the members panel.
+const layout = { sidebar: PANELS.sidebar.fallback, members: PANELS.members.fallback, sidebarHidden: false, membersHidden: innerWidth < 900 };
+
+try { Object.assign(layout, JSON.parse(localStorage.getItem(LAYOUT_KEY)) || {}); } catch (error) { /* keep the defaults */ }
+
+function applyLayout() {
+  const app = $("app");
+  for (const name of Object.keys(PANELS)) {
+    const hidden = layout[name + "Hidden"];
+    app.style.setProperty("--" + name + "-w", layout[name] + "px");
+    app.classList.toggle(name + "-hidden", hidden);
+    $(name + "-handle").classList.toggle("collapsed", hidden);
+    $("toggle-" + name).setAttribute("aria-pressed", String(!hidden));
+  }
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch (error) { /* not remembered */ }
+}
+
+// A panel may not squeeze the messages below MIN_MAIN_PX or grow past its own maximum.
+function clampWidth(name, width) {
+  const panel = PANELS[name];
+  const other = name === "sidebar" ? "members" : "sidebar";
+  const otherUsed = layout[other + "Hidden"] ? 0 : layout[other];
+  const room = innerWidth - otherUsed - MIN_MAIN_PX - 2 * 6;
+  return Math.round(Math.max(panel.min, Math.min(panel.max, room, width)));
+}
+
+for (const [name, panel] of Object.entries(PANELS)) {
+  const handle = $(name + "-handle");
+  const resize = (width) => { layout[name] = clampWidth(name, width); applyLayout(); };
+  handle.addEventListener("pointerdown", (event) => {
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add("dragging");
+    document.body.classList.add("resizing");
+    const startX = event.clientX, startWidth = layout[name];
+    const move = (moveEvent) => resize(startWidth + panel.side * (moveEvent.clientX - startX));
+    const stop = () => {
+      handle.classList.remove("dragging");
+      document.body.classList.remove("resizing");
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", stop);
+      handle.removeEventListener("pointercancel", stop);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
+  });
+  handle.addEventListener("dblclick", () => resize(panel.fallback));
+  handle.addEventListener("keydown", (event) => {
+    const step = { ArrowLeft: -16, ArrowRight: 16 }[event.key];
+    if (step) { event.preventDefault(); resize(layout[name] + panel.side * step); }
+  });
+  $("toggle-" + name).addEventListener("click", () => { layout[name + "Hidden"] = !layout[name + "Hidden"]; applyLayout(); });
+}
+addEventListener("resize", () => { for (const name of Object.keys(PANELS)) layout[name] = clampWidth(name, layout[name]); applyLayout(); });
+applyLayout();
 
 // ---- login ----
 
