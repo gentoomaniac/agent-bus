@@ -1,4 +1,4 @@
-.PHONY: check fmt-check vet test itest
+.PHONY: check fmt-check vet test
 
 check: fmt-check vet test
 
@@ -10,7 +10,3 @@ vet:
 
 test:
 	go test ./...
-
-# Needs podman and starts and stops its own pod (see internal/itest).
-itest:
-	nice go test -tags integration -timeout 10m -count=1 ./internal/itest/
