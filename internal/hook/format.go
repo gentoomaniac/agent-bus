@@ -22,6 +22,21 @@ func StopOutput(reply Reply) string {
 	return marshal(map[string]any{"decision": "block", "reason": reason})
 }
 
+// PluginOutput is what a plugin that sends the prompt itself needs: the text of the notice and
+// the IDs of the messages it covers, or "" when there is no new mail.
+func PluginOutput(reply Reply) string {
+	if len(reply.Mail) == 0 {
+		return ""
+	}
+	var decision struct{ Reason string }
+	_ = json.Unmarshal([]byte(StopOutput(reply)), &decision)
+	ids := make([]string, len(reply.Mail))
+	for i, mail := range reply.Mail {
+		ids[i] = mail.ID
+	}
+	return marshal(map[string]any{"reason": decision.Reason, "ids": ids})
+}
+
 // SessionStartOutput is the SessionStart hook's JSON with a summary of the unread mail as added
 // context, or "" when there is none.
 func SessionStartOutput(reply Reply) string {

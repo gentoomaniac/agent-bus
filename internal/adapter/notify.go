@@ -17,6 +17,29 @@ type notifications struct {
 // and marks them told, plus the total number of unread messages. During the cooldown after the last notification it returns
 // no new mail and leaves it un-notified for the next call.
 func (adapter *Adapter) NewMail() (fresh []Message, unread int, err error) {
+	return adapter.newMail(true)
+}
+
+// PeekNewMail is NewMail without marking anything told, for a caller that marks (MarkNotified)
+// only once it has delivered the notice.
+func (adapter *Adapter) PeekNewMail() (fresh []Message, unread int, err error) {
+	return adapter.newMail(false)
+}
+
+// MarkNotified marks the messages told and starts the cooldown, like NewMail would have.
+func (adapter *Adapter) MarkNotified(ids []string) {
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	if adapter.notifications.notified == nil {
+		adapter.notifications.notified = map[string]bool{}
+	}
+	for _, id := range ids {
+		adapter.notifications.notified[id] = true
+	}
+	adapter.notifications.lastAt = adapter.config.Now()
+}
+
+func (adapter *Adapter) newMail(mark bool) (fresh []Message, unread int, err error) {
 	if err := adapter.Ready(); err != nil {
 		return nil, 0, err
 	}
@@ -24,8 +47,8 @@ func (adapter *Adapter) NewMail() (fresh []Message, unread int, err error) {
 	defer adapter.mu.Unlock()
 	now := adapter.config.Now()
 	if now.Sub(adapter.notifications.lastAt) >= notifyCooldown {
-		fresh = adapter.markNotified(false)
-		if len(fresh) > 0 {
+		fresh = adapter.markNotified(false, mark)
+		if mark && len(fresh) > 0 {
 			adapter.notifications.lastAt = now
 		}
 	}
@@ -40,12 +63,12 @@ func (adapter *Adapter) UnreadSummary() ([]Message, error) {
 	}
 	adapter.mu.Lock()
 	defer adapter.mu.Unlock()
-	return adapter.markNotified(true), nil
+	return adapter.markNotified(true, true), nil
 }
 
 // markNotified marks the buffered messages that target the agent told and returns the new ones, or
 // all of them when includeTold is set. The caller holds mu.
-func (adapter *Adapter) markNotified(includeTold bool) []Message {
+func (adapter *Adapter) markNotified(includeTold, mark bool) []Message {
 	if adapter.notifications.notified == nil {
 		adapter.notifications.notified = map[string]bool{}
 	}
@@ -58,7 +81,9 @@ func (adapter *Adapter) markNotified(includeTold bool) []Message {
 		if includeTold || !adapter.notifications.notified[id] {
 			listed = append(listed, *message)
 		}
-		adapter.notifications.notified[id] = true
+		if mark {
+			adapter.notifications.notified[id] = true
+		}
 	}
 	return listed
 }

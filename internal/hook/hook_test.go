@@ -62,6 +62,7 @@ type fakeSession struct {
 	err    error
 	asked  []string
 	events []presence.Event
+	marked []string
 	titled string
 }
 
@@ -78,6 +79,15 @@ func (session *fakeSession) UnreadSummary() ([]adapter.Message, error) {
 func (session *fakeSession) messages() []adapter.Message {
 	body := envelope.Body{Title: session.titled, Text: "first line\nsecond"}
 	return []adapter.Message{{Envelope: envelope.Envelope{From: "bob@alice", Type: "question", Body: body}}}
+}
+
+func (session *fakeSession) PeekNewMail() ([]adapter.Message, int, error) {
+	session.asked = append(session.asked, PeekMail)
+	return session.messages(), 4, session.err
+}
+
+func (session *fakeSession) MarkNotified(ids []string) {
+	session.marked = append(session.marked, ids...)
 }
 
 func (session *fakeSession) Event(event presence.Event) {
@@ -98,7 +108,7 @@ func TestAskReachesTheSocketOfItsOwnParent(t *testing.T) {
 	}
 
 	reply, ok := Ask(dir, NewMail)
-	if !ok || reply.Unread != 4 || len(reply.Mail) != 1 || reply.Mail[0] != (Mail{"bob@alice", "question", "the title"}) {
+	if !ok || reply.Unread != 4 || len(reply.Mail) != 1 || reply.Mail[0] != (Mail{From: "bob@alice", Type: "question", Title: "the title"}) {
 		t.Errorf("new-mail reply = %+v, %v", reply, ok)
 	}
 	session.titled = ""
@@ -113,6 +123,34 @@ func TestAskReachesTheSocketOfItsOwnParent(t *testing.T) {
 	}
 	if _, ok := Ask(dir, NewMail); ok {
 		t.Error("an answer after stop")
+	}
+}
+
+func TestPluginOutputCarriesTheIDsAndMarkingIsASeparateStep(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sockets")
+	session := &fakeSession{titled: "the title"}
+	stop, err := Listen(dir, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	reply, ok := Ask(dir, PeekMail)
+	var output struct {
+		Reason string
+		IDs    []string
+	}
+	if err := json.Unmarshal([]byte(PluginOutput(reply)), &output); err != nil || !ok {
+		t.Fatalf("output %q, %v, %v", PluginOutput(reply), err, ok)
+	}
+	if !strings.Contains(output.Reason, "`inbox`") || len(output.IDs) != 1 || len(session.marked) != 0 {
+		t.Errorf("output = %+v, marked before the prompt was delivered: %v", output, session.marked)
+	}
+	if !ConfirmTold(dir, output.IDs) || len(session.marked) != 1 {
+		t.Errorf("marked = %v", session.marked)
+	}
+	if PluginOutput(Reply{}) != "" {
+		t.Error("plugin output without mail")
 	}
 }
 

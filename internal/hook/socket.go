@@ -25,14 +25,16 @@ const (
 	eventTimeout = 500 * time.Millisecond
 
 	// Requests: what a hook asks of the adapter.
-	NewMail = "new-mail" // mail not told yet (Stop hook)
-	Summary = "summary"  // all unread mail (SessionStart hook)
-	event   = "event"    // a presence event; the reply is empty
+	NewMail  = "new-mail"  // mail not told yet (Stop hook)
+	PeekMail = "peek-mail" // the same, but not marked told until MarkTold
+	Summary  = "summary"   // all unread mail (SessionStart hook)
+	MarkTold = "mark-told" // mark messages told after the notice was delivered; the reply is empty
+	event    = "event"     // a presence event; the reply is empty
 )
 
 // Mail is one message as a hook shows it. The title is peer data and untrusted.
 type Mail struct {
-	From, Type, Title string
+	ID, From, Type, Title string
 }
 
 // Reply is what the adapter tells a hook.
@@ -44,12 +46,15 @@ type Reply struct {
 type request struct {
 	Op    string
 	Event *presence.Event `json:",omitempty"`
+	IDs   []string        `json:",omitempty"` // for MarkTold
 }
 
 // Session is the adapter and the presence publisher as the hooks see them.
 type Session interface {
 	NewMail() (fresh []adapter.Message, unread int, err error)
 	UnreadSummary() ([]adapter.Message, error)
+	PeekNewMail() (fresh []adapter.Message, unread int, err error)
+	MarkNotified(ids []string)
 	Event(presence.Event)
 }
 
@@ -106,6 +111,12 @@ func serve(connection net.Conn, session Session) {
 	switch asked.Op {
 	case NewMail:
 		messages, unread, err = session.NewMail()
+	case PeekMail:
+		messages, unread, err = session.PeekNewMail()
+	case MarkTold:
+		session.MarkNotified(asked.IDs)
+		json.NewEncoder(connection).Encode(Reply{})
+		return
 	case Summary:
 		messages, err = session.UnreadSummary()
 		unread = len(messages)
@@ -123,7 +134,7 @@ func serve(connection net.Conn, session Session) {
 	}
 	reply := Reply{Unread: unread}
 	for _, message := range messages {
-		reply.Mail = append(reply.Mail, Mail{From: message.Envelope.From, Type: message.Envelope.Type, Title: titleOf(message)})
+		reply.Mail = append(reply.Mail, Mail{ID: message.Envelope.ID, From: message.Envelope.From, Type: message.Envelope.Type, Title: titleOf(message)})
 	}
 	json.NewEncoder(connection).Encode(reply)
 }
@@ -141,6 +152,13 @@ func titleOf(message adapter.Message) string {
 // socket in dir. It returns false when there is none or it does not answer.
 func Ask(dir, op string) (Reply, bool) {
 	return ask(dir, request{Op: op}, connectionTimeout)
+}
+
+// ConfirmTold tells the adapter of this process's session that the notice for these messages was
+// delivered, and says whether it got there.
+func ConfirmTold(dir string, ids []string) bool {
+	_, ok := ask(dir, request{Op: MarkTold, IDs: ids}, connectionTimeout)
+	return ok
 }
 
 // Send tells the adapter of this process's session about a presence event, and says whether it

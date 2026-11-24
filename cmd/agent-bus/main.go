@@ -159,16 +159,24 @@ func (cmd *MCPCmd) Run(ctx context.Context, cli *CLI, session *adapter.Adapter) 
 }
 
 type PendingCmd struct {
-	Format string `help:"hook: the Stop hook's decision. session-start: the SessionStart hook's context." required:"" enum:"hook,session-start"`
+	Format string   `help:"hook: the Stop hook's decision. session-start: the SessionStart hook's context. plugin: {reason, ids} for a plugin that sends the prompt itself; nothing is marked told until --mark." default:"hook" enum:"hook,session-start,plugin"`
+	Mark   []string `help:"Mark these message IDs told, after a plugin delivered the notice, and print nothing."`
 }
 
 // Run prints nothing and succeeds unless there is mail to report: a hook must never fail its
 // session. It does not read the hook's stdin (so stop_hook_active is not consulted): a message is
 // reported once, so a Stop hook that fires again after its own block finds nothing new.
 func (cmd *PendingCmd) Run() error {
+	if len(cmd.Mark) > 0 {
+		hook.ConfirmTold(hook.Dir(), cmd.Mark)
+		return nil
+	}
 	op, format := hook.NewMail, hook.StopOutput
-	if cmd.Format == "session-start" {
+	switch cmd.Format {
+	case "session-start":
 		op, format = hook.Summary, hook.SessionStartOutput
+	case "plugin":
+		op, format = hook.PeekMail, hook.PluginOutput
 	}
 	if reply, ok := hook.Ask(hook.Dir(), op); ok {
 		if output := format(reply); output != "" {

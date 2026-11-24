@@ -39,6 +39,35 @@ func TestNewMailNotifiesEachMessageOnceAndHonoursTheCooldown(t *testing.T) {
 	}
 }
 
+func TestPeekNewMailMarksNothingUntilMarkNotified(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob)
+	first, _ := a.Send(context.Background(), bob, text("one"))
+	poll(t, bobAdapter)
+
+	for range 2 {
+		if fresh, _, _ := bobAdapter.PeekNewMail(); len(fresh) != 1 || fresh[0].Envelope.ID != first {
+			t.Fatalf("a peek must keep showing the mail: %v", fresh)
+		}
+	}
+	bobAdapter.MarkNotified([]string{first})
+	if fresh, _, _ := bobAdapter.PeekNewMail(); len(fresh) != 0 {
+		t.Errorf("told mail still new: %v", fresh)
+	}
+	second, _ := a.Send(context.Background(), bob, text("two"))
+	poll(t, bobAdapter)
+	if fresh, _, _ := bobAdapter.PeekNewMail(); len(fresh) != 0 {
+		t.Errorf("the cooldown after MarkNotified was not honoured: %v", fresh)
+	}
+	b.now = b.now.Add(notifyCooldown + time.Second)
+	if fresh, _, _ := bobAdapter.PeekNewMail(); len(fresh) != 1 || fresh[0].Envelope.ID != second {
+		t.Errorf("after the cooldown: %v", fresh)
+	}
+}
+
 func TestUnreadSummaryListsToldMailToo(t *testing.T) {
 	b := newTestBus(t)
 	b.register(alice)
