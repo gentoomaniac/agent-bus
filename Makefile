@@ -21,8 +21,8 @@ itest: bin/nats-server
 
 # The central image for this machine's architecture, tagged agent-messenger:dev (docs/docker.md).
 # goreleaser builds the release image from a context of <os>/<arch>/ binaries; this assembles the
-# same layout in bin/image. CONTAINER is docker or podman, whichever is installed.
-CONTAINER ?= $(shell command -v docker || command -v podman)
+# same layout in bin/image. CONTAINER is docker if its daemon answers, else podman.
+CONTAINER ?= $(shell docker info >/dev/null 2>&1 && command -v docker || command -v podman || command -v docker)
 IMAGE_PLATFORM := linux/$(shell go env GOARCH)
 
 image:
