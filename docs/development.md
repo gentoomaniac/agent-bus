@@ -27,7 +27,8 @@ JavaScript without a build step). It sends through an adapter session.
 exclusive `flock` on `<agent-dir>/lock` holding the owner's PID, released by the OS when the process
 ends.
 `internal/adapter` is the adapter core. Its handled set (design.md §4) is the append-only file
-`<agent-dir>/handled.jsonl`, synced to disk before the broker is acked: verified messages by
+`<agent-dir>/handled.jsonl`, synced to disk (after the broker confirmed an agent's ack, before acking a
+rejection): verified messages by
 (destination, sender, ID) with a digest of the signed record, rejected deliveries by stream sequence
 only. No SQLite: a file read into memory at start is enough for one identity. Outgoing messages
 are rate limited (30 per 10 minutes, in memory) and their bodies scanned for obvious secrets
@@ -43,7 +44,7 @@ record that fails size, version, `to`, sender, signature or timestamp checks, or
 is recorded by sequence, written to `<agent-dir>/alerts.log` and acked; a sender whose registry
 record cannot be read is left unacked, so the broker redelivers it after `AckWait`; a verified
 message already handled is skipped, one already buffered gets `InProgress`, a new one is buffered.
-`Ack` writes the handled set first, then acks the broker. Sends set `hops` from the parent: the
+`Ack` acks the broker first (a confirmed double ack), then writes the handled set, so a failed broker ack leaves the message unread. Sends set `hops` from the parent: the
 `reply_to` the agent names, or else the message it read or acked in the last five minutes; the
 parent must be known locally, and a parent at 6 hops stops the send. If another process holds the
 identity lock, `Open` still returns an adapter, but every method fails with an error naming the

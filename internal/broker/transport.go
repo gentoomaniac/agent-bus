@@ -88,8 +88,9 @@ func (transport *Transport) History(ctx context.Context, from bus.Channel, after
 	if err := transport.Unavailable(); err != nil {
 		return nil, err
 	}
-	// The default of unlimited resets retries on background contexts, ignoring ctx: a broker lost at
-	// the wrong moment would hold the reader forever. The monitor's own loop does the retrying.
+	// MaxResetAttempts 1 means one attempt to create the consumer, no retry; the default of 0 retries
+	// without limit on background contexts, ignoring ctx, so a broker lost at the wrong moment would
+	// hold the reader forever. The monitor's own loop does the retrying.
 	config := jetstream.OrderedConsumerConfig{FilterSubjects: []string{subject(from)}, DeliverPolicy: jetstream.DeliverAllPolicy, MaxResetAttempts: 1}
 	if afterSequence > 0 {
 		config.DeliverPolicy = jetstream.DeliverByStartSequencePolicy
