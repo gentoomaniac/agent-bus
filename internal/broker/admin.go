@@ -174,6 +174,29 @@ func (admin *Admin) DeleteReadCursor(ctx context.Context, agentID string, channe
 	return admin.bus.explain(err)
 }
 
+func (admin *Admin) Agents(ctx context.Context) ([]bus.AgentRecord, error) {
+	return listControlRecords[bus.AgentRecord](ctx, admin, registryKV)
+}
+
+func (admin *Admin) GroupChannels(ctx context.Context) ([]bus.TopicRecord, error) {
+	return listControlRecords[bus.TopicRecord](ctx, admin, catalogueKV)
+}
+
+func (admin *Admin) ReadCursorHolders(ctx context.Context, channel bus.Channel) ([]string, error) {
+	stream, err := admin.bus.stream.Stream(ctx, busStream)
+	if err != nil {
+		return nil, admin.bus.explain(err)
+	}
+	var holders []string
+	names := stream.ConsumerNames(ctx)
+	for name := range names.Name() {
+		if token, ok := readCursorHolder(name, channel); ok {
+			holders = append(holders, bus.AgentIDFromToken(token))
+		}
+	}
+	return holders, admin.bus.explain(names.Err())
+}
+
 func (admin *Admin) LastSequence(ctx context.Context) (uint64, error) {
 	stream, err := admin.bus.stream.Stream(ctx, busStream)
 	if err != nil {
@@ -232,4 +255,35 @@ func (admin *Admin) putControlRecord(ctx context.Context, bucket, key string, va
 	}
 	_, err = kv.Update(ctx, key, value, current.Revision())
 	return false, admin.control.explain(err)
+}
+
+// listControlRecords reads every value of a KV bucket in CONTROL as a T.
+func listControlRecords[T any](ctx context.Context, admin *Admin, bucket string) ([]T, error) {
+	kv, err := admin.control.stream.KeyValue(ctx, bucket)
+	if err != nil {
+		return nil, fmt.Errorf("opening %s (has `busctl init` run?): %w", bucket, admin.control.explain(err))
+	}
+	keys, err := kv.Keys(ctx)
+	if errors.Is(err, jetstream.ErrNoKeysFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, admin.control.explain(err)
+	}
+	var records []T
+	for _, key := range keys {
+		entry, err := kv.Get(ctx, key)
+		if errors.Is(err, jetstream.ErrKeyNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, admin.control.explain(err)
+		}
+		var record T
+		if err := json.Unmarshal(entry.Value(), &record); err != nil {
+			return nil, fmt.Errorf("reading %s/%s: %w", bucket, key, err)
+		}
+		records = append(records, record)
+	}
+	return records, nil
 }

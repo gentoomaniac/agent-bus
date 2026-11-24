@@ -59,6 +59,13 @@ type Admin interface {
 	CreateReadCursor(ctx context.Context, agentID string, channel Channel, afterSequence uint64) error
 	// DeleteReadCursor removes the agent's read cursor on a channel.
 	DeleteReadCursor(ctx context.Context, agentID string, channel Channel) error
+	// Agents lists the registry: the record of every registered agent.
+	Agents(ctx context.Context) ([]AgentRecord, error)
+	// GroupChannels lists the catalogue: every group channel.
+	GroupChannels(ctx context.Context) ([]TopicRecord, error)
+	// ReadCursorHolders lists the agent IDs that have a read cursor on the channel, that is the
+	// agents that read it. A DM channel has the one holder it is named after.
+	ReadCursorHolders(ctx context.Context, channel Channel) ([]string, error)
 	// LastSequence is the sequence of the newest record of all conversation channels together.
 	LastSequence(ctx context.Context) (uint64, error)
 	Close()

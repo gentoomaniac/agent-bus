@@ -3,7 +3,11 @@
 // (the integration test aside).
 package broker
 
-import "git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+import (
+	"strings"
+
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+)
 
 // The accounts and streams of design.md §4a.
 const (
@@ -37,4 +41,14 @@ func consumerName(agentToken string, channel bus.Channel) string {
 	default:
 		return agentToken + "__dm"
 	}
+}
+
+// readCursorHolder is the agent token of a consumer that holds a read cursor on the channel, and
+// false for any other consumer.
+func readCursorHolder(name string, channel bus.Channel) (agentToken string, ok bool) {
+	token, _, found := strings.Cut(name, "__")
+	if !found || name != consumerName(token, channel) {
+		return "", false
+	}
+	return token, true
 }

@@ -46,6 +46,11 @@ func AgentToken(agentID string) string {
 	return strings.Replace(agentID, "@", "_", 1)
 }
 
+// AgentIDFromToken is the inverse of AgentToken.
+func AgentIDFromToken(token string) string {
+	return strings.Replace(token, "_", "@", 1)
+}
+
 // ChannelKind says which of the bus's channels a Channel names (§4).
 type ChannelKind int
 

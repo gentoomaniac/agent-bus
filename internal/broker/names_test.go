@@ -36,3 +36,23 @@ func TestConsumerNamesSplitAtDoubleUnderscore(t *testing.T) {
 		}
 	}
 }
+
+func TestReadCursorHolder(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		channel bus.Channel
+		want    string
+	}{
+		{"lib-x_bob__g__release", bus.GroupChannel("release"), "lib-x_bob"},
+		{"lib-x_bob__g__release", bus.GroupChannel("rel"), ""},
+		{"lib-x_bob__g__release", bus.GeneralChannel(), ""},
+		{"lib-x_bob__general", bus.GeneralChannel(), "lib-x_bob"},
+		{"lib-x_bob__dm", bus.DMChannel("lib-x@bob"), "lib-x_bob"},
+		{"no-separator", bus.GeneralChannel(), ""},
+	} {
+		got, ok := readCursorHolder(test.name, test.channel)
+		if got != test.want || ok != (test.want != "") {
+			t.Errorf("readCursorHolder(%q, %v) = %q, %v; want %q", test.name, test.channel, got, ok, test.want)
+		}
+	}
+}

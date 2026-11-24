@@ -35,5 +35,8 @@ func TestAgentToken(t *testing.T) {
 		if got := AgentToken(agentID); got != want {
 			t.Errorf("AgentToken(%q) = %q, want %q", agentID, got, want)
 		}
+		if got := AgentIDFromToken(want); got != agentID {
+			t.Errorf("AgentIDFromToken(%q) = %q, want %q", want, got, agentID)
+		}
 	}
 }
