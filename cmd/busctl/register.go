@@ -86,11 +86,15 @@ func (cmd *RegisterCmd) Run(ctx context.Context, cli *CLI) (err error) {
 
 	public, private := identity.Generate()
 	password := creds.NewPassword()
+	now := time.Now().UTC()
+	publicKey := base64.StdEncoding.EncodeToString(public)
+	fingerprint := identity.Fingerprint(public)
 	record, err := json.Marshal(bus.AgentRecord{
 		AgentID:      cmd.AgentID,
-		PublicKey:    base64.StdEncoding.EncodeToString(public),
-		Fingerprint:  identity.Fingerprint(public),
-		RegisteredAt: time.Now().UTC(),
+		PublicKey:    publicKey,
+		Fingerprint:  fingerprint,
+		RegisteredAt: now,
+		Keys:         []bus.KeyEntry{{PublicKey: publicKey, Fingerprint: fingerprint, ValidFrom: now}},
 	})
 	if err != nil {
 		return err

@@ -319,6 +319,14 @@ func TestMilestone1(t *testing.T) {
 		if err := json.Unmarshal([]byte(seen[bus.RegistryTopic+"/"+bob]), &registered); err != nil || registered.AgentID != bob || registered.Fingerprint == "" {
 			t.Errorf("registry entry of %s = %q (%v)", bob, seen[bus.RegistryTopic+"/"+bob], err)
 		}
+		if len(registered.Keys) != 1 {
+			t.Fatalf("registry entry of %s has %d keys, want 1", bob, len(registered.Keys))
+		}
+		first := registered.Keys[0]
+		if first.PublicKey != registered.PublicKey || first.Fingerprint != registered.Fingerprint ||
+			first.ValidFrom.IsZero() || first.RotationSig != "" || first.Revoked || first.RevokedAt != nil {
+			t.Errorf("first key of %s = %+v, want the current key, valid from a time, no rotation_sig, not revoked", bob, first)
+		}
 		var topic bus.TopicRecord
 		if err := json.Unmarshal([]byte(seen[bus.TopicsTopic+"/lib-x"]), &topic); err != nil || topic.Description != "discussion about lib-x" {
 			t.Errorf("catalogue entry of lib-x = %q (%v)", seen[bus.TopicsTopic+"/lib-x"], err)
