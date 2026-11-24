@@ -7,11 +7,16 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 )
+
+// clientTimeout bounds how long a client retries a request or a record before it gives up, so a
+// broker outage ends in an error instead of a hang.
+const clientTimeout = 30 * time.Second
 
 // Connection says how to reach the broker and who to be.
 type Connection struct {
@@ -42,6 +47,8 @@ func NewClient(conn Connection, extraOpts ...kgo.Opt) (*kgo.Client, error) {
 		kgo.SeedBrokers(conn.Address),
 		kgo.DialTLSConfig(&tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}),
 		kgo.SASL(scram.Auth{User: conn.User, Pass: conn.Password}.AsSha256Mechanism()),
+		kgo.RetryTimeout(clientTimeout),
+		kgo.RecordDeliveryTimeout(clientTimeout),
 	}
 	return kgo.NewClient(append(opts, extraOpts...)...)
 }

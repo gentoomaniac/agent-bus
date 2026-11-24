@@ -2,7 +2,12 @@
 package main
 
 import (
+	"context"
+	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
@@ -10,9 +15,10 @@ import (
 )
 
 type CLI struct {
-	ConfigDir string `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
-	Broker    string `help:"Kafka broker address (host:port); the host must be in the broker certificate." default:"localhost:9092" env:"BUS_BROKER"`
-	CACert    string `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
+	ConfigDir string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
+	Broker    string        `help:"Kafka broker address (host:port); the host must be in the broker certificate." default:"localhost:9092" env:"BUS_BROKER"`
+	CACert    string        `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
+	Timeout   time.Duration `help:"Give up after this long, for example when the broker is down." default:"30s" env:"BUS_TIMEOUT"`
 
 	Init InitCmd `cmd:"" help:"Create the system topics. Safe to repeat."`
 
@@ -55,6 +61,13 @@ func (cli *CLI) adminClient() (*broker.Admin, error) {
 
 func main() {
 	var cli CLI
-	ctx := kong.Parse(&cli, kong.Name("busctl"), kong.Description("Admin CLI of the agent bus."))
-	ctx.FatalIfErrorf(ctx.Run(&cli))
+	kongCtx := kong.Parse(&cli, kong.Name("busctl"), kong.Description("Admin CLI of the agent bus."))
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, cli.Timeout)
+	defer cancel()
+	kongCtx.BindTo(ctx, (*context.Context)(nil))
+
+	kongCtx.FatalIfErrorf(kongCtx.Run(&cli))
 }

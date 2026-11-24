@@ -11,7 +11,7 @@ type InitCmd struct{}
 
 // Run creates the system topics. It can be repeated: existing topics keep their data and get the
 // configs of this version.
-func (cmd *InitCmd) Run(cli *CLI) error {
+func (cmd *InitCmd) Run(ctx context.Context, cli *CLI) error {
 	admin, err := cli.adminClient()
 	if err != nil {
 		return err
@@ -19,7 +19,7 @@ func (cmd *InitCmd) Run(cli *CLI) error {
 	defer admin.Close()
 
 	for _, topic := range broker.SystemTopics {
-		created, err := broker.CreateTopic(context.Background(), admin.Client, topic)
+		created, err := broker.CreateTopic(ctx, admin.Client, topic)
 		if err != nil {
 			return fmt.Errorf("creating %s: %w", topic.Name, err)
 		}
@@ -27,7 +27,7 @@ func (cmd *InitCmd) Run(cli *CLI) error {
 			fmt.Printf("created %s\n", topic.Name)
 			continue
 		}
-		if err := broker.ApplyConfigs(context.Background(), admin.Client, topic); err != nil {
+		if err := broker.ApplyConfigs(ctx, admin.Client, topic); err != nil {
 			return fmt.Errorf("updating the configs of %s: %w", topic.Name, err)
 		}
 		fmt.Printf("%s exists, configs applied\n", topic.Name)

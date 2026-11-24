@@ -25,7 +25,7 @@ type RegisterCmd struct {
 // Run creates everything an identity needs: its DM topic, SCRAM user, ACLs and registry entry on the
 // broker, and its key and password on this machine. Keys are per machine and never copied, so an ID
 // that is already registered anywhere is refused.
-func (cmd *RegisterCmd) Run(cli *CLI) (err error) {
+func (cmd *RegisterCmd) Run(ctx context.Context, cli *CLI) (err error) {
 	if err := bus.ValidateAgentID(cmd.AgentID); err != nil {
 		return err
 	}
@@ -44,7 +44,6 @@ func (cmd *RegisterCmd) Run(cli *CLI) (err error) {
 		return err
 	}
 	defer admin.Close()
-	ctx := context.Background()
 
 	if err := os.Mkdir(dir, files.DirMode); errors.Is(err, fs.ErrExist) {
 		// The SCRAM user is created last, so without it the earlier registration did not complete.

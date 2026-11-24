@@ -31,7 +31,8 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
    partition (infinite means `retention.ms=-1`, `retention.bytes=-1`, `cleanup.policy=delete`). Safe to
    repeat: for topics that already exist it applies these configs again, so a broker created by an
    older version picks them up. `busctl` connects to `--broker` (`BUS_BROKER`, default
-   `localhost:9092`) as the admin, trusting `--ca-cert`.
+   `localhost:9092`) as the admin, trusting `--ca-cert`. Every busctl command gives up after `--timeout` (`BUS_TIMEOUT`, default
+   `30s`) and stops on Ctrl-C, so an unreachable broker ends in an error instead of a hang.
 6. `bin/busctl topic create <name> --description "..."` creates the one-partition topic
    `agents.topic.<name>` (infinite retention) and writes the description to the compacted
    `agents.topics` catalogue, keyed by name. Repeating it updates the description.

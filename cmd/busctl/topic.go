@@ -17,7 +17,7 @@ type TopicCreateCmd struct {
 
 // Run creates the topic and records its description in `agents.topics`.
 // Repeating it for an existing topic updates the description.
-func (cmd *TopicCreateCmd) Run(cli *CLI) error {
+func (cmd *TopicCreateCmd) Run(ctx context.Context, cli *CLI) error {
 	if err := bus.ValidateTopicName(cmd.Name); err != nil {
 		return err
 	}
@@ -27,7 +27,6 @@ func (cmd *TopicCreateCmd) Run(cli *CLI) error {
 	}
 	defer admin.Close()
 
-	ctx := context.Background()
 	kafkaTopic := bus.GroupTopic(cmd.Name)
 	created, err := broker.CreateTopic(ctx, admin.Client, broker.Topic{Name: kafkaTopic})
 	if err != nil {

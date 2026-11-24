@@ -308,6 +308,18 @@ func TestMilestone1(t *testing.T) {
 		}
 	})
 
+	t.Run("busctl gives up when the broker is unreachable", func(t *testing.T) {
+		const timeout = 2 * time.Second
+		start := time.Now()
+		output, err := h.tryRun(h.busctl, "--broker", fmt.Sprintf("localhost:%d", freePort(t)), "--timeout", timeout.String(), "init")
+		if err == nil {
+			t.Fatalf("init against a dead broker succeeded:\n%s", output)
+		}
+		if elapsed := time.Since(start); elapsed > timeout+operationTimeout {
+			t.Errorf("busctl took %v to give up, want about %v", elapsed, timeout)
+		}
+	})
+
 	t.Run("registering an existing agent fails", func(t *testing.T) {
 		if output, err := h.tryRun(h.busctl, "register", alice); err == nil {
 			t.Fatalf("second register succeeded:\n%s", output)
