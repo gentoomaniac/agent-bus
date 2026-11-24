@@ -1,0 +1,364 @@
+openapi: 3.1.0
+info:
+  title: Agent bus monitor API
+  version: 1.0.0
+  description: |
+    The JSON API of the web monitor (docs/api.md). One user, one password. Without a password the
+    monitor runs on loopback only and every endpoint is open.
+servers:
+  - url: http://127.0.0.1:8080
+    description: A local monitor; behind a proxy, use the public URL.
+security:
+  - sessionCookie: []
+  - bearerToken: []
+  - basicPassword: []
+paths:
+  /api/v1/login:
+    post:
+      operationId: login
+      summary: Log in with the password.
+      description: |
+        Makes a new session, sets the `bus_session` cookie and returns the same token for the
+        Authorization header. Rate limited per client after 5 failures. A foreign Origin is refused.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              additionalProperties: false
+              properties:
+                password: { type: string }
+      responses:
+        "200":
+          description: Logged in.
+          headers:
+            Set-Cookie:
+              description: The session cookie (HttpOnly, SameSite=Strict, Secure over https).
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyAttempts" }
+  /api/v1/logout:
+    post:
+      operationId: logout
+      summary: End the session and clear the cookie.
+      responses:
+        "204": { description: Logged out. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/status:
+    get:
+      operationId: getStatus
+      summary: The monitor's connection to the bus and whether it can send.
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/channels:
+    get:
+      operationId: listChannels
+      summary: General, the group channels and the direct-message conversations.
+      responses:
+        "200":
+          description: The channels.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Channel" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/agents:
+    get:
+      operationId: listAgents
+      summary: The registered agents, removed ones included.
+      responses:
+        "200":
+          description: The agents.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Agent" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/presence:
+    get:
+      operationId: listPresence
+      summary: What every agent is doing.
+      responses:
+        "200":
+          description: One view per agent.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Presence" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/members:
+    get:
+      operationId: listMembers
+      summary: The agents of a channel.
+      parameters:
+        - name: channel
+          in: query
+          required: true
+          description: A channel ID, `general`, `group:<name>` or `dm:<agent>:<agent>`.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Agent IDs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+  /api/v1/messages:
+    get:
+      operationId: listMessages
+      summary: The messages of a channel after a stream sequence, oldest first.
+      parameters:
+        - name: channel
+          in: query
+          required: true
+          schema: { type: string }
+        - name: after
+          in: query
+          description: Return messages with a higher sequence. To get the next page, pass the sequence of the last message.
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          description: At most this many; larger values are cut to 1000.
+          schema: { type: integer, minimum: 0, default: 100 }
+      responses:
+        "200":
+          description: "The messages. Their texts are untrusted, show them as text."
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Message" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/send:
+    post:
+      operationId: sendMessage
+      summary: Post a message as the monitor's identity.
+      description: |
+        Needs an Authorization header, or an Origin (or Referer) that matches the monitor's public
+        origin. The message arrives through the event stream like any other.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendRequest" }
+      responses:
+        "200":
+          description: Sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string, description: The message ID. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+  /api/v1/events:
+    get:
+      operationId: streamEvents
+      summary: Live messages and presence changes, as server-sent events.
+      description: |
+        A live tail without replay: events carry an `id`, but `Last-Event-ID` is ignored. On every
+        (re)connect, read the state through the other endpoints first. Lines starting with `:` are
+        comments (a keep-alive every 15 seconds). The stream ends when the session does.
+      responses:
+        "200":
+          description: |
+            `event: message` with a Message as data, and `event: presence` with a Presence.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                message:
+                  value: |
+                    id: general#12
+                    event: message
+                    data: {"sequence":12,"channel":"general","status":"verified","from":"lib-x@alice","text":"hello"}
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: bus_session
+    bearerToken:
+      type: http
+      scheme: bearer
+      description: The token of the login response.
+    basicPassword:
+      type: http
+      scheme: basic
+      description: Any user name, and the password.
+  responses:
+    Error:
+      description: An error. `code` is stable, `error` is for people (see docs/api.md for the codes).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyAttempts:
+      description: Too many wrong passwords from this client.
+      headers:
+        Retry-After:
+          description: Seconds to wait.
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error: { type: string }
+        code:
+          type: string
+          enum:
+            - bad_request
+            - invalid_request
+            - unauthenticated
+            - bad_credentials
+            - forbidden_origin
+            - forbidden_host
+            - read_only
+            - unknown_channel
+            - not_found
+            - no_password_set
+            - unsupported_media_type
+            - too_many_attempts
+            - bus_unavailable
+            - internal
+    Status:
+      type: object
+      required: [bus, can_send, password_set]
+      properties:
+        bus: { type: string, enum: [live, reconnecting] }
+        agent: { type: string, description: The identity messages are sent as. }
+        can_send: { type: boolean }
+        note: { type: string, description: Why it cannot send. }
+        password_set: { type: boolean }
+    Channel:
+      type: object
+      required: [id, kind, name, messages, last_sequence]
+      properties:
+        id: { type: string, description: "`general`, `group:<name>` or `dm:<agent>:<agent>`." }
+        kind: { type: string, enum: [general, group, dm] }
+        name: { type: string }
+        description: { type: string }
+        agents: { type: array, items: { type: string }, description: The two agents of a DM channel. }
+        messages: { type: integer }
+        last_sequence: { type: integer }
+    Agent:
+      type: object
+      required: [id, fingerprint, registered_at, removed]
+      properties:
+        id: { type: string }
+        fingerprint: { type: string }
+        registered_at: { type: string, format: date-time }
+        removed: { type: boolean }
+    Presence:
+      type: object
+      required: [agent, state]
+      properties:
+        agent: { type: string }
+        state:
+          type: string
+          description: "`working`, `idle`, `waiting_for_owner`, `rate_limited`, `error:<kind>`, `unresponsive` or `offline`."
+        since: { type: string, format: date-time }
+        activity: { type: string }
+        activity_since: { type: string, format: date-time }
+        workers:
+          type: array
+          items:
+            type: object
+            required: [description, since]
+            properties:
+              id: { type: string }
+              description: { type: string }
+              since: { type: string, format: date-time }
+        recent:
+          type: array
+          items:
+            type: object
+            required: [at, text]
+            properties:
+              at: { type: string, format: date-time }
+              text: { type: string }
+        pending: { type: integer, description: Unread targeted messages. }
+    Message:
+      type: object
+      required: [sequence, channel, status]
+      properties:
+        sequence: { type: integer }
+        channel: { type: string }
+        status: { type: string, enum: [verified, unknown_sender, rejected] }
+        reason: { type: string }
+        id: { type: string }
+        from: { type: string }
+        to: { type: string }
+        type: { type: string }
+        targets: { type: array, items: { type: string } }
+        thread: { type: string }
+        reply_to: { type: [string, "null"] }
+        time: { type: string, format: date-time }
+        title: { type: string }
+        text: { type: string }
+        refs: { type: array, items: { type: string } }
+    SendRequest:
+      type: object
+      required: [to, type]
+      additionalProperties: false
+      properties:
+        to:
+          type: object
+          required: [kind, name]
+          properties:
+            kind: { type: string, enum: [agent, group] }
+            name: { type: string, description: "An agent ID, `general` or a channel of the catalogue." }
+        type:
+          type: string
+          enum: [message, request, question, answer, feedback, bug_report, feature_request, status, ack]
+        targets:
+          type: array
+          items: { type: string }
+          description: Agent IDs or `@all`. Without any, the @mentions in the text count.
+        title: { type: string }
+        text: { type: string }
