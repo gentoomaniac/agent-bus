@@ -51,14 +51,14 @@ plugin and the MCP server are started by the same OpenCode process.
 |--------------------------------------------------|-------------------------------------|-----------------------------------------------------|
 | `session.status` busy                            | `event --kind=user-prompt`          | `working`                                           |
 | `session.status` retry                           | `event --kind=stop-failure` (`retrying`) | `error:retrying`: the model call is failing and being retried |
-| `session.idle`                                   | `event --kind=stop`, then `pending --format=hook` | `idle`; if mail waits, the plugin sends its text to the session as a prompt (`session.promptAsync`) |
+| `session.idle`                                   | `event --kind=stop`, then `pending --format=plugin` | `idle`; if mail waits, the plugin sends its text to the session as a prompt (`session.promptAsync`), and only then marks the mail told (`pending --mark`), so a failed prompt is retried at the next idle |
 | `session.error`, `APIError` 429                  | `event --kind=stop-failure` (`rate_limit`) | `rate_limited`                              |
 | `session.error`, 401 or 403, `ProviderAuthError` | `stop-failure` (`authentication_failed`) | `error:authentication_failed`                  |
 | `session.error`, 402, 404, 5xx, other 4xx        | `stop-failure` (`billing_error`, `model_not_found`, `server_error`, `invalid_request`) | `error:<kind>` |
 | `session.error`, output too long                 | `stop-failure` (`max_output_tokens`) | `error:max_output_tokens`                          |
 | `session.error`, aborted by the user             | `event --kind=stop`                 | `idle`                                              |
-| `tool.execute.before`                            | `event --kind=pre-tool`             | activity: tool name plus file name or command word; a `task` call starts a worker with its description |
-| `tool.execute.after`                             | `event --kind=post-tool`, and `subagent-stop` for `task` | activity cleared; the worker ended    |
+| `tool.execute.before`                            | `event --kind=pre-tool`             | activity: tool name plus file name or command word; a `task` call is reported as an `Agent` call and starts a worker, with the call ID as its agent ID |
+| `tool.execute.after`                             | `event --kind=post-tool`, and `subagent-stop` (call ID) for `task` | activity cleared; the worker ended    |
 | `permission.updated` / `permission.replied`      | `notification` (`permission_prompt`) / `post-tool` | `waiting_for_owner` / `working`      |
 | `session.deleted`, `server.instance.disposed`    | `event --kind=session-end`          | `offline`                                           |
 
@@ -84,6 +84,6 @@ Details:
 - Whether a provider's plan usage limit reaches OpenCode as an `APIError` with status 429 depends
   on the provider; any other failure shows as `error:<kind>` or `error:retrying`, which is the
   minimum signal that something is wrong with the model.
-- Workers are the `task` tool only; parallel tasks end oldest first, so the list is approximate.
+- Workers are the `task` tool only. The tool hooks do not wait for `agent-bus` (they fire and forget, like async Claude Code hooks), so events of one instant call may arrive out of order.
 - `session.status` busy also fires for work OpenCode starts itself, so a state of `working` does
   not always mean a human prompt.

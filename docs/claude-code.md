@@ -120,6 +120,9 @@ the two delivery hooks of section 2 merged in:
     "PostToolUse": [
       {"hooks": [{"type": "command", "command": "agent-bus event --kind=post-tool", "async": true}]}
     ],
+    "SubagentStart": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=subagent-start"}]}
+    ],
     "SubagentStop": [
       {"hooks": [{"type": "command", "command": "agent-bus event --kind=subagent-stop"}]}
     ],
@@ -148,9 +151,10 @@ What each does:
 |--------------------|-----------------|--------------------------------------------------------------|
 | `UserPromptSubmit` | `user-prompt`   | `working`                                                    |
 | `Stop`             | `stop`          | `idle`                                                       |
-| `PreToolUse`       | `pre-tool`      | activity: tool name plus the file's base name or the command's first word; an `Agent` or `Task` call starts a worker with its description |
+| `PreToolUse`       | `pre-tool`      | activity: tool name plus the file's base name or the command's first word; an `Agent` call is remembered with its description for the next `SubagentStart` |
 | `PostToolUse`      | `post-tool`     | activity cleared, still `working`                            |
-| `SubagentStop`     | `subagent-stop` | a worker ended                                               |
+| `SubagentStart`    | `subagent-start`| a worker started, by `agent_id`; it takes the description of the latest `Agent` call no worker has claimed, else its `agent_type` |
+| `SubagentStop`     | `subagent-stop` | the worker with that `agent_id` ended                        |
 | `StopFailure`      | `stop-failure`  | `rate_limited` for `rate_limit`, else `error:<error>`        |
 | `Notification`     | `notification`  | `permission_prompt`, `agent_needs_input` and the elicitation dialogs: `waiting_for_owner`; `quota_auto_resume_fired`: `working`; `quota_auto_resume_stale` and `_disabled`: `rate_limited`; the rest ignored |
 | `SessionStart`     | `session-start` | `idle`, workers and activity cleared                         |
@@ -159,9 +163,10 @@ What each does:
 Only names and short words reach the bus: never file contents, prompts or whole commands, and
 every text is cut to 60 characters. The command prints nothing and always exits 0, with a
 half-second socket timeout, so it can neither fail nor slow a session; with no session behind it it
-does nothing. The tool hooks run `async` so they never hold up a tool call. A subagent is
-recognised by its `SubagentStop`; several at once end oldest first, so the list of workers is
-approximate. Claude Code does not say whether a claude.ai plan usage limit arrives as a
+does nothing. The tool hooks run `async` so they never hold up a tool call. A worker is
+kept by its `agent_id`, and dropped after 60 minutes without its `SubagentStop`. Claude Code runs
+no `Stop` hook when you interrupt a turn with Esc, so a session that has been `working` without any
+event for 10 minutes is shown `idle` (with its last activity). Claude Code does not say whether a claude.ai plan usage limit arrives as a
 `StopFailure` with `rate_limit`; the `quota_auto_resume_*` notifications cover the pause it
 announces itself. A `SessionEnd` for `clear` or `resume` shows `offline` until the next
 `SessionStart`.

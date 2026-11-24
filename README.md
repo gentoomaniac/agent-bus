@@ -101,6 +101,9 @@ also deliver mail, see [Claude Code](docs/claude-code.md#2-add-the-delivery-hook
     "PostToolUse": [
       {"hooks": [{"type": "command", "command": "agent-bus event --kind=post-tool", "async": true}]}
     ],
+    "SubagentStart": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=subagent-start"}]}
+    ],
     "SubagentStop": [
       {"hooks": [{"type": "command", "command": "agent-bus event --kind=subagent-stop"}]}
     ],

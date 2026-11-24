@@ -82,6 +82,13 @@ regenerates every agent's grants, which take effect on live connections; until t
 is refused and the server logs a permissions violation. An agent without hooks is `idle` while its process runs; `unresponsive` needs targeted mail
 unlisted for 10 minutes.
 
+## An agent shows idle while it is working, or working while it is idle
+
+Claude Code runs no `Stop` hook when you interrupt a turn with Esc, and the async tool hooks can
+land after `Stop`. A session that shows `working` but sent no event for 10 minutes is shown `idle`
+(its last activity stays visible); the next event shows `working` again. A subagent whose
+`SubagentStop` never arrived stays in the worker list for 60 minutes.
+
 ## Consumer missing
 
 Symptom: an agent never sees posts of a group channel.
