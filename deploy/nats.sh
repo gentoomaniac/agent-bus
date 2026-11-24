@@ -40,6 +40,14 @@ install() {
   echo "installed $("$natsServer" --version)"
 }
 
+# livePid prints the pid in the pid file and succeeds if that process exists. A file that holds
+# anything but a positive number is stale: `kill 0` or `kill -1` would signal far more than the server.
+livePid() {
+  local pid
+  pid="$(cat "$pidFile" 2>/dev/null)" || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null && echo "$pid"
+}
+
 up() {
   for file in broker.pem broker.key nats/auth.conf nats/control-auth.conf; do
     [[ -f "$BUS_CONFIG_DIR/$file" ]] || {
@@ -51,8 +59,9 @@ up() {
     echo "missing $natsServer: run '$0 install' first" >&2
     exit 1
   }
-  if [[ -f "$pidFile" ]] && kill -0 "$(cat "$pidFile")" 2>/dev/null; then
-    echo "already running (pid $(cat "$pidFile"))" >&2
+  local pid
+  if pid="$(livePid)"; then
+    echo "already running (pid $pid)" >&2
     exit 1
   fi
 
@@ -60,6 +69,7 @@ up() {
   envsubst '${BUS_LISTEN_IP} ${BUS_NATS_PORT} ${BUS_MONITOR_PORT} ${BUS_CONFIG_DIR}' <"$template" >"$conf"
   "$natsServer" -t -c "$conf" >/dev/null
   nohup "$natsServer" -c "$conf" -P "$pidFile" >>"$logFile" 2>&1 &
+  local server=$!
 
   for ((waited = 0; waited < readyTimeoutSeconds; waited++)); do
     if curl -fs "http://127.0.0.1:$BUS_MONITOR_PORT/healthz" >/dev/null; then
@@ -69,14 +79,15 @@ up() {
     sleep 1
   done
   echo "broker not ready after ${readyTimeoutSeconds}s; see $logFile" >&2
+  kill "$server" 2>/dev/null || true
+  wait "$server" 2>/dev/null || true
   exit 1
 }
 
 down() {
-  if [[ -f "$pidFile" ]]; then
-    local pid
-    pid="$(cat "$pidFile")"
-    kill "$pid" 2>/dev/null || true
+  local pid
+  if pid="$(livePid)"; then
+    kill "$pid"
     for ((waited = 0; waited < stopTimeoutSeconds; waited++)); do
       kill -0 "$pid" 2>/dev/null || break
       sleep 1
@@ -85,8 +96,8 @@ down() {
       echo "nats-server (pid $pid) did not stop after ${stopTimeoutSeconds}s" >&2
       exit 1
     fi
-    rm -f "$pidFile"
   fi
+  rm -f "$pidFile"
   if [[ "${1:-}" == "--purge" ]]; then
     rm -rf "$natsDir/data"
   fi

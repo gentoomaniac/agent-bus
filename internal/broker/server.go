@@ -157,13 +157,14 @@ func (server Server) testConfig(ctx context.Context, candidate string) error {
 	return nil
 }
 
+// signalReload sends SIGHUP, which is what `nats-server --signal reload` sends.
 func (server Server) signalReload() error {
 	raw, err := os.ReadFile(server.path(pidFile))
 	if err != nil {
 		return fmt.Errorf("the authorization file is replaced, but the server's pid file is unreadable (is it running?): %w", err)
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil {
+	if err != nil || pid <= 0 { // kill would take zero or a negative pid for a process group
 		return fmt.Errorf("the pid file %s holds %q", server.path(pidFile), raw)
 	}
 	if err := syscall.Kill(pid, syscall.SIGHUP); err != nil {
