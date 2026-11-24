@@ -31,6 +31,11 @@ func ValidateGroupName(name string) error {
 	if len(name) > maxNameLength || !groupNamePattern.MatchString(name) {
 		return fmt.Errorf("invalid channel name %q: lowercase [a-z0-9-], at most %d characters", name, maxNameLength)
 	}
+	// "general" is the default channel; a group of that name would share its envelope address,
+	// so a message signed for one would be accepted on the other.
+	if name == "general" {
+		return fmt.Errorf("channel name %q is reserved", name)
+	}
 	return nil
 }
 

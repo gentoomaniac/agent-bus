@@ -23,7 +23,7 @@ func TestValidateGroupName(t *testing.T) {
 			t.Errorf("ValidateGroupName(%q) = %v, want nil", name, err)
 		}
 	}
-	for _, name := range []string{"", "Lib", "a.b", "a_b", "a@b", "a b"} {
+	for _, name := range []string{"", "Lib", "a.b", "a_b", "a@b", "a b", "general"} {
 		if ValidateGroupName(name) == nil {
 			t.Errorf("ValidateGroupName(%q) = nil, want error", name)
 		}
