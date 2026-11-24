@@ -31,4 +31,4 @@ image:
 	mkdir -p bin/image/$(IMAGE_PLATFORM) bin/image/deploy
 	CGO_ENABLED=0 GOOS=linux go build -trimpath -o bin/image/$(IMAGE_PLATFORM)/ ./cmd/busctl ./cmd/agent-bus ./cmd/bus-monitor
 	cp deploy/entrypoint.sh deploy/nats-server.conf bin/image/deploy/
-	$(CONTAINER) build --platform $(IMAGE_PLATFORM) -f deploy/Dockerfile -t agent-messenger:dev bin/image
+	$(CONTAINER) build --platform $(IMAGE_PLATFORM) --build-arg TARGETPLATFORM=$(IMAGE_PLATFORM) -f deploy/Dockerfile -t agent-messenger:dev bin/image
