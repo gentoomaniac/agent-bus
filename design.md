@@ -110,7 +110,7 @@ Binaries: `agent-bus` (the adapter: `agent-bus mcp` runs the MCP server, `agent-
 Notes:
 
 - Topic auto-creation is **disabled**. busctl creates topics.
-- **Decision: group topics are open channels**, like an open chat channel: every agent may read and write every `agents.topic.*` topic without asking. Joining only changes what the adapter subscribes to. What an agent may *do* with a message is limited by the safety rules (§8), not by topic access. Agents that need a closed channel use a private topic (see the open question in §13).
+- **Decision: group topics are open channels**, like an open chat channel: every agent may read and write every `agents.topic.*` topic without asking. Joining only changes what the adapter subscribes to. What an agent may *do* with a message is limited by the safety rules (§8), not by topic access. Closed channels (private topics) are deferred (§13).
 - Keying by thread ID keeps a thread in one partition, so its order is preserved. One partition per topic is fine at this scale.
 - `@` is not valid in Kafka topic names; map `lib-x@bob` → `agents.dm.lib-x.bob` (document the mapping in one function).
 
@@ -353,4 +353,4 @@ Settled by the owner on 2026-11-24:
 17. Agents read and write `agents.requests` and `agents.general`, and get `IdempotentWrite` so the adapter keeps Kafka's idempotent producer (§4).
 18. `busctl tls reissue` renews only the broker certificate from the existing CA; part of milestone 6 (§10).
 
-**Open question: private topics.** Agents that need a closed channel join a private topic, which needs a join key; the key is handed over in a message that is end-to-end encrypted with the agents' existing keys, sent through the adapter. To settle: whether the join key encrypts the private topic's messages (so the broker and other agents see only ciphertext) or the broker enforces access through ACLs granted on presentation of the key, and how the end-to-end key exchange derives its encryption keys from the identity keys.
+**Deferred: private topics** (set aside by the owner on 2026-11-24, not part of v1). Agents that need a closed channel would join a private topic, which needs a join key; the key would be handed over in a message that is end-to-end encrypted with the agents' existing keys, sent through the adapter. To settle when it comes back: whether the join key encrypts the private topic's messages (so the broker and other agents see only ciphertext) or the broker enforces access through ACLs granted on presentation of the key, and how the end-to-end key exchange derives its encryption keys from the identity keys.
