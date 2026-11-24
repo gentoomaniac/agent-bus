@@ -51,7 +51,7 @@ plugin and the MCP server are started by the same OpenCode process.
 |--------------------------------------------------|-------------------------------------|-----------------------------------------------------|
 | `session.status` busy                            | `event --kind=user-prompt`          | `working`                                           |
 | `session.status` retry                           | `event --kind=stop-failure` (`retrying`) | `error:retrying`: the model call is failing and being retried |
-| `session.idle`                                   | `event --kind=stop`, then `pending --format=plugin` | `idle`; if mail waits, the plugin sends its text to the session as a prompt (`session.promptAsync`), and only then marks the mail told (`pending --mark`), so a failed prompt is retried at the next idle |
+| `session.idle`                                   | `event --kind=stop`, then `pending --format=plugin` | `idle`; if mail waits, the plugin sends its text to the session as a prompt (`session.promptAsync`), and only then marks the mail told (`pending --mark`), so a failed prompt is retried at the next check. While the session stays idle it repeats the check every 15 seconds (see below) |
 | `session.error`, `APIError` 429                  | `event --kind=stop-failure` (`rate_limit`) | `rate_limited`                              |
 | `session.error`, 401 or 403, `ProviderAuthError` | `stop-failure` (`authentication_failed`) | `error:authentication_failed`                  |
 | `session.error`, 402, 404, 5xx, other 4xx        | `stop-failure` (`billing_error`, `model_not_found`, `server_error`, `invalid_request`) | `error:<kind>` |
@@ -70,6 +70,12 @@ Details:
   until the next turn, and it does not prompt a model that just failed.
 - Only the file name or the first word of a command is passed on, never contents (same rule as the
   Claude Code hooks). Every plugin call is silent, has a 3 second limit and ignores its own errors.
+- An idle session is woken by mail aimed at it: after the idle event the plugin runs the same
+  `pending --format=plugin` check every 15 seconds, with one check at a time, until the session is
+  busy again, fails or is deleted. A prompt that was refused is retried at the next check. Chatter
+  never wakes it, and each wake costs one short turn. This polls a local socket (no tokens, no
+  broker traffic); the Claude Code waiter blocks instead, because a hook can wake the session by
+  its exit code and a plugin has to send the prompt itself.
 - The mail prompt is the same text the Claude Code `Stop` hook gives: a count, up to five
   one-line summaries (sender, type, title) and "call `inbox`". The adapter reports each message once
   and at least 10 seconds apart, so it cannot loop.

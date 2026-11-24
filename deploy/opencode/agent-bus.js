@@ -1,7 +1,8 @@
 // OpenCode plugin for the agent bus (docs/opencode.md). It tells the session's `agent-bus mcp`
 // what OpenCode is doing, so the owner's monitor shows whether the model works, how many workers
 // it runs and whether something is wrong with it, and it delivers "you have mail" when the
-// session goes idle. It costs the model nothing and never throws into OpenCode.
+// session goes idle and while it stays idle. It costs the model nothing and never throws into
+// OpenCode.
 //
 // It speaks to the same commands as the Claude Code hooks: `agent-bus event --kind=<hook>` with a
 // small JSON on stdin, and `agent-bus pending --format=hook`.
@@ -9,6 +10,8 @@ import { spawn } from "node:child_process";
 
 const AGENT_BUS = process.env.AGENT_BUS_BIN || "agent-bus";
 const COMMAND_TIMEOUT_MS = 3000;
+// How often an idle session is checked for mail aimed at it. A check is one local socket call.
+const IDLE_POLL_MS = 15000;
 
 // run starts agent-bus, feeds it stdin and resolves with its stdout. It never rejects.
 function run(args, stdin = "") {
@@ -92,6 +95,35 @@ async function server({ client }) {
     }
   }
 
+  // An idle session is checked for mail every IDLE_POLL_MS until it is busy again, so mail that
+  // arrives after the idle event wakes it. The adapter reports only mail aimed at the agent, so
+  // chatter never prompts the model.
+  const idleWatchers = new Map();
+
+  function stopWatchingIdle(sessionID) {
+    const watcher = idleWatchers.get(sessionID);
+    if (!watcher) return;
+    watcher.stopped = true;
+    clearTimeout(watcher.timer);
+    idleWatchers.delete(sessionID);
+  }
+
+  function watchWhileIdle(sessionID) {
+    stopWatchingIdle(sessionID);
+    const watcher = { stopped: false, timer: null };
+    // One check at a time: the next is scheduled when the last one is done.
+    const check = async () => {
+      await deliverMail(sessionID);
+      if (!watcher.stopped) schedule();
+    };
+    const schedule = () => {
+      watcher.timer = setTimeout(check, IDLE_POLL_MS);
+      watcher.timer.unref?.();
+    };
+    idleWatchers.set(sessionID, watcher);
+    schedule();
+  }
+
   return {
     event: async ({ event }) => {
       const properties = event.properties ?? {};
@@ -103,6 +135,7 @@ async function server({ client }) {
       switch (event.type) {
         case "session.status":
           if (properties.status?.type === "busy") {
+            stopWatchingIdle(properties.sessionID);
             failedSessions.delete(properties.sessionID);
             await report("user-prompt");
           }
@@ -112,8 +145,10 @@ async function server({ client }) {
           if (failedSessions.delete(properties.sessionID)) break;
           await report("stop");
           await deliverMail(properties.sessionID);
+          watchWhileIdle(properties.sessionID);
           break;
         case "session.error": {
+          stopWatchingIdle(properties.sessionID);
           const kind = errorKind(properties.error);
           if (kind) failedSessions.add(properties.sessionID);
           await (kind ? report("stop-failure", { error: kind }) : report("stop"));
@@ -127,6 +162,7 @@ async function server({ client }) {
           break;
         case "session.deleted":
         case "server.instance.disposed":
+          for (const sessionID of [...idleWatchers.keys()]) stopWatchingIdle(sessionID);
           await report("session-end");
           break;
       }
