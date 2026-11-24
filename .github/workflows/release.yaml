@@ -1,0 +1,58 @@
+# Runs on GitHub Actions and on Gitea/Forgejo Actions.
+#   push to main, pull request: make check, then a goreleaser snapshot build (nothing published)
+#   tag v*: goreleaser publishes the release and pushes the image
+#
+# Repository variables (all optional):
+#   REGISTRY    container registry host, default: the host of the forge
+#   IMAGE_NAME  full image name, default: <REGISTRY>/<owner>/agent-messenger
+# Secret REGISTRY_TOKEN (falls back to the job token) must be allowed to push packages and to
+# create releases.
+name: release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      FORGE_URL: ${{ github.server_url }}
+      GITEA_TOKEN: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # goreleaser builds the changelog from the tags
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - run: make check
+
+      - name: Registry and image name
+        run: |
+          registry="${{ vars.REGISTRY }}"
+          registry="${registry:-${FORGE_URL#*://}}"
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          image="${{ vars.IMAGE_NAME }}"
+          echo "REGISTRY=$registry" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=${image:-$registry/$owner/agent-messenger}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: v2.20.2
+          args: release --clean ${{ startsWith(github.ref, 'refs/tags/v') && ' ' || '--snapshot' }}
