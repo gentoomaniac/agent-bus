@@ -8,9 +8,10 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
-// ACLRule allows one principal some operations on a topic or a consumer group.
+// ACLRule allows one principal some operations on a topic, a consumer group or the cluster.
 type ACLRule struct {
-	Group      bool // a consumer group; otherwise a topic
+	Group      bool // a consumer group
+	Cluster    bool // the cluster; otherwise, without Group, a topic
 	Name       string
 	Prefixed   bool // Name is a prefix; otherwise it is the exact name
 	Operations []kadm.ACLOperation
@@ -21,6 +22,8 @@ type ACLRule struct {
 // (`agents.topic.*`) are open chat channels: one prefix rule covers every present and future one.
 func AgentACLRules(agentID string) []ACLRule {
 	return []ACLRule{
+		// franz-go produces idempotently by default, which needs this cluster-level operation.
+		{Cluster: true, Name: "kafka-cluster", Operations: []kadm.ACLOperation{kadm.OpIdempotentWrite}},
 		{Group: true, Name: agentID, Operations: []kadm.ACLOperation{kadm.OpRead, kadm.OpDescribe}},
 		{Name: bus.DMTopic(agentID), Operations: []kadm.ACLOperation{kadm.OpRead, kadm.OpDescribe}},
 		{Name: bus.DMTopicPrefix, Prefixed: true, Operations: []kadm.ACLOperation{kadm.OpWrite}},
@@ -35,9 +38,12 @@ func AgentACLRules(agentID string) []ACLRule {
 
 func (rule ACLRule) builder(principal string) *kadm.ACLBuilder {
 	builder := kadm.NewACLs().Allow(principal).AllowHosts("*").Operations(rule.Operations...)
-	if rule.Group {
+	switch {
+	case rule.Cluster:
+		builder = builder.Clusters()
+	case rule.Group:
 		builder = builder.Groups(rule.Name)
-	} else {
+	default:
 		builder = builder.Topics(rule.Name)
 	}
 	if rule.Prefixed {

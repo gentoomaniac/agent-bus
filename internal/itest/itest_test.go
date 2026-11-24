@@ -178,7 +178,7 @@ func TestMilestone1(t *testing.T) {
 		// bob writes to alice's DM topic: any agent may write any DM topic.
 		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
 		defer cancel()
-		sender := h.agentClient(t, bob, kgo.DisableIdempotentWrite())
+		sender := h.agentClient(t, bob)
 		message := &kgo.Record{Topic: bus.DMTopic(alice), Value: []byte("hello alice")}
 		if err := sender.ProduceSync(ctx, message).FirstErr(); err != nil {
 			t.Fatalf("bob cannot write to alice's DM topic: %v", err)
@@ -210,7 +210,7 @@ func TestMilestone1(t *testing.T) {
 	t.Run("an agent writes and reads a group topic made by busctl without extra grants", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
 		defer cancel()
-		writer := h.agentClient(t, bob, kgo.DisableIdempotentWrite())
+		writer := h.agentClient(t, bob)
 		if err := writer.ProduceSync(ctx, &kgo.Record{Topic: bus.GroupTopic("lib-x"), Value: []byte("hello topic")}).FirstErr(); err != nil {
 			t.Fatalf("bob cannot write the group topic: %v", err)
 		}
@@ -239,7 +239,7 @@ func TestMilestone1(t *testing.T) {
 	t.Run("an agent cannot write the registry", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
 		defer cancel()
-		client := h.agentClient(t, alice, kgo.DisableIdempotentWrite())
+		client := h.agentClient(t, alice)
 		err := client.ProduceSync(ctx, &kgo.Record{Topic: bus.RegistryTopic, Key: []byte(alice), Value: []byte("{}")}).FirstErr()
 		if !errors.Is(err, kerr.TopicAuthorizationFailed) {
 			t.Fatalf("write to the registry: %v, want TOPIC_AUTHORIZATION_FAILED", err)

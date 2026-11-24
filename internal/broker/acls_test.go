@@ -12,7 +12,7 @@ import (
 func allows(rules []ACLRule, topic string, operation kadm.ACLOperation) bool {
 	for _, rule := range rules {
 		matches := rule.Name == topic || (rule.Prefixed && strings.HasPrefix(topic, rule.Name))
-		if !rule.Group && matches && slices.Contains(rule.Operations, operation) {
+		if !rule.Group && !rule.Cluster && matches && slices.Contains(rule.Operations, operation) {
 			return true
 		}
 	}
@@ -54,6 +54,15 @@ func TestAgentCannotWriteRegistryOrCatalogue(t *testing.T) {
 			t.Errorf("agent cannot read %s", topic)
 		}
 	}
+}
+
+func TestAgentCanWriteIdempotently(t *testing.T) {
+	for _, rule := range AgentACLRules("lib-x@bob") {
+		if rule.Cluster && slices.Contains(rule.Operations, kadm.OpIdempotentWrite) {
+			return
+		}
+	}
+	t.Error("agent lacks IdempotentWrite on the cluster")
 }
 
 func TestAgentConsumerGroupIsItsOwnID(t *testing.T) {
