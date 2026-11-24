@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -16,17 +17,30 @@ type rateLimiter struct {
 	sent   []time.Time
 }
 
-// allow records a send at now if the allowance is not used up.
-func (limiter *rateLimiter) allow(now time.Time) bool {
+// allow records a send at now if the allowance is not used up. Otherwise it returns how long
+// until the oldest send leaves the window.
+func (limiter *rateLimiter) allow(now time.Time) (ok bool, retryAfter time.Duration) {
 	cutoff := now.Add(-limiter.window)
 	for len(limiter.sent) > 0 && limiter.sent[0].Before(cutoff) {
 		limiter.sent = limiter.sent[1:]
 	}
 	if len(limiter.sent) >= limiter.limit {
-		return false
+		return false, limiter.sent[0].Add(limiter.window).Sub(now)
 	}
 	limiter.sent = append(limiter.sent, now)
-	return true
+	return true, 0
+}
+
+// RateLimitError says when a refused send may be tried again.
+type RateLimitError struct {
+	Limit      int
+	Window     time.Duration
+	RetryAfter time.Duration
+}
+
+func (err *RateLimitError) Error() string {
+	return fmt.Sprintf("not sent: rate limit of %d messages per %s reached; keep what you meant to send and retry_after %ds",
+		err.Limit, err.Window, int(err.RetryAfter.Seconds())+1)
 }
 
 // secretPatterns are the obvious secrets of §8 rule 5: private keys and well-known token formats.

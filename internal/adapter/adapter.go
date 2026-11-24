@@ -111,6 +111,8 @@ type Adapter struct {
 	mu     sync.Mutex // guards everything below and the stores above
 	inbox  inbox
 	rate   rateLimiter
+	// closingRate limits ack, answer and status replies on their own.
+	closingRate rateLimiter
 
 	notifications notifications
 	// contextDropped counts the context messages dropped for room since TakeContextDropped.
@@ -179,6 +181,7 @@ func (adapter *Adapter) load() (err error) {
 	adapter.alertsPath = filepath.Join(config.Dir, alertsFile)
 	adapter.inbox = inbox{maxMessages: config.InboxMessages, maxBytes: config.InboxBytes, maxContext: config.ContextMessages}
 	adapter.rate = rateLimiter{limit: config.RateLimit, window: rateWindow}
+	adapter.closingRate = rateLimiter{limit: config.RateLimit, window: rateWindow}
 	catalogue, err := adapter.catalogue()
 	if err != nil {
 		return err
@@ -491,16 +494,21 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 	if thread == "" {
 		thread = id
 	}
-	if !adapter.rate.allow(now) {
-		return "", fmt.Errorf("not sent: rate limit of %d messages per %s reached", adapter.config.RateLimit, rateWindow)
-	}
-
 	payload, err := envelope.Sign(envelope.Envelope{
 		Version: envelope.Version, ID: id, TS: now, From: adapter.config.AgentID, To: envelope.ToFor(to),
 		Type: message.Type, Targets: targets, Thread: thread, ReplyTo: replyTo, Hops: hops, KeyFP: adapter.keyFP, Body: message.Body,
 	}, adapter.key)
 	if err != nil {
 		return "", err
+	}
+	// The quota is spent only by a message that passed every check. Closing replies have an
+	// allowance of their own, so a burst of requests cannot keep the promised answers from going out.
+	limiter := &adapter.rate
+	if inherited != nil && slices.Contains(closingTypes, message.Type) {
+		limiter = &adapter.closingRate
+	}
+	if ok, retryAfter := limiter.allow(now); !ok {
+		return "", &RateLimitError{Limit: adapter.config.RateLimit, Window: rateWindow, RetryAfter: retryAfter}
 	}
 	sequence, err := adapter.config.Transport.Publish(ctx, to, id, payload)
 	if err != nil {

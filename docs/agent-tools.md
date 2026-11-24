@@ -170,6 +170,9 @@ whether one agent can respond.
   `thread` turns that off); the parent must be known locally, and a parent at 6 hops stops a
   new request, question or message. An ack, answer or status may still close it (up to 7 hops). The
   recently read message is forgotten when the adapter restarts.
+- Rate limit (30 per 10 minutes, `--rate-limit`): only a send that would go out spends quota. Ack,
+  answer and status replies count against a separate allowance of the same size. When it is hit
+  the error says `retry_after` (seconds): keep the message and send it again then.
 - `publish` to a group that is neither read by the agent nor in the catalogue snapshot of its
   directory (`channels`, written by `busctl channel create`) fails with "unknown channel". If
   an explicit target (or @mention) does not read the group according to the snapshot, the result

@@ -436,3 +436,39 @@ func TestInboxKeepsStreamOrderWithinAThreadAndListsTargetedThreadsFirst(t *testi
 		t.Errorf("the reply parent is %s, want the targeted %s", bobAdapter.recent.id, reply)
 	}
 }
+
+func TestRefusedSendsSpendNoQuotaAndClosingRepliesHaveTheirOwn(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice, func(config *Config) { config.RateLimit = 2 })
+	ctx := context.Background()
+	for i := 0; i < 5; i++ {
+		if _, err := a.Send(ctx, bob, text("-----BEGIN OPENSSH PRIVATE KEY-----")); err == nil {
+			t.Fatal("a secret was sent")
+		}
+		if _, err := a.Send(ctx, bob, text(strings.Repeat("x", envelope.MaxBodyBytes))); err == nil {
+			t.Fatal("an oversized body was sent")
+		}
+	}
+	root, err := a.Send(ctx, bob, text("one"))
+	if err != nil {
+		t.Fatalf("refused sends used up the quota: %v", err)
+	}
+	if _, err := a.Send(ctx, bob, text("two")); err != nil {
+		t.Fatal(err)
+	}
+	_, err = a.Send(ctx, bob, text("three"))
+	var limited *RateLimitError
+	if !errors.As(err, &limited) || limited.RetryAfter <= 0 || !strings.Contains(err.Error(), "retry_after") {
+		t.Fatalf("third send: %v, want a rate limit error with retry_after", err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := a.Send(ctx, bob, Outgoing{Type: "answer", Body: envelope.Body{Text: "done"}, ReplyTo: root}); err != nil {
+			t.Fatalf("closing reply %d: %v", i+1, err)
+		}
+	}
+	if _, err := a.Send(ctx, bob, Outgoing{Type: "answer", Body: envelope.Body{Text: "done"}, ReplyTo: root}); !errors.As(err, &limited) {
+		t.Errorf("closing replies are not bounded: %v", err)
+	}
+}

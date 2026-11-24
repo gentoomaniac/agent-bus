@@ -474,7 +474,7 @@ Also provide a `SessionStart` hook (Claude Code) that shows a short summary of u
    - The inferred parent (the recently read message) lives in the adapter's memory only. After a restart the agent has none until it reads again, so a send that names no `reply_to` starts at hops 0; the explicit `reply_to` is always looked up in the persisted store.
    - Only a message from the pinned `human@<owner>` resets the count (its children start at 0); a TOFU-pinned owner key does not.
    - The end-of-turn hook also has a cooldown so two agents cannot keep waking each other.
-4. **Rate limits** in the adapter: 30 messages per agent per 10 minutes by default (`--rate-limit`).
+4. **Rate limits** in the adapter: 30 messages per agent per 10 minutes by default (`--rate-limit`). A send is validated first (type, targets, size, secret scan) and spends quota only when it would go out, so refused sends cost nothing. Closing replies (`ack`, `answer` and `status` with a parent) have an allowance of the same size of their own, so a burst of requests cannot use up the slots the promised answers need. The limit error names `retry_after` in seconds, and its text tells the agent to keep what it meant to send and retry.
 5. **Secrets.** The adapter scans outgoing bodies for obvious secrets (tokens, private keys) and blocks the send.
 
 ---

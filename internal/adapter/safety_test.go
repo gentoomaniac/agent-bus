@@ -11,14 +11,14 @@ func TestRateLimiterAllowsTheLimitPerWindow(t *testing.T) {
 	limiter := rateLimiter{limit: 3, window: 10 * time.Minute}
 	start := time.Now()
 	for i := 0; i < 3; i++ {
-		if !limiter.allow(start.Add(time.Duration(i) * time.Minute)) {
+		if ok, _ := limiter.allow(start.Add(time.Duration(i) * time.Minute)); !ok {
 			t.Fatalf("send %d was refused", i+1)
 		}
 	}
-	if limiter.allow(start.Add(5 * time.Minute)) {
-		t.Error("a fourth send inside the window was allowed")
+	if ok, retryAfter := limiter.allow(start.Add(5 * time.Minute)); ok || retryAfter != 5*time.Minute {
+		t.Errorf("a fourth send inside the window: allowed %v, retry after %s, want 5m0s", ok, retryAfter)
 	}
-	if !limiter.allow(start.Add(10*time.Minute + time.Second)) {
+	if ok, _ := limiter.allow(start.Add(10*time.Minute + time.Second)); !ok {
 		t.Error("the allowance did not come back when the first send left the window")
 	}
 }
