@@ -203,7 +203,8 @@ func (adapter *Adapter) DeliversAll() bool { return adapter.config.Deliver == De
 func (adapter *Adapter) Channels() []bus.Channel { return slices.Clone(adapter.channels) }
 
 // directoryRecords reads every record of the local directory. Only a directory that can be listed
-// (trust.FileDirectory) supports it.
+// (trust.FileDirectory) supports it. Like FileDirectory.Records it returns the readable records
+// together with an error naming the files it skipped.
 func (adapter *Adapter) directoryRecords(ctx context.Context) ([]bus.AgentRecord, error) {
 	lister, ok := adapter.config.Directory.(interface {
 		Records(context.Context) ([]bus.AgentRecord, error)
@@ -220,7 +221,7 @@ func (adapter *Adapter) Agents(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	records, err := adapter.directoryRecords(ctx)
-	if err != nil {
+	if err != nil && len(records) == 0 {
 		return nil, err
 	}
 	var agentIDs []string
@@ -234,27 +235,25 @@ func (adapter *Adapter) Agents(ctx context.Context) ([]string, error) {
 
 // RefreshDirectory re-reads the local directory and remembers the fingerprint of every revoked key
 // in it, in revoked_keys. From then on messages signed by such a key are rejected, pinned or not.
-// Revocations are only ever added: a directory that lost a record does not un-revoke anything.
+// Revocations are only ever added: a directory that lost a record does not un-revoke anything. An
+// unreadable file does not stop the others from being processed; the error names it.
 func (adapter *Adapter) RefreshDirectory(ctx context.Context) error {
 	if err := adapter.Ready(); err != nil {
 		return err
 	}
-	records, err := adapter.directoryRecords(ctx)
-	if err != nil {
-		return err
-	}
+	records, skippedErr := adapter.directoryRecords(ctx)
 	adapter.mu.Lock()
 	defer adapter.mu.Unlock()
 	for _, record := range records {
 		for _, key := range record.Keys {
 			if key.Revoked {
 				if err := adapter.trust.Revoke(record.AgentID, key.Fingerprint); err != nil {
-					return err
+					return errors.Join(skippedErr, err)
 				}
 			}
 		}
 	}
-	return nil
+	return skippedErr
 }
 
 func (adapter *Adapter) Fingerprint() string { return adapter.keyFP }
@@ -275,17 +274,18 @@ func (adapter *Adapter) Send(ctx context.Context, to string, message Outgoing) (
 	return adapter.post(ctx, bus.DMChannel(to), message)
 }
 
-// checkRecipient refuses an agent that has no directory record or was removed.
+// checkRecipient refuses an agent that has no directory record or was removed, as ErrBadTargets:
+// the sender's mistake. A lookup that fails otherwise is returned as it is.
 func (adapter *Adapter) checkRecipient(ctx context.Context, agentID string) error {
 	record, err := adapter.config.Directory.Lookup(ctx, agentID)
 	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("unknown agent %s: it has no entry in the directory", agentID)
+		return fmt.Errorf("%w: unknown agent %s: it has no entry in the directory", ErrBadTargets, agentID)
 	}
 	if err != nil {
 		return err
 	}
 	if record.Removed() {
-		return fmt.Errorf("agent removed: %s", agentID)
+		return fmt.Errorf("%w: agent removed: %s", ErrBadTargets, agentID)
 	}
 	return nil
 }
@@ -355,7 +355,7 @@ func (adapter *Adapter) targetsFor(ctx context.Context, to bus.Channel, message 
 			continue
 		}
 		if err := adapter.checkRecipient(ctx, target); err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrBadTargets, err)
+			return nil, err
 		}
 	}
 	return targets, nil

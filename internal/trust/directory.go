@@ -3,6 +3,7 @@ package trust
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,14 +43,17 @@ func (dir FileDirectory) Lookup(_ context.Context, agentID string) (bus.AgentRec
 	return record, nil
 }
 
-// Records returns the record of every agent in the directory, removed ones included, sorted by
-// agent ID.
+// Records returns the record of every readable agent file in the directory, removed ones
+// included, sorted by agent ID. A file that cannot be read or parsed (a copy in progress, say) is
+// skipped and reported in the error, which joins them, next to the records returned: one bad
+// file must not hide the others' revocations.
 func (dir FileDirectory) Records(ctx context.Context) ([]bus.AgentRecord, error) {
 	entries, err := os.ReadDir(string(dir))
 	if err != nil {
 		return nil, err
 	}
 	var records []bus.AgentRecord
+	var skipped []error
 	for _, entry := range entries {
 		token, isRecord := strings.CutSuffix(entry.Name(), ".json")
 		if !isRecord {
@@ -57,12 +61,13 @@ func (dir FileDirectory) Records(ctx context.Context) ([]bus.AgentRecord, error)
 		}
 		record, err := dir.Lookup(ctx, bus.AgentIDFromToken(token))
 		if err != nil {
-			return nil, err
+			skipped = append(skipped, err)
+			continue
 		}
 		records = append(records, record)
 	}
 	slices.SortFunc(records, func(a, b bus.AgentRecord) int { return strings.Compare(a.AgentID, b.AgentID) })
-	return records, nil
+	return records, errors.Join(skipped...)
 }
 
 // Write stores a record, replacing an earlier one.

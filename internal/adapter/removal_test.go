@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,5 +94,37 @@ func TestRemovedAgentIsRefusedAsRecipientAndNotListed(t *testing.T) {
 	}
 	if agents, err := bobAdapter.Agents(ctx); err != nil || len(agents) != 1 || agents[0] != bob {
 		t.Errorf("Agents = %v, %v", agents, err)
+	}
+}
+
+func TestUnreadableRecordDoesNotStopRevocationsAndIsNotTheSendersMistake(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob, deliverAll)
+	ctx := context.Background()
+	b.remove(alice)
+	badFile := filepath.Join(b.configDir, "directory", "broken_x.json")
+	if err := os.WriteFile(badFile, []byte("{half a record"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := bobAdapter.RefreshDirectory(ctx)
+	if err == nil || !strings.Contains(err.Error(), "broken@x") {
+		t.Errorf("RefreshDirectory = %v, want the skipped file named", err)
+	}
+	reopened, openErr := trust.Open(filepath.Join(b.configDir, bob, knownAgentsFile))
+	if openErr != nil {
+		t.Fatal(openErr)
+	}
+	if _, err := reopened.Resolve(ctx, trust.DirectoryPath(b.configDir), alice, a.Fingerprint(), b.now); err == nil {
+		t.Error("the revocation next to the bad file was not recorded")
+	}
+	if agents, err := bobAdapter.Agents(ctx); err != nil || len(agents) != 1 {
+		t.Errorf("Agents = %v, %v", agents, err)
+	}
+	if _, err := bobAdapter.Send(ctx, "broken@x", text("hi")); err == nil || errors.Is(err, ErrBadTargets) {
+		t.Errorf("Send with an unreadable record: %v, want a plain error", err)
 	}
 }

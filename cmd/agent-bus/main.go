@@ -143,6 +143,9 @@ type hookSession struct {
 }
 
 func (cmd *MCPCmd) Run(ctx context.Context, cli *CLI, session *adapter.Adapter) error {
+	if cli.DirectoryRefresh <= 0 {
+		return errors.New("--directory-refresh must be positive")
+	}
 	// Only the lock holder answers hooks and publishes presence; a failure here only costs the
 	// end-of-turn check and the owner's view.
 	if session.Ready() == nil {
