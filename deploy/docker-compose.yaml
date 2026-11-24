@@ -1,7 +1,7 @@
 # Example: the central components in one container. See docs/docker.md.
 services:
   agent-bus:
-    image: git.srv.gentoomaniac.net/marco/agent-messenger:latest
+    image: ghcr.io/gentoomaniac/agent-messenger:latest
     restart: unless-stopped
     ports:
       - "4222:4222"

@@ -108,22 +108,23 @@ install`), then starts and stops its own server (temporary config directory, ran
 
 ## Cutting a release
 
-`.github/workflows/release.yaml` runs on GitHub Actions and Gitea/Forgejo Actions. On every push
-to `main` and every pull request it runs `make check` and a goreleaser snapshot build that
+`.github/workflows/release.yaml` runs on GitHub Actions (github.com/gentoomaniac/agent-messenger).
+On every push to `main` and every pull request it runs `make check` and a goreleaser snapshot build that
 publishes nothing. A tag `v*` publishes the archives, `checksums.txt` and the changelog as a
-release and pushes the image ([docker.md](docker.md)):
+GitHub release and pushes the image to `ghcr.io/gentoomaniac/agent-messenger` ([docker.md](docker.md)):
 
 ```sh
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Settings, all in the repository settings of the forge:
+The job's `GITHUB_TOKEN` creates the release and pushes the image; the workflow asks for the
+`contents: write` and `packages: write` permissions it needs. No secret has to be set. The optional
+repository variable `IMAGE_NAME` overrides the image name (default
+`ghcr.io/<owner>/agent-messenger`).
 
-- secret `REGISTRY_TOKEN`: a token that may push packages and create releases (the job token is
-  the fallback)
-- variable `REGISTRY` (optional): registry host, default the host of the forge
-- variable `IMAGE_NAME` (optional): full image name, default `<registry>/<owner>/agent-messenger`
+A new ghcr.io package is private. After the first release, make it public in the package settings
+on GitHub, or `docker pull` without a login fails.
 
 To try the build locally:
 

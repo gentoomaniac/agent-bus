@@ -7,13 +7,13 @@ without Docker see [broker.md](broker.md); for cutting a release see
 ## The image
 
 Every release pushes a multi-arch (linux amd64 and arm64) image to
-`<registry>/<owner>/agent-messenger`, tagged with the version and `latest`. It holds the pinned
+`ghcr.io/gentoomaniac/agent-messenger`, tagged with the version and `latest`. It holds the pinned
 `nats-server` (v2.15.3), `busctl` and `agent-bus`, and runs as the non-root user `bus` (uid 10001).
 The entrypoint renders `deploy/nats-server.conf` from the environment and runs `nats-server` as
 PID 1, so `docker stop` stops it cleanly and `busctl --direct` inside the container can reload it.
 
 In the commands below, replace `IMAGE` with the full image name and tag, for example
-`<registry>/<owner>/agent-messenger:latest`. The agents' binary (`agent-bus`) is in the release
+`ghcr.io/gentoomaniac/agent-messenger:latest`. The agents' binary (`agent-bus`) is in the release
 archives; the image is for the central components only.
 
 ### Volumes

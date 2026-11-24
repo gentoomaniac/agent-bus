@@ -40,14 +40,14 @@ changelog:
   filters:
     exclude: ["^docs:", "^test:"]
 
-# The forge is Gitea/Forgejo: the release is published through its API, FORGE_URL is its base URL.
-force_token: gitea
-gitea_urls:
-  api: "{{ .Env.FORGE_URL }}/api/v1"
-  download: "{{ .Env.FORGE_URL }}"
+# Releases are published on GitHub.
+release:
+  github:
+    owner: gentoomaniac
+    name: agent-messenger
 
 # The central components (nats-server, busctl); the image is multi-arch linux. The registry and
-# image name come from the environment: IMAGE_NAME is <registry>/<owner>/agent-messenger.
+# image name come from the environment: IMAGE_NAME, by default ghcr.io/gentoomaniac/agent-messenger.
 dockers_v2:
   - images:
       - "{{ .Env.IMAGE_NAME }}"

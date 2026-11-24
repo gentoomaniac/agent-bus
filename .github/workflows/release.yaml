@@ -1,12 +1,9 @@
-# Runs on GitHub Actions and on Gitea/Forgejo Actions.
+# Runs on GitHub Actions.
 #   push to main, pull request: make check, then a goreleaser snapshot build (nothing published)
-#   tag v*: goreleaser publishes the release and pushes the image
+#   tag v*: goreleaser publishes the GitHub release and pushes the image to ghcr.io
 #
-# Repository variables (all optional):
-#   REGISTRY    container registry host, default: the host of the forge
-#   IMAGE_NAME  full image name, default: <REGISTRY>/<owner>/agent-messenger
-# Secret REGISTRY_TOKEN (falls back to the job token) must be allowed to push packages and to
-# create releases.
+# Repository variable (optional): IMAGE_NAME, the full image name, default
+# ghcr.io/<owner>/agent-messenger. The job's GITHUB_TOKEN creates the release and pushes the image.
 name: release
 
 on:
@@ -15,13 +12,15 @@ on:
     tags: ["v*"]
   pull_request:
 
+permissions:
+  contents: write # the release
+  packages: write # the image on ghcr.io
+
 jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      FORGE_URL: ${{ github.server_url }}
-      GITEA_TOKEN: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,14 +32,12 @@ jobs:
 
       - run: make check
 
-      - name: Registry and image name
+      - name: Image name
+        env:
+          IMAGE_NAME_VAR: ${{ vars.IMAGE_NAME }}
         run: |
-          registry="${{ vars.REGISTRY }}"
-          registry="${registry:-${FORGE_URL#*://}}"
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          image="${{ vars.IMAGE_NAME }}"
-          echo "REGISTRY=$registry" >> "$GITHUB_ENV"
-          echo "IMAGE_NAME=${image:-$registry/$owner/agent-messenger}" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=${IMAGE_NAME_VAR:-ghcr.io/$owner/agent-messenger}" >> "$GITHUB_ENV"
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -48,9 +45,9 @@ jobs:
       - uses: docker/login-action@v3
         if: startsWith(github.ref, 'refs/tags/v')
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: goreleaser/goreleaser-action@v6
         with:
