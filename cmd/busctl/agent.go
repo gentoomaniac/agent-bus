@@ -168,6 +168,9 @@ func (cmd *DirectoryExportCmd) Run(ctx context.Context, cli *CLI) error {
 			return err
 		}
 	}
-	fmt.Printf("exported %d agent records to %s\n", len(records), cmd.Dir)
+	if err := writeCatalogue(ctx, admin, directory); err != nil {
+		return err
+	}
+	fmt.Printf("exported %d agent records and the channel catalogue to %s\n", len(records), cmd.Dir)
 	return nil
 }

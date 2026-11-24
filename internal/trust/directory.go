@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -68,6 +69,39 @@ func (dir FileDirectory) Records(ctx context.Context) ([]bus.AgentRecord, error)
 	}
 	slices.SortFunc(records, func(a, b bus.AgentRecord) int { return strings.Compare(a.AgentID, b.AgentID) })
 	return records, errors.Join(skipped...)
+}
+
+// Catalogue is the snapshot of the group channels: each name with the agents that read it. busctl
+// writes it next to the records (`channel create`, `channel join`, `directory export`), so it
+// travels with the directory. It is JSON in the file `channels` (no `.json` suffix, so Records
+// does not take it for an agent).
+type Catalogue map[string][]string
+
+const catalogueFile = "channels"
+
+// Catalogue reads the snapshot; a directory without one has an empty catalogue.
+func (dir FileDirectory) Catalogue() (Catalogue, error) {
+	data, err := os.ReadFile(filepath.Join(string(dir), catalogueFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return Catalogue{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var catalogue Catalogue
+	if err := json.Unmarshal(data, &catalogue); err != nil {
+		return nil, fmt.Errorf("reading the channel catalogue: %w", err)
+	}
+	return catalogue, nil
+}
+
+// WriteCatalogue replaces the snapshot.
+func (dir FileDirectory) WriteCatalogue(catalogue Catalogue) error {
+	data, err := json.MarshalIndent(catalogue, "", "  ")
+	if err != nil {
+		return err
+	}
+	return files.Write(filepath.Join(string(dir), catalogueFile), data, files.PublicMode, true)
 }
 
 // Write stores a record, replacing an earlier one.

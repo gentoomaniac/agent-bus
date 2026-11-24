@@ -49,8 +49,9 @@ type Config struct {
 	Dir       string // the identity's directory: key, lock, known_agents, handled.jsonl, alerts.log
 	Transport bus.Transport
 	Directory trust.Directory
-	// Groups are the group channels to read besides the agent's DM channel and general. Their read
-	// cursors must exist (busctl creates them); joining through busd comes later.
+	// Groups are group channels to read besides the agent's DM channel, general and the groups the
+	// directory's catalogue snapshot lists the agent in (written by `busctl channel join`). Their
+	// read cursors must exist (busctl creates them).
 	Groups []string
 
 	// AutoAccept says the agent may act on a request aimed at it without asking its owner
@@ -176,14 +177,37 @@ func (adapter *Adapter) load() (err error) {
 	adapter.alertsPath = filepath.Join(config.Dir, alertsFile)
 	adapter.inbox = inbox{maxMessages: config.InboxMessages, maxBytes: config.InboxBytes, maxContext: config.ContextMessages}
 	adapter.rate = rateLimiter{limit: config.RateLimit, window: rateWindow}
+	catalogue, err := adapter.catalogue()
+	if err != nil {
+		return err
+	}
+	groups := slices.Clone(config.Groups)
+	for name, readers := range catalogue {
+		if slices.Contains(readers, config.AgentID) {
+			groups = append(groups, name)
+		}
+	}
+	slices.Sort(groups)
 	adapter.channels = []bus.Channel{bus.DMChannel(config.AgentID), bus.GeneralChannel()}
-	for _, group := range config.Groups {
+	for _, group := range slices.Compact(groups) {
 		if err := bus.ValidateGroupName(group); err != nil {
 			return err
 		}
 		adapter.channels = append(adapter.channels, bus.GroupChannel(group))
 	}
 	return nil
+}
+
+// catalogue reads the directory's snapshot of the group channels and their readers. A directory
+// that has none (trust.FileDirectory is the only one that can) gives an empty catalogue.
+func (adapter *Adapter) catalogue() (trust.Catalogue, error) {
+	snapshotter, ok := adapter.config.Directory.(interface {
+		Catalogue() (trust.Catalogue, error)
+	})
+	if !ok {
+		return trust.Catalogue{}, nil
+	}
+	return snapshotter.Catalogue()
 }
 
 // Close gives the identity up. The transport belongs to the caller.
@@ -264,9 +288,7 @@ func (adapter *Adapter) RefreshDirectory(ctx context.Context) error {
 
 func (adapter *Adapter) Fingerprint() string { return adapter.keyFP }
 
-// Send sends a message to one agent's DM channel. The agent must be in the local directory. A
-// group name is not checked against the catalogue, which agents cannot read until busd exists, so
-// a post to an unknown group is stored and never read.
+// Send sends a message to one agent's DM channel. The agent must be in the local directory.
 func (adapter *Adapter) Send(ctx context.Context, to string, message Outgoing) (string, error) {
 	if err := bus.ValidateAgentID(to); err != nil {
 		return "", err
@@ -296,7 +318,8 @@ func (adapter *Adapter) checkRecipient(ctx context.Context, agentID string) erro
 	return nil
 }
 
-// Publish posts to `general` or a group channel.
+// Publish posts to `general` or a group channel the agent reads or the directory's catalogue
+// lists. A post to any other group would be stored and never read, so it is refused.
 func (adapter *Adapter) Publish(ctx context.Context, channelName string, message Outgoing) (string, error) {
 	if channelName == "general" {
 		return adapter.post(ctx, bus.GeneralChannel(), message)
@@ -304,7 +327,35 @@ func (adapter *Adapter) Publish(ctx context.Context, channelName string, message
 	if err := bus.ValidateGroupName(channelName); err != nil {
 		return "", err
 	}
+	if !slices.Contains(adapter.channels, bus.GroupChannel(channelName)) {
+		catalogue, err := adapter.catalogue()
+		if err != nil {
+			return "", err
+		}
+		if _, listed := catalogue[channelName]; !listed {
+			return "", fmt.Errorf("unknown channel %s: it is not in the catalogue (busctl channel create) of this machine's directory", channelName)
+		}
+	}
 	return adapter.post(ctx, bus.GroupChannel(channelName), message)
+}
+
+// NonReaders are the agents among the targets that the directory's catalogue does not list as
+// readers of the group, for the sender to be warned: they would not see the message. general is
+// read by everyone, and a group the catalogue does not know (the agent reads it through --groups)
+// says nothing.
+func (adapter *Adapter) NonReaders(channelName string, targets []string) []string {
+	catalogue, err := adapter.catalogue()
+	readers, listed := catalogue[channelName]
+	if err != nil || !listed {
+		return nil
+	}
+	var absent []string
+	for _, target := range targets {
+		if target != envelope.TargetAll && !slices.Contains(readers, target) {
+			absent = append(absent, target)
+		}
+	}
+	return absent
 }
 
 // parent is what a reply inherits from the message it answers.

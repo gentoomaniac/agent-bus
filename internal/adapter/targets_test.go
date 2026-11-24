@@ -6,11 +6,13 @@ import (
 	"errors"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/identity"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
 const carol = "docs@carol"
@@ -282,5 +284,44 @@ func TestContextOverflowDropsTheOldestContextAndNeverBlocksTargetedMail(t *testi
 	poll(t, bobAdapter)
 	if got := inboxIDs(t, bobAdapter); got[0] != request {
 		t.Errorf("inbox = %v, want the request first", got)
+	}
+}
+
+func TestCatalogueSnapshotGivesSubscriptionsAndRefusesUnknownChannels(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	b.register(carol)
+	catalogue := trust.Catalogue{"dev": {alice, bob}, "ops": {bob}, "empty": {}}
+	if err := trust.DirectoryPath(b.configDir).WriteCatalogue(catalogue); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := b.open(alice, func(config *Config) { config.Groups = []string{"extra", "dev"} })
+	var got []string
+	for _, channel := range a.Channels() {
+		got = append(got, channel.String())
+	}
+	if want := []string{"DM " + alice, "general", "channel dev", "channel extra"}; !slices.Equal(got, want) {
+		t.Errorf("channels = %v, want %v", got, want)
+	}
+
+	ctx := context.Background()
+	if _, err := a.Publish(ctx, "nowhere", toAll("x")); err == nil || !strings.Contains(err.Error(), "unknown channel") {
+		t.Errorf("publish to an unknown channel: %v", err)
+	}
+	if _, err := a.Publish(ctx, "ops", toAll("x")); err != nil {
+		t.Errorf("publish to a catalogue channel the agent does not read: %v", err)
+	}
+	if _, err := a.Publish(ctx, "extra", toAll("x")); err != nil {
+		t.Errorf("publish to a channel read through Groups: %v", err)
+	}
+	if got := a.NonReaders("dev", []string{bob, carol, envelope.TargetAll}); !slices.Equal(got, []string{carol}) {
+		t.Errorf("non-readers of dev = %v, want carol", got)
+	}
+	if got := a.NonReaders("general", []string{carol}); got != nil {
+		t.Errorf("everyone reads general, got %v", got)
+	}
+	if got := a.NonReaders("extra", []string{carol}); got != nil {
+		t.Errorf("a channel outside the catalogue says nothing, got %v", got)
 	}
 }

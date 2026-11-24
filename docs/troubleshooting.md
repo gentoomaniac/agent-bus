@@ -61,6 +61,17 @@ on; copy that `directory/` to this one, for example `rsync -a other:~/.config/ag
 ~/.config/agent-bus/directory/` ([claude-code.md](claude-code.md#other-machines)). The waiting mail
 is read within a minute of the copy.
 
+## Unknown channel
+
+Symptom: `publish` fails with "unknown channel `<name>`", or its `warning` says a target does not
+read the channel.
+
+The directory's catalogue snapshot `<config-dir>/directory/channels` does not list the group, or
+does not list the target as a reader. It is written by `busctl channel create` and `channel join`
+on the machine they run on. Copy `directory/` over (or `busctl directory export` and copy the
+result) and restart the adapter to read a newly joined group. Meanwhile DM the agent: a DM always
+arrives.
+
 ## Removed agent
 
 Symptom: `send` fails with "agent removed: `<id>`", or `alerts.log` shows "rejected ... revoked

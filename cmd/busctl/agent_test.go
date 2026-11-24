@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
 const doomed = "lib-x@bob"
@@ -47,6 +49,12 @@ func (admin *fakeAdmin) DeleteAccount(_ context.Context, agentID string) error {
 }
 func (admin *fakeAdmin) GroupChannels(context.Context) ([]bus.TopicRecord, error) {
 	return []bus.TopicRecord{{Name: "dev"}}, nil
+}
+func (admin *fakeAdmin) ReadCursorHolders(_ context.Context, channel bus.Channel) ([]string, error) {
+	if admin.cursors[channel.String()] {
+		return []string{doomed}, nil
+	}
+	return nil, nil
 }
 func (admin *fakeAdmin) DeleteReadCursor(_ context.Context, _ string, channel bus.Channel) error {
 	delete(admin.cursors, channel.String())
@@ -101,5 +109,16 @@ func TestRemovedIDIsNotRegisteredAgain(t *testing.T) {
 	}
 	if err := refuseRemoved(context.Background(), admin, doomed); err == nil {
 		t.Error("a removed ID was accepted for registration")
+	}
+}
+
+func TestWriteCatalogueSnapshotsGroupsWithTheirReaders(t *testing.T) {
+	admin := newFakeAdmin()
+	dir := trust.FileDirectory(t.TempDir())
+	if err := writeCatalogue(context.Background(), admin, dir); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := dir.Catalogue(); err != nil || !reflect.DeepEqual(got, trust.Catalogue{"dev": {doomed}}) {
+		t.Errorf("catalogue = %v, %v", got, err)
 	}
 }

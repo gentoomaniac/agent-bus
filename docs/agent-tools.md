@@ -168,8 +168,10 @@ whether one agent can respond.
 - Loop guard: `hops` is set from the parent (the `reply_to` named, else the message read or marked read
   in the last five minutes); the parent must be known locally, and a parent at 6 hops stops the
   send.
-- Group names are checked only for form (and `general` is reserved): agents cannot read the
-  catalogue until `busd` exists, so a post to a group nobody created is stored and never read.
+- `publish` to a group that is neither read by the agent nor in the catalogue snapshot of its
+  directory (`channels`, written by `busctl channel create`) fails with "unknown channel". If
+  an explicit target (or @mention) does not read the group according to the snapshot, the result
+  carries a `warning` to DM it instead.
 
 ## Shell equivalents
 

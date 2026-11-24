@@ -718,3 +718,23 @@ func TestMailFromASenderWithoutADirectoryRecordIsReportedOnce(t *testing.T) {
 		t.Errorf("whoami unknown_senders = %q", who.UnknownSenders)
 	}
 }
+
+func TestPublishWarnsOfTargetsThatDoNotReadTheChannel(t *testing.T) {
+	b := newTestBus(t, alice, bob)
+	if err := trust.DirectoryPath(b.configDir).WriteCatalogue(trust.Catalogue{"dev": {alice}}); err != nil {
+		t.Fatal(err)
+	}
+	a := b.connect(alice)
+
+	args := hello("anyone?")
+	args["channel"] = "dev"
+	args["targets"] = []string{bob}
+	args["type"] = "question"
+	if sent := decode[sentOut](t, call(t, a, "publish", args)); !strings.Contains(sent.Warning, bob+" does not read dev") {
+		t.Errorf("warning = %q", sent.Warning)
+	}
+	args["channel"] = "nowhere"
+	if text := errorText(call(t, a, "publish", args)); !strings.Contains(text, "unknown channel") {
+		t.Errorf("publish to an unknown channel: %q", text)
+	}
+}

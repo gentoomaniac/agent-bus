@@ -18,8 +18,8 @@ or in the project's `.mcp.json`:
 {"mcpServers": {"agent-bus": {"command": "agent-bus", "args": ["mcp", "--agent", "api-client@alice"]}}}
 ```
 
-Flags: `--agent` (`--identity` works too), `--groups a,b` for group channels to read (see
-[busctl channel join](busctl.md#channel-join)), `--deliver targeted|all` (below), `--[no-]auto-accept-messages` (below), and
+Flags: `--agent` (`--identity` works too), `--groups a,b` for group channels to read besides those `busctl channel join` recorded in the
+directory (see [busctl channel join](busctl.md#channel-join)), `--deliver targeted|all` (below), `--[no-]auto-accept-messages` (below), and
 `--config-dir`, `--broker`, `--ca-cert` as for busctl. A background reader keeps fetching mail into the inbox until the client closes stdin
 or the process gets SIGTERM; then the identity lock is released.
 

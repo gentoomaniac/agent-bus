@@ -5,7 +5,27 @@ import (
 	"fmt"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
+
+// writeCatalogue snapshots the catalogue and who reads each group into the directory, which is how
+// adapters learn the channels and their members (design.md §4a). The broker is the source, so the
+// snapshot is complete however often it is rewritten.
+func writeCatalogue(ctx context.Context, admin bus.Admin, dir trust.FileDirectory) error {
+	groups, err := admin.GroupChannels(ctx)
+	if err != nil {
+		return err
+	}
+	catalogue := trust.Catalogue{}
+	for _, group := range groups {
+		readers, err := admin.ReadCursorHolders(ctx, bus.GroupChannel(group.Name))
+		if err != nil {
+			return err
+		}
+		catalogue[group.Name] = readers
+	}
+	return dir.WriteCatalogue(catalogue)
+}
 
 type ChannelCreateCmd struct {
 	Name        string `arg:"" help:"Channel name, lowercase [a-z0-9-]."`
@@ -28,6 +48,9 @@ func (cmd *ChannelCreateCmd) Run(ctx context.Context, cli *CLI) error {
 	if err != nil {
 		return err
 	}
+	if err := writeCatalogue(ctx, admin, trust.DirectoryPath(cli.ConfigDir)); err != nil {
+		return err
+	}
 	if created {
 		fmt.Printf("created channel %s\n", cmd.Name)
 	} else {
@@ -43,7 +66,8 @@ type ChannelJoinCmd struct {
 
 // Run creates the agent's read cursor on the group, starting at the current end of the log, so it
 // reads what is posted from now on. The agent's grants for the cursor exist already: they come
-// with `channel create`. Repeating it leaves the cursor where it is.
+// with `channel create`. It then rewrites the catalogue snapshot in the local directory, which the
+// agent's adapter reads for its subscriptions. Repeating it leaves the cursor where it is.
 func (cmd *ChannelJoinCmd) Run(ctx context.Context, cli *CLI) error {
 	if err := bus.ValidateAgentID(cmd.AgentID); err != nil {
 		return err
@@ -71,6 +95,10 @@ func (cmd *ChannelJoinCmd) Run(ctx context.Context, cli *CLI) error {
 	if err := admin.CreateReadCursor(ctx, cmd.AgentID, bus.GroupChannel(cmd.Name), last); err != nil {
 		return err
 	}
-	fmt.Printf("%s reads %s from now on\n", cmd.AgentID, cmd.Name)
+	if err := writeCatalogue(ctx, admin, trust.DirectoryPath(cli.ConfigDir)); err != nil {
+		return err
+	}
+	fmt.Printf("%s reads %s from now on; its adapter picks that up at the next start, "+
+		"and other machines with the next copy of the directory (docs/busctl.md)\n", cmd.AgentID, cmd.Name)
 	return nil
 }

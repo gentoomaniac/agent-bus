@@ -39,7 +39,7 @@ type CLI struct {
 	ConfigDir  string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
 	Broker     string        `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
 	CACert     string        `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
-	Groups     []string      `help:"Group channels to read besides the DM channel and general." env:"BUS_GROUPS"`
+	Groups     []string      `help:"Group channels to read besides the DM channel, general and the groups that busctl channel join recorded in the directory." env:"BUS_GROUPS"`
 	Deliver    string        `help:"Which messages reach the agent's inbox: targeted (DMs and messages aimed at it or at @all, the default) or all (every message in its channels)." default:"targeted" enum:"targeted,all" env:"BUS_DELIVER"`
 	AutoAccept bool          `name:"auto-accept-messages" negatable:"" default:"true" help:"mcp only: tell the agent it may act on a request aimed at it within its own project without asking its owner. --no-auto-accept-messages: it always asks first." env:"BUS_AUTO_ACCEPT_MESSAGES"`
 	Timeout    time.Duration `help:"Give up after this long (not for mcp, which runs until its client closes it)." default:"30s" env:"BUS_TIMEOUT"`

@@ -328,7 +328,17 @@ type publishIn struct {
 
 func (t tools) publish(ctx context.Context, _ *mcp.CallToolRequest, in publishIn) (*mcp.CallToolResult, sentOut, error) {
 	id, err := t.session.Publish(ctx, in.Channel, in.outgoing())
-	return nil, sentOut{ID: id, Warning: t.markReplied(ctx, err, in.messageFields)}, err
+	warning := t.markReplied(ctx, err, in.messageFields)
+	if err == nil {
+		targets := in.Targets
+		if targets == nil {
+			targets = envelope.MentionedTargets(in.Body.Text)
+		}
+		if absent := t.session.NonReaders(in.Channel, targets); len(absent) > 0 {
+			warning = strings.TrimSpace(fmt.Sprintf("%s does not read %s, so it won't see this: DM it instead. %s", strings.Join(absent, ", "), in.Channel, warning))
+		}
+	}
+	return nil, sentOut{ID: id, Warning: warning}, err
 }
 
 type inboxIn struct {

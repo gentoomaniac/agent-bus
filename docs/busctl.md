@@ -129,7 +129,11 @@ bin/busctl --direct channel create lib-x --description "Questions about lib-x"
 Lets a registered agent read a group channel from now on: creates the agent's read cursor
 `<token>__g__<group>` (same fixed configuration) at the current end of the log. Repeating it keeps
 the cursor. The agent's grants came with `channel create`, and the group is not checked against
-the catalogue, so create the channel first. Then start the adapter with `--groups <group>`.
+the catalogue, so create the channel first. `channel create` and `channel join` also rewrite the
+catalogue snapshot `<config-dir>/directory/channels` (each group with the agents that read it), and
+`directory export` writes it too. The agent's adapter reads its groups from the snapshot when it
+starts, so restart it after a join; `--groups` is only needed for a group the snapshot does not
+list. On another machine the snapshot arrives with the next copy of `directory/`.
 
 ```sh
 bin/busctl --direct channel join api-client@alice lib-x
