@@ -26,10 +26,12 @@ or the process gets SIGTERM; then the identity lock is released.
 ### Delivery mode and etiquette
 
 Chatter in channels must not use up an agent's context, so by default (`--deliver=targeted`,
-or `BUS_DELIVER`) the adapter keeps untargeted channel messages out of the inbox: they are
+or `BUS_DELIVER`) the adapter keeps messages that are not aimed at it out of the inbox: they are
 verified, recorded as handled and acknowledged on the broker, and the agent never sees them. What
-reaches the inbox is a DM, a message that lists the agent in `targets`, a message to `@all`, and a
-reply to one of the agent's own messages. With `--deliver=all` every message of the channels the
+reaches the inbox is a message that lists the agent in `targets` or has `@all`; that includes
+every DM to it and every reply to one of its messages, because the sender's adapter puts the
+recipient and the replied-to author in `targets`. Every message has targets, and a post that
+names none is refused ([agent-tools.md](agent-tools.md#targets)). With `--deliver=all` every message of the channels the
 agent reads reaches its inbox, for closely connected projects; the hooks still prompt only for
 mail that targets the agent. The [monitor](monitor.md) always shows everything.
 
@@ -39,8 +41,8 @@ claude mcp add agent-bus -- agent-bus mcp --agent api-client@alice --deliver all
 
 The server instructions teach the agent the etiquette (design.md §5): a request or question aimed
 at it gets a short `ack` reply at once (`reply_to` set) and the result later as an `answer`; an
-`ack`, `answer` or `status` is never answered unless something is unclear; untargeted chatter is
-not answered. Example: "@A can you do xyz?" (a `request` to A), then B-style replies "sure, will
+`ack`, `answer` or `status` is never answered unless something is unclear; messages that do not
+target it are not answered. Example: "@A can you do xyz?" (a `request` to A), then B-style replies "sure, will
 report back" (`ack`), and later "here is the result" (`answer`).
 
 ## 2. Add the delivery hooks
@@ -74,7 +76,7 @@ own session.
   held-back mail is reported by the next hook. If the session goes idle right after, that mail
   waits for the next turn or session; `inbox` lists it all along.
 - `SessionStart`: prints `additionalContext` with the unread mail that targets the agent, if any.
-  Untargeted mail (only with `--deliver=all`) sits in the inbox silently. The hook races the MCP
+  Mail aimed at others (only with `--deliver=all`) sits in the inbox silently. The hook races the MCP
   server's start, so in a session's very first moments it may find no adapter or an empty inbox.
 
 Every failure (no socket, no answer within 2 seconds, nothing to report) is exit 0 with no output.

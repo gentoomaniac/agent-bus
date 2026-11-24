@@ -121,9 +121,6 @@ func Sign(env Envelope, key ed25519.PrivateKey) ([]byte, error) {
 	if err := env.CheckTargets(); err != nil {
 		return nil, err
 	}
-	if env.Targets == nil {
-		env.Targets = []string{} // signed as [], not null
-	}
 	body, err := json.Marshal(env.Body)
 	if err != nil {
 		return nil, err
@@ -186,14 +183,15 @@ func Parse(payload []byte) (*Signed, error) {
 	if err := env.CheckTargets(); err != nil {
 		return nil, err
 	}
-	if env.Targets == nil {
-		env.Targets = []string{} // a record from before targets existed
-	}
 	return &Signed{Envelope: env, canonical: canonical, signature: signature}, nil
 }
 
-// CheckTargets accepts agent IDs without duplicates, or the single value "@all", or nothing.
+// CheckTargets accepts agent IDs without duplicates, or the single value "@all". Every message
+// is aimed at someone (§5), so none is not accepted.
 func (env Envelope) CheckTargets() error {
+	if len(env.Targets) == 0 {
+		return errors.New("no targets: name a target or @all")
+	}
 	if slices.Equal(env.Targets, []string{TargetAll}) {
 		return nil
 	}
@@ -234,10 +232,13 @@ func (signed *Signed) Verify(key ed25519.PublicKey) bool {
 }
 
 // CheckTo rejects a record that was consumed from a channel it was not addressed to, so a signed
-// message cannot be replayed into another inbox (§6 step 2).
+// message cannot be replayed into another inbox (§6 step 2). A DM targets exactly its recipient.
 func (env Envelope) CheckTo(channel bus.Channel) error {
 	if want := ToFor(channel); env.To != want {
 		return fmt.Errorf("addressed to %s %q, but consumed from %s", env.To.Kind, env.To.Name, channel)
+	}
+	if env.To.Kind == ToAgent && !slices.Equal(env.Targets, []string{env.To.Name}) {
+		return fmt.Errorf("a DM to %s must target exactly it, not %v", env.To.Name, env.Targets)
 	}
 	return nil
 }

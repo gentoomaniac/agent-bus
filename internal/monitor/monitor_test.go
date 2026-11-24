@@ -89,9 +89,16 @@ func newTestAgent(id string) *testAgent {
 	return &testAgent{id: id, key: private, fp: identity.Fingerprint(public)}
 }
 
-// sign returns the record the agent publishes to a channel, aimed at the targets.
+// sign returns the record the agent publishes to a channel, aimed at the targets: by default the
+// recipient of a DM, or everyone.
 func (agent *testAgent) sign(t *testing.T, to bus.Channel, text string, targets ...string) []byte {
 	t.Helper()
+	if len(targets) == 0 {
+		targets = []string{envelope.TargetAll}
+		if to.Kind == bus.DM {
+			targets = []string{to.Name}
+		}
+	}
 	payload, err := envelope.Sign(envelope.Envelope{
 		Version: envelope.Version, ID: envelope.NewID(time.Now()), TS: time.Now().UTC(), From: agent.id, To: envelope.ToFor(to),
 		Type: "message", Targets: targets, Thread: "t", KeyFP: agent.fp, Body: envelope.Body{Text: text},

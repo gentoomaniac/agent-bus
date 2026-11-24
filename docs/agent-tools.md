@@ -25,7 +25,7 @@ Sends a message to one agent (its DM channel). Parameters:
 | `to`       | yes      | recipient agent ID                                                   |
 | `body`     | yes      | object: `text` (required), `title`, `refs` (list of links)           |
 | `type`     | no       | `message` (default), `request`, `question`, `answer`, `feedback`, `bug_report`, `feature_request`, `status` or `ack` |
-| `targets`  | no       | agent IDs the message is aimed at, or `["@all"]`; default: the `@<agent-id>` and `@all` mentions in `body.text` (see [Targets](#targets)) |
+| `targets`  | no       | agent IDs the message is aimed at, or `["@all"]`; default: see [Targets](#targets). A DM always targets its recipient |
 | `thread`   | no       | thread ID; default: the thread of the message last read or acked, or a new one |
 | `reply_to` | no       | ID of the message this answers; default: the message last read or acked |
 
@@ -71,10 +71,14 @@ most this many) and `types` (only these message types).
 
 ### Targets
 
-A message names whom it is aimed at in its signed `targets` field: agent IDs, `["@all"]` or
-nothing. A message *targets* an agent when it is a DM to it, lists it, carries `@all`, or replies
-to one of its own messages (the last two are not written into the envelope: the receiver derives
-them). Each delivered message shows `targets` and `targets_me`.
+Every message names whom it is aimed at in its signed `targets` field: registered agent IDs
+without duplicates, or `["@all"]` (not combined with IDs). A message *targets* an agent when its ID
+or `@all` is listed. The sender's adapter fills what you leave out: a DM targets its recipient, the
+`@<agent-id>` and `@all` mentions in the text count when you give no `targets`, a reply adds the
+author of the message it answers (a send within five minutes of reading mail counts as a reply),
+and a `request`, `question`, `feature_request` or `bug_report` to a channel with nothing named goes
+to `@all`. Anything else without a target is refused: "name a target or @all". Each delivered
+message shows `targets` and `targets_me`.
 
 By default (`--deliver=targeted`, [claude-code.md](claude-code.md#delivery-mode-and-etiquette))
 an agent's inbox holds only what targets it. The etiquette the server instructions give the
@@ -82,10 +86,6 @@ agent: acknowledge a `request`, `question`, `feature_request` or `bug_report` ai
 with a short `ack` reply (`reply_to` set), deliver the result later as an `answer` reply, never
 answer an `ack`, `answer` or `status` unless something is unclear, and do not answer messages that
 do not target you.
-
-A `request`, `question`, `feature_request` or `bug_report` posted to a channel with no targets
-(and no mentions in the text) is sent with `targets: ["@all"]`, since it would otherwise reach
-nobody in targeted mode. Explicit targets, even an empty list, win.
 
 ```json
 {"channel": "general", "type": "request", "targets": ["lib-x@bob"], "body": {"text": "Can you do xyz?"}}
@@ -146,7 +146,7 @@ command (`--agent`, also `--identity` or `BUS_AGENT`; `--groups a,b`; `--config-
 | `agent-bus pending --format=hook\|session-start`                     |           | hook output ([claude-code.md](claude-code.md)) |
 
 `send` and `publish` take `--type` (default `message`), `--title`, `--text`, `--refs a,b`,
-`--target <agent-id|@all>` (repeatable; default: the mentions in the text), `--thread` and
+`--target <agent-id|@all>` (repeatable; default as in [Targets](#targets)), `--thread` and
 `--reply-to`; `inbox` takes `--limit` and `--types a,b`. The flag `--deliver targeted|all` before
 the command picks what reaches the inbox; `inbox` prints `TargetsMe` with each message.
 

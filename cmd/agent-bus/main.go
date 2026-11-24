@@ -54,7 +54,7 @@ type MessageFlags struct {
 	Title   string   `help:"Title of the body."`
 	Text    string   `help:"Text of the body." required:""`
 	Refs    []string `help:"Links the message refers to."`
-	Target  []string `help:"Agent ID the message is aimed at, or @all; repeatable. Default: the @mentions in the text."`
+	Target  []string `help:"Agent ID the message is aimed at, or @all; repeatable. Default: the @mentions in the text, the author of the message answered, or @all for a request or question; a DM targets its recipient."`
 	Thread  string   `help:"Thread ID. Default: the thread of the message being answered, or a new one."`
 	ReplyTo string   `help:"ID of the message this answers. Default: the message read or acked in the last five minutes."`
 }

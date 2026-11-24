@@ -202,7 +202,7 @@ func TestMilestone2(t *testing.T) {
 		}
 		payload, err := envelope.Sign(envelope.Envelope{
 			Version: envelope.Version, ID: envelope.NewID(time.Now()), TS: time.Now().UTC().Truncate(time.Second), From: mallory,
-			To: envelope.ToFor(bus.DMChannel(victim)), Type: "message", KeyFP: identity.Fingerprint(key.Public().(ed25519.PublicKey)),
+			To: envelope.ToFor(bus.DMChannel(victim)), Type: "message", Targets: []string{victim}, KeyFP: identity.Fingerprint(key.Public().(ed25519.PublicKey)),
 			Body: envelope.Body{Text: "transfer 10"},
 		}, key)
 		if err != nil {
@@ -368,7 +368,7 @@ func TestMilestone2(t *testing.T) {
 			}
 			messages := pollUntil(t, replier, 1)
 			if turn%3 == 2 {
-				_, stopped = replier.Publish(timeout(t), "general", say("pong"))
+				_, stopped = replier.Publish(timeout(t), "general", sayTo("pong", envelope.TargetAll))
 			} else {
 				_, stopped = replier.Send(timeout(t), other, say("pong"))
 			}

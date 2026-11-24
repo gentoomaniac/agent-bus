@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 // fakeSender records what the monitor sends.
 type fakeSender struct {
 	ready   error
+	refuse  error    // what Send and Publish fail with
 	sent    []string // "<destination>: <text>"
 	targets [][]string
 }
@@ -26,13 +28,13 @@ func (sender *fakeSender) Ready() error { return sender.ready }
 func (sender *fakeSender) Send(_ context.Context, to string, message adapter.Outgoing) (string, error) {
 	sender.sent = append(sender.sent, "agent "+to+": "+message.Body.Text)
 	sender.targets = append(sender.targets, message.Targets)
-	return "ID1", nil
+	return "ID1", sender.refuse
 }
 
 func (sender *fakeSender) Publish(_ context.Context, channel string, message adapter.Outgoing) (string, error) {
 	sender.sent = append(sender.sent, "group "+channel+": "+message.Body.Text)
 	sender.targets = append(sender.targets, message.Targets)
-	return "ID2", nil
+	return "ID2", sender.refuse
 }
 
 func monitorWithSender(t *testing.T, sender Sender) *Monitor {
@@ -101,6 +103,19 @@ func TestSendPassesPickedTargetsAndLeavesMentionsToTheAdapter(t *testing.T) {
 	}
 	if len(sender.targets) != 2 || len(sender.targets[0]) != 1 || sender.targets[1] != nil {
 		t.Errorf("targets passed on = %v, want the picked one and then nil", sender.targets)
+	}
+}
+
+func TestAMessageAimedAtNobodyIsTheUsersMistake(t *testing.T) {
+	sender := &fakeSender{refuse: fmt.Errorf("%w: name a target or @all", adapter.ErrBadTargets)}
+	monitor := monitorWithSender(t, sender)
+	request := SendRequest{To: envelope.To{Kind: envelope.ToGroup, Name: "general"}, Type: "message", Text: "hi"}
+	if _, err := monitor.Send(context.Background(), request); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("error %v, want ErrInvalidRequest", err)
+	}
+	request.Targets = []string{"who@ever"}
+	if _, err := monitor.Send(context.Background(), request); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("an unregistered target: error %v, want ErrInvalidRequest", err)
 	}
 }
 

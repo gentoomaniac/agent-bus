@@ -129,6 +129,11 @@ func (b *testBus) open(agentID string, mutate ...func(*Config)) (*Adapter, *fake
 	return adapter, transport
 }
 
+// toAll is a channel post aimed at everyone: every message needs a target.
+func toAll(content string) Outgoing {
+	return Outgoing{Type: "message", Body: envelope.Body{Text: content}, Targets: []string{envelope.TargetAll}}
+}
+
 func text(content string) Outgoing {
 	return Outgoing{Type: "message", Body: envelope.Body{Text: content}}
 }
@@ -161,7 +166,7 @@ func TestDMAndGeneralPostAreVerifiedPinnedAndAcked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	postID, err := a.Publish(ctx, "general", text("hello all"))
+	postID, err := a.Publish(ctx, "general", toAll("hello all"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +207,7 @@ func TestOwnPostsOnGeneralAreNotDeliveredBack(t *testing.T) {
 	b := newTestBus(t)
 	b.register(alice)
 	a, transport := b.open(alice)
-	if _, err := a.Publish(context.Background(), "general", text("hi")); err != nil {
+	if _, err := a.Publish(context.Background(), "general", toAll("hi")); err != nil {
 		t.Fatal(err)
 	}
 	poll(t, a)
@@ -356,7 +361,7 @@ func TestSecondAdapterOnTheSameIdentityFailsEveryOperation(t *testing.T) {
 
 	errs := map[string]error{}
 	_, errs["send"] = second.Send(ctx, bob, text("x"))
-	_, errs["publish"] = second.Publish(ctx, "general", text("x"))
+	_, errs["publish"] = second.Publish(ctx, "general", toAll("x"))
 	errs["poll"] = second.Poll(ctx)
 	_, errs["inbox"] = second.Inbox(InboxQuery{})
 	errs["ack"] = second.Ack(ctx, []string{"x"})
@@ -368,7 +373,7 @@ func TestSecondAdapterOnTheSameIdentityFailsEveryOperation(t *testing.T) {
 			t.Errorf("%s: %v, want an error naming the identity and holder", operation, err)
 		}
 	}
-	if _, err := first.Publish(ctx, "general", text("still works")); err != nil {
+	if _, err := first.Publish(ctx, "general", toAll("still works")); err != nil {
 		t.Errorf("the lock holder is affected: %v", err)
 	}
 	if err := second.Close(); err != nil {
@@ -393,11 +398,11 @@ func TestRateLimit(t *testing.T) {
 	a, _ := b.open(alice, func(config *Config) { config.RateLimit = 2 })
 	ctx := context.Background()
 	for i := 0; i < 2; i++ {
-		if _, err := a.Publish(ctx, "general", text("x")); err != nil {
+		if _, err := a.Publish(ctx, "general", toAll("x")); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := a.Publish(ctx, "general", text("x")); err == nil || !strings.Contains(err.Error(), "rate limit") {
+	if _, err := a.Publish(ctx, "general", toAll("x")); err == nil || !strings.Contains(err.Error(), "rate limit") {
 		t.Errorf("third send: %v", err)
 	}
 }
@@ -409,7 +414,7 @@ func reply(t *testing.T, adapter *Adapter, to string, viaPublish bool) error {
 	messages := inboxOf(t, adapter)
 	var err error
 	if viaPublish {
-		_, err = adapter.Publish(context.Background(), "general", text("reply"))
+		_, err = adapter.Publish(context.Background(), "general", toAll("reply"))
 	} else {
 		_, err = adapter.Send(context.Background(), to, text("reply"))
 	}

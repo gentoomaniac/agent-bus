@@ -236,7 +236,9 @@ func TestPublishTargetsFromTheArrayOrTheText(t *testing.T) {
 	call(t, a, "publish", byText)
 	chatter := hello("nobody is asked")
 	chatter["channel"] = "general"
-	call(t, a, "publish", chatter)
+	if text := errorText(call(t, a, "publish", chatter)); !strings.Contains(text, "name a target or @all") {
+		t.Errorf("a post without targets: %q", text)
+	}
 
 	var got []message
 	for len(got) < 2 {

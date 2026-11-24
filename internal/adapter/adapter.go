@@ -65,7 +65,7 @@ type Config struct {
 type Outgoing struct {
 	Type    string
 	Body    envelope.Body
-	Targets []string // agent IDs or "@all"; default: the mentions in the body text, else @all for a request in a channel (§5)
+	Targets []string // agent IDs or "@all"; default: see targetsFor
 	Thread  string   // default: the parent's thread, or a new one
 	ReplyTo string   // default: the message the agent most recently read or acked (§8 rule 3)
 }
@@ -216,20 +216,60 @@ func (adapter *Adapter) Publish(ctx context.Context, channelName string, message
 
 // parent is what a reply inherits from the message it answers.
 type parent struct {
-	id, thread string
-	hops       int
+	id, thread, author string
+	hops               int
 }
 
 // findParent looks for a message the agent has read or sent. The history lookup of §8 rule 3 for
 // an unknown one comes with busd, so an unknown reply_to is refused.
 func (adapter *Adapter) findParent(id string) (parent, bool) {
 	if buffered := adapter.inbox.findByID(id); buffered != nil {
-		return parent{id, buffered.Envelope.Thread, buffered.Envelope.Hops}, true
+		return parent{id, buffered.Envelope.Thread, buffered.Envelope.From, buffered.Envelope.Hops}, true
 	}
 	if entry, ok := adapter.handled.messageByID(id); ok {
-		return parent{id, entry.Thread, entry.Hops}, true
+		return parent{id, entry.Thread, entry.From, entry.Hops}, true
 	}
 	return parent{}, false
+}
+
+// ErrBadTargets is the error of a message that is aimed at nobody or at an invalid target.
+var ErrBadTargets = errors.New("invalid targets")
+
+// targetsFor fills in the targets of an outgoing message (design.md §5): a DM targets its
+// recipient; in a channel they are the ones given, else the mentions in the text, plus the author
+// of the message being answered; a request or question with none goes to @all. Anything else
+// aimed at nobody is refused.
+func (adapter *Adapter) targetsFor(ctx context.Context, to bus.Channel, message Outgoing, replied *parent) ([]string, error) {
+	if to.Kind == bus.DM {
+		if message.Targets != nil && !slices.Equal(message.Targets, []string{to.Name}) {
+			return nil, fmt.Errorf("%w: a DM targets its recipient %s", ErrBadTargets, to.Name)
+		}
+		return []string{to.Name}, nil
+	}
+	targets := message.Targets
+	if targets == nil {
+		targets = envelope.MentionedTargets(message.Body.Text)
+	}
+	if replied != nil && replied.author != adapter.config.AgentID && !slices.Contains(targets, envelope.TargetAll) && !slices.Contains(targets, replied.author) {
+		targets = append(slices.Clone(targets), replied.author)
+	}
+	if len(targets) == 0 && slices.Contains(envelope.ResponseBearingTypes, message.Type) {
+		targets = []string{envelope.TargetAll}
+	}
+	if err := (envelope.Envelope{Targets: targets}).CheckTargets(); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrBadTargets, err)
+	}
+	for _, target := range targets {
+		if target == envelope.TargetAll {
+			continue
+		}
+		if _, err := adapter.config.Directory.Lookup(ctx, target); errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("%w: unknown agent %s: it has no entry in the directory", ErrBadTargets, target)
+		} else if err != nil {
+			return nil, err
+		}
+	}
+	return targets, nil
 }
 
 func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoing) (string, error) {
@@ -261,13 +301,9 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 		}
 	}
 
-	targets := message.Targets
-	if targets == nil {
-		targets = envelope.MentionedTargets(message.Body.Text)
-	}
-	// A question to a channel that names nobody would reach nobody in targeted mode (§5).
-	if targets == nil && to.Kind != bus.DM && slices.Contains(envelope.ResponseBearingTypes, message.Type) {
-		targets = []string{envelope.TargetAll}
+	targets, err := adapter.targetsFor(ctx, to, message, inherited)
+	if err != nil {
+		return "", err
 	}
 
 	id := envelope.NewID(now)
@@ -437,7 +473,7 @@ func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delive
 	}
 	message := &Message{
 		Envelope: env, Channel: channel, Sequence: delivery.Sequence, FirstContact: resolution.NewPin != nil,
-		TargetsMe: adapter.targetsMe(env, channel), Digest: digest, delivery: delivery, size: len(delivery.Payload),
+		TargetsMe: adapter.targetsMe(env), Digest: digest, delivery: delivery, size: len(delivery.Payload),
 	}
 	if !message.TargetsMe && adapter.config.Deliver == DeliverTargeted {
 		// Chatter costs the agent no context: handled and acked without ever reaching the inbox.
@@ -450,18 +486,10 @@ func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delive
 	return nil
 }
 
-// targetsMe is the rule of §5: a DM to this agent, its ID or "@all" in the targets, or a reply to
-// one of its own messages. Its sent messages are in the handled set, which is on disk, so the
-// last rule survives a restart.
-func (adapter *Adapter) targetsMe(env envelope.Envelope, channel bus.Channel) bool {
-	if channel.Kind == bus.DM || slices.Contains(env.Targets, adapter.config.AgentID) || slices.Contains(env.Targets, envelope.TargetAll) {
-		return true
-	}
-	if env.ReplyTo == nil {
-		return false
-	}
-	replied, known := adapter.handled.messageByID(*env.ReplyTo)
-	return known && replied.From == adapter.config.AgentID
+// targetsMe is the rule of §5: this agent's ID or "@all" in the targets. The sender put the
+// recipient of a DM and the author of a replied-to message there.
+func (adapter *Adapter) targetsMe(env envelope.Envelope) bool {
+	return slices.Contains(env.Targets, adapter.config.AgentID) || slices.Contains(env.Targets, envelope.TargetAll)
 }
 
 func (adapter *Adapter) handledEntry(message *Message) handledEntry {

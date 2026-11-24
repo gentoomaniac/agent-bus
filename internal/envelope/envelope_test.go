@@ -136,16 +136,21 @@ func TestParseRejectsBadRecords(t *testing.T) {
 }
 
 func TestCheckTo(t *testing.T) {
-	env := Envelope{To: To{Kind: ToAgent, Name: "b@o"}}
+	env := Envelope{To: To{Kind: ToAgent, Name: "b@o"}, Targets: []string{"b@o"}}
 	if err := env.CheckTo(bus.DMChannel("b@o")); err != nil {
 		t.Error(err)
+	}
+	for _, targets := range [][]string{nil, {"c@o"}, {"b@o", "c@o"}, {TargetAll}} {
+		if (Envelope{To: env.To, Targets: targets}).CheckTo(bus.DMChannel("b@o")) == nil {
+			t.Errorf("a DM with targets %v was accepted", targets)
+		}
 	}
 	for _, channel := range []bus.Channel{bus.DMChannel("c@o"), bus.GeneralChannel(), bus.GroupChannel("b@o")} {
 		if env.CheckTo(channel) == nil {
 			t.Errorf("accepted on %s", channel)
 		}
 	}
-	general := Envelope{To: To{Kind: ToGroup, Name: "general"}}
+	general := Envelope{To: To{Kind: ToGroup, Name: "general"}, Targets: []string{TargetAll}}
 	if err := general.CheckTo(bus.GeneralChannel()); err != nil {
 		t.Error(err)
 	}
@@ -246,7 +251,7 @@ func TestCheckNoDuplicateKeys(t *testing.T) {
 
 func TestCheckTargets(t *testing.T) {
 	for targets, want := range map[string]bool{
-		`[]`: true, `["a@o"]`: true, `["a@o","b@o"]`: true, `["@all"]`: true,
+		`[]`: false, `["a@o"]`: true, `["a@o","b@o"]`: true, `["@all"]`: true,
 		`["@all","a@o"]`: false, `["a@o","a@o"]`: false, `["nobody"]`: false, `["@all","@all"]`: false,
 	} {
 		var list []string
@@ -259,20 +264,18 @@ func TestCheckTargets(t *testing.T) {
 	}
 }
 
-func TestSignRefusesInvalidTargetsAndSignsEmptyAsList(t *testing.T) {
+func TestSignRefusesInvalidAndMissingTargets(t *testing.T) {
 	public, private := identity.Generate()
 	env := testEnvelope(public)
 	env.Targets = []string{"nobody"}
 	if _, err := Sign(env, private); err == nil {
 		t.Error("an invalid target was signed")
 	}
-	env.Targets = nil
-	payload, err := Sign(env, private)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(payload), `"targets":[]`) {
-		t.Errorf("no targets should be signed as an empty list: %s", payload)
+	for _, none := range [][]string{nil, {}} {
+		env.Targets = none
+		if _, err := Sign(env, private); err == nil {
+			t.Errorf("a message with targets %v was signed", none)
+		}
 	}
 }
 
@@ -286,17 +289,15 @@ func TestParseRefusesInvalidTargets(t *testing.T) {
 	}
 }
 
-func TestRecordWithoutTargetsStillParses(t *testing.T) {
-	public, private := identity.Generate()
-	raw := `{"v":1,"id":"X","ts":"2026-11-24T10:00:00Z","from":"a@o","to":{"kind":"agent","name":"b@o"},"type":"message","thread":"T","reply_to":null,"hops":0,"key_fp":"F","body":{}}`
-	canonical, _ := canonicalize([]byte(raw))
-	record, _ := json.Marshal(map[string]any{"envelope": json.RawMessage(raw), "sig": base64.StdEncoding.EncodeToString(ed25519.Sign(private, canonical))})
-	signed, err := Parse(record)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !signed.Verify(public) || len(signed.Envelope.Targets) != 0 {
-		t.Errorf("old record: verifies = %v, targets = %v", signed.Verify(public), signed.Envelope.Targets)
+func TestParseRefusesMissingAndEmptyTargets(t *testing.T) {
+	_, private := identity.Generate()
+	for _, field := range []string{``, `"targets":[],`, `"targets":null,`} {
+		raw := `{"v":1,"id":"X","ts":"2026-11-24T10:00:00Z","from":"a@o","to":{"kind":"agent","name":"b@o"},"type":"message",` + field + `"thread":"T","reply_to":null,"hops":0,"key_fp":"F","body":{}}`
+		canonical, _ := canonicalize([]byte(raw))
+		record, _ := json.Marshal(map[string]any{"envelope": json.RawMessage(raw), "sig": base64.StdEncoding.EncodeToString(ed25519.Sign(private, canonical))})
+		if _, err := Parse(record); err == nil || !strings.Contains(err.Error(), "targets") {
+			t.Errorf("%q: a record without targets was parsed: %v", field, err)
+		}
 	}
 }
 

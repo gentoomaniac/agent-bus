@@ -103,7 +103,9 @@ can reach it.
 
 With `--agent`, the composer posts to `general`, a group channel or, as a DM, to an agent. For a
 channel it offers a picker of the channel's members and `@all` to aim the message; if none is
-ticked, the `@<agent-id>` and `@all` mentions in the text are used. A DM targets its recipient. The
+ticked, the `@<agent-id>` and `@all` mentions in the text are used; failing that a request or
+question goes to `@all` and anything else is refused ("name a target or @all"). A DM targets its
+recipient. A record with no or malformed targets shows as `rejected` with the reason. The
 message goes through an adapter session of that identity: it is signed with its key, subject to its
 rate limit, and refused if the body looks like a secret. The identity lock applies as usual: if a
 Claude Code session holds the identity, the monitor says so and stays read-only. Use an identity of

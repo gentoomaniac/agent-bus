@@ -89,10 +89,10 @@ func TestMonitor(t *testing.T) {
 	if _, err := bobSession.Send(ctx, alice, say("dm answer")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := aliceSession.Publish(ctx, "general", say("general hello")); err != nil {
+	if _, err := aliceSession.Publish(ctx, "general", sayTo("general hello", envelope.TargetAll)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bobSession.Publish(ctx, "lib-x", say("group hello")); err != nil {
+	if _, err := bobSession.Publish(ctx, "lib-x", sayTo("group hello", envelope.TargetAll)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -103,7 +103,7 @@ func TestMonitor(t *testing.T) {
 	}
 	payload, err := envelope.Sign(envelope.Envelope{
 		Version: envelope.Version, ID: envelope.NewID(time.Now()), TS: time.Now().UTC(), From: alice, To: envelope.ToFor(bus.GeneralChannel()),
-		Type: "message", Thread: "t", KeyFP: identity.Fingerprint(key.Public().(ed25519.PublicKey)), Body: envelope.Body{Text: "as signed"},
+		Type: "message", Targets: []string{envelope.TargetAll}, Thread: "t", KeyFP: identity.Fingerprint(key.Public().(ed25519.PublicKey)), Body: envelope.Body{Text: "as signed"},
 	}, key)
 	if err != nil {
 		t.Fatal(err)

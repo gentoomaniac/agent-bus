@@ -53,11 +53,16 @@ func (monitor *Monitor) Send(ctx context.Context, request SendRequest) (string, 
 	if request.Title == "" && request.Text == "" {
 		return "", fmt.Errorf("%w: the message has neither a title nor a text", ErrInvalidRequest)
 	}
-	if err := (envelope.Envelope{Targets: request.Targets}).CheckTargets(); err != nil {
-		return "", fmt.Errorf("%w: %v", ErrInvalidRequest, err)
-	}
 	message := adapter.Outgoing{Type: request.Type, Body: envelope.Body{Title: request.Title, Text: request.Text}}
 	if len(request.Targets) > 0 {
+		if err := (envelope.Envelope{Targets: request.Targets}).CheckTargets(); err != nil {
+			return "", fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
+		for _, target := range request.Targets {
+			if _, err := monitor.registry.Lookup(ctx, target); target != envelope.TargetAll && err != nil {
+				return "", fmt.Errorf("%w: target %v", ErrInvalidRequest, err)
+			}
+		}
 		message.Targets = request.Targets
 	}
 
@@ -69,13 +74,24 @@ func (monitor *Monitor) Send(ctx context.Context, request SendRequest) (string, 
 		if _, err := monitor.registry.Lookup(ctx, request.To.Name); err != nil {
 			return "", fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 		}
-		return monitor.config.Sender.Send(ctx, request.To.Name, message)
+		id, err := monitor.config.Sender.Send(ctx, request.To.Name, message)
+		return id, asInvalidRequest(err)
 	case envelope.ToGroup:
 		if request.To.Name != "general" && !monitor.hasGroup(request.To.Name) {
 			return "", fmt.Errorf("%w: %q is not a channel in the catalogue", ErrInvalidRequest, request.To.Name)
 		}
-		return monitor.config.Sender.Publish(ctx, request.To.Name, message)
+		id, err := monitor.config.Sender.Publish(ctx, request.To.Name, message)
+		return id, asInvalidRequest(err)
 	default:
 		return "", fmt.Errorf("%w: unknown destination kind %q", ErrInvalidRequest, request.To.Kind)
 	}
+}
+
+// asInvalidRequest turns the adapter's refusal of a message aimed at nobody into the user's mistake
+// it is.
+func asInvalidRequest(err error) error {
+	if errors.Is(err, adapter.ErrBadTargets) {
+		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+	}
+	return err
 }
