@@ -4,8 +4,10 @@ import (
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -55,4 +57,40 @@ func TestWritePrivateKeyRoundTripsWithPrivateMode(t *testing.T) {
 	if WritePrivateKey(dir, private) == nil {
 		t.Error("an existing key was overwritten")
 	}
+}
+
+func TestReadPrivateKeyReturnsWhatWasWritten(t *testing.T) {
+	_, private := Generate()
+	dir := t.TempDir()
+	if err := WritePrivateKey(dir, private); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadPrivateKey(dir)
+	if err != nil || !got.Equal(private) {
+		t.Errorf("ReadPrivateKey = %v, %v", got, err)
+	}
+	if _, err := ReadPrivateKey(t.TempDir()); err == nil {
+		t.Error("a missing key was read")
+	}
+}
+
+func TestLockIsExclusiveAndNamesTheHolder(t *testing.T) {
+	dir := t.TempDir()
+	first, err := AcquireLock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = AcquireLock(dir)
+	var held HeldError
+	if !errors.As(err, &held) || held.HolderPID != strconv.Itoa(os.Getpid()) {
+		t.Fatalf("second lock: %v, want HeldError naming pid %d", err, os.Getpid())
+	}
+	if err := first.Release(); err != nil {
+		t.Fatal(err)
+	}
+	second, err := AcquireLock(dir)
+	if err != nil {
+		t.Fatalf("the identity is not free after release: %v", err)
+	}
+	second.Release()
 }
