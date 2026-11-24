@@ -3,7 +3,7 @@ package hook
 import (
 	"encoding/json"
 	"path/filepath"
-	"slices"
+	"regexp"
 	"strings"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
@@ -83,18 +83,22 @@ func notificationEvent(notificationType string) (presence.Event, bool) {
 	return presence.Event{}, false
 }
 
-// commandWrappers are words that only run the next command; the next command is what to show.
-var commandWrappers = []string{"env", "sudo", "nohup", "time", "nice", "command", "exec"}
+// plainCommand is a first word that is only a command name or path: no assignment, quote, escape
+// or variable, so it cannot carry part of a secret.
+var plainCommand = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 
 // toolDetail is what the monitor shows next to the tool name: the base name of the file it works
-// on or the command word of its command. Leading VAR=value words and wrappers are skipped because
-// they may carry secrets, and only plain name characters are kept.
+// on, or the base name of the command's first word. A command whose first word is anything but a
+// plain name (an assignment such as TOKEN=..., a quote, an escape, a variable) shows nothing, because
+// splitting shell text safely is not worth the risk of leaking part of a secret.
 func toolDetail(input hookInput) string {
-	for _, word := range strings.Fields(input.ToolInput.Command) {
-		if strings.Contains(word, "=") || slices.Contains(commandWrappers, filepath.Base(word)) {
-			continue
+	if command := strings.TrimSpace(input.ToolInput.Command); command != "" {
+		first, _, _ := strings.Cut(command, " ")
+		first, _, _ = strings.Cut(first, "\t")
+		if !plainCommand.MatchString(first) {
+			return ""
 		}
-		return plainName(filepath.Base(word))
+		return plainName(filepath.Base(first))
 	}
 	for _, path := range []string{input.ToolInput.FilePath, input.ToolInput.NotebookPath, input.ToolInput.Path} {
 		if path != "" {
