@@ -1,4 +1,4 @@
-.PHONY: check fmt-check vet test itest
+.PHONY: check fmt-check vet test itest image
 
 check: fmt-check vet test
 
@@ -18,3 +18,16 @@ bin/nats-server: deploy/nats.sh
 # Starts and stops its own nats-server (see internal/itest).
 itest: bin/nats-server
 	BUS_NATS_SERVER=$(CURDIR)/bin/nats-server nice go test -tags integration -timeout 10m -count=1 ./internal/itest/
+
+# The central image for this machine's architecture, tagged agent-messenger:dev (docs/docker.md).
+# goreleaser builds the release image from a context of <os>/<arch>/ binaries; this assembles the
+# same layout in bin/image. CONTAINER is docker or podman, whichever is installed.
+CONTAINER ?= $(shell command -v docker || command -v podman)
+IMAGE_PLATFORM := linux/$(shell go env GOARCH)
+
+image:
+	rm -rf bin/image
+	mkdir -p bin/image/$(IMAGE_PLATFORM) bin/image/deploy
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -o bin/image/$(IMAGE_PLATFORM)/ ./cmd/busctl ./cmd/agent-bus ./cmd/bus-monitor
+	cp deploy/entrypoint.sh deploy/nats-server.conf bin/image/deploy/
+	$(CONTAINER) build --platform $(IMAGE_PLATFORM) -f deploy/Dockerfile -t agent-messenger:dev bin/image

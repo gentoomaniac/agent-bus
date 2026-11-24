@@ -1,7 +1,8 @@
 # Example: the central components in one container. See docs/docker.md.
+# AGENT_BUS_IMAGE overrides the image, for example agent-messenger:dev from `make image`.
 services:
   agent-bus:
-    image: ghcr.io/gentoomaniac/agent-messenger:latest
+    image: ${AGENT_BUS_IMAGE:-ghcr.io/gentoomaniac/agent-messenger:latest}
     restart: unless-stopped
     ports:
       - "4222:4222"
@@ -19,7 +20,7 @@ services:
   # broker as localhost, and the volume with the admin credentials. The page shows all traffic and
   # has no login: publish it on the host's loopback only.
   monitor:
-    image: ghcr.io/gentoomaniac/agent-messenger:latest
+    image: ${AGENT_BUS_IMAGE:-ghcr.io/gentoomaniac/agent-messenger:latest}
     entrypoint: ["bus-monitor"]
     restart: unless-stopped
     network_mode: "service:agent-bus"
