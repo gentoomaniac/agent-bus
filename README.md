@@ -28,7 +28,9 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
 5. `bin/busctl init` creates the system topics (`agents.registry`, `agents.general`,
    `agents.requests`, `agents.topics`) with the retention from design.md §4: compacted for the
    registry, requests and topic catalogue, infinite for `agents.general`. All topics have one
-   partition. Safe to repeat. `busctl` connects to `--broker` (`BUS_BROKER`, default
+   partition (infinite means `retention.ms=-1`, `retention.bytes=-1`, `cleanup.policy=delete`). Safe to
+   repeat: for topics that already exist it applies these configs again, so a broker created by an
+   older version picks them up. `busctl` connects to `--broker` (`BUS_BROKER`, default
    `localhost:9092`) as the admin, trusting `--ca-cert`.
 6. `bin/busctl topic create <name> --description "..."` creates the one-partition topic
    `agents.topic.<name>` (infinite retention) and writes the description to the compacted

@@ -68,6 +68,7 @@ func startBus(t *testing.T) *harness {
 	h.run(t, busctl, "admin", "init")
 	h.run(t, brokerScript, "up")
 	h.run(t, busctl, "init")
+	h.run(t, busctl, "init") // a repeat applies the configs to the existing topics
 	h.run(t, busctl, "register", alice)
 	h.run(t, busctl, "register", bob)
 	h.run(t, busctl, "topic", "create", "lib-x", "--description", "discussion about lib-x")
@@ -263,8 +264,10 @@ func TestMilestone1(t *testing.T) {
 		if got := configValue(t, configs, bus.RegistryTopic, "cleanup.policy"); got != "compact" {
 			t.Errorf("registry cleanup.policy = %q, want compact", got)
 		}
-		if got := configValue(t, configs, bus.DMTopic(alice), "retention.ms"); got != "-1" {
-			t.Errorf("DM topic retention.ms = %q, want -1", got)
+		for name, want := range map[string]string{"cleanup.policy": "delete", "retention.ms": "-1", "retention.bytes": "-1"} {
+			if got := configValue(t, configs, bus.DMTopic(alice), name); got != want {
+				t.Errorf("DM topic %s = %q, want %q", name, got, want)
+			}
 		}
 	})
 

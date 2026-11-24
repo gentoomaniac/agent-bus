@@ -8,8 +8,10 @@ func TestTopicConfigs(t *testing.T) {
 		t.Errorf("compacted cleanup.policy = %q, want compact", got)
 	}
 	infinite := Topic{Name: "t"}.configs()
-	if got := *infinite["retention.ms"]; got != "-1" {
-		t.Errorf("retention.ms = %q, want -1 (infinite)", got)
+	for name, want := range map[string]string{"cleanup.policy": "delete", "retention.ms": "-1", "retention.bytes": "-1"} {
+		if got := *infinite[name]; got != want {
+			t.Errorf("infinite topic %s = %q, want %q", name, got, want)
+		}
 	}
 }
 

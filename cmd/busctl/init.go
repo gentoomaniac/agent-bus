@@ -9,7 +9,8 @@ import (
 
 type InitCmd struct{}
 
-// Run creates the system topics. It can be repeated: existing topics are left alone.
+// Run creates the system topics. It can be repeated: existing topics keep their data and get the
+// configs of this version.
 func (cmd *InitCmd) Run(cli *CLI) error {
 	admin, err := cli.adminClient()
 	if err != nil {
@@ -24,9 +25,12 @@ func (cmd *InitCmd) Run(cli *CLI) error {
 		}
 		if created {
 			fmt.Printf("created %s\n", topic.Name)
-		} else {
-			fmt.Printf("%s exists\n", topic.Name)
+			continue
 		}
+		if err := broker.ApplyConfigs(context.Background(), admin.Client, topic); err != nil {
+			return fmt.Errorf("updating the configs of %s: %w", topic.Name, err)
+		}
+		fmt.Printf("%s exists, configs applied\n", topic.Name)
 	}
 	return nil
 }
