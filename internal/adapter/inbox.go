@@ -20,6 +20,7 @@ type Message struct {
 	Channel      bus.Channel
 	Sequence     uint64
 	FirstContact bool // the sender's key was pinned because of this message
+	TargetsMe    bool // the message needs this agent's response (design.md §5)
 	Digest       string
 
 	delivery bus.Delivery

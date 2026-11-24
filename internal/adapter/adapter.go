@@ -33,6 +33,11 @@ const (
 	keepAliveInterval  = 20 * time.Second // well inside the consumers' one-minute AckWait
 	idlePause          = time.Second      // between rounds of Run that fetched nothing
 
+	// DeliverTargeted keeps untargeted channel messages out of the inbox; DeliverAll delivers every
+	// message (design.md §7).
+	DeliverTargeted = "targeted"
+	DeliverAll      = "all"
+
 	knownAgentsFile = "known_agents"
 	handledFile     = "handled.jsonl"
 	alertsFile      = "alerts.log"
@@ -48,10 +53,11 @@ type Config struct {
 	// cursors must exist (busctl creates them); joining through busd comes later.
 	Groups []string
 
-	InboxMessages int // default DefaultInboxMessages
-	InboxBytes    int // default DefaultInboxBytes
-	RateLimit     int // sends per 10 minutes, default 30
-	MaxHops       int // default 6
+	Deliver       string // DeliverTargeted (default) or DeliverAll
+	InboxMessages int    // default DefaultInboxMessages
+	InboxBytes    int    // default DefaultInboxBytes
+	RateLimit     int    // sends per 10 minutes, default 30
+	MaxHops       int    // default 6
 	Now           func() time.Time
 }
 
@@ -59,8 +65,9 @@ type Config struct {
 type Outgoing struct {
 	Type    string
 	Body    envelope.Body
-	Thread  string // default: the parent's thread, or a new one
-	ReplyTo string // default: the message the agent most recently read or acked (§8 rule 3)
+	Targets []string // agent IDs or "@all"; default: the mentions in the body text (§5)
+	Thread  string   // default: the parent's thread, or a new one
+	ReplyTo string   // default: the message the agent most recently read or acked (§8 rule 3)
 }
 
 // InboxQuery narrows what Inbox returns; zero values select everything.
@@ -106,6 +113,10 @@ func Open(config Config) (*Adapter, error) {
 	}
 	if config.Now == nil {
 		config.Now = time.Now
+	}
+	config.Deliver = cmp.Or(config.Deliver, DeliverTargeted)
+	if config.Deliver != DeliverTargeted && config.Deliver != DeliverAll {
+		return nil, fmt.Errorf("unknown delivery mode %q, want %s or %s", config.Deliver, DeliverTargeted, DeliverAll)
 	}
 	config.InboxMessages = cmp.Or(config.InboxMessages, DefaultInboxMessages)
 	config.InboxBytes = cmp.Or(config.InboxBytes, DefaultInboxBytes)
@@ -250,6 +261,11 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 		}
 	}
 
+	targets := message.Targets
+	if targets == nil {
+		targets = envelope.MentionedTargets(message.Body.Text)
+	}
+
 	id := envelope.NewID(now)
 	hops, thread := 0, message.Thread
 	if inherited != nil {
@@ -271,7 +287,7 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 
 	payload, err := envelope.Sign(envelope.Envelope{
 		Version: envelope.Version, ID: id, TS: now, From: adapter.config.AgentID, To: envelope.ToFor(to),
-		Type: message.Type, Thread: thread, ReplyTo: replyTo, Hops: hops, KeyFP: adapter.keyFP, Body: message.Body,
+		Type: message.Type, Targets: targets, Thread: thread, ReplyTo: replyTo, Hops: hops, KeyFP: adapter.keyFP, Body: message.Body,
 	}, adapter.key)
 	if err != nil {
 		return "", err
@@ -415,11 +431,41 @@ func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delive
 		}
 		return delivery.InProgress(ctx)
 	}
-	adapter.inbox.add(&Message{
+	message := &Message{
 		Envelope: env, Channel: channel, Sequence: delivery.Sequence, FirstContact: resolution.NewPin != nil,
-		Digest: digest, delivery: delivery, size: len(delivery.Payload),
-	})
+		TargetsMe: adapter.targetsMe(env, channel), Digest: digest, delivery: delivery, size: len(delivery.Payload),
+	}
+	if !message.TargetsMe && adapter.config.Deliver == DeliverTargeted {
+		// Chatter costs the agent no context: handled and acked without ever reaching the inbox.
+		if err := adapter.handled.add(adapter.handledEntry(message)); err != nil {
+			return err
+		}
+		return delivery.Ack(ctx)
+	}
+	adapter.inbox.add(message)
 	return nil
+}
+
+// targetsMe is the rule of §5: a DM to this agent, its ID or "@all" in the targets, or a reply to
+// one of its own messages. Its sent messages are in the handled set, which is on disk, so the
+// last rule survives a restart.
+func (adapter *Adapter) targetsMe(env envelope.Envelope, channel bus.Channel) bool {
+	if channel.Kind == bus.DM || slices.Contains(env.Targets, adapter.config.AgentID) || slices.Contains(env.Targets, envelope.TargetAll) {
+		return true
+	}
+	if env.ReplyTo == nil {
+		return false
+	}
+	replied, known := adapter.handled.messageByID(*env.ReplyTo)
+	return known && replied.From == adapter.config.AgentID
+}
+
+func (adapter *Adapter) handledEntry(message *Message) handledEntry {
+	env := message.Envelope
+	return handledEntry{
+		Kind: entryMessage, Destination: message.Channel.String(), Sequence: message.Sequence, From: env.From, ID: env.ID,
+		Digest: message.Digest, Thread: env.Thread, Hops: env.Hops, At: adapter.config.Now().UTC(),
+	}
 }
 
 // reject records a delivery as handled by its sequence, alerts and acks it: it will never be
@@ -487,16 +533,11 @@ func (adapter *Adapter) Ack(ctx context.Context, ids []string) error {
 			errs = append(errs, fmt.Errorf("no unread message %s", id))
 			continue
 		}
-		env := message.Envelope
-		err := adapter.handled.add(handledEntry{
-			Kind: entryMessage, Destination: message.Channel.String(), Sequence: message.Sequence, From: env.From, ID: env.ID,
-			Digest: message.Digest, Thread: env.Thread, Hops: env.Hops, At: adapter.config.Now().UTC(),
-		})
-		if err != nil {
+		if err := adapter.handled.add(adapter.handledEntry(message)); err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		adapter.recent.id, adapter.recent.at = env.ID, adapter.config.Now()
+		adapter.recent.id, adapter.recent.at = message.Envelope.ID, adapter.config.Now()
 		adapter.inbox.remove(message)
 		if err := message.delivery.Ack(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("message %s is handled, but the broker did not confirm the ack (it will be redelivered and skipped): %w", id, err))

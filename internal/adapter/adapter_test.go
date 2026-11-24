@@ -154,7 +154,7 @@ func TestDMAndGeneralPostAreVerifiedPinnedAndAcked(t *testing.T) {
 	b.register(alice)
 	b.register(bob)
 	a, _ := b.open(alice)
-	bobAdapter, bobTransport := b.open(bob)
+	bobAdapter, bobTransport := b.open(bob, deliverAll)
 	ctx := context.Background()
 
 	dmID, err := a.Send(ctx, bob, text("hello bob"))
@@ -216,7 +216,7 @@ func TestTamperedMessageIsRejectedAlertedAndAcked(t *testing.T) {
 	b.register(alice)
 	b.register(bob)
 	a, _ := b.open(alice)
-	bobAdapter, bobTransport := b.open(bob)
+	bobAdapter, bobTransport := b.open(bob, deliverAll)
 	if _, err := a.Send(context.Background(), bob, text("pay 10")); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestDuplicateRecordIsSkippedAndAcked(t *testing.T) {
 	b.register(alice)
 	b.register(bob)
 	a, _ := b.open(alice)
-	bobAdapter, bobTransport := b.open(bob)
+	bobAdapter, bobTransport := b.open(bob, deliverAll)
 	ctx := context.Background()
 	if _, err := a.Send(ctx, bob, text("once")); err != nil {
 		t.Fatal(err)

@@ -212,7 +212,7 @@ func TestPublishReachesGeneral(t *testing.T) {
 	b := newTestBus(t, alice, bob)
 	a, bobClient := b.connect(alice), b.connect(bob)
 
-	args := hello("anyone there?")
+	args := hello("@lib-x@bob anyone there?")
 	args["channel"] = "general"
 	args["type"] = "question"
 	call(t, a, "publish", args)
