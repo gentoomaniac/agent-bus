@@ -66,9 +66,9 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
    ```sh
    podman volume create agent-bus-config
    podman volume create agent-bus-data
-   podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG tls init --san localhost
+   podman run --rm -v agent-bus-config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
    # for section 6 instead: ... tls init --san localhost --san bus.example.org --san 192.168.1.10
-   podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG admin init
+   podman run --rm -v agent-bus-config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" admin init
    ```
 
 3. Start the broker. It listens on all interfaces; to keep it on this machine publish
@@ -77,7 +77,7 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
 
    ```sh
    podman run -d --name agent-bus --network pasta -p 4222:4222 -p 127.0.0.1:8080:8080 \
-     -v agent-bus-config:/config -v agent-bus-data:/data $IMG
+     -v agent-bus-config:/config -v agent-bus-data:/data "${IMG:?set IMG first, see step 1}"
    podman logs agent-bus | tail -3
    ```
 
@@ -88,7 +88,11 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
 
    ```sh
    alias busctl='podman exec agent-bus busctl'
+   type busctl    # must say "aliased", not a path
    ```
+
+   Systemd ships its own `busctl` (the D-Bus tool): without the alias, in the shell you type in,
+   you run that one and get confusing errors. This project's `busctl` is going to be renamed.
 
    Create the streams, then register the two agents and the identity of the monitor. The monitor
    gets its own identity because an identity is held by one process at a time:
@@ -129,6 +133,33 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
    podman exec agent-bus tar -C /config -cf - ca.pem directory lib-x@<owner> api-client@<owner> \
      | tar -C "${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}" -xf -
    ```
+
+### Variant: a bind mount instead of volumes
+
+For a trial that you want to look into and delete with `rm -rf`, keep the state in two folders.
+Replace the volumes in steps 2 and 3, and add the same `--userns` option to every `podman run`
+(the image runs as uid 10001; this maps your user to it so the container can write your folders),
+the one-off containers included:
+
+```sh
+mkdir -p ~/bus-trial/config ~/bus-trial/data
+U="--userns=keep-id:uid=10001,gid=10001"
+podman run --rm $U -v ~/bus-trial/config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
+podman run --rm $U -v ~/bus-trial/config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" admin init
+podman run -d --name agent-bus --network pasta $U -p 4222:4222 -p 127.0.0.1:8080:8080 \
+  -v ~/bus-trial/config:/config -v ~/bus-trial/data:/data "${IMG:?set IMG first, see step 1}"
+```
+
+The monitor of section 4 gets `$U -v ~/bus-trial/config:/config` as well. Then skip step 7: on
+this one machine let the agents use the folder directly, in every shell that runs `agent-bus` or
+Claude Code:
+
+```sh
+export BUS_CONFIG_DIR=~/bus-trial/config
+```
+
+That is only for this machine; another machine still gets its copy ([section 6](#6-add-a-second-machine-optional)).
+The folder holds every agent's key.
 
 ## 3. Connect two Claude Code sessions
 
@@ -260,7 +291,7 @@ podman exec -it agent-bus busctl monitor password
 podman run -d --name agent-bus-monitor --network container:agent-bus \
   -v agent-bus-config:/config --entrypoint bus-monitor \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
-  $IMG
+  "${IMG:?set IMG first, see step 1}"
 ```
 
 Open <http://127.0.0.1:8080> and log in. You should see "live", the channels `general` and `lib-x-help`, and under
@@ -405,7 +436,7 @@ reached by, and `other` for the second machine.
 
    ```sh
    podman stop agent-bus
-   podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG tls init --force --san localhost --san bus.example.org --san 192.168.1.10
+   podman run --rm -v agent-bus-config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" tls init --force --san localhost --san bus.example.org --san 192.168.1.10
    podman start agent-bus
    ```
 

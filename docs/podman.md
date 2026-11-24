@@ -19,8 +19,8 @@ IMG=agent-messenger:dev           # or ghcr.io/gentoomaniac/agent-messenger:late
 ```sh
 podman volume create agent-bus-config
 podman volume create agent-bus-data
-podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG tls init --san localhost --san <broker-host>
-podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG admin init
+podman run --rm -v agent-bus-config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost --san <broker-host>
+podman run --rm -v agent-bus-config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" admin init
 ```
 
 `tls init` must name every host name agents use to reach the broker (`--san`, repeatable).
@@ -31,7 +31,7 @@ podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG admin init
 podman run -d --name agent-bus --network pasta \
   -p 4222:4222 -p 127.0.0.1:8080:8080 \
   -v agent-bus-config:/config -v agent-bus-data:/data \
-  $IMG
+  "${IMG:?set IMG first, see step 1}"
 podman logs agent-bus             # "Server is ready"
 ```
 
@@ -44,7 +44,12 @@ A short alias for `busctl` inside the container:
 
 ```sh
 alias busctl='podman exec agent-bus busctl'
+type busctl                       # must say: busctl is aliased to ...
 ```
+
+The alias must be set in the shell you type in: systemd ships its own `busctl` (the D-Bus tool),
+and without the alias you run that one. Check with `type busctl`. This project's `busctl` is
+going to be renamed, so the clash goes away.
 
 ```sh
 busctl --direct init
@@ -65,7 +70,7 @@ Each agent machine needs `ca.pem`, `directory/` and its own agent folder from th
 
 ```sh
 mkdir -p ~/.config/agent-bus
-podman run --rm -v agent-bus-config:/config:ro --entrypoint tar $IMG \
+podman run --rm -v agent-bus-config:/config:ro --entrypoint tar "${IMG:?set IMG first, see step 1}" \
   -C /config -cf - ca.pem directory lib-x@<owner> | tar -xf - -C ~/.config/agent-bus
 ```
 
@@ -95,7 +100,7 @@ loopback only (step 3), so no proxy is needed here:
 podman run -d --name agent-bus-monitor --network container:agent-bus \
   -v agent-bus-config:/config --entrypoint bus-monitor \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
-  $IMG
+  "${IMG:?set IMG first, see step 1}"
 ```
 
 Open <http://localhost:8080> (or `127.0.0.1`, on any published port) and log in. Without the
@@ -103,7 +108,44 @@ password the monitor refuses to start (`--behind-proxy needs a password`; see
 `podman logs agent-bus-monitor`). Restart it after changing the password. To reach it from other
 machines, put a TLS proxy in front instead ([monitor.md](monitor.md#behind-a-reverse-proxy)).
 
-## 7. Day to day
+## 7. A test setup with a bind mount
+
+For a trial it is handier to keep the state in plain folders than in volumes: you can look at it,
+copy it and delete it with `rm -rf`. The image runs as uid 10001, so every `podman run` below
+maps your own user to it (`--userns=keep-id`), which lets the container write the folders you own.
+Do steps 2, 3 and 6 like this instead (`IMG` as in step 1; the commands of steps 4, 5 and the
+rest are unchanged, and the alias of step 4 stays):
+
+```sh
+mkdir -p ~/bus-trial/config ~/bus-trial/data
+U="--userns=keep-id:uid=10001,gid=10001"
+
+podman run --rm $U -v ~/bus-trial/config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
+podman run --rm $U -v ~/bus-trial/config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" admin init
+
+podman run -d --name agent-bus --network pasta $U \
+  -p 4222:4222 -p 127.0.0.1:8080:8080 \
+  -v ~/bus-trial/config:/config -v ~/bus-trial/data:/data \
+  "${IMG:?set IMG first, see step 1}"
+
+podman run -d --name agent-bus-monitor --network container:agent-bus $U \
+  -v ~/bus-trial/config:/config --entrypoint bus-monitor \
+  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
+  "${IMG:?set IMG first, see step 1}"
+```
+
+`$U` must be on every one of them, the one-off containers too, or the files end up owned by
+another uid. The config folder is then the one the agents read, so on this one machine skip the
+copy of step 5 and point the agents at it:
+
+```sh
+export BUS_CONFIG_DIR=~/bus-trial/config
+```
+
+Only for this machine: other machines still get their files as in step 5, and the folder holds
+every agent's key, so do not share it.
+
+## 8. Day to day
 
 ```sh
 podman restart agent-bus                      # reload after an upgrade (agents reconnect on their own)
