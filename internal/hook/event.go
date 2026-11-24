@@ -3,6 +3,7 @@ package hook
 import (
 	"encoding/json"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
@@ -85,16 +86,33 @@ func notificationEvent(notificationType string) (presence.Event, bool) {
 	return presence.Event{}, false
 }
 
+// commandWrappers are words that only run the next command; the next command is what to show.
+var commandWrappers = []string{"env", "sudo", "nohup", "time", "nice", "command", "exec"}
+
 // toolDetail is what the monitor shows next to the tool name: the base name of the file it works
-// on or the first word of its command.
+// on or the command word of its command. Leading VAR=value words and wrappers are skipped because
+// they may carry secrets, and only plain name characters are kept.
 func toolDetail(input hookInput) string {
-	if command := strings.Fields(input.ToolInput.Command); len(command) > 0 {
-		return filepath.Base(command[0])
+	for _, word := range strings.Fields(input.ToolInput.Command) {
+		if strings.Contains(word, "=") || slices.Contains(commandWrappers, filepath.Base(word)) {
+			continue
+		}
+		return plainName(filepath.Base(word))
 	}
 	for _, path := range []string{input.ToolInput.FilePath, input.ToolInput.NotebookPath, input.ToolInput.Path} {
 		if path != "" {
-			return filepath.Base(path)
+			return plainName(filepath.Base(path))
 		}
 	}
 	return ""
+}
+
+// plainName keeps letters, digits, dot, underscore and hyphen.
+func plainName(name string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-' {
+			return r
+		}
+		return -1
+	}, name)
 }
