@@ -19,7 +19,9 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
 4. `deploy/broker.sh up` starts Redpanda (pod manifest `deploy/redpanda.yaml`, started with
    `podman kube play`) and waits until it is ready. `deploy/broker.sh down` stops it and keeps its
    data, `down --purge` deletes the data too. Settings are environment variables
-   (`BUS_CONFIG_DIR`, `BUS_POD_NAME`, `BUS_KAFKA_PORT`, `BUS_ADVERTISE_HOST`; see the script).
+   (`BUS_CONFIG_DIR`, `BUS_POD_NAME`, `BUS_KAFKA_PORT`, `BUS_ADVERTISE_HOST`, `BUS_LISTEN_IP`; see the
+   script). The port is published on all interfaces (`BUS_LISTEN_IP=0.0.0.0`) so the bus works on
+   the LAN; to keep the broker on this machine, start it with `BUS_LISTEN_IP=127.0.0.1`.
    The broker has only a TLS + SASL/SCRAM listener, topic auto-creation is off and ACLs are
    enforced. For clients on other machines set `BUS_ADVERTISE_HOST` to a name that is in the
    certificate's SANs. The image tag is pinned in the manifest.

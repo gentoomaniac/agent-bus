@@ -6,6 +6,7 @@
 #   BUS_POD_NAME         name of the pod and prefix of its data volume
 #   BUS_CONFIG_DIR       host directory holding broker.pem, broker.key and admin/password
 #   BUS_KAFKA_PORT       Kafka port, listened on and published on the host
+#   BUS_LISTEN_IP        host address the port is published on (0.0.0.0: all interfaces)
 #   BUS_ADVERTISE_HOST   host name clients reach the broker under; must be in the certificate's SANs
 #
 # The broker has one listener: TLS and SASL/SCRAM. Topic auto-creation is off and ACLs are enforced.
@@ -74,6 +75,7 @@ spec:
       ports:
         - containerPort: ${BUS_KAFKA_PORT}
           hostPort: ${BUS_KAFKA_PORT}
+          hostIP: ${BUS_LISTEN_IP}
       volumeMounts:
         - { name: data, mountPath: /var/lib/redpanda/data }
         - { name: config, mountPath: /run/bus/config, readOnly: true }

@@ -11,12 +11,14 @@
 #   BUS_POD_NAME        default agent-bus
 #   BUS_KAFKA_PORT      default 9092
 #   BUS_ADVERTISE_HOST  default localhost
+#   BUS_LISTEN_IP       default 0.0.0.0, the LAN; 127.0.0.1 keeps the broker on this machine
 set -euo pipefail
 
 export BUS_CONFIG_DIR="${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}"
 export BUS_POD_NAME="${BUS_POD_NAME:-agent-bus}"
 export BUS_KAFKA_PORT="${BUS_KAFKA_PORT:-9092}"
 export BUS_ADVERTISE_HOST="${BUS_ADVERTISE_HOST:-localhost}"
+export BUS_LISTEN_IP="${BUS_LISTEN_IP:-0.0.0.0}"
 
 readonly manifest="$(dirname "$0")/redpanda.yaml"
 readonly readyTimeoutSeconds=90
@@ -31,7 +33,7 @@ up() {
 
   # Rootless Podman's default bridge network needs veth devices, which not every kernel allows;
   # pasta needs nothing from the kernel and publishes the port the same way.
-  envsubst '${BUS_POD_NAME} ${BUS_CONFIG_DIR} ${BUS_KAFKA_PORT} ${BUS_ADVERTISE_HOST}' <"$manifest" |
+  envsubst '${BUS_POD_NAME} ${BUS_CONFIG_DIR} ${BUS_KAFKA_PORT} ${BUS_ADVERTISE_HOST} ${BUS_LISTEN_IP}' <"$manifest" |
     podman kube play --quiet --network pasta -
 
   for ((waited = 0; waited < readyTimeoutSeconds; waited++)); do
