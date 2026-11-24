@@ -72,11 +72,12 @@ type Channel struct {
 	LastSequence uint64   `json:"last_sequence"`
 }
 
-// Agent is a registered agent.
+// Agent is a registered agent. A removed one stays listed, marked, because its history remains.
 type Agent struct {
 	ID           string    `json:"id"`
 	Fingerprint  string    `json:"fingerprint"`
 	RegisteredAt time.Time `json:"registered_at"`
+	Removed      bool      `json:"removed"`
 }
 
 // Config says what the monitor reads with. History must work on every channel, so it is a
@@ -337,7 +338,7 @@ func (monitor *Monitor) Status() Status {
 	return status
 }
 
-// Agents lists the registered agents.
+// Agents lists the registered agents, removed ones included.
 func (monitor *Monitor) Agents() []Agent {
 	return monitor.registry.agents()
 }
@@ -352,7 +353,9 @@ func (monitor *Monitor) Members(ctx context.Context, id string) ([]string, error
 	switch {
 	case id == "general":
 		for _, agent := range monitor.registry.agents() {
-			members = append(members, agent.ID)
+			if !agent.Removed {
+				members = append(members, agent.ID)
+			}
 		}
 	case strings.HasPrefix(id, "group:"):
 		name := strings.TrimPrefix(id, "group:")
@@ -444,7 +447,7 @@ func (registry *registry) agents() []Agent {
 	defer registry.mu.Unlock()
 	var agents []Agent
 	for _, record := range registry.records {
-		agents = append(agents, Agent{ID: record.AgentID, Fingerprint: record.Fingerprint, RegisteredAt: record.RegisteredAt})
+		agents = append(agents, Agent{ID: record.AgentID, Fingerprint: record.Fingerprint, RegisteredAt: record.RegisteredAt, Removed: record.Removed()})
 	}
 	slices.SortFunc(agents, func(a, b Agent) int { return cmp.Compare(a.ID, b.ID) })
 	return agents

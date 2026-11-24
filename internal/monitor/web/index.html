@@ -35,6 +35,7 @@
   li.member { padding: 4px 12px; overflow-wrap: anywhere; cursor: pointer; }
   li.member:hover { background: var(--hover); }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; flex: none; background: var(--muted); }
+  .removed { opacity: .5; }
   .dot.working { background: var(--ok); }
   .dot.idle { background: var(--accent); }
   .dot.waiting_for_owner, .dot.rate_limited { background: var(--warn); }
@@ -286,6 +287,10 @@ function renderSidebar() {
   $("channels").replaceChildren(...channelItems.map(item));
   $("dms").replaceChildren(...(dmItems.length ? dmItems.map(item) : [el("li", { class: "empty" }, "none yet")]));
   $("agents").replaceChildren(...(state.agents.length ? state.agents.map((agent) => {
+    if (agent.removed) {
+      return el("li", { class: "item removed", title: agent.fingerprint },
+        el("div", {}, el("span", { class: "agent-line" }, el("span", { class: "dot" }), el("span", { class: "label" }, agent.id), el("span", { class: "muted" }, "\u00a0removed"))));
+    }
     const view = presenceOf(agent.id);
     return el("li", { class: "item", title: agent.fingerprint, onclick: () => { document.forms.composer.target.value = "agent:" + agent.id; showDetail(agent.id); } },
       el("div", {}, agentLine(agent.id, view), agentSummary(view)));
@@ -352,7 +357,7 @@ function renderComposer() {
   const groups = state.channels.filter((c) => c.kind === "group");
   form.target.replaceChildren(
     el("optgroup", { label: "Channels" }, el("option", { value: "group:general" }, "# general"), ...groups.map((g) => el("option", { value: "group:" + g.name }, "# " + g.name))),
-    el("optgroup", { label: "Direct message" }, ...state.agents.filter((a) => a.id !== state.status.agent).map((a) => el("option", { value: "agent:" + a.id }, a.id))));
+    el("optgroup", { label: "Direct message" }, ...state.agents.filter((a) => a.id !== state.status.agent && !a.removed).map((a) => el("option", { value: "agent:" + a.id }, a.id))));
   form.target.value = previous || "group:general";
   if (!form.target.value) form.target.value = "group:general";
   if (!form.type.options.length) form.type.replaceChildren(...MESSAGE_TYPES.map((type) => el("option", { value: type }, type)));
