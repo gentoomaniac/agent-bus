@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -210,6 +211,32 @@ func TestToolsExchangeAMessageFramedAsUntrusted(t *testing.T) {
 	}
 }
 
+func TestToolNamesAreTheDocumentedOnes(t *testing.T) {
+	b := newTestBus(t, alice)
+	client := b.connect(alice)
+	var names []string
+	for tool, err := range client.Tools(context.Background(), nil) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, tool.Name)
+	}
+	slices.Sort(names)
+	want := []string{"inbox", "list_agents", "list_channels", "mark_read", "publish", "send", "wait_for_messages", "whoami"}
+	if !slices.Equal(names, want) {
+		t.Errorf("tools = %v, want %v", names, want)
+	}
+}
+
+func TestListAgentsShowsTheDirectory(t *testing.T) {
+	b := newTestBus(t, bob, alice)
+	client := b.connect(alice)
+	got := decode[agentsOut](t, call(t, client, "list_agents", nil))
+	if want := []string{alice, bob}; !slices.Equal(got.Agents, want) {
+		t.Errorf("agents = %v, want %v", got.Agents, want)
+	}
+}
+
 func TestPublishReachesGeneral(t *testing.T) {
 	b := newTestBus(t, alice, bob)
 	a, bobClient := b.connect(alice), b.connect(bob)
@@ -281,6 +308,7 @@ func TestSecondServerOnTheSameIdentityErrorsOnEveryTool(t *testing.T) {
 	calls := map[string]map[string]any{
 		"whoami":            nil,
 		"list_channels":     nil,
+		"list_agents":       nil,
 		"inbox":             nil,
 		"wait_for_messages": {"timeout_s": 1},
 		"mark_read":         {"message_ids": []string{"x"}},

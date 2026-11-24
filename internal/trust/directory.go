@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
@@ -38,6 +40,22 @@ func (dir FileDirectory) Lookup(_ context.Context, agentID string) (bus.AgentRec
 		return record, fmt.Errorf("reading the record of %s: %w", agentID, err)
 	}
 	return record, nil
+}
+
+// List returns the IDs of the registered agents, sorted.
+func (dir FileDirectory) List(context.Context) ([]string, error) {
+	entries, err := os.ReadDir(string(dir))
+	if err != nil {
+		return nil, err
+	}
+	var agentIDs []string
+	for _, entry := range entries {
+		if token, isRecord := strings.CutSuffix(entry.Name(), ".json"); isRecord {
+			agentIDs = append(agentIDs, bus.AgentIDFromToken(token))
+		}
+	}
+	slices.Sort(agentIDs)
+	return agentIDs, nil
 }
 
 // Write stores a record, replacing an earlier one.

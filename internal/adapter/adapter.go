@@ -183,6 +183,21 @@ func (adapter *Adapter) AgentID() string { return adapter.config.AgentID }
 // Channels are the channels the adapter reads: the agent's DM channel, general and its groups.
 func (adapter *Adapter) Channels() []bus.Channel { return slices.Clone(adapter.channels) }
 
+// Agents are the agents of the local directory, sorted. Only a directory that can be listed
+// (trust.FileDirectory) supports it.
+func (adapter *Adapter) Agents(ctx context.Context) ([]string, error) {
+	if err := adapter.Ready(); err != nil {
+		return nil, err
+	}
+	lister, ok := adapter.config.Directory.(interface {
+		List(context.Context) ([]string, error)
+	})
+	if !ok {
+		return nil, errors.New("this directory cannot list agents")
+	}
+	return lister.List(ctx)
+}
+
 func (adapter *Adapter) Fingerprint() string { return adapter.keyFP }
 
 // Send sends a message to one agent's DM channel. The agent must be in the local directory. A

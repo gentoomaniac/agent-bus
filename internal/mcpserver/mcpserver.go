@@ -110,6 +110,10 @@ func New(session *adapter.Adapter) *mcp.Server {
 		Name:        "list_channels",
 		Description: "The channels you read: your DM channel, general and your groups.",
 	}, t.listChannels)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_agents",
+		Description: "The registered agents you can send to, by agent ID, yourself included. Every agent reads `general`.",
+	}, t.listAgents)
 	return server
 }
 
@@ -162,6 +166,15 @@ func (t tools) listChannels(context.Context, *mcp.CallToolRequest, struct{}) (*m
 		return nil, channelsOut{}, err
 	}
 	return nil, channelsOut{t.channelNames()}, nil
+}
+
+type agentsOut struct {
+	Agents []string `json:"agents"`
+}
+
+func (t tools) listAgents(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, agentsOut, error) {
+	agents, err := t.session.Agents(ctx)
+	return nil, agentsOut{agents}, err
 }
 
 func (t tools) channelNames() []string {

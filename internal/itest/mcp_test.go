@@ -99,8 +99,8 @@ func TestMilestone4(t *testing.T) {
 		}
 		holder := "adapter process " + strconv.Itoa(first.cmd.Process.Pid)
 		calls := map[string]map[string]any{
-			"whoami": nil, "list_channels": nil, "inbox": nil, "wait_for_messages": {"timeout_s": 1},
-			"ack": {"message_ids": []string{"x"}}, "send": {"to": bob, "body": map[string]any{"text": "x"}},
+			"whoami": nil, "list_channels": nil, "list_agents": nil, "inbox": nil, "wait_for_messages": {"timeout_s": 1},
+			"mark_read": {"message_ids": []string{"x"}}, "send": {"to": bob, "body": map[string]any{"text": "x"}},
 			"publish": {"channel": "general", "body": map[string]any{"text": "x"}},
 		}
 		for tool, arguments := range calls {
