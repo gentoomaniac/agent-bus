@@ -14,9 +14,9 @@ const (
 	RequestsTopic = "agents.requests"
 	TopicsTopic   = "agents.topics"
 
-	// DMTopicPrefix is also the prefix of the write ACL that lets every agent send DMs.
+	// The prefixes are also the prefixes of the ACLs that open these topics to every agent.
 	DMTopicPrefix    = "agents.dm."
-	groupTopicPrefix = "agents.topic."
+	GroupTopicPrefix = "agents.topic."
 
 	// Kafka allows 249 characters per topic name; the prefixes use up to 13.
 	maxNameLength = 128
@@ -52,5 +52,5 @@ func DMTopic(agentID string) string {
 
 // GroupTopic is the Kafka topic of a named group topic.
 func GroupTopic(name string) string {
-	return groupTopicPrefix + name
+	return GroupTopicPrefix + name
 }

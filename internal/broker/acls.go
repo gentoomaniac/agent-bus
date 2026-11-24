@@ -17,12 +17,14 @@ type ACLRule struct {
 }
 
 // AgentACLRules are what an agent may do (design.md §4). Everything else is denied, in particular
-// reading other agents' DM topics and writing `agents.registry` and `agents.topics`.
+// reading other agents' DM topics and writing `agents.registry` and `agents.topics`. Group topics
+// (`agents.topic.*`) are open chat channels: one prefix rule covers every present and future one.
 func AgentACLRules(agentID string) []ACLRule {
 	return []ACLRule{
 		{Group: true, Name: agentID, Operations: []kadm.ACLOperation{kadm.OpRead, kadm.OpDescribe}},
 		{Name: bus.DMTopic(agentID), Operations: []kadm.ACLOperation{kadm.OpRead, kadm.OpDescribe}},
 		{Name: bus.DMTopicPrefix, Prefixed: true, Operations: []kadm.ACLOperation{kadm.OpWrite}},
+		{Name: bus.GroupTopicPrefix, Prefixed: true, Operations: []kadm.ACLOperation{kadm.OpRead, kadm.OpWrite, kadm.OpDescribe}},
 		{Name: bus.GeneralTopic, Operations: []kadm.ACLOperation{kadm.OpRead, kadm.OpWrite}},
 		{Name: bus.RegistryTopic, Operations: []kadm.ACLOperation{kadm.OpRead}},
 		{Name: bus.TopicsTopic, Operations: []kadm.ACLOperation{kadm.OpRead}},

@@ -24,6 +24,8 @@ type CLI struct {
 
 	Register RegisterCmd `cmd:"" help:"Register an agent identity: key, credentials, DM topic, ACLs and registry entry."`
 
+	ACLs ACLsCmd `cmd:"" name:"acls" help:"Apply the current ACLs of a registered agent again."`
+
 	Topic struct {
 		Create TopicCreateCmd `cmd:"" help:"Create a topic and add it to the topic catalogue."`
 	} `cmd:"" help:"Group topics."`

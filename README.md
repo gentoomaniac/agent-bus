@@ -42,6 +42,9 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
    `agents.dm.<name>.<owner>`, the SCRAM user, the ACLs from design.md §4, and publishes the public
    key and fingerprint to `agents.registry`. Keys are per machine and never copied: registering an
    ID that exists on this machine or on the bus is an error. `human@<owner>` is not supported yet.
+   Agents may read, write and describe every group topic (`agents.topic.*`, open channels) through
+   one prefix ACL. Agents registered before that ACL existed lack it: run `bin/busctl acls <agent-id>`,
+   which applies the current ACLs of a registered agent again (safe to repeat).
    A registration that fails before the SCRAM user is sent removes its directory again. After that
    point the broker may have applied the user even if the answer was lost, so the directory is kept
    and the error says so. If the directory exists but the broker has no such user, the earlier

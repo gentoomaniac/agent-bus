@@ -35,6 +35,15 @@ func TestAgentCanWriteAnyDMTopic(t *testing.T) {
 	}
 }
 
+func TestAgentCanUseAnyGroupTopic(t *testing.T) {
+	rules := AgentACLRules("lib-x@bob")
+	for _, operation := range []kadm.ACLOperation{kadm.OpRead, kadm.OpWrite, kadm.OpDescribe} {
+		if !allows(rules, "agents.topic.lib-x", operation) {
+			t.Errorf("agent lacks %v on a group topic", operation)
+		}
+	}
+}
+
 func TestAgentCannotWriteRegistryOrCatalogue(t *testing.T) {
 	rules := AgentACLRules("lib-x@bob")
 	for _, topic := range []string{"agents.registry", "agents.topics"} {

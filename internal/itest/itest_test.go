@@ -207,6 +207,35 @@ func TestMilestone1(t *testing.T) {
 		}
 	})
 
+	t.Run("an agent writes and reads a group topic made by busctl without extra grants", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
+		defer cancel()
+		writer := h.agentClient(t, bob, kgo.DisableIdempotentWrite())
+		if err := writer.ProduceSync(ctx, &kgo.Record{Topic: bus.GroupTopic("lib-x"), Value: []byte("hello topic")}).FirstErr(); err != nil {
+			t.Fatalf("bob cannot write the group topic: %v", err)
+		}
+
+		reader := h.agentClient(t, alice,
+			kgo.ConsumerGroup(alice),
+			kgo.ConsumeTopics(bus.GroupTopic("lib-x")),
+			kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
+		)
+		fetches := reader.PollFetches(ctx)
+		if err := fetches.Err(); err != nil {
+			t.Fatalf("alice cannot read the group topic: %v", err)
+		}
+		if got := fetches.Records(); len(got) != 1 || string(got[0].Value) != "hello topic" {
+			t.Fatalf("alice read %v, want the one message from bob", got)
+		}
+	})
+
+	t.Run("busctl acls reapplies the rules of a registered agent only", func(t *testing.T) {
+		h.run(t, h.busctl, "acls", alice)
+		if output, err := h.tryRun(h.busctl, "acls", "nobody@nowhere"); err == nil {
+			t.Fatalf("acls for an unregistered agent succeeded:\n%s", output)
+		}
+	})
+
 	t.Run("an agent cannot write the registry", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
 		defer cancel()
