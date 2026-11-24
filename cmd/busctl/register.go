@@ -34,8 +34,8 @@ func (cmd *RegisterCmd) Run(cli *CLI) (err error) {
 	}
 	dir := creds.AgentDir(cli.ConfigDir, cmd.AgentID)
 	// Claiming the identity's directory with Mkdir makes concurrent runs for the same ID safe: only
-	// the run that created it goes on, and only that run removes it again if a later step fails, so
-	// neither a broker user without a local key nor a local key without a broker user is left behind.
+	// the run that created it goes on, and only that run removes it again if a step fails before the
+	// SCRAM user is sent, so no local key without a broker user is left behind.
 	if err := os.MkdirAll(cli.ConfigDir, files.DirMode); err != nil {
 		return err
 	}
@@ -44,8 +44,16 @@ func (cmd *RegisterCmd) Run(cli *CLI) (err error) {
 	} else if err != nil {
 		return err
 	}
+	scramUserSent := false
 	defer func() {
 		if err == nil {
+			return
+		}
+		if scramUserSent {
+			// The broker may have applied the user although its response was lost; the key and password
+			// are then the only way in, so they stay.
+			fmt.Fprintf(os.Stderr, "busctl: the broker may or may not have created the SCRAM user %s. The key and password are kept in %s; "+
+				"if the broker has no such user, remove that directory before registering again.\n", cmd.AgentID, dir)
 			return
 		}
 		if rmErr := os.RemoveAll(dir); rmErr != nil {
@@ -100,6 +108,7 @@ func (cmd *RegisterCmd) Run(cli *CLI) (err error) {
 	if err := admin.Publish(ctx, bus.RegistryTopic, cmd.AgentID, record); err != nil {
 		return fmt.Errorf("writing the registry (has `busctl init` run?): %w", err)
 	}
+	scramUserSent = true
 	if err := admin.SetSCRAMUser(ctx, cmd.AgentID, password); err != nil {
 		return err
 	}
