@@ -38,6 +38,7 @@ type CLI struct {
 	Broker    string        `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
 	CACert    string        `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
 	Groups    []string      `help:"Group channels to read besides the DM channel and general." env:"BUS_GROUPS"`
+	Deliver   string        `help:"Which messages reach the agent's inbox: targeted (DMs and messages aimed at it or at @all, the default) or all (every message in its channels)." default:"targeted" enum:"targeted,all" env:"BUS_DELIVER"`
 	Timeout   time.Duration `help:"Give up after this long (not for mcp, which runs until its client closes it)." default:"30s" env:"BUS_TIMEOUT"`
 
 	Send    SendCmd    `cmd:"" help:"Send a message to one agent."`
@@ -49,10 +50,11 @@ type CLI struct {
 }
 
 type MessageFlags struct {
-	Type    string   `help:"Message type." default:"message" enum:"message,question,answer,feedback,bug_report,feature_request,status,ack"`
+	Type    string   `help:"Message type." default:"message" enum:"message,request,question,answer,feedback,bug_report,feature_request,status,ack"`
 	Title   string   `help:"Title of the body."`
 	Text    string   `help:"Text of the body." required:""`
 	Refs    []string `help:"Links the message refers to."`
+	Target  []string `help:"Agent ID the message is aimed at, or @all; repeatable. Default: the @mentions in the text."`
 	Thread  string   `help:"Thread ID. Default: the thread of the message being answered, or a new one."`
 	ReplyTo string   `help:"ID of the message this answers. Default: the message read or acked in the last five minutes."`
 }
@@ -60,7 +62,7 @@ type MessageFlags struct {
 func (flags MessageFlags) outgoing() adapter.Outgoing {
 	return adapter.Outgoing{
 		Type: flags.Type, Body: envelope.Body{Title: flags.Title, Text: flags.Text, Refs: flags.Refs},
-		Thread: flags.Thread, ReplyTo: flags.ReplyTo,
+		Targets: flags.Target, Thread: flags.Thread, ReplyTo: flags.ReplyTo,
 	}
 }
 
@@ -101,8 +103,9 @@ func (cmd *InboxCmd) Run(ctx context.Context, session *adapter.Adapter) error {
 		line, err := json.Marshal(struct {
 			Channel      string
 			FirstContact bool
+			TargetsMe    bool
 			Envelope     envelope.Envelope
-		}{message.Channel.String(), message.FirstContact, message.Envelope})
+		}{message.Channel.String(), message.FirstContact, message.TargetsMe, message.Envelope})
 		if err != nil {
 			return err
 		}
@@ -198,7 +201,7 @@ func (cli *CLI) open() (session *adapter.Adapter, closeSession func(), err error
 		return nil, nil, err
 	}
 	session, err = adapter.Open(adapter.Config{
-		AgentID: cli.Agent, Dir: dir, Transport: transport, Directory: trust.DirectoryPath(cli.ConfigDir), Groups: cli.Groups,
+		AgentID: cli.Agent, Dir: dir, Transport: transport, Directory: trust.DirectoryPath(cli.ConfigDir), Groups: cli.Groups, Deliver: cli.Deliver,
 	})
 	if err != nil {
 		transport.Close()

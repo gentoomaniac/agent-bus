@@ -223,6 +223,41 @@ func TestPublishReachesGeneral(t *testing.T) {
 	}
 }
 
+func TestPublishTargetsFromTheArrayOrTheText(t *testing.T) {
+	b := newTestBus(t, alice, bob)
+	a, bobClient := b.connect(alice), b.connect(bob)
+
+	byArray := hello("no mention here")
+	byArray["channel"] = "general"
+	byArray["targets"] = []string{bob}
+	call(t, a, "publish", byArray)
+	byText := hello("@all please look")
+	byText["channel"] = "general"
+	call(t, a, "publish", byText)
+	chatter := hello("nobody is asked")
+	chatter["channel"] = "general"
+	call(t, a, "publish", chatter)
+
+	var got []message
+	for len(got) < 2 {
+		got = append(got, decode[messagesOut](t, call(t, bobClient, "wait_for_messages", map[string]any{"timeout_s": 10})).Messages...)
+		call(t, bobClient, "ack", map[string]any{"message_ids": []string{got[len(got)-1].ID}})
+	}
+	if len(got) != 2 || !got[0].TargetsMe || got[0].Targets[0] != bob || !got[1].TargetsMe || got[1].Targets[0] != "@all" {
+		t.Errorf("received = %+v", got)
+	}
+}
+
+func TestServerInstructionsStateTheEtiquette(t *testing.T) {
+	b := newTestBus(t, alice)
+	client := b.connect(alice)
+	for _, want := range []string{"targets_me", "`ack` reply", "`answer` reply", "Never answer an ack"} {
+		if !strings.Contains(client.InitializeResult().Instructions, want) {
+			t.Errorf("instructions lack %q", want)
+		}
+	}
+}
+
 func TestWaitForMessagesReturnsEmptyOnTimeout(t *testing.T) {
 	b := newTestBus(t, alice)
 	client := b.connect(alice)

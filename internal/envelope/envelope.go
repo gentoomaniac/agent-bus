@@ -183,6 +183,9 @@ func Parse(payload []byte) (*Signed, error) {
 	if err := env.CheckTargets(); err != nil {
 		return nil, err
 	}
+	if env.Targets == nil {
+		env.Targets = []string{} // a record from before targets existed
+	}
 	return &Signed{Envelope: env, canonical: canonical, signature: signature}, nil
 }
 
