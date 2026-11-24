@@ -16,6 +16,8 @@ type CLI struct {
 
 	Init InitCmd `cmd:"" help:"Create the system topics. Safe to repeat."`
 
+	Register RegisterCmd `cmd:"" help:"Register an agent identity: key, credentials, DM topic, ACLs and registry entry."`
+
 	Topic struct {
 		Create TopicCreateCmd `cmd:"" help:"Create a topic and add it to the topic catalogue."`
 	} `cmd:"" help:"Group topics."`

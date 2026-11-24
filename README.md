@@ -31,3 +31,9 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
 6. `bin/busctl topic create <name> --description "..."` creates the one-partition topic
    `agents.topic.<name>` (infinite retention) and writes the description to the compacted
    `agents.topics` catalogue, keyed by name. Repeating it updates the description.
+7. `bin/busctl register <name>@<owner>` (e.g. `api-client@alice`) registers an agent identity:
+   it generates an Ed25519 key pair and a SCRAM password in `~/.config/agent-bus/<agent-id>/`
+   (`key`, `password`; directory 0700, files 0600), creates the DM topic
+   `agents.dm.<name>.<owner>`, the SCRAM user, the ACLs from design.md §4, and publishes the public
+   key and fingerprint to `agents.registry`. Keys are per machine and never copied: registering an
+   ID that exists on this machine or on the bus is an error. `human@<owner>` is not supported yet.

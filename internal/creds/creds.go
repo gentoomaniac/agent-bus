@@ -34,6 +34,11 @@ func AdminDir(configDir string) string {
 	return filepath.Join(configDir, AdminUser)
 }
 
+// AgentDir holds an agent's private key and credentials.
+func AgentDir(configDir, agentID string) string {
+	return filepath.Join(configDir, agentID)
+}
+
 // WritePassword stores the password in dir/password with mode 0600.
 func WritePassword(dir, password string, overwrite bool) error {
 	return files.Write(filepath.Join(dir, passwordFile), []byte(password+"\n"), files.SecretMode, overwrite)
