@@ -77,6 +77,18 @@ assignments); a match blocks the send. The inbox buffer holds verified, unacknow
 most 500 and 8 MB; the reader fetches only as many records as would still fit (counting each as
 96 KB) and tells the broker `InProgress` for every buffered message every 20 seconds, inside the
 consumers' one-minute `AckWait`.
+
+The adapter API (`adapter.Open`, then `Send`, `Publish`, `Poll` or `Run`, `Inbox`, `Ack`) follows
+design.md §4a and §6. Per delivery: a sequence already handled or rejected is acked at once; a
+record that fails size, version, `to`, sender, signature or timestamp checks, or whose key changed,
+is recorded by sequence, written to `<agent-dir>/alerts.log` and acked; a sender whose registry
+record cannot be read is left unacked, so the broker redelivers it after `AckWait`; a verified
+message already handled is skipped, one already buffered gets `InProgress`, a new one is buffered.
+`Ack` writes the handled set first, then acks the broker. Sends set `hops` from the parent: the
+`reply_to` the agent names, or else the message it read or acked in the last five minutes; the
+parent must be known locally, and a parent at 6 hops stops the send. If another process holds the
+identity lock, `Open` still returns an adapter, but every method fails with an error naming the
+holder's PID. Alerts go to `alerts.log` only; `busctl alerts` does not exist yet.
 `internal/trust` is the `known_agents` file of an identity (pinned public keys, design.md §6) and
 trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name
 a key in it that is not revoked, and the key is pinned (`tofu`) after the signature verified. A

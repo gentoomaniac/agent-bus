@@ -1,0 +1,488 @@
+package adapter
+
+import (
+	"cmp"
+	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"sync"
+	"time"
+
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/identity"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
+)
+
+const (
+	defaultRateLimit = 30 // messages per rateWindow (§8 rule 4)
+	rateWindow       = 10 * time.Minute
+	defaultMaxHops   = 6 // §8 rule 3
+
+	// recentParentWindow is how long a delivered or acked message binds a send that names no
+	// reply_to (§8 rule 3).
+	recentParentWindow = 5 * time.Minute
+	keepAliveInterval  = 20 * time.Second // well inside the consumers' one-minute AckWait
+	idlePause          = time.Second      // between rounds of Run that fetched nothing
+
+	knownAgentsFile = "known_agents"
+	handledFile     = "handled.jsonl"
+	alertsFile      = "alerts.log"
+)
+
+// Config says who the adapter is and what it talks to.
+type Config struct {
+	AgentID   string
+	Dir       string // the identity's directory: key, lock, known_agents, handled.jsonl, alerts.log
+	Transport bus.Transport
+	Directory trust.Directory
+	// Groups are the group channels to read besides the agent's DM channel and general. Their read
+	// cursors must exist (busctl creates them); joining through busd comes later.
+	Groups []string
+
+	InboxMessages int // default DefaultInboxMessages
+	InboxBytes    int // default DefaultInboxBytes
+	RateLimit     int // sends per 10 minutes, default 30
+	MaxHops       int // default 6
+	Now           func() time.Time
+}
+
+// Outgoing is what the agent chooses about a message; the adapter fills in the rest.
+type Outgoing struct {
+	Type    string
+	Body    envelope.Body
+	Thread  string // default: the parent's thread, or a new one
+	ReplyTo string // default: the message the agent most recently read or acked (§8 rule 3)
+}
+
+// InboxQuery narrows what Inbox returns; zero values select everything.
+type InboxQuery struct {
+	Limit   int
+	Types   []string
+	Channel *bus.Channel
+}
+
+// Adapter is one agent's session on the bus.
+type Adapter struct {
+	config Config
+	// lockErr is set when another process holds the identity: the adapter still starts, but every
+	// operation returns it (§3).
+	lockErr error
+	lock    *identity.Lock
+
+	key     ed25519.PrivateKey
+	keyFP   string
+	trust   *trust.Store
+	handled *handledSet
+	// alertsPath is a plain log until busctl alerts exists.
+	alertsPath string
+	channels   []bus.Channel
+
+	pollMu sync.Mutex // one reader at a time; fetching must not hold mu
+	mu     sync.Mutex // guards everything below and the stores above
+	inbox  inbox
+	rate   rateLimiter
+	recent struct {
+		id string
+		at time.Time
+	}
+}
+
+// Open takes the identity. If another process already holds it, the returned adapter is inert:
+// every operation fails with an error naming the holder.
+func Open(config Config) (*Adapter, error) {
+	if err := bus.ValidateAgentID(config.AgentID); err != nil {
+		return nil, err
+	}
+	if config.Now == nil {
+		config.Now = time.Now
+	}
+	config.InboxMessages = cmp.Or(config.InboxMessages, DefaultInboxMessages)
+	config.InboxBytes = cmp.Or(config.InboxBytes, DefaultInboxBytes)
+	config.RateLimit = cmp.Or(config.RateLimit, defaultRateLimit)
+	config.MaxHops = cmp.Or(config.MaxHops, defaultMaxHops)
+	adapter := &Adapter{config: config}
+
+	lock, err := identity.AcquireLock(config.Dir)
+	var held identity.HeldError
+	if errors.As(err, &held) {
+		adapter.lockErr = fmt.Errorf("%s: %w", config.AgentID, err)
+		return adapter, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	adapter.lock = lock
+	if err := adapter.load(); err != nil {
+		lock.Release()
+		return nil, err
+	}
+	return adapter, nil
+}
+
+func (adapter *Adapter) load() (err error) {
+	config := adapter.config
+	if adapter.key, err = identity.ReadPrivateKey(config.Dir); err != nil {
+		return err
+	}
+	adapter.keyFP = identity.Fingerprint(adapter.key.Public().(ed25519.PublicKey))
+	if adapter.trust, err = trust.Open(filepath.Join(config.Dir, knownAgentsFile)); err != nil {
+		return err
+	}
+	if adapter.handled, err = openHandledSet(filepath.Join(config.Dir, handledFile)); err != nil {
+		return err
+	}
+	adapter.alertsPath = filepath.Join(config.Dir, alertsFile)
+	adapter.inbox = inbox{maxMessages: config.InboxMessages, maxBytes: config.InboxBytes}
+	adapter.rate = rateLimiter{limit: config.RateLimit, window: rateWindow}
+	adapter.channels = []bus.Channel{bus.DMChannel(config.AgentID), bus.GeneralChannel()}
+	for _, group := range config.Groups {
+		if err := bus.ValidateGroupName(group); err != nil {
+			return err
+		}
+		adapter.channels = append(adapter.channels, bus.GroupChannel(group))
+	}
+	return nil
+}
+
+// Close gives the identity up. The transport belongs to the caller.
+func (adapter *Adapter) Close() error {
+	if adapter.lock == nil {
+		return nil
+	}
+	return errors.Join(adapter.handled.close(), adapter.lock.Release())
+}
+
+func (adapter *Adapter) ready() error { return adapter.lockErr }
+
+func (adapter *Adapter) AgentID() string { return adapter.config.AgentID }
+
+func (adapter *Adapter) Fingerprint() string { return adapter.keyFP }
+
+// Send sends a message to one agent's DM channel.
+func (adapter *Adapter) Send(ctx context.Context, to string, message Outgoing) (string, error) {
+	if err := bus.ValidateAgentID(to); err != nil {
+		return "", err
+	}
+	return adapter.post(ctx, bus.DMChannel(to), message)
+}
+
+// Publish posts to `general` or a group channel.
+func (adapter *Adapter) Publish(ctx context.Context, channelName string, message Outgoing) (string, error) {
+	if channelName == "general" {
+		return adapter.post(ctx, bus.GeneralChannel(), message)
+	}
+	if err := bus.ValidateGroupName(channelName); err != nil {
+		return "", err
+	}
+	return adapter.post(ctx, bus.GroupChannel(channelName), message)
+}
+
+// parent is what a reply inherits from the message it answers.
+type parent struct {
+	id, thread string
+	hops       int
+}
+
+// findParent looks for a message the agent has read or sent. The history lookup of §8 rule 3 for
+// an unknown one comes with busd, so an unknown reply_to is refused.
+func (adapter *Adapter) findParent(id string) (parent, bool) {
+	if buffered := adapter.inbox.findByID(id); buffered != nil {
+		return parent{id, buffered.Envelope.Thread, buffered.Envelope.Hops}, true
+	}
+	if entry, ok := adapter.handled.messageByID(id); ok {
+		return parent{id, entry.Thread, entry.Hops}, true
+	}
+	return parent{}, false
+}
+
+func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoing) (string, error) {
+	if err := adapter.ready(); err != nil {
+		return "", err
+	}
+	if !slices.Contains(envelope.Types, message.Type) {
+		return "", fmt.Errorf("unknown message type %q, want one of %v", message.Type, envelope.Types)
+	}
+	if secret := findSecret(message.Body); secret != "" {
+		return "", fmt.Errorf("not sent: the body contains %s", secret)
+	}
+
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	now := adapter.config.Now().UTC().Truncate(time.Second)
+
+	var replyTo *string
+	var inherited *parent
+	if message.ReplyTo != "" {
+		found, ok := adapter.findParent(message.ReplyTo)
+		if !ok {
+			return "", fmt.Errorf("not sent: reply_to %s is not a message this agent has read or sent", message.ReplyTo)
+		}
+		inherited = &found
+	} else if adapter.recent.id != "" && now.Sub(adapter.recent.at) <= recentParentWindow {
+		if found, ok := adapter.findParent(adapter.recent.id); ok {
+			inherited = &found
+		}
+	}
+
+	id := envelope.NewID(now)
+	hops, thread := 0, message.Thread
+	if inherited != nil {
+		if inherited.hops >= adapter.config.MaxHops {
+			return "", fmt.Errorf("not sent: the conversation is %d replies deep, the limit is %d; wait for a human", inherited.hops, adapter.config.MaxHops)
+		}
+		hops = inherited.hops + 1
+		replyTo = &inherited.id
+		if thread == "" {
+			thread = inherited.thread
+		}
+	}
+	if thread == "" {
+		thread = id
+	}
+	if !adapter.rate.allow(now) {
+		return "", fmt.Errorf("not sent: rate limit of %d messages per %s reached", adapter.config.RateLimit, rateWindow)
+	}
+
+	payload, err := envelope.Sign(envelope.Envelope{
+		Version: envelope.Version, ID: id, TS: now, From: adapter.config.AgentID, To: envelope.ToFor(to),
+		Type: message.Type, Thread: thread, ReplyTo: replyTo, Hops: hops, KeyFP: adapter.keyFP, Body: message.Body,
+	}, adapter.key)
+	if err != nil {
+		return "", err
+	}
+	sequence, err := adapter.config.Transport.Publish(ctx, to, id, payload)
+	if err != nil {
+		return "", err
+	}
+	// Handled at send time with the sequence, so a message that comes back on general or a group
+	// channel is not delivered to the agent again.
+	err = adapter.handled.add(handledEntry{
+		Kind: entryMessage, Destination: to.String(), Sequence: sequence, From: adapter.config.AgentID, ID: id,
+		Digest: digestOf(payload), Thread: thread, Hops: hops, At: now,
+	})
+	if err != nil {
+		return id, fmt.Errorf("message %s was sent but could not be recorded: %w", id, err)
+	}
+	return id, nil
+}
+
+func digestOf(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+// Poll fetches each channel once and verifies what it got. It returns the errors of channels that
+// could not be read after processing the rest.
+func (adapter *Adapter) Poll(ctx context.Context) error {
+	if err := adapter.ready(); err != nil {
+		return err
+	}
+	adapter.pollMu.Lock()
+	defer adapter.pollMu.Unlock()
+	var errs []error
+	for _, channel := range adapter.channels {
+		adapter.mu.Lock()
+		batch := adapter.inbox.fetchBatch()
+		adapter.mu.Unlock()
+		if batch == 0 {
+			break // full: resume when the agent has acked something
+		}
+		deliveries, err := adapter.config.Transport.Fetch(ctx, channel, batch)
+		errs = append(errs, err)
+		adapter.mu.Lock()
+		for _, delivery := range deliveries {
+			errs = append(errs, adapter.receive(ctx, channel, delivery))
+		}
+		adapter.mu.Unlock()
+	}
+	return errors.Join(errs...)
+}
+
+// Run reads until the context ends and keeps buffered messages alive at the broker.
+func (adapter *Adapter) Run(ctx context.Context, report func(error)) error {
+	if err := adapter.ready(); err != nil {
+		return err
+	}
+	lastKeepAlive := time.Now()
+	for ctx.Err() == nil {
+		before := adapter.buffered()
+		if err := adapter.Poll(ctx); err != nil && ctx.Err() == nil {
+			report(err)
+		}
+		if time.Since(lastKeepAlive) >= keepAliveInterval {
+			adapter.mu.Lock()
+			err := adapter.inbox.keepAlive(ctx)
+			adapter.mu.Unlock()
+			if err != nil && ctx.Err() == nil {
+				report(err)
+			}
+			lastKeepAlive = time.Now()
+		}
+		if adapter.buffered() == before {
+			select {
+			case <-ctx.Done():
+			case <-time.After(idlePause):
+			}
+		}
+	}
+	return nil
+}
+
+func (adapter *Adapter) buffered() int {
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	return len(adapter.inbox.messages)
+}
+
+// receive runs the state machine of design.md §4a for one delivery. The caller holds mu. A
+// delivery it cannot decide about is left unacknowledged: the broker redelivers it after AckWait.
+func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delivery bus.Delivery) error {
+	destination := channel.String()
+	if adapter.handled.sequenceHandled(destination, delivery.Sequence) {
+		return delivery.Ack(ctx)
+	}
+
+	signed, err := envelope.Parse(delivery.Payload)
+	if err != nil {
+		return adapter.reject(ctx, channel, delivery, err)
+	}
+	env := signed.Envelope
+	if err := bus.ValidateAgentID(env.From); err != nil {
+		return adapter.reject(ctx, channel, delivery, err)
+	}
+	if err := env.CheckTo(channel); err != nil {
+		return adapter.reject(ctx, channel, delivery, err)
+	}
+	resolution, err := adapter.trust.Resolve(ctx, adapter.config.Directory, env.From, env.KeyFP, adapter.config.Now())
+	if errors.Is(err, trust.ErrUnavailable) {
+		return adapter.alert("%s sequence %d from %s left unread for now: %v", destination, delivery.Sequence, env.From, err)
+	}
+	if err != nil {
+		return adapter.reject(ctx, channel, delivery, err)
+	}
+	if !signed.Verify(resolution.Key) {
+		return adapter.reject(ctx, channel, delivery, fmt.Errorf("signature of %s does not verify", env.From))
+	}
+	if err := env.CheckNotFuture(adapter.config.Now()); err != nil {
+		return adapter.reject(ctx, channel, delivery, err)
+	}
+	if resolution.NewPin != nil {
+		if err := adapter.trust.Add(*resolution.NewPin); err != nil {
+			return err
+		}
+	}
+
+	digest := digestOf(delivery.Payload)
+	if entry, handled := adapter.handled.message(destination, env.From, env.ID); handled {
+		if entry.Digest != digest {
+			return adapter.reject(ctx, channel, delivery, fmt.Errorf("ID %s of %s was handled with another payload", env.ID, env.From))
+		}
+		entry.Sequence = delivery.Sequence
+		if err := adapter.handled.add(entry); err != nil {
+			return err
+		}
+		return delivery.Ack(ctx)
+	}
+	if buffered := adapter.inbox.find(channel, env.From, env.ID); buffered != nil {
+		if buffered.Digest != digest {
+			return adapter.reject(ctx, channel, delivery, fmt.Errorf("ID %s of %s is buffered with another payload", env.ID, env.From))
+		}
+		return delivery.InProgress(ctx)
+	}
+	adapter.inbox.add(&Message{
+		Envelope: env, Channel: channel, Sequence: delivery.Sequence, FirstContact: resolution.NewPin != nil,
+		Digest: digest, delivery: delivery, size: len(delivery.Payload),
+	})
+	return nil
+}
+
+// reject records a delivery as handled by its sequence, alerts and acks it: it will never be
+// shown to the agent (§6 terminal rejection).
+func (adapter *Adapter) reject(ctx context.Context, channel bus.Channel, delivery bus.Delivery, reason error) error {
+	entry := handledEntry{Kind: entryRejected, Destination: channel.String(), Sequence: delivery.Sequence, At: adapter.config.Now().UTC()}
+	if err := adapter.handled.add(entry); err != nil {
+		return err
+	}
+	alertErr := adapter.alert("rejected %s sequence %d: %v", channel, delivery.Sequence, reason)
+	return errors.Join(alertErr, delivery.Ack(ctx))
+}
+
+// alert appends a line to alerts.log; busctl alerts will read it.
+func (adapter *Adapter) alert(format string, args ...any) error {
+	line := fmt.Sprintf("%s %s\n", adapter.config.Now().UTC().Format(time.RFC3339), fmt.Sprintf(format, args...))
+	file, err := os.OpenFile(adapter.alertsPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, files.SecretMode)
+	if err != nil {
+		return err
+	}
+	_, err = file.WriteString(line)
+	return errors.Join(err, file.Close())
+}
+
+// Inbox lists the verified messages the agent has not acked, oldest first. Reading them makes the
+// newest one the parent of the agent's next reply (§8 rule 3).
+func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
+	if err := adapter.ready(); err != nil {
+		return nil, err
+	}
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	var listed []Message
+	for _, message := range adapter.inbox.messages {
+		if query.Limit > 0 && len(listed) == query.Limit {
+			break
+		}
+		if len(query.Types) > 0 && !slices.Contains(query.Types, message.Envelope.Type) {
+			continue
+		}
+		if query.Channel != nil && message.Channel != *query.Channel {
+			continue
+		}
+		listed = append(listed, *message)
+	}
+	if len(listed) > 0 {
+		adapter.recent.id, adapter.recent.at = listed[len(listed)-1].Envelope.ID, adapter.config.Now()
+	}
+	return listed, nil
+}
+
+// Ack marks messages handled: the handled set is written first, then the broker is acked, so a
+// crash in between redelivers a message that is then skipped. It goes on after an error and
+// reports every one.
+func (adapter *Adapter) Ack(ctx context.Context, ids []string) error {
+	if err := adapter.ready(); err != nil {
+		return err
+	}
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	var errs []error
+	for _, id := range ids {
+		message := adapter.inbox.findByID(id)
+		if message == nil {
+			errs = append(errs, fmt.Errorf("no unread message %s", id))
+			continue
+		}
+		env := message.Envelope
+		err := adapter.handled.add(handledEntry{
+			Kind: entryMessage, Destination: message.Channel.String(), Sequence: message.Sequence, From: env.From, ID: env.ID,
+			Digest: message.Digest, Thread: env.Thread, Hops: env.Hops, At: adapter.config.Now().UTC(),
+		})
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		adapter.recent.id, adapter.recent.at = env.ID, adapter.config.Now()
+		adapter.inbox.remove(message)
+		if err := message.delivery.Ack(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("message %s is handled, but the broker did not confirm the ack (it will be redelivered and skipped): %w", id, err))
+		}
+	}
+	return errors.Join(errs...)
+}
