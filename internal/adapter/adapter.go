@@ -74,8 +74,8 @@ type Outgoing struct {
 	Type    string
 	Body    envelope.Body
 	Targets []string // agent IDs or "@all"; default: see targetsFor
-	Thread  string   // default: the parent's thread, or a new one
-	ReplyTo string   // default: the message the agent most recently read or acked (§8 rule 3)
+	Thread  string   // default: the parent's thread, or a new one; naming one disables inferring a parent
+	ReplyTo string   // default: the message most recently read or acked in the same channel (§8 rule 3)
 }
 
 // InboxQuery narrows what Inbox returns; zero values select everything.
@@ -119,9 +119,11 @@ type Adapter struct {
 	// unknownSenders maps a sender with no directory record to the deliveries (destination and
 	// sequence) of its messages waiting for one.
 	unknownSenders map[string]map[string]bool
-	recent         struct {
-		id string
-		at time.Time
+	// recent is the message the agent last read or acked, the parent of a send that names none.
+	recent struct {
+		id      string
+		channel bus.Channel // where it arrived
+		at      time.Time
 	}
 }
 
@@ -376,6 +378,16 @@ func (adapter *Adapter) findParent(id string) (parent, bool) {
 	return parent{}, false
 }
 
+// recentInScope says the recently read message belongs to the conversation a send to `to` continues:
+// it arrived on the same channel, or for a DM it is a DM from the recipient. An agent that moves
+// to another channel or person starts something new, as does one that names a thread.
+func (adapter *Adapter) recentInScope(to bus.Channel, recent parent) bool {
+	if to.Kind == bus.DM {
+		return adapter.recent.channel.Kind == bus.DM && recent.author == to.Name
+	}
+	return adapter.recent.channel == to
+}
+
 // ErrBadTargets is the error of a message that is aimed at nobody or at an invalid target.
 var ErrBadTargets = errors.New("invalid targets")
 
@@ -444,8 +456,8 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 			return "", fmt.Errorf("not sent: reply_to %s is not a message this agent has read or sent", message.ReplyTo)
 		}
 		inherited = &found
-	} else if adapter.recent.id != "" && now.Sub(adapter.recent.at) <= recentParentWindow {
-		if found, ok := adapter.findParent(adapter.recent.id); ok {
+	} else if message.Thread == "" && adapter.recent.id != "" && now.Sub(adapter.recent.at) <= recentParentWindow {
+		if found, ok := adapter.findParent(adapter.recent.id); ok && adapter.recentInScope(to, found) {
 			inherited = &found
 		}
 	}
@@ -792,7 +804,7 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 		if lastTargeted := slices.IndexFunc(listed, func(m Message) bool { return !m.TargetsMe }) - 1; lastTargeted >= 0 {
 			parent = lastTargeted
 		}
-		adapter.recent.id, adapter.recent.at = listed[parent].Envelope.ID, adapter.config.Now()
+		adapter.recent.id, adapter.recent.channel, adapter.recent.at = listed[parent].Envelope.ID, listed[parent].Channel, adapter.config.Now()
 	}
 	return listed, nil
 }
@@ -822,7 +834,7 @@ func (adapter *Adapter) Ack(ctx context.Context, ids []string) error {
 			errs = append(errs, fmt.Errorf("message %s stays unread, the broker did not confirm the ack: %w", id, err))
 			continue
 		}
-		adapter.recent.id, adapter.recent.at = message.Envelope.ID, adapter.config.Now()
+		adapter.recent.id, adapter.recent.channel, adapter.recent.at = message.Envelope.ID, message.Channel, adapter.config.Now()
 		adapter.inbox.remove(message)
 		if err := adapter.handled.add(adapter.handledEntry(message)); err != nil {
 			errs = append(errs, err)

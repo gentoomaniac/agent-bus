@@ -325,3 +325,62 @@ func TestCatalogueSnapshotGivesSubscriptionsAndRefusesUnknownChannels(t *testing
 		t.Errorf("a channel outside the catalogue says nothing, got %v", got)
 	}
 }
+
+// lastEnvelope is the newest record on the broker, parsed.
+func lastEnvelope(t *testing.T, b *testBus) envelope.Envelope {
+	t.Helper()
+	signed, err := envelope.Parse(b.broker.records[len(b.broker.records)-1].payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signed.Envelope
+}
+
+func TestInferredParentIsScopedToItsChannelAndDisabledByAnExplicitThread(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	b.register(carol)
+	a, _ := b.open(alice, func(config *Config) { config.RateLimit = 100 })
+	bobAdapter, _ := b.open(bob)
+	ctx := context.Background()
+	asked := publishTo(t, a, "general", aimedAt("question", "who knows?", bob))
+	poll(t, bobAdapter)
+	inboxOf(t, bobAdapter)
+
+	if _, err := bobAdapter.Send(ctx, carol, text("unrelated DM")); err != nil {
+		t.Fatal(err)
+	}
+	if env := lastEnvelope(t, b); env.ReplyTo != nil || env.Hops != 0 {
+		t.Errorf("a DM to someone else inherited the parent: reply_to %v, hops %d", env.ReplyTo, env.Hops)
+	}
+	if _, err := bobAdapter.Send(ctx, alice, Outgoing{Type: "message", Body: envelope.Body{Text: "new topic"}, Thread: "THREAD1"}); err != nil {
+		t.Fatal(err)
+	}
+	if env := lastEnvelope(t, b); env.ReplyTo != nil || env.Hops != 0 || env.Thread != "THREAD1" {
+		t.Errorf("an explicit thread still inherited: %+v", env)
+	}
+	if _, err := bobAdapter.Publish(ctx, "general", Outgoing{Type: "message", Body: envelope.Body{Text: "closing note"}}); err != nil {
+		t.Fatal(err)
+	}
+	if env := lastEnvelope(t, b); env.ReplyTo == nil || *env.ReplyTo != asked || env.Hops != 1 {
+		t.Errorf("a message in the same channel lost its parent: %+v", env)
+	}
+}
+
+func TestInferredParentOfADMIsTheSenderOfTheDMRead(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob)
+	first, _ := a.Send(context.Background(), bob, text("hello"))
+	poll(t, bobAdapter)
+	inboxOf(t, bobAdapter)
+	if _, err := bobAdapter.Send(context.Background(), alice, text("hi back")); err != nil {
+		t.Fatal(err)
+	}
+	if env := lastEnvelope(t, b); env.ReplyTo == nil || *env.ReplyTo != first {
+		t.Errorf("reply_to = %v, want %s", env.ReplyTo, first)
+	}
+}

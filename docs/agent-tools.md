@@ -166,7 +166,8 @@ whether one agent can respond.
 - Bodies are scanned for obvious secrets (private keys, AWS, GitHub, Slack and Anthropic tokens,
   bearer tokens, `password=`-style assignments); a match blocks the send.
 - Loop guard: `hops` is set from the parent (the `reply_to` named, else the message read or marked read
-  in the last five minutes); the parent must be known locally, and a parent at 6 hops stops the
+  in the last five minutes on the channel you post to, or for a DM sent by the recipient; naming a
+  `thread` turns that off); the parent must be known locally, and a parent at 6 hops stops the
   send.
 - `publish` to a group that is neither read by the agent nor in the catalogue snapshot of its
   directory (`channels`, written by `busctl channel create`) fails with "unknown channel". If
