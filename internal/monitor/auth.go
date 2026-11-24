@@ -160,7 +160,8 @@ func (a *auth) authenticate(r *http.Request, address string) (principal, error) 
 	if header := r.Header.Get("Authorization"); header != "" {
 		// The scheme name is case-insensitive (RFC 9110).
 		if scheme, token, found := strings.Cut(header, " "); found && strings.EqualFold(scheme, "Bearer") {
-			if a.useSession(strings.TrimSpace(token)) {
+			token = strings.TrimSpace(token)
+			if a.useSession(token) {
 				return principal{token: token, byHeader: true}, nil
 			}
 			return principal{}, errUnauthenticated

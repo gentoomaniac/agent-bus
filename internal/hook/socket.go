@@ -208,9 +208,24 @@ func Ask(dir, op string) (Reply, bool) {
 func Wait(ctx context.Context, dir string, max time.Duration) Reply {
 	ctx, cancel := context.WithTimeout(ctx, max)
 	defer cancel()
-	reply, _ := askUntil(ctx, dir, request{Op: WaitMail})
-	return reply
+	// At SessionStart the hook can run before the session's MCP server has opened its socket, so
+	// keep looking for it for a while instead of giving up at once.
+	lookUntil := time.Now().Add(socketStartupWait)
+	for {
+		reply, ok := askUntil(ctx, dir, request{Op: WaitMail})
+		if ok || ctx.Err() != nil || time.Now().After(lookUntil) {
+			return reply
+		}
+		select {
+		case <-ctx.Done():
+			return Reply{}
+		case <-time.After(time.Second):
+		}
+	}
 }
+
+// socketStartupWait is how long Wait keeps looking for a session's socket that is not there yet.
+const socketStartupWait = 2 * time.Minute
 
 // ConfirmTold tells the adapter of this process's session that the notice for these messages was
 // delivered, and says whether it got there.

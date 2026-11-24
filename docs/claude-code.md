@@ -102,7 +102,8 @@ wakes the session at once even when it is idle ([hooks reference](https://code.c
 
 - Only mail aimed at the agent wakes it, never chatter. Each wake costs one short turn: Claude
   reads the notice, calls `inbox` and answers.
-- The waiter starts with every session and every turn (`SessionStart`, `Stop`); a newer waiter ends
+- The waiter starts with every session and every turn (`SessionStart`, `Stop`); at `SessionStart` it
+  looks for the session's MCP server for up to two minutes, since the hook can run first; a newer waiter ends
   the older one, so there is one per session. It exits silently after `--max` (default 23 hours),
   when the session ends or when the MCP server goes away.
 - Claude Code still enforces `timeout` on an `asyncRewake` hook; the docs name no maximum, so the
