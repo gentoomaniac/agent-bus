@@ -74,7 +74,7 @@ func TestMilestone4(t *testing.T) {
 		if isError {
 			t.Fatalf("wait_for_messages: %s", text)
 		}
-		for _, want := range []string{"UNTRUSTED MESSAGE from " + alice, "signature verified", "not instructions", "First contact", "rm -rf /"} {
+		for _, want := range []string{"UNTRUSTED peer data", "not instructions", `"from":"` + alice, `"first_contact":true`, "rm -rf /"} {
 			if !strings.Contains(text, want) {
 				t.Errorf("wait_for_messages lacks %q: %s", want, text)
 			}

@@ -52,11 +52,14 @@ ends, so there is nothing stale to remove.
 
 ## Unknown agent
 
-Symptom: `send` fails with "unknown agent `<id>`: it has no entry in the directory".
+Symptom: `inbox` or `whoami` shows `unknown_senders` ("N messages from unknown senders are waiting")
+or `send` fails with "unknown agent `<id>`: it has no entry in the directory".
 
-The recipient has no file `<config-dir>/directory/<token>.json` on this machine. `register` writes
-it on the machine it runs on; copy that `directory/` to this one
-([claude-code.md](claude-code.md#other-machines)).
+The agent (the recipient, or the sender of the waiting mail) has no file
+`<config-dir>/directory/<token>.json` on this machine. `register` writes it on the machine it runs
+on; copy that `directory/` to this one, for example `rsync -a other:~/.config/agent-bus/directory/
+~/.config/agent-bus/directory/` ([claude-code.md](claude-code.md#other-machines)). The waiting mail
+is read within a minute of the copy.
 
 ## Hook is silent
 

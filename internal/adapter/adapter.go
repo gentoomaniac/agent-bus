@@ -76,6 +76,7 @@ type Outgoing struct {
 
 // InboxQuery narrows what Inbox returns; zero values select everything.
 type InboxQuery struct {
+	ID      string
 	Limit   int
 	Types   []string
 	Channel *bus.Channel
@@ -103,7 +104,10 @@ type Adapter struct {
 	rate   rateLimiter
 
 	notifications notifications
-	recent        struct {
+	// unknownSenders maps a sender with no directory record to the deliveries (destination and
+	// sequence) of its messages waiting for one.
+	unknownSenders map[string]map[string]bool
+	recent         struct {
 		id string
 		at time.Time
 	}
@@ -443,6 +447,30 @@ func (adapter *Adapter) Run(ctx context.Context, report func(error)) error {
 	return nil
 }
 
+// noteUnknownSender remembers a message that waits because its sender has no directory record.
+func (adapter *Adapter) noteUnknownSender(sender, destination string, sequence uint64) {
+	if adapter.unknownSenders == nil {
+		adapter.unknownSenders = map[string]map[string]bool{}
+	}
+	if adapter.unknownSenders[sender] == nil {
+		adapter.unknownSenders[sender] = map[string]bool{}
+	}
+	adapter.unknownSenders[sender][fmt.Sprintf("%s/%d", destination, sequence)] = true
+}
+
+// UnknownSenders returns the senders whose messages wait for a directory record, and how many
+// messages that is.
+func (adapter *Adapter) UnknownSenders() (senders []string, messages int) {
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	for sender, waiting := range adapter.unknownSenders {
+		senders = append(senders, sender)
+		messages += len(waiting)
+	}
+	slices.Sort(senders)
+	return senders, messages
+}
+
 func (adapter *Adapter) buffered() int {
 	adapter.mu.Lock()
 	defer adapter.mu.Unlock()
@@ -469,6 +497,11 @@ func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delive
 		return adapter.reject(ctx, channel, delivery, err)
 	}
 	resolution, err := adapter.trust.Resolve(ctx, adapter.config.Directory, env.From, env.KeyFP, adapter.config.Now())
+	if errors.Is(err, fs.ErrNotExist) {
+		adapter.noteUnknownSender(env.From, destination, delivery.Sequence)
+	} else {
+		delete(adapter.unknownSenders, env.From)
+	}
 	if errors.Is(err, trust.ErrUnavailable) {
 		return adapter.alert("%s sequence %d from %s left unread for now: %v", destination, delivery.Sequence, env.From, err)
 	}
@@ -567,6 +600,9 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 	var listed []Message
 	for _, message := range adapter.inbox.messages {
 		if len(query.Types) > 0 && !slices.Contains(query.Types, message.Envelope.Type) {
+			continue
+		}
+		if query.ID != "" && message.Envelope.ID != query.ID {
 			continue
 		}
 		if query.Channel != nil && message.Channel != *query.Channel {

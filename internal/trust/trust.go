@@ -146,7 +146,7 @@ func (store *Store) Resolve(ctx context.Context, directory Directory, agentID, k
 
 	record, err := directory.Lookup(ctx, agentID)
 	if err != nil {
-		return Resolution{}, fmt.Errorf("%w for %s: %v", ErrUnavailable, agentID, err)
+		return Resolution{}, fmt.Errorf("%w for %s: %w", ErrUnavailable, agentID, err)
 	}
 	for _, entry := range keyHistory(record) {
 		if entry.Fingerprint != keyFingerprint {

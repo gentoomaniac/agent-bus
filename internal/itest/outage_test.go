@@ -72,9 +72,7 @@ func busState(server *httptest.Server) string {
 
 type inboxMessage struct {
 	ID   string `json:"id"`
-	Body struct {
-		Text string `json:"text"`
-	} `json:"body"`
+	Text string `json:"text"`
 }
 
 // inbox returns the texts of the unread messages, with their IDs.
@@ -86,7 +84,7 @@ func inbox(t *testing.T, server *mcpServer) (texts, ids []string) {
 		t.Fatalf("inbox: %s", text)
 	}
 	for _, message := range out.Messages {
-		texts, ids = append(texts, message.Body.Text), append(ids, message.ID)
+		texts, ids = append(texts, message.Text), append(ids, message.ID)
 	}
 	slices.Sort(texts)
 	return texts, ids

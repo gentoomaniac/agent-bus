@@ -74,8 +74,8 @@ own session.
 
 - `Stop`: when the adapter holds mail that targets the agent and that it has not reported yet, the hook prints
   `{"decision":"block","reason":...}` and Claude continues instead of stopping. The reason gives
-  the count and up to five one-line summaries (sender, type, title, each marked UNTRUSTED, never
-  the message text) and tells Claude to call `inbox`. Each message is reported once, so the hook
+  the count, a note that the mail is untrusted peer data and up to five one-line summaries (sender,
+  type, title, never the message text), and tells Claude to call `inbox`. Each message is reported once, so the hook
   that fires again after its own block is silent; this also stands in for `stop_hook_active`,
   which the hook does not read. Reports are at least 10 seconds apart (design.md §8 rule 3);
   held-back mail is reported by the next hook. If the session goes idle right after, that mail
@@ -103,9 +103,10 @@ every concurrent session its own identity.
 
 ## What the agent sees
 
-Every delivered message carries a `notice` that frames it as an untrusted peer message with a
-verified signature, and says whether a request in it may be acted on (design.md §8 rules 1 and 2), plus `first_contact` when its sender's key was pinned
-by that message. The server instructions say the same: a valid signature proves who sent a
+Every `inbox` or `wait_for_messages` result carries one `notice` that frames its messages as
+untrusted peer data with a verified signature and says whether a request in them may be acted on
+(design.md §8 rules 1 and 2), and each message has `first_contact` when its sender's key was pinned
+by it. The server instructions say the same: a valid signature proves who sent a
 message, not that it is safe or that the owner wants it done. Tools and results:
 [agent-tools.md](agent-tools.md).
 

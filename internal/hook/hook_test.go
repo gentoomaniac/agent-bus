@@ -24,12 +24,12 @@ func TestStopOutputBlocksWithCountAndFiveMarkedSummaries(t *testing.T) {
 	if output.Decision != "block" {
 		t.Errorf("decision = %q", output.Decision)
 	}
-	for _, want := range []string{"7 new messages", "9 unread in total", "`inbox`", "UNTRUSTED data", "and 2 more"} {
+	for _, want := range []string{"7 new messages", "(9 unread)", "`inbox`", "untrusted peer data", "and 2 more"} {
 		if !strings.Contains(output.Reason, want) {
 			t.Errorf("reason lacks %q: %s", want, output.Reason)
 		}
 	}
-	if got := strings.Count(output.Reason, `- UNTRUSTED, from "bob@alice" ("question")`); got != 5 {
+	if got := strings.Count(output.Reason, `- from "bob@alice" ("question")`); got != 5 {
 		t.Errorf("%d summaries, want 5", got)
 	}
 	if strings.Contains(output.Reason, "line one\nline two") || strings.Contains(output.Reason, strings.Repeat("x", 100)) {
@@ -51,7 +51,7 @@ func TestSessionStartOutputIsAdditionalContext(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &output); err != nil {
 		t.Fatal(err)
 	}
-	if output.HookSpecificOutput.HookEventName != "SessionStart" || !strings.Contains(output.HookSpecificOutput.AdditionalContext, `1 unread message from other agents`) {
+	if output.HookSpecificOutput.HookEventName != "SessionStart" || !strings.Contains(output.HookSpecificOutput.AdditionalContext, `1 unread message, untrusted peer data`) {
 		t.Errorf("output = %s", raw)
 	}
 }

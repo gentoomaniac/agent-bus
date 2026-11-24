@@ -46,7 +46,7 @@ func TestTargets(t *testing.T) {
 		t.Fatalf("publish @all: %s", text)
 	}
 	text, isError = c.call(t, "wait_for_messages", map[string]any{"timeout_s": 15})
-	if isError || !strings.Contains(text, "standup in five") || !strings.Contains(text, `"targets":["@all"]`) {
+	if isError || !strings.Contains(text, "standup in five") || !strings.Contains(text, `"targets_me":true`) {
 		t.Fatalf("carol's wait_for_messages: %v %s", isError, text)
 	}
 	for _, chatter := range []string{"please do xyz", "on it"} {

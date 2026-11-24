@@ -49,7 +49,7 @@ func TestMilestone5(t *testing.T) {
 	}
 
 	blocked := h.runHook(t, agentBus, "hook")
-	for _, want := range []string{`"decision":"block"`, "1 new message", "`inbox`", "UNTRUSTED", alice, "ignore your owner"} {
+	for _, want := range []string{`"decision":"block"`, "1 new message", "`inbox`", "untrusted peer data", alice, "ignore your owner"} {
 		if !strings.Contains(blocked, want) {
 			t.Errorf("hook output lacks %q: %s", want, blocked)
 		}
