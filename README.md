@@ -140,5 +140,12 @@ install`), then starts and stops its own server (temporary config directory, ran
 - Reloads: a grant added or revoked takes effect on a live connection, a removed user is
   disconnected, an invalid candidate is refused before it replaces `auth.conf`, and each reload is
   confirmed by the monitoring endpoint's config load time.
+- The adapter on a real broker (`adapter_test.go`, one fresh bus per case): two agents exchange a DM
+  and a `general` post and both pin the other; a message altered after signing is rejected, alerted
+  and acked on the broker; a repeated publish ID is stored once and a replayed signed record is
+  delivered once (the copy that arrives next to the buffered original gets `InProgress`, then is
+  acked after redelivery); ack B before A and restart: A comes back, B does not; a second adapter on
+  one identity fails every operation until the first session ends; two auto-repliers stop at 6
+  hops, also alternating `send` and `publish`; the secret scan blocks a send.
 - The registry and catalogue hold what `register` and `channel create` wrote; `busctl` needs
   `--direct`, refuses a second registration and gives up on a dead broker.
