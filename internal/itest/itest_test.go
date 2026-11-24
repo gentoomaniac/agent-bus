@@ -293,6 +293,18 @@ func TestMilestone1(t *testing.T) {
 		}
 	})
 
+	t.Run("the broker reports an unknown SCRAM user as absent and a registered one as present", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
+		defer cancel()
+		admin := h.admin(t)
+		for user, want := range map[string]bool{alice: true, "nobody@nowhere": false} {
+			got, err := admin.HasSCRAMUser(ctx, user)
+			if err != nil || got != want {
+				t.Errorf("HasSCRAMUser(%s) = (%v, %v), want (%v, nil)", user, got, err, want)
+			}
+		}
+	})
+
 	t.Run("registering an existing agent fails", func(t *testing.T) {
 		if output, err := h.tryRun(h.busctl, "register", alice); err == nil {
 			t.Fatalf("second register succeeded:\n%s", output)
