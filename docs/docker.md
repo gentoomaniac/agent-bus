@@ -1,6 +1,6 @@
 # Docker
 
-The central components (`nats-server` and `busctl`) as a container image. For running the broker
+The central components (`nats-server`, `busctl` and `bus-monitor`) as a container image. For running the broker
 without Docker see [broker.md](broker.md); for cutting a release see
 [development.md](development.md#cutting-a-release).
 
@@ -8,7 +8,7 @@ without Docker see [broker.md](broker.md); for cutting a release see
 
 Every release pushes a multi-arch (linux amd64 and arm64) image to
 `ghcr.io/gentoomaniac/agent-messenger`, tagged with the version and `latest`. It holds the pinned
-`nats-server` (v2.15.3), `busctl` and `agent-bus`, and runs as the non-root user `bus` (uid 10001).
+`nats-server` (v2.15.3), `busctl`, `bus-monitor` and `agent-bus`, and runs as the non-root user `bus` (uid 10001).
 The entrypoint renders `deploy/nats-server.conf` from the environment and runs `nats-server` as
 PID 1, so `docker stop` stops it cleanly and `busctl --direct` inside the container can reload it.
 
@@ -80,10 +80,16 @@ file (`/config/nats/nats-server.pid`). Agent keys and credentials end up in `/co
 copy `ca.pem` and the agent's directory to the agent's machine
 ([claude-code.md](claude-code.md#other-machines)).
 
+## The web monitor
+
+The image also holds `bus-monitor`, run as a second container on the same volume and network; see
+[monitor.md](monitor.md#docker). It shows all traffic and has no login: publish it on the host's
+loopback only.
+
 ## Compose
 
 [deploy/docker-compose.yaml](../deploy/docker-compose.yaml) is an example with one service, the two
-volumes and the port. Run the one-off `busctl` commands above first, with the compose volume names
+volumes and the port, and an optional `monitor` service (profile `monitor`). Run the one-off `busctl` commands above first, with the compose volume names
 (`<project>_config`, `<project>_data`).
 
 ```sh

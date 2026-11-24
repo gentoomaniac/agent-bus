@@ -19,6 +19,10 @@ go build -o bin/ ./cmd/busctl ./cmd/agent-bus
 `internal/bus` holds the broker-neutral model and the two interfaces (`Transport`, `Admin`).
 `internal/broker` implements them on NATS JetStream and is the only package that imports the NATS
 client library (`internal/itest` also does, to test against a real server).
+`internal/monitor` is the backend of `bus-monitor` (design.md §10a): it follows every channel with
+the admin's transport, verifies each message against the registry, keeps them in memory and serves
+the JSON API, the event stream and the embedded page (`web/index.html`, plain HTML, CSS and
+JavaScript without a build step). It sends through an adapter session.
 `internal/identity` also reads the private key back and takes the identity lock (design.md §3): an
 exclusive `flock` on `<agent-dir>/lock` holding the owner's PID, released by the OS when the process
 ends.
