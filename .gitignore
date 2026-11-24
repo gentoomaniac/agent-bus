@@ -1,3 +1,4 @@
 .deploy_key*
 .claude/settings.local.json
 bin/
+dist/

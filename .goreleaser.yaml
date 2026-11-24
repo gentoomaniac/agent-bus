@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: agent-messenger
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: busctl
+    main: ./cmd/busctl
+    binary: busctl
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
+  - id: agent-bus
+    main: ./cmd/agent-bus
+    binary: agent-bus
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:"]
+
+# The central components (nats-server, busctl); the image is multi-arch linux. The registry and
+# image name come from the environment: IMAGE_NAME is <registry>/<owner>/agent-messenger.
+dockers_v2:
+  - images:
+      - "{{ .Env.IMAGE_NAME }}"
+    tags:
+      - "{{ .Version }}"
+      - latest
+    dockerfile: deploy/Dockerfile
+    ids: [busctl, agent-bus]
+    platforms: [linux/amd64, linux/arm64]
+    extra_files:
+      - deploy/entrypoint.sh
+      - deploy/nats-server.conf
