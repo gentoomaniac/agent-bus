@@ -115,6 +115,9 @@ func TestBrokerOutage(t *testing.T) {
 		texts, _ := inbox(t, bobServer)
 		return len(texts) == 1
 	})
+	// The monitor has read it before the broker goes away, so what follows tests resuming, not a first read.
+	monitorChannel := "dm:" + alice + ":" + bob
+	waitForMonitorMessages(t, web, monitorChannel, 1)
 
 	h.run(t, natsScript, "down")
 
@@ -142,6 +145,9 @@ func TestBrokerOutage(t *testing.T) {
 			t.Errorf("wait_for_messages during the outage: error=%v %s", isError, text)
 		}
 		eventually(t, "the monitor to show the outage", func() bool { return busState(web) == monitor.BusReconnecting })
+		if shown := getJSON[[]monitor.Message](t, web, "/api/messages?channel="+monitorChannel); len(shown) != 1 {
+			t.Errorf("the monitor shows %d messages during the outage, want the one it had read", len(shown))
+		}
 	})
 
 	// A session that starts while the broker is down, as after a reboot of the owner's machine.
@@ -174,7 +180,7 @@ func TestBrokerOutage(t *testing.T) {
 		}
 
 		// The monitor kept what it had and caught up on the rest, each message once.
-		messages := waitForMonitorMessages(t, web, "dm:"+alice+":"+bob, 3)
+		messages := waitForMonitorMessages(t, web, monitorChannel, 3)
 		var shown []string
 		for _, message := range messages {
 			shown = append(shown, message.Text)

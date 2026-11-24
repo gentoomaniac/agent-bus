@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +38,56 @@ type failingHistory struct{ *fakeBus }
 
 func (failingHistory) History(context.Context, bus.Channel, uint64, int) ([]bus.Record, error) {
 	return nil, errors.New("reading the history: broker lost")
+}
+
+// recordingHistory remembers the sequence each read started after.
+type recordingHistory struct {
+	*fakeBus
+	mu     sync.Mutex
+	afters []uint64
+}
+
+func (history *recordingHistory) History(ctx context.Context, from bus.Channel, after uint64, limit int) ([]bus.Record, error) {
+	history.mu.Lock()
+	history.afters = append(history.afters, after)
+	history.mu.Unlock()
+	return history.fakeBus.History(ctx, from, after, limit)
+}
+
+func TestFollowResumesAfterTheLastStoredSequence(t *testing.T) {
+	fake := newFakeBus(t)
+	general := bus.GeneralChannel()
+	fake.store(general, 7, []byte("not an envelope"))
+	history := &recordingHistory{fakeBus: fake}
+	monitor := New(Config{Admin: fake, History: history, Report: func(error) {}})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { monitor.follow(ctx, general); close(done) }()
+
+	waitFor := func(what string, condition func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(2 * time.Second); !condition(); time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+		}
+	}
+	waitFor("the first record", func() bool { return len(monitor.Messages("general", 0, 10)) == 1 })
+	fake.store(general, 9, []byte("another"))
+	waitFor("the second record", func() bool { return len(monitor.Messages("general", 0, 10)) == 2 })
+	cancel()
+	<-done
+
+	history.mu.Lock()
+	defer history.mu.Unlock()
+	if history.afters[0] != 0 {
+		t.Fatalf("the first read started after %d, want 0", history.afters[0])
+	}
+	for _, after := range history.afters[1:] {
+		if after < 7 {
+			t.Errorf("a later read started after %d, want at least the stored sequence 7: %v", after, history.afters)
+		}
+	}
 }
 
 func TestRunReturnsPromptlyWhenCancelledWhileEveryReadFails(t *testing.T) {
