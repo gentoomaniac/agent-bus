@@ -52,6 +52,16 @@ func (server Server) WriteAdminAuth(busAdminHash, controlAdminHash string) error
 	return writeAuthFile(server.path(controlAuthFile), 1, renderControlAuth(controlAdminHash))
 }
 
+// hasAgent says whether auth.conf lists the agent.
+func (server Server) hasAgent(agentToken string) (bool, error) {
+	current, err := os.ReadFile(server.path(authFile))
+	if err != nil {
+		return false, fmt.Errorf("reading the authorization file (has `busctl admin init` run?): %w", err)
+	}
+	_, listed := parseBusAuth(string(current)).agentHashes[agentToken]
+	return listed, nil
+}
+
 // UpdateAuth changes auth.conf as one serialised operation: lock, let edit produce the new file
 // body from the current one, test the new configuration, replace the file atomically, reload the
 // server and wait until its monitoring endpoint reports a newer config load time. Only then is

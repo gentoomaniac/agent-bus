@@ -13,6 +13,18 @@ const (
 	catalogueKV  = "catalogue"
 )
 
+// subject is the one place that maps a channel to the subject it is stored under in stream BUS.
+func subject(channel bus.Channel) string {
+	switch channel.Kind {
+	case bus.General:
+		return "general"
+	case bus.Group:
+		return "topic." + channel.Name
+	default:
+		return "dm." + bus.AgentToken(channel.Name)
+	}
+}
+
 // consumerName is the durable consumer that holds an agent's read cursor on a channel (§4a).
 // The parts split at "__" because no token or channel name contains it. A DM channel is always
 // the agent's own.
