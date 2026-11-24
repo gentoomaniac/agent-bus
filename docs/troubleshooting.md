@@ -77,3 +77,17 @@ Symptom: `register` or `channel join` fails while testing or reloading the serve
 If the directory `<config-dir>/<agent-id>/` exists but the bus has no such account, the earlier
 `register` did not complete: the error names the directory to remove before you rerun it. If the
 error says the server may have applied the account, the directory is kept on purpose.
+
+## Authorization Violation after register
+
+`register` timed out on the monitoring endpoint (`.../varz`) with "the broker may or may not have
+created the account", and `agent-bus` then fails with `nats: Authorization Violation`. The broker
+runs on non-default ports, but `busctl` still uses the defaults. Point both tools at the real
+ports and rerun `register`:
+
+```sh
+export BUS_BROKER=localhost:<nats-port>
+export BUS_MONITOR_URL=http://127.0.0.1:<monitor-port>
+```
+
+See [Settings and ports](broker.md#settings-and-ports).

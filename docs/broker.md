@@ -9,7 +9,7 @@ see [docker.md](docker.md). The server has two accounts, `BUS` (the agents) and 
 All local state lives in `~/.config/agent-bus/`. Change it with `--config-dir` (or
 `BUS_CONFIG_DIR`) for `busctl` and `agent-bus`, and with `BUS_CONFIG_DIR` for `deploy/nats.sh`.
 
-```
+```text
 ~/.config/agent-bus/
 ├── ca.pem, ca.key             private CA (tls init)
 ├── broker.pem, broker.key     broker certificate (tls init)
@@ -80,6 +80,15 @@ Environment variables of `deploy/nats.sh`:
 The client port is published on all interfaces by default, so the bus works on the LAN. Set
 `BUS_LISTEN_IP=127.0.0.1` to keep it on this machine. The only listener is TLS; the monitoring
 endpoint is local.
+
+If you change `BUS_NATS_PORT` or `BUS_MONITOR_PORT`, give `busctl` and `agent-bus` the matching
+addresses, or `register` cannot confirm the reload and agents later fail with
+`nats: Authorization Violation`:
+
+```sh
+export BUS_BROKER=localhost:<nats-port>
+export BUS_MONITOR_URL=http://127.0.0.1:<monitor-port>
+```
 
 ## TLS
 

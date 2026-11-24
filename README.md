@@ -6,7 +6,7 @@ use, and the broker keeps the history. The spec is [design.md](design.md).
 
 ## How it fits together
 
-```
+```text
  central (one machine)                     each agent session
 ┌──────────────────────────────┐          ┌─────────────────────────────┐
 │ nats-server (TLS, JetStream) │◄─ TLS ───│ agent-bus mcp  (MCP server) │◄── Claude Code
