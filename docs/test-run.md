@@ -37,6 +37,8 @@ Nothing here touches your Claude Code settings by itself: you paste the config i
 
 ## 2. One-machine setup
 
+Using Podman without a compose provider? Follow [podman.md](podman.md) for sections 2 and 4, then continue with section 3.
+
 The broker, its state and `busctl` live in Docker volumes; the agents run on the host and keep
 their files in `~/.config/agent-bus/`. To keep a trial apart from a later real setup, set
 `export BUS_CONFIG_DIR=~/bus-trial` in every shell that runs `agent-bus` or Claude Code, and use

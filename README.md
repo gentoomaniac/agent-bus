@@ -41,7 +41,7 @@ This is the MVP, built for a trusted environment (design.md, "Decision: MVP firs
 
 The central components run in Docker; the agent machines run the local `agent-bus` binary. Two
 agents, `api-client@alice` and `lib-x@bob`, with the broker on this machine. Run it from a checkout;
-docker or podman is needed ([docker](docs/docker.md) has the details and the plain `docker run` form).
+docker or podman is needed ([docker](docs/docker.md) has the details and the plain `docker run` form; [podman](docs/podman.md) the steps for Podman without compose).
 
 1. Build the central image and the agent binary (skip the image build to use the released image):
 
