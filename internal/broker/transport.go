@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -45,6 +46,7 @@ func (transport *Transport) Publish(ctx context.Context, to bus.Channel, id stri
 	return ack.Sequence, nil
 }
 
+// Fetch returns the deliveries it could read, together with an error for each message it skipped.
 func (transport *Transport) Fetch(ctx context.Context, from bus.Channel, max int) ([]bus.Delivery, error) {
 	consumer, err := transport.session.stream.Consumer(ctx, busStream, consumerName(transport.agentToken, from))
 	if err != nil {
@@ -55,19 +57,24 @@ func (transport *Transport) Fetch(ctx context.Context, from bus.Channel, max int
 		return nil, fmt.Errorf("reading %s: %w", from, transport.session.explain(err))
 	}
 	var deliveries []bus.Delivery
+	var skipped []error
 	for message := range batch.Messages() {
 		metadata, err := message.Metadata()
 		if err != nil {
-			return nil, err
+			// Left unacknowledged, the message comes back after the ack wait.
+			skipped = append(skipped, fmt.Errorf("skipping a message of %s with unreadable metadata: %w", from, err))
+			continue
 		}
 		deliveries = append(deliveries, bus.Delivery{
 			Record: bus.Record{Sequence: metadata.Sequence.Stream, Payload: message.Data()},
 			Ack:    message.DoubleAck,
 		})
 	}
-	return deliveries, transport.session.explain(batch.Error())
+	return deliveries, errors.Join(append(skipped, transport.session.explain(batch.Error()))...)
 }
 
+// History works only with admin credentials until busd exists (milestone 3): an agent has no
+// access to the stream itself, only to its own consumers.
 func (transport *Transport) History(ctx context.Context, from bus.Channel, afterSequence uint64, limit int) ([]bus.Record, error) {
 	config := jetstream.OrderedConsumerConfig{FilterSubjects: []string{subject(from)}, DeliverPolicy: jetstream.DeliverAllPolicy}
 	if afterSequence > 0 {

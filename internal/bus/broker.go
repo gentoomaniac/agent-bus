@@ -11,10 +11,11 @@ type Transport interface {
 	// returns the first sequence.
 	Publish(ctx context.Context, to Channel, id string, payload []byte) (sequence uint64, err error)
 	// Fetch returns up to max unacknowledged records from the agent's read cursor on a channel,
-	// waiting briefly for them. The cursor moves only when a delivery is acknowledged.
+	// waiting briefly for them. The cursor moves only when a delivery is acknowledged. A record
+	// that cannot be read is skipped and reported in the error, next to the deliveries returned.
 	Fetch(ctx context.Context, from Channel, max int) ([]Delivery, error)
 	// History reads up to limit records of a channel after the given sequence, oldest first.
-	// It does not move any read cursor.
+	// It does not move any read cursor. Until busd exists, only the admin's connection may use it.
 	History(ctx context.Context, from Channel, afterSequence uint64, limit int) ([]Record, error)
 	Close()
 }
