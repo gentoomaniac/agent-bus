@@ -64,6 +64,9 @@ func (cli *CLI) connection(caCert, user, password string) broker.Connection {
 func (cli *CLI) access() (monitor.Access, error) {
 	access := monitor.Access{Listen: cli.Listen, BehindProxy: cli.BehindProxy, AllowedHosts: cli.AllowedHost}
 	var err error
+	if access.PasswordHash, err = creds.ReadMonitorPasswordHash(cli.ConfigDir); err != nil {
+		return access, err
+	}
 	if access.TrustedProxies, err = monitor.ParseTrustedProxies(cli.TrustedProxy); err != nil {
 		return access, err
 	}
@@ -136,6 +139,9 @@ func (cli *CLI) Run() error {
 		server.Shutdown(shutdownCtx)
 	}()
 	log.Printf("bus-monitor %s: http://%s", version, listener.Addr())
+	if len(access.PasswordHash) == 0 {
+		log.Print("no password set: anyone who can reach the page sees all traffic (busctl monitor password)")
+	}
 	if err := server.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

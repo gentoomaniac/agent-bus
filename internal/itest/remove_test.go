@@ -4,7 +4,6 @@ package itest
 
 import (
 	"context"
-	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"strings"

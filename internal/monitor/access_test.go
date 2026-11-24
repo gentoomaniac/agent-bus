@@ -28,11 +28,12 @@ func TestValidateRefusesWhatWouldExposeTheMonitor(t *testing.T) {
 		"all interfaces":             {Access{Listen: "0.0.0.0:8080"}, true},
 		"no host":                    {Access{Listen: ":8080"}, true},
 		"a LAN address":              {Access{Listen: "192.168.1.5:8080"}, true},
-		"all interfaces, proxied":    {Access{Listen: "0.0.0.0:8080", BehindProxy: true}, false},
+		"all interfaces, proxied":    {Access{Listen: "0.0.0.0:8080", BehindProxy: true, PasswordHash: []byte("x")}, false},
+		"proxied without password":   {Access{Listen: "0.0.0.0:8080", BehindProxy: true}, true},
 		"public URL without proxy":   {Access{Listen: "127.0.0.1:8080", PublicURL: &url.URL{Scheme: "https", Host: "bus.example"}}, true},
 		"trusted proxy without flag": {Access{Listen: "127.0.0.1:8080", TrustedProxies: loopbackProxies}, true},
-		"public URL with a path":     {Access{Listen: "0.0.0.0:8080", BehindProxy: true, PublicURL: &url.URL{Scheme: "https", Host: "bus.example", Path: "/bus"}}, true},
-		"public URL without scheme":  {Access{Listen: "0.0.0.0:8080", BehindProxy: true, PublicURL: &url.URL{Host: "bus.example"}}, true},
+		"public URL with a path":     {Access{Listen: "0.0.0.0:8080", BehindProxy: true, PasswordHash: []byte("x"), PublicURL: &url.URL{Scheme: "https", Host: "bus.example", Path: "/bus"}}, true},
+		"public URL without scheme":  {Access{Listen: "0.0.0.0:8080", BehindProxy: true, PasswordHash: []byte("x"), PublicURL: &url.URL{Host: "bus.example"}}, true},
 	} {
 		if err := test.access.Validate(); (err != nil) != test.refused {
 			t.Errorf("%s: err = %v, want refused %v", name, err, test.refused)

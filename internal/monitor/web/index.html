@@ -86,6 +86,13 @@
   button:disabled, select:disabled, input:disabled, textarea:disabled { opacity: .55; cursor: not-allowed; }
   #send-note { font-size: 12px; color: var(--muted); }
   #send-note.error { color: var(--bad); }
+  [hidden] { display: none !important; }
+  #login-screen { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); z-index: 1; }
+  #login-form { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: min(320px, 90vw); }
+  #login-note { font-size: 12px; color: var(--bad); min-height: 1.4em; }
+  #banner { background: var(--warn-bg); color: var(--warn); padding: 4px 16px; font-size: 12px; }
+  header .right { display: flex; gap: 12px; align-items: baseline; }
+  #logout { padding: 1px 8px; font-size: 12px; background: var(--bg); color: var(--text); border-color: var(--border); }
   @media (max-width: 900px) {
     #app { grid-template-columns: 200px minmax(0, 1fr); }
     #members-panel { display: none; }
@@ -93,6 +100,14 @@
 </style>
 </head>
 <body>
+<div id="login-screen" hidden>
+  <form id="login-form">
+    <h1>Agent bus monitor</h1>
+    <input type="password" name="password" autocomplete="current-password" placeholder="Password" aria-label="Password" required>
+    <button type="submit">Log in</button>
+    <div id="login-note" role="alert"></div>
+  </form>
+</div>
 <div id="app">
   <aside id="sidebar">
     <h1>Agent bus monitor</h1>
@@ -101,9 +116,10 @@
     <h2>Agents</h2><ul id="agents"></ul>
   </aside>
   <main>
+    <div id="banner" hidden>No password set: anyone who can reach this page sees all traffic. Set one with <code>busctl monitor password</code>.</div>
     <header>
       <div><span class="title" id="channel-title">Select a channel</span> <span class="muted" id="channel-description"></span></div>
-      <span id="live">connecting...</span>
+      <div class="right"><span id="live">connecting...</span><button id="logout" type="button" hidden>Log out</button></div>
     </header>
     <div id="messages"></div>
     <form id="composer">
@@ -158,12 +174,47 @@ function el(tag, props = {}, ...children) {
 
 async function api(path, options) {
   const response = await fetch(path, options);
+  if (response.status === 401) showLogin();
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error || response.statusText);
   }
   return response.json();
 }
+
+// ---- login ----
+
+// A 401 from any call brings up the login form and stops the event stream, which the browser
+// would otherwise retry forever. Logging in starts the page again.
+function showLogin() {
+  state.loggedOut = true;
+  if (state.source) state.source.close();
+  state.source = null;
+  state.feedOpen = false;
+  $("login-screen").hidden = false;
+  document.forms["login-form"].password.focus();
+}
+
+document.forms["login-form"].addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.target;
+  const note = $("login-note");
+  note.textContent = "";
+  const response = await fetch("/api/v1/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: form.password.value }) });
+  if (!response.ok) {
+    note.textContent = ((await response.json().catch(() => ({}))).error || response.statusText);
+    return;
+  }
+  form.password.value = "";
+  $("login-screen").hidden = true;
+  start();
+});
+
+$("logout").addEventListener("click", async () => {
+  await fetch("/api/v1/logout", { method: "POST" });
+  state.messages.clear();
+  showLogin();
+});
 
 // ---- data ----
 
@@ -190,6 +241,7 @@ function insertMessage(list, message) {
 }
 
 async function refresh() {
+  if (state.loggedOut) return;
   try {
     let views;
     [state.channels, state.agents, state.status, views] = await Promise.all([api("/api/v1/channels"), api("/api/v1/agents"), api("/api/v1/status"), api("/api/v1/presence")]);
@@ -200,6 +252,8 @@ async function refresh() {
     return;
   }
   showLive();
+  $("banner").hidden = state.status.password_set !== false;
+  $("logout").hidden = !state.status.password_set;
   renderSidebar();
   renderMembers();
   renderComposer();
@@ -430,7 +484,7 @@ function showLive() {
 }
 
 function connectEvents() {
-  const source = new EventSource("/api/v1/events");
+  const source = state.source = new EventSource("/api/v1/events");
   source.onopen = async () => {
     state.feedOpen = true;
     showLive();
@@ -446,9 +500,11 @@ function connectEvents() {
     renderSidebar();
     renderMembers();
   });
+  // An event stream that fails shows no status code: ask the API, which brings up the login if that is why.
   source.onerror = () => {
     state.feedOpen = false;
     showLive();
+    api("/api/v1/status").catch(() => {});
   };
   source.addEventListener("message", async (event) => {
     const message = JSON.parse(event.data);
@@ -465,14 +521,16 @@ function connectEvents() {
 }
 
 async function start() {
+  state.loggedOut = false;
   await refresh();
+  if (state.loggedOut) return;
   const wanted = decodeURIComponent(location.hash.slice(1));
   await select(state.channels.some((c) => c.id === wanted) ? wanted : "general");
   connectEvents();
-  setInterval(refresh, REFRESH_MS);
 }
 
 start();
+setInterval(refresh, REFRESH_MS);
 </script>
 </body>
 </html>

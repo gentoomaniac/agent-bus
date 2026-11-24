@@ -16,8 +16,11 @@ const (
 	defaultMessageLimit = 100
 	maxMessageLimit     = 1000
 	maxSendBytes        = 2 * envelope.MaxRecordBytes // the body limit is enforced when the message is signed
-	eventKeepAlive      = 15 * time.Second            // keeps proxies and the browser from closing a quiet event stream
 )
+
+// eventKeepAlive keeps proxies and the browser from closing a quiet event stream. It is also when
+// a stream notices that its login session has ended. A variable for the tests.
+var eventKeepAlive = 15 * time.Second
 
 //go:embed web/index.html
 var web embed.FS
@@ -36,23 +39,41 @@ type Status struct {
 	Note    string `json:"note,omitempty"` // why it cannot send
 }
 
-// Handler serves the JSON API under /api/v1 and the event stream. It has no login: it shows all
-// traffic and belongs on localhost or behind a reverse proxy (docs/monitor.md). It answers only
-// requests whose Host header access accepts.
+// Handler serves the page and the JSON API under /api/v1. Everything but the page and the login
+// needs the password when access has one (docs/api.md). It answers only requests whose Host header
+// access accepts.
 func (monitor *Monitor) Handler(access Access) (http.Handler, error) {
+	return monitor.handler(access, time.Now)
+}
+
+func (monitor *Monitor) handler(access Access, now func() time.Time) (http.Handler, error) {
 	if err := access.Validate(); err != nil {
 		return nil, err
 	}
+	login := gate{access: access, auth: newAuth(access.PasswordHash, now)}
+	read := func(handler http.HandlerFunc) http.HandlerFunc { return login.guard(false, handler) }
+	change := func(handler http.HandlerFunc) http.HandlerFunc { return login.guard(true, handler) }
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, web, "web/index.html") })
-	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Status()) })
-	mux.HandleFunc("GET /api/v1/channels", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Channels()) })
-	mux.HandleFunc("GET /api/v1/agents", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Agents()) })
-	mux.HandleFunc("GET /api/v1/presence", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Presences()) })
-	mux.HandleFunc("GET /api/v1/members", monitor.serveMembers)
-	mux.HandleFunc("GET /api/v1/messages", monitor.serveMessages)
-	mux.HandleFunc("GET /api/v1/events", monitor.serveEvents)
-	mux.HandleFunc("POST /api/v1/send", monitor.serveSend)
+	mux.HandleFunc("POST /api/v1/login", login.serveLogin)
+	mux.HandleFunc("POST /api/v1/logout", change(login.serveLogout))
+	mux.HandleFunc("GET /api/v1/status", read(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, struct {
+			Status
+			PasswordSet bool `json:"password_set"`
+		}{monitor.Status(), login.auth.enabled()})
+	}))
+	mux.HandleFunc("GET /api/v1/channels", read(func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Channels()) }))
+	mux.HandleFunc("GET /api/v1/agents", read(func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Agents()) }))
+	mux.HandleFunc("GET /api/v1/presence", read(func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Presences()) }))
+	mux.HandleFunc("GET /api/v1/members", read(monitor.serveMembers))
+	mux.HandleFunc("GET /api/v1/messages", read(monitor.serveMessages))
+	mux.HandleFunc("GET /api/v1/events", read(func(w http.ResponseWriter, r *http.Request) {
+		who := principalOf(r)
+		monitor.serveEvents(w, r, func() bool { return who.token == "" || login.auth.isLive(who.token) })
+	}))
+	mux.HandleFunc("POST /api/v1/send", change(monitor.serveSend))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	})
@@ -143,9 +164,10 @@ func (monitor *Monitor) serveSend(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveEvents streams every new message as a server-sent event named "message" and every presence
-// change as one named "presence". The stream ends when the client leaves or falls too far behind;
-// the browser then reconnects and reads what it missed from /api/v1/messages and /api/v1/presence.
-func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request) {
+// change as one named "presence". The stream ends when the client leaves, falls too far behind or
+// its login session ends; the browser then reconnects and reads what it missed from
+// /api/v1/messages and /api/v1/presence.
+func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request, loggedIn func() bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "internal", "streaming is not supported")
@@ -167,6 +189,9 @@ func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-keepAlive.C:
+			if !loggedIn() {
+				return
+			}
 			fmt.Fprint(w, ": keep-alive\n\n")
 		case message, open := <-messages:
 			if !open {
