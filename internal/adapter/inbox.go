@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
@@ -21,7 +22,13 @@ type Message struct {
 	Sequence     uint64
 	FirstContact bool // the sender's key was pinned because of this message
 	TargetsMe    bool // the message needs this agent's response (design.md §5)
+	Acked        bool // the agent sent an ack reply to it; it stays unread until answered
 	Digest       string
+	ArrivedAt    time.Time
+
+	// returned is set once Inbox listed the message: wait_for_messages then skips it, so an agent
+	// idling with mail it has not answered does not spin.
+	returned bool
 
 	delivery bus.Delivery
 	size     int

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -31,6 +32,7 @@ type fakeBroker struct {
 	records []bus.Record
 	to      []bus.Channel
 	acked   map[string]bool // agent|sequence
+	failAck bool            // the broker does not confirm acks
 }
 
 type fakeTransport struct {
@@ -62,6 +64,9 @@ func (transport fakeTransport) Fetch(_ context.Context, from bus.Channel, max in
 			Ack: func(context.Context) error {
 				broker.mu.Lock()
 				defer broker.mu.Unlock()
+				if broker.failAck {
+					return errors.New("no ack from the broker")
+				}
 				broker.acked[key] = true
 				return nil
 			},
@@ -479,6 +484,86 @@ func TestAnswerMarksTheRequestReadAndMarkReadTakesAll(t *testing.T) {
 	}
 }
 
+func TestWaitReturnsOnlyMessagesNotReturnedBefore(t *testing.T) {
+	b := newTestBus(t, alice, bob)
+	a, bobClient := b.connect(alice), b.connect(bob)
+	send(t, a, bob, map[string]any{"type": "request", "body": map[string]any{"text": "do it"}})
+
+	if first := decode[messagesOut](t, call(t, bobClient, "wait_for_messages", map[string]any{"timeout_s": 10})); len(first.Messages) != 1 {
+		t.Fatalf("first wait = %+v", first)
+	}
+	started := time.Now()
+	if again := decode[messagesOut](t, call(t, bobClient, "wait_for_messages", map[string]any{"timeout_s": 1})); len(again.Messages) != 0 || time.Since(started) < time.Second {
+		t.Errorf("a second wait returned the unanswered request again (%+v after %s)", again.Messages, time.Since(started))
+	}
+	if all := decode[messagesOut](t, call(t, bobClient, "inbox", nil)); len(all.Messages) != 1 {
+		t.Errorf("inbox must still list it: %+v", all)
+	}
+	send(t, a, bob, map[string]any{"body": map[string]any{"text": "new"}})
+	if fresh := decode[messagesOut](t, call(t, bobClient, "wait_for_messages", map[string]any{"timeout_s": 10})); len(fresh.Messages) != 1 || fresh.Messages[0].Text != "new" {
+		t.Errorf("wait after a new message = %+v", fresh)
+	}
+}
+
+func TestAckedShowsOnTheMessageAndMarkReadAllSkipsUnansweredRequests(t *testing.T) {
+	b := newTestBus(t, alice, bob)
+	a, bobClient := b.connect(alice), b.connect(bob)
+	request := send(t, a, bob, map[string]any{"type": "request", "body": map[string]any{"text": "do it"}})
+	send(t, a, bob, map[string]any{"body": map[string]any{"text": "fyi"}})
+	for len(decode[messagesOut](t, call(t, bobClient, "inbox", nil)).Messages) < 2 {
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	for _, listed := range decode[messagesOut](t, call(t, bobClient, "inbox", nil)).Messages {
+		if listed.Acked {
+			t.Errorf("%s is shown as acked before an ack", listed.ID)
+		}
+	}
+	send(t, bobClient, alice, map[string]any{"type": "ack", "reply_to": request.ID, "body": map[string]any{"text": "on it"}})
+	for _, listed := range decode[messagesOut](t, call(t, bobClient, "inbox", nil)).Messages {
+		if listed.Acked != (listed.ID == request.ID) {
+			t.Errorf("message %s acked = %v", listed.ID, listed.Acked)
+		}
+	}
+
+	marked := decode[markReadOut](t, call(t, bobClient, "mark_read", map[string]any{"all": true}))
+	if marked.MarkedRead != 1 || marked.Unanswered != 1 {
+		t.Errorf("mark_read all = %+v, want the fyi marked and the request skipped", marked)
+	}
+	if left := decode[messagesOut](t, call(t, bobClient, "inbox", nil)).Messages; len(left) != 1 || left[0].ID != request.ID {
+		t.Errorf("after mark_read all: %+v", left)
+	}
+	if marked := decode[markReadOut](t, call(t, bobClient, "mark_read", map[string]any{"message_ids": []string{request.ID}})); marked.MarkedRead != 1 {
+		t.Errorf("mark_read by id = %+v", marked)
+	}
+}
+
+func TestSendWarnsWhenTheAutomaticMarkReadFails(t *testing.T) {
+	b := newTestBus(t, alice, bob)
+	a, bobClient := b.connect(alice), b.connect(bob)
+	question := send(t, a, bob, map[string]any{"type": "question", "body": map[string]any{"text": "why?"}})
+	for len(decode[messagesOut](t, call(t, bobClient, "inbox", nil)).Messages) < 1 {
+		time.Sleep(50 * time.Millisecond)
+	}
+	b.broker.mu.Lock()
+	b.broker.failAck = true
+	b.broker.mu.Unlock()
+
+	sent := send(t, bobClient, alice, map[string]any{"type": "answer", "reply_to": question.ID, "body": map[string]any{"text": "because"}})
+	if sent.ID == "" || !strings.Contains(sent.Warning, "stays unread") {
+		t.Errorf("send = %+v, want an id and a warning that the question stays unread", sent)
+	}
+}
+
+func TestPluralWording(t *testing.T) {
+	if got := plural(1, "message"); got != "1 message" {
+		t.Errorf("plural(1) = %q", got)
+	}
+	if got := plural(3, "message"); got != "3 messages" {
+		t.Errorf("plural(3) = %q", got)
+	}
+}
+
 // TestTokenFootprint keeps what the agent pays for in every session small: the briefing, the tool
 // descriptions and a typical listing of three messages.
 func TestTokenFootprint(t *testing.T) {
@@ -518,7 +603,7 @@ func TestMailFromASenderWithoutADirectoryRecordIsReportedOnce(t *testing.T) {
 	for deadline := time.Now().Add(10 * time.Second); inbox.UnknownSenders == "" && time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
 		inbox = decode[messagesOut](t, call(t, bobClient, "inbox", nil))
 	}
-	want := "1 messages from unknown senders are waiting (" + alice + "): their records are missing from the directory."
+	want := "1 message from unknown senders waiting (" + alice + "): their records are missing from the directory."
 	if inbox.UnknownSenders != want || len(inbox.Messages) != 0 {
 		t.Errorf("inbox = %+v, want unknown_senders %q", inbox, want)
 	}

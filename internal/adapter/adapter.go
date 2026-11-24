@@ -80,6 +80,8 @@ type InboxQuery struct {
 	Limit   int
 	Types   []string
 	Channel *bus.Channel
+	// NewOnly leaves out the messages an earlier Inbox call already listed.
+	NewOnly bool
 }
 
 // Adapter is one agent's session on the bus.
@@ -104,6 +106,7 @@ type Adapter struct {
 	rate   rateLimiter
 
 	notifications notifications
+	acked         map[string]bool // IDs of the messages this agent sent an ack reply to
 	// unknownSenders maps a sender with no directory record to the deliveries (destination and
 	// sequence) of its messages waiting for one.
 	unknownSenders map[string]map[string]bool
@@ -189,6 +192,9 @@ func (adapter *Adapter) Ready() error { return adapter.lockErr }
 func (adapter *Adapter) AgentID() string { return adapter.config.AgentID }
 
 func (adapter *Adapter) AutoAccept() bool { return adapter.config.AutoAccept }
+
+// DeliversAll says every message of the agent's channels reaches its inbox (--deliver=all).
+func (adapter *Adapter) DeliversAll() bool { return adapter.config.Deliver == DeliverAll }
 
 // Channels are the channels the adapter reads: the agent's DM channel, general and its groups.
 func (adapter *Adapter) Channels() []bus.Channel { return slices.Clone(adapter.channels) }
@@ -368,6 +374,12 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 	if err != nil {
 		return "", err
 	}
+	if message.Type == "ack" && replyTo != nil {
+		if adapter.acked == nil {
+			adapter.acked = map[string]bool{}
+		}
+		adapter.acked[*replyTo] = true
+	}
 	// Handled at send time with the sequence, so a message that comes back on general or a group
 	// channel is not delivered to the agent again.
 	err = adapter.handled.add(handledEntry{
@@ -539,7 +551,7 @@ func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delive
 	}
 	message := &Message{
 		Envelope: env, Channel: channel, Sequence: delivery.Sequence, FirstContact: resolution.NewPin != nil,
-		TargetsMe: adapter.targetsMe(env), Digest: digest, delivery: delivery, size: len(delivery.Payload),
+		TargetsMe: adapter.targetsMe(env), Digest: digest, ArrivedAt: adapter.config.Now(), delivery: delivery, size: len(delivery.Payload),
 	}
 	if !message.TargetsMe && adapter.config.Deliver == DeliverTargeted {
 		// Chatter costs the agent no context: handled and acked without ever reaching the inbox.
@@ -608,7 +620,11 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 		if query.Channel != nil && message.Channel != *query.Channel {
 			continue
 		}
+		if query.NewOnly && message.returned {
+			continue
+		}
 		listed = append(listed, *message)
+		listed[len(listed)-1].Acked = adapter.acked[message.Envelope.ID]
 	}
 	slices.SortStableFunc(listed, func(a, b Message) int {
 		switch {
@@ -621,6 +637,9 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 	})
 	if query.Limit > 0 && len(listed) > query.Limit {
 		listed = listed[:query.Limit]
+	}
+	for _, message := range listed {
+		adapter.inbox.findByID(message.Envelope.ID).returned = true
 	}
 	if len(listed) > 0 {
 		// Targeted messages come first, so the one before the first other is the newest of them.
