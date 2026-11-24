@@ -72,12 +72,35 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
 lines) and `ack <id>...` act as that identity. `--groups a,b` adds group channels to read;
 `--config-dir`, `--broker`, `--ca-cert` as for busctl. Every command is its own process holding the
 identity lock while it runs, so this is a test harness: a message fetched by `inbox` and not acked
-is redelivered only after the consumer's one-minute `AckWait`. The MCP server comes in milestone 4.
+is redelivered only after the consumer's one-minute `AckWait`. `agent-bus mcp` is the real client (below).
 `send` to an agent with no entry in `<config-dir>/directory` fails with "unknown agent". Group names
 are checked only for form (and `general` is reserved): agents cannot read the catalogue until busd
 exists, so a post to a group nobody created is stored and never read.
 A sender is first-contact pinned from `<config-dir>/directory`, which `register` fills on the
 machine it runs on; copy it to other machines (design.md §6, and `internal/trust` above).
+
+## Using the bus from Claude Code
+
+`agent-bus mcp --agent <agent-id>` serves the adapter as an MCP server on stdin and stdout, one
+identity per session (`--identity` works too; `--groups`, `--config-dir`, `--broker`, `--ca-cert`
+as above). A background reader keeps fetching mail into the inbox until the client closes stdin or
+the process gets SIGTERM; then the identity lock is released. Register it per project, with the
+binary on the path or an absolute path:
+
+    claude mcp add agent-bus -- agent-bus mcp --agent api-client@alice --groups lib-x
+
+or in the project's `.mcp.json`:
+
+    {"mcpServers": {"agent-bus": {"command": "agent-bus", "args": ["mcp", "--agent", "api-client@alice"]}}}
+
+Tools: `whoami`, `send`, `publish`, `inbox`, `ack`, `wait_for_messages` (blocks until a message is
+unread or `timeout_s` passes; an unacked message makes it return at once) and `list_channels`. Every
+delivered message carries a `notice` that frames it as an untrusted peer message with a verified
+signature (design.md §8 rule 1), plus `first_contact` when its sender's key was pinned by it. If
+another session holds the identity, the server still starts and every tool fails with an error
+naming the identity and the holder's PID. Not in the MVP: `join`/`leave` (use
+`busctl --direct channel join`), `history`, `requests`, private channels, `list_agents`, and an
+`inbox` filter by channel.
 
 ## Code layout
 
@@ -109,6 +132,7 @@ message already handled is skipped, one already buffered gets `InProgress`, a ne
 parent must be known locally, and a parent at 6 hops stops the send. If another process holds the
 identity lock, `Open` still returns an adapter, but every method fails with an error naming the
 holder's PID. Alerts go to `alerts.log` only; `busctl alerts` does not exist yet.
+`internal/mcpserver` is the MCP server of one adapter session (official Go SDK, pinned in `go.mod`).
 `internal/trust` is the `known_agents` file of an identity (pinned public keys, design.md §6) and
 trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name
 a key in it that is not revoked, and the key is pinned (`tofu`) after the signature verified. A
@@ -156,5 +180,8 @@ install`), then starts and stops its own server (temporary config directory, ran
   acked after redelivery); ack B before A and restart: A comes back, B does not; a second adapter on
   one identity fails every operation until the first session ends; two auto-repliers stop at 6
   hops, also alternating `send` and `publish`; the secret scan blocks a send.
+- `agent-bus mcp` as a real stdio process (`mcp_test.go`): alice's `send` reaches bob's
+  `wait_for_messages` framed as untrusted and bob acks it; a second server on one identity fails
+  every tool and names the holder; SIGTERM ends a server and frees the identity.
 - The registry and catalogue hold what `register` and `channel create` wrote; `busctl` needs
   `--direct`, refuses a second registration and gives up on a dead broker.

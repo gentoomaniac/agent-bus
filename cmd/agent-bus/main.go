@@ -1,6 +1,6 @@
-// agent-bus is the adapter's command line (design.md §2). The MCP server of milestone 4 will be
-// another command here; these ones drive the adapter from a shell, for tests and for trying the
-// bus. Each command is its own process, so the inbox is only what one fetch brings.
+// agent-bus is the adapter's command line (design.md §2). `mcp` is the adapter as an MCP server
+// for an agent session; the other commands drive the adapter from a shell, for tests and for
+// trying the bus. Each of those is its own process, so the inbox is only what one fetch brings.
 package main
 
 import (
@@ -19,22 +19,25 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/mcpserver"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 	"github.com/alecthomas/kong"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type CLI struct {
-	Agent     string        `help:"The identity to act as, <name>@<owner>." required:"" env:"BUS_AGENT"`
+	Agent     string        `help:"The identity to act as, <name>@<owner>." required:"" aliases:"identity" env:"BUS_AGENT"`
 	ConfigDir string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
 	Broker    string        `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
 	CACert    string        `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
 	Groups    []string      `help:"Group channels to read besides the DM channel and general." env:"BUS_GROUPS"`
-	Timeout   time.Duration `help:"Give up after this long." default:"30s" env:"BUS_TIMEOUT"`
+	Timeout   time.Duration `help:"Give up after this long (not for mcp, which runs until its client closes it)." default:"30s" env:"BUS_TIMEOUT"`
 
 	Send    SendCmd    `cmd:"" help:"Send a message to one agent."`
 	Publish PublishCmd `cmd:"" help:"Post to general or a group channel."`
 	Inbox   InboxCmd   `cmd:"" help:"Fetch new mail and print the unread messages as JSON."`
 	Ack     AckCmd     `cmd:"" help:"Fetch new mail and acknowledge the given message IDs."`
+	MCP     MCPCmd     `cmd:"" name:"mcp" help:"Serve the adapter as an MCP server on stdin and stdout."`
 }
 
 type MessageFlags struct {
@@ -109,14 +112,23 @@ func (cmd *AckCmd) Run(ctx context.Context, session *adapter.Adapter) error {
 	return errors.Join(pollErr, session.Ack(ctx, cmd.IDs))
 }
 
+type MCPCmd struct{}
+
+func (cmd *MCPCmd) Run(ctx context.Context, session *adapter.Adapter) error {
+	return mcpserver.Serve(ctx, session, &mcp.StdioTransport{})
+}
+
 func main() {
 	var cli CLI
 	kongCtx := kong.Parse(&cli, kong.Name("agent-bus"), kong.Description("Adapter of the agent bus."))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ctx, cancel := context.WithTimeout(ctx, cli.Timeout)
-	defer cancel()
+	if kongCtx.Command() != "mcp" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, cli.Timeout)
+		defer cancel()
+	}
 
 	session, closeSession, err := cli.open()
 	kongCtx.FatalIfErrorf(err)
