@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/monitor"
 )
 
@@ -183,4 +184,40 @@ func TestBrokerOutage(t *testing.T) {
 			t.Errorf("the monitor shows %v, want %v", shown, want)
 		}
 	})
+}
+
+// A restarting broker may refuse logins until it has loaded its users; the session must keep
+// trying instead of giving up after the same authentication error twice.
+func TestReconnectSurvivesRejectedLogins(t *testing.T) {
+	agentBus := goBuild(t, "agent-bus")
+	h := startBus(t)
+	h.env = append(h.env, "BUS_RECONNECT_INITIAL=100ms", "BUS_RECONNECT_MAX=300ms")
+	aliceServer, bobServer := h.startMCPServer(t, agentBus, alice), h.startMCPServer(t, agentBus, bob)
+	if text, isError := send(t, bobServer, alice, "warm up"); isError {
+		t.Fatalf("send: %s", text)
+	}
+
+	ctx := timeout(t)
+	admin := h.admin(t)
+	password, err := creds.ReadPassword(creds.AgentDir(h.configDir, bob))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.DeleteAccount(ctx, bob); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "bob to notice the lost login", func() bool { _, isError := send(t, bobServer, alice, "x"); return isError })
+	time.Sleep(2 * time.Second) // many rejected attempts, more than nats.go tolerates by default
+	if err := admin.CreateAccount(ctx, bob, password); err != nil {
+		t.Fatal(err)
+	}
+
+	eventually(t, "bob to send again", func() bool { _, isError := send(t, bobServer, alice, "bob is back"); return !isError })
+	if text, isError := send(t, aliceServer, bob, "welcome back"); isError {
+		t.Fatalf("send: %s", text)
+	}
+	eventually(t, "bob to read the message", func() bool { texts, _ := inbox(t, bobServer); return len(texts) >= 1 })
+	if texts, _ := inbox(t, bobServer); !slices.Equal(texts, []string{"welcome back"}) {
+		t.Errorf("bob's inbox = %v, want the one message", texts)
+	}
 }

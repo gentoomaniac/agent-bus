@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
@@ -45,6 +46,7 @@ type session struct {
 	mu              sync.Mutex
 	lastServerError string
 	nextAttempt     time.Time // of the next reconnect attempt
+	closedByUs      atomic.Bool
 }
 
 // connect opens the session over TLS, trusting only the CA certificate. An inboxPrefix, if not
@@ -94,11 +96,21 @@ func connect(conn Connection, inboxPrefix string) (*session, error) {
 
 // reconnectOptions makes the connection retry forever, also when the first attempt fails. nats.go
 // resends the subscriptions after a reconnect, and each fetch or request starts afresh, so
-// reading resumes without help.
+// reading resumes without help. A restarting broker may refuse the login for a moment, before it
+// has loaded its users, so nats.go's default of giving up after the same authentication error
+// twice is switched off. Nothing is buffered while the connection is down: a publish is refused
+// instead of being sent minutes later.
 func (s *session) reconnectOptions(conn Connection) []nats.Option {
 	return []nats.Option{
 		nats.MaxReconnects(-1),
 		nats.RetryOnFailedConnect(true),
+		nats.IgnoreAuthErrorAbort(),
+		nats.ReconnectBufSize(-1),
+		nats.ClosedHandler(func(*nats.Conn) {
+			if !s.closedByUs.Load() {
+				conn.Log("the connection to the bus at %s is closed for good: restart this process", conn.Address)
+			}
+		}),
 		nats.CustomReconnectDelay(func(attempt int) time.Duration {
 			delay := conn.Reconnect.Delay(attempt)
 			s.mu.Lock()
@@ -119,7 +131,14 @@ func (s *session) reconnectOptions(conn Connection) []nats.Option {
 // unavailable is bus.ErrUnavailable with the time of the next attempt while the connection is
 // being re-established, and nil otherwise.
 func (s *session) unavailable() error {
-	if s.conn.Status() != nats.RECONNECTING {
+	switch s.conn.Status() {
+	case nats.CLOSED:
+		if s.closedByUs.Load() {
+			return nil
+		}
+		return fmt.Errorf("the connection to the bus was closed (%v): restart this process", s.conn.LastError())
+	case nats.RECONNECTING:
+	default:
 		return nil
 	}
 	s.mu.Lock()
@@ -128,7 +147,10 @@ func (s *session) unavailable() error {
 	return fmt.Errorf("%w (next attempt in %s)", bus.ErrUnavailable, wait.Round(time.Second))
 }
 
-func (s *session) close() { s.conn.Close() }
+func (s *session) close() {
+	s.closedByUs.Store(true)
+	s.conn.Close()
+}
 
 func (s *session) rememberServerError(err error) {
 	s.mu.Lock()
