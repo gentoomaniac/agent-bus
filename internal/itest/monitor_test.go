@@ -124,7 +124,9 @@ func TestMonitor(t *testing.T) {
 	done := make(chan struct{})
 	go func() { web.Run(runCtx); close(done) }()
 	t.Cleanup(func() { stop(); <-done })
-	server := httptest.NewServer(web.Handler())
+	server := httptest.NewUnstartedServer(nil)
+	server.Config.Handler = web.Handler(server.Listener.Addr().String())
+	server.Start()
 	t.Cleanup(server.Close)
 
 	t.Run("lists channels, agents and members", func(t *testing.T) {

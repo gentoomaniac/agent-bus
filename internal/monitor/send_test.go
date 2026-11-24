@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
@@ -111,7 +110,7 @@ func TestStatusAndSendWithoutAnIdentity(t *testing.T) {
 
 func TestSendEndpoint(t *testing.T) {
 	sender := &fakeSender{}
-	server := httptest.NewServer(monitorWithSender(t, sender).Handler())
+	server := serve(monitorWithSender(t, sender))
 	defer server.Close()
 	post := func(contentType, body string) (*http.Response, string) {
 		response, err := http.Post(server.URL+"/api/send", contentType, bytes.NewBufferString(body))

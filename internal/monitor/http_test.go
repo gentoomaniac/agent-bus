@@ -12,6 +12,14 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 )
 
+// serve starts the monitor's handler on a test server, listening where the handler expects to be.
+func serve(monitor *Monitor) *httptest.Server {
+	server := httptest.NewUnstartedServer(nil)
+	server.Config.Handler = monitor.Handler(server.Listener.Addr().String())
+	server.Start()
+	return server
+}
+
 func getJSON(t *testing.T, server *httptest.Server, path string, into any) *http.Response {
 	t.Helper()
 	response, err := http.Get(server.URL + path)
@@ -33,7 +41,7 @@ func TestAPI(t *testing.T) {
 	fake.store(bus.GeneralChannel(), 1, alice.sign(t, bus.GeneralChannel(), "hello"))
 	monitor := runMonitor(t, fake)
 	waitForMessages(t, monitor, "general", 1)
-	server := httptest.NewServer(monitor.Handler())
+	server := serve(monitor)
 	defer server.Close()
 
 	var channels []Channel
@@ -76,7 +84,7 @@ func TestAPI(t *testing.T) {
 }
 
 func TestServesThePage(t *testing.T) {
-	server := httptest.NewServer(runMonitor(t, newFakeBus(t)).Handler())
+	server := serve(runMonitor(t, newFakeBus(t)))
 	defer server.Close()
 	response, err := http.Get(server.URL + "/")
 	if err != nil {
@@ -95,7 +103,7 @@ func TestEventStreamDeliversNewMessages(t *testing.T) {
 	alice := newTestAgent("api-client@alice")
 	fake := newFakeBus(t, alice)
 	monitor := runMonitor(t, fake)
-	server := httptest.NewServer(monitor.Handler())
+	server := serve(monitor)
 	defer server.Close()
 
 	response, err := http.Get(server.URL + "/api/events")
@@ -129,5 +137,32 @@ func TestEventStreamDeliversNewMessages(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no event arrived")
+	}
+}
+
+func TestHandlerRefusesAForeignHostHeader(t *testing.T) {
+	server := serve(runMonitor(t, newFakeBus(t)))
+	defer server.Close()
+	_, port, _ := strings.Cut(strings.TrimPrefix(server.URL, "http://"), ":")
+
+	for host, want := range map[string]int{
+		server.Listener.Addr().String(): http.StatusOK,
+		"localhost:" + port:             http.StatusOK,
+		"LOCALHOST:" + port:             http.StatusOK,
+		"127.0.0.1:" + port:             http.StatusOK,
+		"rebound.example:" + port:       http.StatusForbidden,
+		"localhost":                     http.StatusForbidden,
+		"127.0.0.1:1":                   http.StatusForbidden,
+	} {
+		request, _ := http.NewRequest("GET", server.URL+"/api/status", nil)
+		request.Host = host
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != want {
+			t.Errorf("Host %q: status %d, want %d", host, response.StatusCode, want)
+		}
 	}
 }

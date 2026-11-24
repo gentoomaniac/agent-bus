@@ -85,7 +85,7 @@ func (cli *CLI) Run() error {
 		return err
 	}
 	// The event streams never go idle, so they end with the context instead of holding the shutdown.
-	server := &http.Server{Handler: web.Handler(), BaseContext: func(net.Listener) context.Context { return ctx }}
+	server := &http.Server{Handler: web.Handler(listener.Addr().String()), BaseContext: func(net.Listener) context.Context { return ctx }}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
