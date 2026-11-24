@@ -42,7 +42,6 @@ function toolInput(args = {}) {
     command: args.command,
     file_path: args.filePath ?? args.file_path ?? args.path,
     description: args.description,
-    subagent_type: args.subagent_type,
   };
 }
 
@@ -78,12 +77,16 @@ async function server({ client }) {
   // that just failed.
   const failedSessions = new Set();
 
+  // deliverMail prompts the session about new mail. The mail is marked told only after the prompt
+  // was accepted, so a failed prompt is retried at the next idle.
   async function deliverMail(sessionID) {
-    const output = (await run(["pending", "--format=hook"])).trim();
+    const output = (await run(["pending", "--format=plugin"])).trim();
     if (!output) return;
     try {
-      const { reason } = JSON.parse(output);
-      if (reason) await client.session.promptAsync({ path: { id: sessionID }, body: { parts: [{ type: "text", text: reason }] } });
+      const { reason, ids } = JSON.parse(output);
+      const result = await client.session.promptAsync({ path: { id: sessionID }, body: { parts: [{ type: "text", text: reason }] } });
+      if (result?.error) return;
+      await run(["pending", "--mark=" + ids.join(",")]);
     } catch {
       // the next idle tries again; the mail is still in the inbox
     }
@@ -128,13 +131,17 @@ async function server({ client }) {
           break;
       }
     },
+    // Tool hooks do not wait for agent-bus: they run on every tool call, like Claude Code's async
+    // hooks. A task call is a worker, told apart by its call ID; its events are chained so the
+    // launch comes before the start, and the start before the stop.
     "tool.execute.before": async (input, output) => {
-      const tool = input.tool === "task" ? "Task" : input.tool;
-      await report("pre-tool", { tool_name: tool, tool_input: toolInput(output.args) });
+      const isTask = input.tool === "task";
+      const launched = report("pre-tool", { tool_name: isTask ? "Agent" : input.tool, tool_input: toolInput(output.args) });
+      if (isTask) launched.then(() => report("subagent-start", { agent_id: input.callID, agent_type: "task" }));
     },
     "tool.execute.after": async (input) => {
-      await report("post-tool", { tool_name: input.tool });
-      if (input.tool === "task") await report("subagent-stop");
+      const done = report("post-tool", { tool_name: input.tool });
+      if (input.tool === "task") done.then(() => report("subagent-stop", { agent_id: input.callID }));
     },
   };
 }
