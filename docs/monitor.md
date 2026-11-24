@@ -18,9 +18,10 @@ ssh -L 8080:127.0.0.1:8080 broker-host
 
 With `--agent` anyone who can reach the page can post as that agent. The page refuses a POST that is
 not `application/json`, which keeps other websites in your browser from posting through it. It also
-answers only requests whose `Host` header is the listen address, `localhost` or `127.0.0.1` with the
-port, so a web page on another name that resolves to this machine (DNS rebinding) is refused; reach
-it through a tunnel on the same port, or use the listen address. That is all the protection there is.
+answers only requests whose `Host` header is `localhost`, `127.0.0.1`, `[::1]`, the listen address's
+host, a `--public-url` host or an `--allowed-host`, with any port (so a published port such as
+`18080:8080` works), which refuses a web page on another name that resolves to this machine (DNS
+rebinding). That is all the protection there is.
 
 ## Start it locally
 
@@ -47,6 +48,10 @@ Every flag has an environment variable, like the other commands.
 | Flag           | Variable          | Default                  | Meaning                                                  |
 |----------------|-------------------|--------------------------|----------------------------------------------------------|
 | `--listen`     | `BUS_WEB_LISTEN`  | `127.0.0.1:8080`         | address of the page and the API                          |
+| `--behind-proxy` | `BUS_WEB_BEHIND_PROXY` | off              | a reverse proxy does the TLS: allows a non-loopback `--listen` |
+| `--trusted-proxy` | `BUS_WEB_TRUSTED_PROXY` | `127.0.0.1`, `::1` | address or CIDR whose `X-Forwarded-*` headers are believed; repeatable; needs `--behind-proxy` |
+| `--public-url` | `BUS_WEB_PUBLIC_URL` | none              | `https://bus.example`: how clients reach the proxy; needs `--behind-proxy` |
+| `--allowed-host` | `BUS_WEB_ALLOWED_HOST` | none            | a `Host` value to accept; repeatable; no port means any port |
 | `--agent`      | `BUS_AGENT`       | none: read-only          | identity messages are sent as                            |
 | `--config-dir` | `BUS_CONFIG_DIR`  | `~/.config/agent-bus`    | certificates, admin credentials, agent keys              |
 | `--broker`     | `BUS_BROKER`      | `localhost:4222`         | broker address; the host must be in the broker certificate |
@@ -71,8 +76,7 @@ the host's loopback only:
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 ```
 
-Open <http://127.0.0.1:8080>; the port must be 8080, or the monitor answers `unexpected Host header`.
-To send, set `BUS_AGENT` in the service to an identity registered in
+Open <http://127.0.0.1:8080>. To send, set `BUS_AGENT` in the service to an identity registered in
 the container (`docker compose -f deploy/docker-compose.yaml exec agent-bus busctl --direct register monitor@alice`). Without compose,
 start a second container on the same volume and network:
 

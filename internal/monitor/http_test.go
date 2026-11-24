@@ -12,10 +12,23 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 )
 
-// serve starts the monitor's handler on a test server, listening where the handler expects to be.
+// serve starts the monitor's handler on a test server, as it runs on loopback.
 func serve(monitor *Monitor) *httptest.Server {
+	return serveWith(monitor, Access{})
+}
+
+// serveWith starts the monitor's handler on a test server with the given access, listening where
+// the access says unless it names another address.
+func serveWith(monitor *Monitor, access Access) *httptest.Server {
 	server := httptest.NewUnstartedServer(nil)
-	server.Config.Handler = monitor.Handler(server.Listener.Addr().String())
+	if access.Listen == "" {
+		access.Listen = server.Listener.Addr().String()
+	}
+	handler, err := monitor.Handler(access)
+	if err != nil {
+		panic(err)
+	}
+	server.Config.Handler = handler
 	server.Start()
 	return server
 }
@@ -175,8 +188,9 @@ func TestHandlerRefusesAForeignHostHeader(t *testing.T) {
 		"LOCALHOST:" + port:             http.StatusOK,
 		"127.0.0.1:" + port:             http.StatusOK,
 		"rebound.example:" + port:       http.StatusForbidden,
-		"localhost":                     http.StatusForbidden,
-		"127.0.0.1:1":                   http.StatusForbidden,
+		"localhost":                     http.StatusOK,
+		"127.0.0.1:1":                   http.StatusOK, // a published port differs from the listen port
+		"rebound.example":               http.StatusForbidden,
 	} {
 		request, _ := http.NewRequest("GET", server.URL+"/api/v1/status", nil)
 		request.Host = host

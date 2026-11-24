@@ -106,10 +106,7 @@ func TestAgentRemoval(t *testing.T) {
 		done := make(chan struct{})
 		go func() { web.Run(runCtx); close(done) }()
 		t.Cleanup(func() { stop(); <-done })
-		server := httptest.NewUnstartedServer(nil)
-		server.Config.Handler = web.Handler(server.Listener.Addr().String())
-		server.Start()
-		t.Cleanup(server.Close)
+		server := serveMonitor(t, web)
 
 		var removed []string
 		for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline) && len(removed) == 0; time.Sleep(100 * time.Millisecond) {

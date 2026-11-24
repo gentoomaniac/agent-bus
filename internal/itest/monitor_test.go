@@ -41,6 +41,20 @@ func (h *harness) consumerPositions(t *testing.T) map[string][5]uint64 {
 	return positions
 }
 
+// serveMonitor serves the monitor on a test server that is closed with the test.
+func serveMonitor(t *testing.T, web *monitor.Monitor) *httptest.Server {
+	t.Helper()
+	server := httptest.NewUnstartedServer(nil)
+	handler, err := web.Handler(monitor.Access{Listen: server.Listener.Addr().String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.Config.Handler = handler
+	server.Start()
+	t.Cleanup(server.Close)
+	return server
+}
+
 // getJSON reads a JSON endpoint of the monitor.
 func getJSON[T any](t *testing.T, server *httptest.Server, path string) T {
 	t.Helper()
@@ -124,10 +138,7 @@ func TestMonitor(t *testing.T) {
 	done := make(chan struct{})
 	go func() { web.Run(runCtx); close(done) }()
 	t.Cleanup(func() { stop(); <-done })
-	server := httptest.NewUnstartedServer(nil)
-	server.Config.Handler = web.Handler(server.Listener.Addr().String())
-	server.Start()
-	t.Cleanup(server.Close)
+	server := serveMonitor(t, web)
 
 	t.Run("lists channels, agents and members", func(t *testing.T) {
 		waitForMonitorMessages(t, server, "general", 2)

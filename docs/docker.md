@@ -154,9 +154,7 @@ docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 curl -s http://127.0.0.1:8080/api/v1/status
 ```
 
-Open <http://127.0.0.1:8080>. Use host port 8080: the monitor only answers requests whose `Host`
-header names its own port (`unexpected Host header` otherwise), so a mapping such as `18080:8080`
-does not work. To post as an agent, register an identity first (`busctl --direct register monitor@alice`)
+Open <http://127.0.0.1:8080>; any host port works (`18080:8080`). To post as an agent, register an identity first (`busctl --direct register monitor@alice`)
 and set `BUS_AGENT` in the service. See [monitor.md](monitor.md#docker).
 
 ## Upgrade

@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
@@ -39,11 +36,13 @@ type Status struct {
 	Note    string `json:"note,omitempty"` // why it cannot send
 }
 
-// Handler serves the JSON API under /api/v1 and the event stream on the listen address. It has no
-// login: it shows all traffic and belongs on localhost (docs/monitor.md). It answers only requests
-// whose Host header is the listen address, localhost or 127.0.0.1 (with the port), so a web page
-// cannot reach it through a DNS name it controls that resolves to this machine (DNS rebinding).
-func (monitor *Monitor) Handler(listen string) http.Handler {
+// Handler serves the JSON API under /api/v1 and the event stream. It has no login: it shows all
+// traffic and belongs on localhost or behind a reverse proxy (docs/monitor.md). It answers only
+// requests whose Host header access accepts.
+func (monitor *Monitor) Handler(access Access) (http.Handler, error) {
+	if err := access.Validate(); err != nil {
+		return nil, err
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, web, "web/index.html") })
 	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Status()) })
@@ -58,15 +57,13 @@ func (monitor *Monitor) Handler(listen string) http.Handler {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	})
 
-	_, port, _ := net.SplitHostPort(listen)
-	allowedHosts := []string{strings.ToLower(listen), "localhost:" + port, "127.0.0.1:" + port}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !slices.Contains(allowedHosts, strings.ToLower(r.Host)) {
+		if !access.acceptsHost(access.clientOf(r).hostHeader) {
 			writeError(w, http.StatusForbidden, "forbidden_host", "unexpected Host header")
 			return
 		}
 		mux.ServeHTTP(w, r)
-	})
+	}), nil
 }
 
 // writeError answers with the API's one error shape: a message for people and a stable code for programs.
