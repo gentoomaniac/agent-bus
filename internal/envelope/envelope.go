@@ -31,6 +31,9 @@ const (
 // Types are the message types of §5.
 var Types = []string{"message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack", "key_rotation", "invite"}
 
+// ResponseBearingTypes expect an answer; the other types close a loop or only inform (§5).
+var ResponseBearingTypes = []string{"request", "question", "feature_request", "bug_report"}
+
 // Destination kinds. `general` is the group named "general".
 const (
 	ToAgent = "agent"

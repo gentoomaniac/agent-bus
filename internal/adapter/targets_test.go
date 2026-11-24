@@ -159,3 +159,24 @@ func TestInvalidTargetsAreRefusedOnSend(t *testing.T) {
 		t.Error("an invalid target was sent")
 	}
 }
+
+func TestResponseBearingPostToAChannelDefaultsToAll(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob)
+
+	question := publishTo(t, a, "general", Outgoing{Type: "question", Body: envelope.Body{Text: "who knows?"}})
+	named := publishTo(t, a, "general", Outgoing{Type: "request", Body: envelope.Body{Text: "@docs@carol please"}})
+	explicitNone := publishTo(t, a, "general", Outgoing{Type: "question", Body: envelope.Body{Text: "thinking aloud"}, Targets: []string{}})
+	status := publishTo(t, a, "general", Outgoing{Type: "status", Body: envelope.Body{Text: "done"}})
+	poll(t, bobAdapter)
+
+	if got := inboxIDs(t, bobAdapter); !slices.Equal(got, []string{question}) {
+		t.Errorf("inbox = %v, want only the untargeted question %s (not %s, %s, %s)", got, question, named, explicitNone, status)
+	}
+	if got := inboxOf(t, bobAdapter)[0].Envelope.Targets; !slices.Equal(got, []string{envelope.TargetAll}) {
+		t.Errorf("targets = %v, want [@all]", got)
+	}
+}

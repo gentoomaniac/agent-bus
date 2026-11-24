@@ -65,7 +65,7 @@ type Config struct {
 type Outgoing struct {
 	Type    string
 	Body    envelope.Body
-	Targets []string // agent IDs or "@all"; default: the mentions in the body text (§5)
+	Targets []string // agent IDs or "@all"; default: the mentions in the body text, else @all for a request in a channel (§5)
 	Thread  string   // default: the parent's thread, or a new one
 	ReplyTo string   // default: the message the agent most recently read or acked (§8 rule 3)
 }
@@ -264,6 +264,10 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 	targets := message.Targets
 	if targets == nil {
 		targets = envelope.MentionedTargets(message.Body.Text)
+	}
+	// A question to a channel that names nobody would reach nobody in targeted mode (§5).
+	if targets == nil && to.Kind != bus.DM && slices.Contains(envelope.ResponseBearingTypes, message.Type) {
+		targets = []string{envelope.TargetAll}
 	}
 
 	id := envelope.NewID(now)
