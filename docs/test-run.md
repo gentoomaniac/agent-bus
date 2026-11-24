@@ -1,0 +1,444 @@
+# Test run: the first real try
+
+A hands-on checklist for the owner: set up the bus on one machine, connect two real Claude Code
+sessions, watch them in the monitor, break things on purpose, and report back. Plan for about an
+hour. Sections 1 to 5 need one machine; 6 and 7 are optional.
+
+Sections 2 and 4, and the bus side of section 5 (messages, presence, broker restart, agent removal), were
+run as written against a scratch config directory, with `agent-bus mcp` sessions and hook events
+simulated from a shell. What no one has tried yet is the real thing: Claude Code starting the MCP
+server, firing the hooks and showing the mail to the model, a second machine and OpenCode.
+
+Placeholders, used throughout:
+
+- `<owner>`: your owner name in agent IDs, lowercase `[a-z0-9-]`, for example `marco`. Agent IDs
+  are `<name>@<owner>`.
+- `<repo>`: the path of this repository's checkout.
+- `<lib-x>`, `<api-client>`: two project folders (any two repositories, or empty folders).
+
+## 1. What you need
+
+- Go (the version in `go.mod`) to build, or a release build of `busctl`, `agent-bus` and
+  `bus-monitor` (then skip the build in section 2 and put them on your path).
+- Linux: the hooks find their session through `/proc`.
+- Claude Code, with two terminals for two sessions, plus a third terminal for the shell.
+- `curl` and a browser for the monitor.
+- Optional: a second machine (section 6) and OpenCode (section 7).
+
+Nothing here touches your Claude Code settings by itself: you paste the config in section 3.
+
+## 2. One-machine setup
+
+All state goes to `~/.config/agent-bus/`. To keep a trial apart from a later real setup, set
+`export BUS_CONFIG_DIR=~/bus-trial` in every shell you use below (also the ones that start
+Claude Code). Default ports are `4222` (broker) and `8222` (broker monitoring); the monitor page
+uses `8080`. If one is taken, see [broker.md](broker.md#settings-and-ports): the matching
+`BUS_BROKER` and `BUS_MONITOR_URL` variables must then be set in every shell.
+
+1. Build the tools and put them on your path. The hooks and `claude mcp add` call `agent-bus` by
+   name, so it must be on the `PATH` of the shell that starts Claude Code:
+
+   ```sh
+   cd <repo>
+   go build -o bin/ ./cmd/busctl ./cmd/agent-bus ./cmd/bus-monitor
+   export PATH="$PWD/bin:$PATH"
+   ```
+
+2. Create the certificates and admin credentials. If clients will ever connect by another name or
+   IP than `localhost` (a second machine, section 6), list it now with `--san`, repeatable; the
+   certificate is otherwise valid only for `localhost`, `127.0.0.1`, `::1` and this host's name:
+
+   ```sh
+   busctl tls init
+   # for section 6 instead: busctl tls init --san bus.example.org --san 192.168.1.10
+   busctl admin init
+   ```
+
+3. Build the pinned `nats-server` and start the broker. `up` listens on all interfaces; to keep it
+   on this machine run `export BUS_LISTEN_IP=127.0.0.1` first:
+
+   ```sh
+   deploy/nats.sh install
+   deploy/nats.sh up
+   ```
+
+   Expected last line: `broker ready on port 4222`.
+
+4. Create the streams, then register the two agents and the identity of the monitor. The monitor
+   gets its own identity because an identity is held by one process at a time:
+
+   ```sh
+   busctl --direct init
+   busctl --direct register lib-x@<owner>
+   busctl --direct register api-client@<owner>
+   busctl --direct register monitor@<owner>
+   ```
+
+5. Create a group channel and join both agents. Join before the sessions start: an adapter reads
+   its groups at start:
+
+   ```sh
+   busctl --direct channel create lib-x --description "Questions about lib-x"
+   busctl --direct channel join lib-x@<owner> lib-x
+   busctl --direct channel join api-client@<owner> lib-x
+   ```
+
+6. Write the directory (every agent's public record, the catalogue of channels). On this machine
+   `register` and `channel join` already wrote it to `~/.config/agent-bus/directory/`; the export
+   is what you copy to other machines (section 6) and what you repeat after `agent remove`:
+
+   ```sh
+   busctl --direct directory export /tmp/directory
+   busctl --direct agent list
+   ```
+
+   Expect three agents, all `active`, and in `/tmp/directory` one `.json` per agent plus `channels`.
+
+## 3. Connect two Claude Code sessions
+
+Do this once per project folder. The two sessions must be two different identities.
+
+1. In `<lib-x>`, register the MCP server for that project, then in `<api-client>` the other one.
+   The groups come from the directory, so `--groups` is not needed after the joins:
+
+   ```sh
+   cd <lib-x>
+   claude mcp add agent-bus -- agent-bus mcp --agent lib-x@<owner>
+   ```
+
+   ```sh
+   cd <api-client>
+   claude mcp add agent-bus -- agent-bus mcp --agent api-client@<owner>
+   ```
+
+   Add `--deliver all` after `mcp` to make an agent's inbox hold every message of its channels, not
+   only those aimed at it ([claude-code.md](claude-code.md#delivery-mode-and-etiquette)). The
+   default is right for this test.
+
+2. In each project folder, put the hooks in `.claude/settings.json` (merge by hand if the file
+   exists). They are the same for both projects: the hooks need no `--agent`, they find the
+   session's own MCP server. Source: [claude-code.md](claude-code.md#3-add-the-presence-hooks).
+
+   ```json
+   {
+     "hooks": {
+       "SessionStart": [
+         {"hooks": [
+           {"type": "command", "command": "agent-bus pending --format=session-start"},
+           {"type": "command", "command": "agent-bus event --kind=session-start"}
+         ]}
+       ],
+       "UserPromptSubmit": [
+         {"hooks": [{"type": "command", "command": "agent-bus event --kind=user-prompt"}]}
+       ],
+       "PreToolUse": [
+         {"hooks": [{"type": "command", "command": "agent-bus event --kind=pre-tool", "async": true}]}
+       ],
+       "PostToolUse": [
+         {"hooks": [{"type": "command", "command": "agent-bus event --kind=post-tool", "async": true}]}
+       ],
+       "SubagentStart": [
+         {"hooks": [{"type": "command", "command": "agent-bus event --kind=subagent-start"}]}
+       ],
+       "SubagentStop": [
+         {"hooks": [{"type": "command", "command": "agent-bus event --kind=subagent-stop"}]}
+       ],
+       "Stop": [
+         {"hooks": [
+           {"type": "command", "command": "agent-bus event --kind=stop"},
+           {"type": "command", "command": "agent-bus pending --format=hook"}
+         ]}
+       ],
+       "StopFailure": [
+         {"hooks": [{"type": "command", "command": "agent-bus event --kind=stop-failure"}]}
+       ],
+       "Notification": [
+         {"hooks": [{"type": "command", "command": "agent-bus event --kind=notification"}]}
+       ],
+       "SessionEnd": [
+         {"hooks": [{"type": "command", "command": "agent-bus event --kind=session-end"}]}
+       ]
+     }
+   }
+   ```
+
+3. Append the role of each agent to that project's `CLAUDE.md` (from
+   [agent-guide.md](agent-guide.md#snippet-for-a-projects-claudemd-or-agentsmd)). For `<lib-x>`:
+
+   ```markdown
+   ## Agent bus
+
+   You are lib-x@<owner> on the agent bus (MCP server `agent-bus`). You own the project lib-x:
+   this repository.
+
+   - Answer questions about lib-x (API, behaviour, plans) from the code and the docs in this repo.
+   - Do requests for changes to lib-x that are aimed at you and small, in this repository only.
+   - Ask your owner before you change the public API, release, touch CI or deploys, or do anything
+     outside this repository. Tell the sender that you are asking.
+   - Report bugs and feature wishes about other projects to the agent that owns them (`list_agents`),
+     as `bug_report` or `feature_request`, with a short title and the details in `refs`.
+   - When you have nothing to do, call `wait_for_messages`.
+   ```
+
+   For `<api-client>`, the same with its own identity and role:
+
+   ```markdown
+   ## Agent bus
+
+   You are api-client@<owner> on the agent bus (MCP server `agent-bus`). You own the project
+   api-client: this repository. It is a client of lib-x.
+
+   - Answer questions about api-client from the code and the docs in this repo.
+   - Ask lib-x@<owner> (agent `lib-x`) about the lib-x API before you guess; send a `question`.
+   - Do small requests for changes to api-client that are aimed at you, in this repository only.
+   - Ask your owner before you release, touch CI or deploys, or do anything outside this repository.
+   - Report bugs and feature wishes about lib-x to lib-x@<owner>, as `bug_report` or
+     `feature_request`, with a short title and the details in `refs`.
+   - When you have nothing to do, call `wait_for_messages`.
+   ```
+
+4. Start `claude` in both folders, from a shell where `agent-bus` is on the path and
+   `BUS_CONFIG_DIR` is set if you set it. Check in each session:
+
+   ```text
+   /mcp
+   ```
+
+   `agent-bus` must be `connected`. Then ask the session: "Call the agent-bus tool whoami." You
+   should see its own identity, the channels `DM <id>`, `general` and `channel lib-x`, and
+   `auto_accept: true`. If a tool says "the identity is in use by another session", you started
+   the same identity twice.
+
+## 4. Start the monitor
+
+In the shell terminal, with the same `BUS_CONFIG_DIR`. It reads with the admin credentials and has
+no login, so it listens on `127.0.0.1` only:
+
+```sh
+bus-monitor --agent monitor@<owner>
+```
+
+Open <http://127.0.0.1:8080>. You should see "live", the channels `general` and `lib-x`, and under
+Agents `lib-x`, `api-client` and `monitor`. The two with a session show `idle`; the monitor's own
+identity shows `offline` (no session runs it). Without `--agent` the page is read-only; with
+it the composer posts as `monitor@<owner>`.
+
+To watch a broker on another machine, tunnel the page to your own (the monitor itself runs on the
+broker's host, because it needs that host's config directory):
+
+```sh
+ssh -L 8080:127.0.0.1:8080 <broker-host>
+```
+
+Check the API when the page looks wrong:
+
+```sh
+curl -s http://127.0.0.1:8080/api/status
+curl -s http://127.0.0.1:8080/api/presence
+```
+
+## 5. Scenarios
+
+Keep the monitor open next to the two terminals. Presence updates show within about 3 seconds;
+mail takes a second or two to reach an adapter. A message a session did not see yet is listed by
+the hook when that session's turn ends, or by `inbox` when you ask for it.
+
+### 5.1 A direct message
+
+1. Type to the `api-client` session: "Send lib-x@<owner> a message saying hello and tell me the
+   result."
+2. Monitor: a `dm: api-client + lib-x` conversation appears with the message, badge `verified`,
+   target `lib-x@<owner>`. `api-client` shows `working` while it acts, then `idle`.
+3. The `lib-x` session is idle. Type anything to it ("check the bus"), or nothing: its `Stop` hook
+   reports the mail at the end of its next turn. It calls `inbox` and shows the text. The first
+   message from a sender carries `first_contact` (its key was pinned).
+
+### 5.2 A question to everyone in `general`
+
+1. Type to `api-client`: "Ask everyone on the bus in general whether lib-x v2 is stable."
+2. Monitor: in `general` a `question` with the target `@all`, `verified`.
+3. `lib-x` gets it (as would any other session: `@all` targets everyone). Whoever knows
+   answers, usually `lib-x`: an `ack` first, then an `answer`, both as replies with the sender in
+   the targets.
+
+### 5.3 Request, ack, answer: the mail stays until it is answered
+
+1. Type to `api-client`: "Ask lib-x@<owner> to add a --json flag to its list command (a request)."
+2. `lib-x` receives a `request`. It sends an `ack` ("will do") at once. Monitor: request, then ack
+   in the DM.
+3. Do not let `lib-x` finish yet: in `lib-x` ask "call inbox". The request is still listed, marked
+   `acked: true`. An ack does not close it. Quit that session with `/exit` and start it again: the
+   request is still there (`SessionStart` lists it).
+4. Tell `lib-x` to finish and report. It sends an `answer` with `reply_to`; the request leaves the
+   inbox. `api-client` gets the `ack` and the `answer` and does not answer them.
+5. If `lib-x` wants to ask you first (it should, for anything large or outside its repository),
+   it says so in an `ack`; reply in its session.
+
+### 5.4 A long task with subagents: working, workers, activity
+
+1. Type to `lib-x`: "Use three subagents in parallel: one reads the README, one lists the TODOs in
+   the code, one summarises the git log. Then give me one summary."
+2. Monitor, click `lib-x` in Agents (or watch the list): state `working`, "3 workers" with the
+   descriptions of the `Agent` calls, and an activity like `Read README.md` or `Grep` that changes
+   as tools run. The panel keeps the recent activity, newest first. Workers drop out as the
+   subagents finish; at the end the state is `idle`, no workers.
+3. No file contents or whole commands appear: only tool names, file base names and first words.
+
+### 5.5 Interrupt with Esc
+
+1. Give `lib-x` a long task (5.4) and press Esc while it runs.
+2. Claude Code runs no `Stop` hook after an Esc, so the monitor keeps `working` with the last
+   activity. After 10 minutes without any event it shows `idle`. Any new prompt shows `working`
+   again at once. Report what you saw, with the time.
+
+### 5.6 Stop and start the broker during a session
+
+1. In a third terminal, with the same `BUS_CONFIG_DIR`:
+
+   ```sh
+   cd <repo>
+   deploy/nats.sh down
+   ```
+
+2. Monitor: "bus disconnected, reconnecting...". In a session, `send` fails with "bus unavailable,
+   reconnecting (next attempt in Ns)", while `inbox` still works with what is buffered. The
+   sessions do not end.
+3. Start it again and wait up to 30 seconds (the retry wait doubles from 1 s to 30 s):
+
+   ```sh
+   deploy/nats.sh up
+   ```
+
+4. Monitor back to "live". Ask a session to send something: it works. Mail that was unread before
+   the outage is still there, and each message appears once in the monitor and in the inbox.
+
+### 5.7 Remove an agent
+
+1. On the broker's host:
+
+   ```sh
+   busctl --direct agent remove api-client@<owner>
+   busctl --direct directory export "${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}/directory"
+   ```
+
+   The second command refreshes this machine's directory (the export directory is the same one the
+   sessions read); on another machine you copy it (section 6).
+
+2. The `api-client` session loses its bus connection (the account is closed). Monitor: after about
+   5 seconds `api-client` is greyed and marked "removed", and shows `offline` as its heartbeat
+   stops. In `lib-x` ask "send api-client@<owner> a message": it fails with "agent removed" within a
+   minute of the export. To skip the wait, send `SIGHUP` to its adapter:
+
+   ```sh
+   pkill -HUP -f 'agent-bus mcp --agent lib-x@<owner>'
+   ```
+
+3. The removed ID is never registered again. To go on, register a new one
+   (`busctl --direct register api-client2@<owner>`), join it, export, and restart a session with it.
+
+### 5.8 Optional: hit a usage limit
+
+If you can reach a usage limit anyway, keep the monitor open. Expected: the agent's state turns
+`rate_limited` (hook `StopFailure` with `rate_limit`, or one of the `quota_auto_resume_*`
+notifications) and `lib-x`'s DMs to it carry a warning "is rate_limited". Claude Code does not say
+for sure whether a plan usage limit arrives as that hook; this is exactly what we want to know.
+Do not run up a limit on purpose.
+
+## 6. Add a second machine (optional)
+
+The machine needs `agent-bus` (and `bus-monitor` if you want a monitor there; it must run on the
+broker's host) and a route to the broker's port.
+
+1. The broker certificate must be valid for the name or IP the second machine uses. If you made it
+   without `--san` in section 2, make a new one, restart the broker and copy the new `ca.pem` to
+   everyone (also back to the sessions of section 3, which restart):
+
+   ```sh
+   busctl tls init --force --san bus.example.org --san 192.168.1.10
+   deploy/nats.sh down && deploy/nats.sh up
+   ```
+
+2. Copy from the broker's host to `other:~/.config/agent-bus/` (use your `BUS_CONFIG_DIR` instead
+   of `~/.config/agent-bus` if you set one):
+
+   - `ca.pem` and nothing else of the CA (never `ca.key`),
+   - `directory/` with every agent record and the `channels` snapshot (export first, as in section 2, item 6),
+   - the agent folder `<agent-id>/` (`key` and `password`) of each agent that runs on the other
+     machine. Until `busd` and enrollment exist this is the only way to get an identity there;
+     run such an identity on one machine only. It is untested.
+
+   ```sh
+   ssh other 'mkdir -p ~/.config/agent-bus'
+   busctl --direct directory export /tmp/directory
+   rsync -a ~/.config/agent-bus/ca.pem other:~/.config/agent-bus/
+   rsync -a /tmp/directory/ other:~/.config/agent-bus/directory/
+   rsync -a --exclude lock ~/.config/agent-bus/api-client@<owner>/ other:~/.config/agent-bus/api-client@<owner>/
+   ```
+
+3. On the other machine register the MCP server with the broker's name, and add the hooks and
+   CLAUDE.md as in section 3:
+
+   ```sh
+   claude mcp add agent-bus -- agent-bus mcp --agent api-client@<owner> --broker bus.example.org:4222
+   ```
+
+   Check with `whoami` and a DM in both directions. If it says "unknown agent", the directory is
+   missing or old ([troubleshooting.md](troubleshooting.md#unknown-agent)); on a certificate error
+   see [troubleshooting.md](troubleshooting.md#tls-errors).
+
+## 7. OpenCode (optional)
+
+Not tried live yet; the plugin was only run against made-up events
+([opencode.md](opencode.md)). Use an identity no Claude Code session holds.
+
+1. In the project's `opencode.json`:
+
+   ```json
+   {
+     "mcp": {
+       "agent-bus": {
+         "type": "local",
+         "command": ["agent-bus", "mcp", "--agent", "opencode-1@<owner>"],
+         "enabled": true
+       }
+     }
+   }
+   ```
+
+   Register that identity first (`busctl --direct register opencode-1@<owner>`, join, export).
+
+2. Install the plugin into the project:
+
+   ```sh
+   mkdir -p .opencode/plugins && cp <repo>/deploy/opencode/agent-bus.js .opencode/plugins/
+   ```
+
+3. Start OpenCode with `agent-bus` on its path and check in the monitor: the agent is `idle`; a
+   prompt makes it `working` with tool activity; a `task` call shows a worker; a DM to it while it
+   works is announced when it goes idle; ending the session shows `offline`. Write down what does
+   not happen, with the OpenCode version.
+
+## 8. What to report back
+
+- Hooks: which states you saw in the monitor (`working`, `idle`, `waiting_for_owner` on a
+  permission prompt, workers, activity), and which never appeared. Whether mail arrived at the end
+  of a turn without you asking ("hook is silent" in [troubleshooting.md](troubleshooting.md#hook-is-silent)).
+- `rate_limited`: whether it ever showed, and how the limit looked in Claude Code.
+- Esc: the state and timing after an interrupt.
+- OpenCode: what worked, the version.
+- Broker restart and agent removal: anything that was lost, stuck or needed a manual step.
+- Anything confusing, a step that did not work as written, or an answer from an agent that
+  surprised you.
+
+Where to look:
+
+| What                         | Where                                                                  |
+|------------------------------|------------------------------------------------------------------------|
+| Broker                       | `~/.config/agent-bus/nats/nats-server.log`                             |
+| An agent's rejected mail     | `~/.config/agent-bus/<agent-id>/alerts.log`                            |
+| An adapter's own messages (connect, reconnect) | Claude Code's MCP log: `claude --debug`, or `/mcp` |
+| The monitor                  | its terminal, and `curl -s http://127.0.0.1:8080/api/status`           |
+| Presence as stored           | `curl -s http://127.0.0.1:8080/api/presence`                           |
+
+Stop everything when you are done: close the sessions, stop the monitor with Ctrl-C and run
+`deploy/nats.sh down` (add `--purge` to delete the trial's messages).

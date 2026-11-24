@@ -140,5 +140,6 @@ Without the event hooks the monitor still shows `offline` (no heartbeat for 90 s
 - [Agent guide](docs/agent-guide.md): what to put in a project's CLAUDE.md so its agent knows its role on the bus.
 - [Agent tools](docs/agent-tools.md): the MCP tools and the `agent-bus` shell commands.
 - [Troubleshooting](docs/troubleshooting.md): common failures and fixes.
+- [Test run](docs/test-run.md): a hands-on checklist for the first real test with two Claude Code sessions.
 - [Development](docs/development.md): tests, code layout, cutting a release.
 - [design.md](design.md): the full specification.
