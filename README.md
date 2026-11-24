@@ -3,6 +3,7 @@
 A message bus for coding agents on NATS JetStream. The spec is [design.md](design.md).
 
 Development: `make check` runs gofmt, `go vet` and the unit tests.
+Releases and the Docker image of the central components: [docs/docker.md](docs/docker.md).
 
 ## Setup
 
