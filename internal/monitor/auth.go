@@ -59,8 +59,9 @@ func newAuth(hash []byte, now func() time.Time) *auth {
 
 func (a *auth) enabled() bool { return len(a.hash) > 0 }
 
-// attempt checks a password for a client. Wrong ones count against the client; the delay grows
-// with every further failure and a correct password clears the count.
+// attempt checks a password for a client. Every attempt counts against the client before the
+// password is compared, so guesses sent at the same time cannot slip past the limit; a correct
+// password clears the count. The delay grows with every further failure.
 func (a *auth) attempt(address, password string) error {
 	a.mu.Lock()
 	now := a.now()
@@ -76,22 +77,20 @@ func (a *auth) attempt(address, password string) error {
 			return tooManyAttempts{wait}
 		}
 	}
-	a.mu.Unlock()
-
-	correct := bcrypt.CompareHashAndPassword(a.hash, []byte(password)) == nil
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if correct {
-		delete(a.failures, address)
-		return nil
-	}
 	if a.failures[address] == nil {
 		a.failures[address] = &loginFailures{}
 	}
 	a.failures[address].count++
-	a.failures[address].last = a.now()
-	return errBadCredentials
+	a.failures[address].last = now
+	a.mu.Unlock()
+
+	if bcrypt.CompareHashAndPassword(a.hash, []byte(password)) != nil {
+		return errBadCredentials
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.failures, address)
+	return nil
 }
 
 // startSession makes a new session, always: a login never keeps the token it came with.
@@ -159,8 +158,9 @@ func (a *auth) authenticate(r *http.Request, address string) (principal, error) 
 		return principal{}, nil
 	}
 	if header := r.Header.Get("Authorization"); header != "" {
-		if token, isBearer := strings.CutPrefix(header, "Bearer "); isBearer {
-			if a.useSession(token) {
+		// The scheme name is case-insensitive (RFC 9110).
+		if scheme, token, found := strings.Cut(header, " "); found && strings.EqualFold(scheme, "Bearer") {
+			if a.useSession(strings.TrimSpace(token)) {
 				return principal{token: token, byHeader: true}, nil
 			}
 			return principal{}, errUnauthenticated

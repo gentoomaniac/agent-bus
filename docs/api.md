@@ -20,7 +20,7 @@ With a password, every endpoint except the page (`GET /`) and `POST /api/v1/logi
 | How                                   | For                                                     |
 |---------------------------------------|---------------------------------------------------------|
 | session cookie `bus_session`          | the page: set by `login`, `HttpOnly`, `SameSite=Strict`, `Secure` over https |
-| `Authorization: Bearer <token>`       | scripts: the `token` of the login response              |
+| `Authorization: Bearer <token>`       | scripts: the `token` of the login response (`bearer` works too)  |
 | `Authorization: Basic base64(user:password)` | scripts that do not want a session; the user name is ignored |
 
 `POST /api/v1/login` with `Content-Type: application/json` and `{"password": "..."}` answers
@@ -132,7 +132,8 @@ data: {"agent":"lib-x@alice","state":"working","since":"2026-11-24T12:00:00Z","a
 - `message`: one new message, in the shape of `messages`.
 - `presence`: an agent's new view, in the shape of `presence`, including an agent that went offline.
 - Lines starting with `:` are comments: one when the stream opens and a keep-alive every 15
-  seconds, which is also when a stream whose session ended closes.
+  seconds. A stream whose session ended closes at the next event or keep-alive, whichever comes
+  first, without writing it.
 
 **Snapshot and reconnect.** The stream is a live tail, not a log. Events carry an `id` (a message
 is `<channel>#<sequence>`), but there is no replay: the monitor ignores `Last-Event-ID`, and a

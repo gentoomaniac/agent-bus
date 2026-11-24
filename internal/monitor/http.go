@@ -195,7 +195,7 @@ func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request, logg
 			}
 			fmt.Fprint(w, ": keep-alive\n\n")
 		case message, open := <-messages:
-			if !open {
+			if !open || !loggedIn() {
 				return
 			}
 			data, err := json.Marshal(message)
@@ -204,7 +204,7 @@ func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request, logg
 			}
 			fmt.Fprintf(w, "id: %s#%d\nevent: message\ndata: %s\n\n", message.Channel, message.Sequence, data)
 		case view, open := <-views:
-			if !open {
+			if !open || !loggedIn() {
 				return
 			}
 			data, err := json.Marshal(view)

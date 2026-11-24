@@ -39,7 +39,9 @@ cookie, a bearer token or HTTP Basic. Sessions are random tokens kept in the mon
 hours idle, 7 days at most), renewed at every login and ended by logout. The cookie is `HttpOnly`,
 `SameSite=Strict` and `Secure` when the monitor knows the client is on https. A request that changes
 something (send, logout) must come from the page's own origin or carry an `Authorization` header.
-After five wrong passwords a client is slowed down, with a delay that doubles each time.
+After five wrong passwords a client is slowed down, with a delay that doubles each time; every
+attempt counts before the password is compared, so guesses sent at once do not get more tries. A
+password file with nothing in it stops the monitor with an error instead of leaving it open.
 
 ## Behind a reverse proxy
 

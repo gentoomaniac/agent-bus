@@ -70,7 +70,8 @@ func WriteMonitorPassword(configDir, password string) error {
 	return files.Write(filepath.Join(configDir, monitorPasswordFile), append(hash, '\n'), files.SecretMode, true)
 }
 
-// ReadMonitorPasswordHash returns the stored hash, or nil when no password is set.
+// ReadMonitorPasswordHash returns the stored hash, or nil when no password is set. A file with
+// no hash in it is an error, not "no password": it must not leave the monitor open.
 func ReadMonitorPasswordHash(configDir string) ([]byte, error) {
 	data, err := os.ReadFile(filepath.Join(configDir, monitorPasswordFile))
 	if errors.Is(err, os.ErrNotExist) {
@@ -79,5 +80,9 @@ func ReadMonitorPasswordHash(configDir string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading the monitor password: %w", err)
 	}
-	return []byte(strings.TrimSpace(string(data))), nil
+	hash := strings.TrimSpace(string(data))
+	if hash == "" {
+		return nil, errors.New("the monitor password file is empty: set a password again (busctl monitor password) or remove the file")
+	}
+	return []byte(hash), nil
 }
