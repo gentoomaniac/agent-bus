@@ -111,7 +111,8 @@
   #banner { background: var(--warn-bg); color: var(--warn); padding: 4px 16px; font-size: 12px; }
   header .right, header .left { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
   header .left { flex: 1; }
-  #logout { padding: 1px 8px; font-size: 12px; background: var(--bg); color: var(--text); border-color: var(--border); }
+  #logout { padding: 1px 8px; font-size: 12px; background: var(--bg); color: var(--text); border-color: var(--border); flex: none; white-space: nowrap; }
+  #identity { font-size: 12px; max-width: 32ch; }
 </style>
 </head>
 <body>
@@ -138,7 +139,7 @@
         <button class="toggle" id="toggle-sidebar" type="button" title="Show or hide the channel list" aria-pressed="true">Channels</button>
         <div><span class="title cut" id="channel-title">Select a channel</span> <span class="muted cut" id="channel-description"></span></div>
       </div>
-      <div class="right"><span id="live">connecting...</span><button id="logout" type="button" hidden>Log out</button>
+      <div class="right"><span id="live">connecting...</span><span id="identity" class="muted cut"></span><button id="logout" type="button" hidden>Log out</button>
         <button class="toggle" id="toggle-members" type="button" title="Show or hide the members panel" aria-pressed="true">Members</button></div>
     </header>
     <div id="messages"></div>
@@ -339,10 +340,21 @@ async function refresh() {
   }
   showLive();
   $("banner").hidden = state.status.password_set !== false;
-  $("logout").hidden = !state.status.password_set;
+  renderIdentity();
   renderSidebar();
   renderMembers();
   renderComposer();
+}
+
+// With a password set, the header says that the visitor is logged in and what the page sends as,
+// and offers the logout. Without one there is no session to end: the banner says so instead.
+function renderIdentity() {
+  const loggedIn = state.status.password_set === true;
+  const sender = state.status.agent ? "sending as " + state.status.agent : "read-only";
+  const text = (loggedIn ? "logged in \u00b7 " : "") + sender;
+  $("identity").textContent = text;
+  $("identity").title = text;
+  $("logout").hidden = !loggedIn;
 }
 
 async function select(channelId) {
