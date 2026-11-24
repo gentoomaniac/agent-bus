@@ -10,7 +10,49 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+	"unicode/utf8"
 )
+
+// checkUnicode refuses what encoding/json would silently repair: invalid UTF-8 and \u escapes that
+// form a lone surrogate. Both decode to U+FFFD, so the signed bytes and the text the agent reads
+// would differ.
+func checkUnicode(raw []byte) error {
+	if !utf8.Valid(raw) {
+		return errors.New("invalid UTF-8")
+	}
+	for i := 0; i < len(raw); {
+		if raw[i] != '\\' {
+			i++
+			continue
+		}
+		code, ok := unicodeEscape(raw, i)
+		if !ok {
+			i += 2 // another escape, or invalid JSON, which the decoder reports
+			continue
+		}
+		i += 6
+		switch {
+		case code >= 0xDC00 && utf16.IsSurrogate(code):
+			return fmt.Errorf("lone low surrogate \\u%04x", code)
+		case utf16.IsSurrogate(code):
+			low, ok := unicodeEscape(raw, i)
+			if !ok || low < 0xDC00 || !utf16.IsSurrogate(low) {
+				return fmt.Errorf("lone high surrogate \\u%04x", code)
+			}
+			i += 6
+		}
+	}
+	return nil
+}
+
+// unicodeEscape reads the \uXXXX escape that starts at raw[i].
+func unicodeEscape(raw []byte, i int) (rune, bool) {
+	if i+6 > len(raw) || raw[i] != '\\' || raw[i+1] != 'u' {
+		return 0, false
+	}
+	code, err := strconv.ParseUint(string(raw[i+2:i+6]), 16, 16)
+	return rune(code), err == nil
+}
 
 // maxExactInteger is the largest magnitude RFC 8785 (via ES6) writes as a plain integer.
 const maxExactInteger = 1 << 53

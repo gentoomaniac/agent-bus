@@ -198,6 +198,36 @@ func TestDuplicateKeysAreRefused(t *testing.T) {
 	}
 }
 
+func TestInvalidUnicodeIsRefused(t *testing.T) {
+	public, private := identity.Generate()
+	payload, err := Sign(testEnvelope(public), private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withText := func(text string) []byte {
+		return []byte(strings.Replace(string(payload), `"body":{`, `"body":{"x":"`+text+`",`, 1))
+	}
+	// `\\ud800` is an escaped backslash followed by plain text, not a surrogate.
+	for _, text := range []string{`😀`, `\\ud800`, "café"} {
+		if _, err := Parse(withText(text)); err != nil {
+			t.Errorf("%q: %v, want it accepted", text, err)
+		}
+	}
+	for name, text := range map[string]string{
+		"invalid UTF-8":      "a\xffb",
+		"lone high":          `\ud83d`,
+		"high before text":   `\ud83dx`,
+		"high before high":   `\ud83d😀`,
+		"stray low":          `\ude00`,
+		"low before high":    `\ude00\ud83d`,
+		"high before escape": `\ud83d\n`,
+	} {
+		if _, err := Parse(withText(text)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
 func TestCheckNoDuplicateKeys(t *testing.T) {
 	for _, ok := range []string{`{"a":{"x":1},"b":{"x":2}}`, `[{"a":1},{"a":2}]`, `{"a":[1,2,{"b":null}]}`} {
 		if err := checkNoDuplicateKeys([]byte(ok)); err != nil {
