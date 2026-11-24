@@ -30,32 +30,32 @@ const (
 	unknownAgent      = "unknown" // stands for the sender of a record that names none; no agent ID lacks an '@'
 )
 
-// Status is the verification result of a message.
-type Status string
+// Verification is the verification result of a message.
+type Verification string
 
 const (
-	Verified      Status = "verified"
-	UnknownSender Status = "unknown_sender" // the registry has no record of the sender, so nothing was checked
-	Rejected      Status = "rejected"
+	Verified      Verification = "verified"
+	UnknownSender Verification = "unknown_sender" // the registry has no record of the sender, so nothing was checked
+	Rejected      Verification = "rejected"
 )
 
 // Message is a stored record as the monitor shows it. A record that is not a valid envelope has
 // only its sequence, channel, status and reason.
 type Message struct {
-	Sequence uint64    `json:"sequence"`
-	Channel  string    `json:"channel"`
-	Status   Status    `json:"status"`
-	Reason   string    `json:"reason,omitempty"`
-	ID       string    `json:"id,omitempty"`
-	From     string    `json:"from,omitempty"`
-	To       string    `json:"to,omitempty"`
-	Type     string    `json:"type,omitempty"`
-	Thread   string    `json:"thread,omitempty"`
-	ReplyTo  *string   `json:"reply_to,omitempty"`
-	Time     time.Time `json:"time,omitzero"`
-	Title    string    `json:"title,omitempty"`
-	Text     string    `json:"text,omitempty"`
-	Refs     []string  `json:"refs,omitempty"`
+	Sequence uint64       `json:"sequence"`
+	Channel  string       `json:"channel"`
+	Status   Verification `json:"status"`
+	Reason   string       `json:"reason,omitempty"`
+	ID       string       `json:"id,omitempty"`
+	From     string       `json:"from,omitempty"`
+	To       string       `json:"to,omitempty"`
+	Type     string       `json:"type,omitempty"`
+	Thread   string       `json:"thread,omitempty"`
+	ReplyTo  *string      `json:"reply_to,omitempty"`
+	Time     time.Time    `json:"time,omitzero"`
+	Title    string       `json:"title,omitempty"`
+	Text     string       `json:"text,omitempty"`
+	Refs     []string     `json:"refs,omitempty"`
 }
 
 // Channel is a conversation of the bus as the monitor lists it. A DM channel is the conversation of
@@ -305,6 +305,11 @@ func dmAgents(id string) ([]string, bool) {
 	rest, isDM := strings.CutPrefix(id, "dm:")
 	agents := strings.Split(rest, ":")
 	return agents, isDM && len(agents) == 2
+}
+
+// Status says what the monitor can do besides reading.
+func (monitor *Monitor) Status() Status {
+	return Status{Note: "read-only: the monitor was started without --agent"}
 }
 
 // Agents lists the registered agents.

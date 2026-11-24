@@ -145,7 +145,7 @@ func TestVerificationStatus(t *testing.T) {
 	messages := waitForMessages(t, runMonitor(t, fake), "general", 5)
 
 	type verdict struct {
-		status Status
+		status Verification
 		reason bool
 	}
 	want := []verdict{{Verified, false}, {UnknownSender, true}, {Rejected, true}, {Rejected, true}, {Rejected, true}}
