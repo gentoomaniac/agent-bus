@@ -576,9 +576,10 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 	return listed, nil
 }
 
-// Ack marks messages handled: the handled set is written first, then the broker is acked, so a
-// crash in between redelivers a message that is then skipped. It goes on after an error and
-// reports every one.
+// Ack acks the broker first and only then records the message as handled and drops it from the
+// inbox, so an ack the broker did not confirm leaves the message unread. A crash between the two
+// steps loses nothing the agent did not ack: the broker will not redeliver it, and the handled
+// entry, which only skips redeliveries, is missing. It goes on after an error and reports every one.
 func (adapter *Adapter) Ack(ctx context.Context, ids []string) error {
 	if err := adapter.Ready(); err != nil {
 		return err
@@ -596,14 +597,14 @@ func (adapter *Adapter) Ack(ctx context.Context, ids []string) error {
 			errs = append(errs, fmt.Errorf("no unread message %s", id))
 			continue
 		}
-		if err := adapter.handled.add(adapter.handledEntry(message)); err != nil {
-			errs = append(errs, err)
+		if err := message.delivery.Ack(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("message %s stays unread, the broker did not confirm the ack: %w", id, err))
 			continue
 		}
 		adapter.recent.id, adapter.recent.at = message.Envelope.ID, adapter.config.Now()
 		adapter.inbox.remove(message)
-		if err := message.delivery.Ack(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("message %s is handled, but the broker did not confirm the ack (it will be redelivered and skipped): %w", id, err))
+		if err := adapter.handled.add(adapter.handledEntry(message)); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)

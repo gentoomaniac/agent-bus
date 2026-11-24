@@ -40,6 +40,7 @@ type fakeTransport struct {
 	agent  string
 	acks   int
 	down   error // what Unavailable returns
+	ackErr error // what a delivery's Ack returns, after Unavailable passed
 }
 
 func (broker *fakeBroker) transport(agent string) *fakeTransport {
@@ -65,6 +66,9 @@ func (transport *fakeTransport) Fetch(_ context.Context, from bus.Channel, max i
 		deliveries = append(deliveries, bus.Delivery{
 			Record: bus.Record{Sequence: record.sequence, Payload: record.payload},
 			Ack: func(context.Context) error {
+				if transport.ackErr != nil {
+					return transport.ackErr
+				}
 				if transport.broker.acked == nil {
 					transport.broker.acked = map[string]bool{}
 				}
@@ -556,5 +560,32 @@ func TestWhileTheBusIsUnavailableSendAndAckFailAndNothingChanges(t *testing.T) {
 	bobTransport.down = nil
 	if err := bobAdapter.Ack(ctx, []string{id}); err != nil || bobTransport.acks != 1 {
 		t.Errorf("ack after recovery: %v, broker acks %d", err, bobTransport.acks)
+	}
+}
+
+func TestAckTheBrokerDoesNotConfirmLeavesTheMessageUnread(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, bobTransport := b.open(bob, deliverAll)
+	ctx := context.Background()
+	id, err := a.Send(ctx, bob, text("hello bob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	poll(t, bobAdapter)
+
+	bobTransport.ackErr = errors.New("connection lost")
+	if err := bobAdapter.Ack(ctx, []string{id}); err == nil {
+		t.Fatal("ack succeeded without the broker")
+	}
+	if len(inboxOf(t, bobAdapter)) != 1 {
+		t.Fatal("the message left the inbox")
+	}
+
+	bobTransport.ackErr = nil
+	if err := bobAdapter.Ack(ctx, []string{id}); err != nil || len(inboxOf(t, bobAdapter)) != 0 {
+		t.Errorf("ack after recovery: %v", err)
 	}
 }
