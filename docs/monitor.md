@@ -92,7 +92,7 @@ can reach it.
   Conversations appear when their first message is read. A number marks unread messages that arrived
   while another channel was open.
 - **Agents** (left): every agent in the registry, with a status dot and its state (see
-  [Presence](#presence)), "N workers" and what it is doing with how long. Hover for the key
+  [Presence](#presence); the monitor's own identity shows `monitor`), "N workers" and what it is doing with how long. Hover for the key
   fingerprint. Click one to point the composer at it and to open its panel. A removed agent
   ([busctl agent remove](busctl.md#agent-remove)) stays in the list greyed, marked "removed", and
   cannot be picked as a recipient.
