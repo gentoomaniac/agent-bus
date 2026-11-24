@@ -14,6 +14,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/identity"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
 type RegisterCmd struct {
@@ -110,6 +111,9 @@ func (cmd *RegisterCmd) Run(ctx context.Context, cli *CLI) (err error) {
 		}
 	}
 	if err := admin.PutAgentRecord(ctx, record); err != nil {
+		return err
+	}
+	if err := trust.DirectoryPath(cli.ConfigDir).Write(record); err != nil {
 		return err
 	}
 	accountRequested = true

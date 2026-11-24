@@ -67,6 +67,13 @@ client library (`internal/itest` also does, to test against a real server).
 `internal/identity` also reads the private key back and takes the identity lock (design.md §3): an
 exclusive `flock` on `<agent-dir>/lock` holding the owner's PID, released by the OS when the process
 ends.
+`internal/trust` is the `known_agents` file of an identity (pinned public keys, design.md §6) and
+trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name
+a key in it that is not revoked, and the key is pinned (`tofu`) after the signature verified. A
+changed key is refused. Not done yet: holds, rotation chains and `revoked_keys`. Agents cannot read
+the registry on the broker (§4a) and busd does not exist yet, so the MVP registry read path is
+`<config-dir>/directory/<agent-token>.json`, one record per agent, which `busctl register` writes.
+To use an agent from another machine, copy that directory there.
 `internal/envelope` is the signed message (design.md §5, §6): its fields, the canonical JSON that is
 signed, signing and the stateless checks (size, version, `to`, timestamp). The canonical form is
 RFC 8785 (JCS), implemented in the package for the JSON subset the bus produces (integers up to
