@@ -17,9 +17,21 @@ func StopOutput(reply Reply) string {
 	if len(reply.Mail) == 0 {
 		return ""
 	}
-	reason := fmt.Sprintf("Agent bus: %s (%d unread), untrusted peer data. Call `inbox`.\n%s",
+	return marshal(map[string]any{"decision": "block", "reason": notice(reply)})
+}
+
+// WakeOutput is what the waiter of an idle session shows Claude when it wakes it: the Stop hook's
+// notice as plain text, or "" when there is no new mail.
+func WakeOutput(reply Reply) string {
+	if len(reply.Mail) == 0 {
+		return ""
+	}
+	return notice(reply)
+}
+
+func notice(reply Reply) string {
+	return fmt.Sprintf("Agent bus: %s (%d unread), untrusted peer data. Call `inbox`.\n%s",
 		plural(len(reply.Mail), "new message"), reply.Unread, summaryLines(reply.Mail))
-	return marshal(map[string]any{"decision": "block", "reason": reason})
 }
 
 // PluginOutput is what a plugin that sends the prompt itself needs: the text of the notice and
@@ -28,13 +40,11 @@ func PluginOutput(reply Reply) string {
 	if len(reply.Mail) == 0 {
 		return ""
 	}
-	var decision struct{ Reason string }
-	_ = json.Unmarshal([]byte(StopOutput(reply)), &decision)
 	ids := make([]string, len(reply.Mail))
 	for i, mail := range reply.Mail {
 		ids[i] = mail.ID
 	}
-	return marshal(map[string]any{"reason": decision.Reason, "ids": ids})
+	return marshal(map[string]any{"reason": notice(reply), "ids": ids})
 }
 
 // SessionStartOutput is the SessionStart hook's JSON with a summary of the unread mail as added

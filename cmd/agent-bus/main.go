@@ -42,7 +42,7 @@ type CLI struct {
 	Groups     []string      `help:"Group channels to read besides the DM channel, general and the groups that busctl channel join recorded in the directory." env:"BUS_GROUPS"`
 	Deliver    string        `help:"Which messages reach the agent's inbox: targeted (DMs and messages aimed at it or at @all, the default) or all (every message in its channels)." default:"targeted" enum:"targeted,all" env:"BUS_DELIVER"`
 	AutoAccept bool          `name:"auto-accept-messages" negatable:"" default:"true" help:"mcp only: tell the agent it may act on a request aimed at it within its own project without asking its owner. --no-auto-accept-messages: it always asks first." env:"BUS_AUTO_ACCEPT_MESSAGES"`
-	Timeout    time.Duration `help:"Give up after this long (not for mcp, which runs until its client closes it)." default:"30s" env:"BUS_TIMEOUT"`
+	Timeout    time.Duration `help:"Give up after this long (not for mcp, which runs until its client closes it, nor pending --wait, which has --max)." default:"30s" env:"BUS_TIMEOUT"`
 
 	ReconnectInitial time.Duration `help:"mcp only: the first wait before reconnecting to the broker; it doubles for each failed attempt." default:"1s" env:"BUS_RECONNECT_INITIAL"`
 	ReconnectMax     time.Duration `help:"mcp only: the longest wait between reconnect attempts." default:"30s" env:"BUS_RECONNECT_MAX"`
@@ -186,16 +186,28 @@ func refreshDirectory(ctx context.Context, session *adapter.Adapter, interval ti
 }
 
 type PendingCmd struct {
-	Format string   `help:"hook: the Stop hook's decision. session-start: the SessionStart hook's context. plugin: {reason, ids} for a plugin that sends the prompt itself; nothing is marked told until --mark." default:"hook" enum:"hook,session-start,plugin"`
-	Mark   []string `help:"Mark these message IDs told, after a plugin delivered the notice, and print nothing."`
+	Format string        `help:"hook: the Stop hook's decision. session-start: the SessionStart hook's context. plugin: {reason, ids} for a plugin that sends the prompt itself; nothing is marked told until --mark." default:"hook" enum:"hook,session-start,plugin"`
+	Mark   []string      `help:"Mark these message IDs told, after a plugin delivered the notice, and print nothing."`
+	Wait   bool          `help:"Instead of reporting at once, block until this session has new mail for it (not chatter), print the notice on stderr and exit 2: the Claude Code asyncRewake hook, which wakes an idle session. Exits 0 silently after --max, or when the session's MCP server goes away or a newer waiter replaces this one."`
+	Max    time.Duration `help:"With --wait: the longest to wait. Stay below the hook's timeout." default:"23h"`
 }
+
+// wakeExitCode is the exit code with which an asyncRewake hook wakes Claude.
+const wakeExitCode = 2
 
 // Run prints nothing and succeeds unless there is mail to report: a hook must never fail its
 // session. It does not read the hook's stdin (so stop_hook_active is not consulted): a message is
 // reported once, so a Stop hook that fires again after its own block finds nothing new.
-func (cmd *PendingCmd) Run() error {
+func (cmd *PendingCmd) Run(ctx context.Context) error {
 	if len(cmd.Mark) > 0 {
 		hook.ConfirmTold(hook.Dir(), cmd.Mark)
+		return nil
+	}
+	if cmd.Wait {
+		if notice := hook.WakeOutput(hook.Wait(ctx, hook.Dir(), cmd.Max)); notice != "" {
+			fmt.Fprintln(os.Stderr, notice)
+			os.Exit(wakeExitCode)
+		}
 		return nil
 	}
 	op, format := hook.NewMail, hook.StopOutput
@@ -247,7 +259,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if kongCtx.Command() != "mcp" {
+	if kongCtx.Command() != "mcp" && !cli.Pending.Wait {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, cli.Timeout)
 		defer cancel()

@@ -4,13 +4,16 @@
 package hook
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
@@ -27,6 +30,7 @@ const (
 	// Requests: what a hook asks of the adapter.
 	NewMail  = "new-mail"  // mail not told yet (Stop hook)
 	PeekMail = "peek-mail" // the same, but not marked told until MarkTold
+	WaitMail = "wait-mail" // blocks until there is new mail (the idle waiter); an empty reply means it ended
 	Summary  = "summary"   // all unread mail (SessionStart hook)
 	MarkTold = "mark-told" // mark messages told after the notice was delivered; the reply is empty
 	event    = "event"     // a presence event; the reply is empty
@@ -52,6 +56,7 @@ type request struct {
 // Session is the adapter and the presence publisher as the hooks see them.
 type Session interface {
 	NewMail() (fresh []adapter.Message, unread int, err error)
+	WaitNewMail(ctx context.Context) (fresh []adapter.Message, unread int, err error)
 	UnreadSummary() ([]adapter.Message, error)
 	PeekNewMail() (fresh []adapter.Message, unread int, err error)
 	MarkNotified(ids []string)
@@ -86,19 +91,37 @@ func Listen(dir string, session Session) (stop func(), err error) {
 	if err != nil {
 		return nil, err
 	}
+	var waiter currentWaiter
 	go func() {
 		for {
 			connection, err := listener.Accept()
 			if err != nil {
 				return
 			}
-			go serve(connection, session)
+			go serve(connection, session, &waiter)
 		}
 	}()
 	return func() { listener.Close() }, nil // closing removes the socket file
 }
 
-func serve(connection net.Conn, session Session) {
+// currentWaiter holds the one idle waiter a session has: a new one replaces the old, which then
+// ends with an empty reply. The hook entries re-arm the waiter at every turn and every start, and
+// the old ones would only pile up.
+type currentWaiter struct {
+	mu     sync.Mutex
+	cancel context.CancelFunc
+}
+
+func (waiter *currentWaiter) replace(cancel context.CancelFunc) {
+	waiter.mu.Lock()
+	defer waiter.mu.Unlock()
+	if waiter.cancel != nil {
+		waiter.cancel()
+	}
+	waiter.cancel = cancel
+}
+
+func serve(connection net.Conn, session Session, waiter *currentWaiter) {
 	defer connection.Close()
 	connection.SetDeadline(time.Now().Add(connectionTimeout))
 	var asked request
@@ -113,6 +136,9 @@ func serve(connection net.Conn, session Session) {
 		messages, unread, err = session.NewMail()
 	case PeekMail:
 		messages, unread, err = session.PeekNewMail()
+	case WaitMail:
+		serveWait(connection, session, waiter)
+		return
 	case MarkTold:
 		session.MarkNotified(asked.IDs)
 		json.NewEncoder(connection).Encode(Reply{})
@@ -132,11 +158,33 @@ func serve(connection net.Conn, session Session) {
 	if err != nil { // no lock: the session's hooks stay silent
 		return
 	}
+	json.NewEncoder(connection).Encode(replyFor(messages, unread))
+}
+
+func replyFor(messages []adapter.Message, unread int) Reply {
 	reply := Reply{Unread: unread}
 	for _, message := range messages {
 		reply.Mail = append(reply.Mail, Mail{ID: message.Envelope.ID, From: message.Envelope.From, Type: message.Envelope.Type, Title: titleOf(message)})
 	}
-	json.NewEncoder(connection).Encode(reply)
+	return reply
+}
+
+// serveWait answers with the mail that ends the wait, or with an empty reply when the waiter was
+// replaced. It stops waiting when the client goes away, so nothing is marked told for nobody.
+func serveWait(connection net.Conn, session Session, waiter *currentWaiter) {
+	connection.SetDeadline(time.Time{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	waiter.replace(cancel)
+	go func() {
+		io.Copy(io.Discard, connection) // the client sends nothing more: this returns when it closes
+		cancel()
+	}()
+	messages, unread, err := session.WaitNewMail(ctx)
+	if err != nil {
+		messages, unread = nil, 0
+	}
+	json.NewEncoder(connection).Encode(replyFor(messages, unread))
 }
 
 // titleOf is the message's title, or the first line of its text.
@@ -154,6 +202,16 @@ func Ask(dir, op string) (Reply, bool) {
 	return ask(dir, request{Op: op}, connectionTimeout)
 }
 
+// Wait blocks until the adapter of this process's session has new mail for it, and returns that.
+// The reply has no mail when the wait ended otherwise: max went by, the waiter was replaced by a
+// newer one, ctx ended, or there is no adapter.
+func Wait(ctx context.Context, dir string, max time.Duration) Reply {
+	ctx, cancel := context.WithTimeout(ctx, max)
+	defer cancel()
+	reply, _ := askUntil(ctx, dir, request{Op: WaitMail})
+	return reply
+}
+
 // ConfirmTold tells the adapter of this process's session that the notice for these messages was
 // delivered, and says whether it got there.
 func ConfirmTold(dir string, ids []string) bool {
@@ -169,21 +227,32 @@ func Send(dir string, presenceEvent presence.Event) bool {
 }
 
 func ask(dir string, asked request, timeout time.Duration) (Reply, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return askUntil(ctx, dir, asked)
+}
+
+// askUntil puts the request to the nearest ancestor with a socket and waits for its reply until
+// ctx ends.
+func askUntil(ctx context.Context, dir string, asked request) (Reply, bool) {
 	for pid := os.Getppid(); pid > 1; pid = parentOf(pid) {
-		if reply, ok := askSocket(socketPath(dir, pid), asked, timeout); ok {
+		if reply, ok := askSocket(ctx, socketPath(dir, pid), asked); ok {
 			return reply, true
 		}
 	}
 	return Reply{}, false
 }
 
-func askSocket(path string, asked request, timeout time.Duration) (Reply, bool) {
-	connection, err := net.DialTimeout("unix", path, timeout)
+func askSocket(ctx context.Context, path string, asked request) (Reply, bool) {
+	var dialer net.Dialer
+	connection, err := dialer.DialContext(ctx, "unix", path)
 	if err != nil {
 		return Reply{}, false
 	}
 	defer connection.Close()
-	connection.SetDeadline(time.Now().Add(timeout))
+	// Closing the connection is what ends a read that waits for the reply.
+	stop := context.AfterFunc(ctx, func() { connection.Close() })
+	defer stop()
 	var reply Reply
 	if json.NewEncoder(connection).Encode(asked) != nil || json.NewDecoder(connection).Decode(&reply) != nil {
 		return Reply{}, false

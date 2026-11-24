@@ -64,6 +64,8 @@ type fakeSession struct {
 	events []presence.Event
 	marked []string
 	titled string
+	// mailForWaiter ends a WaitNewMail with the mail sent on it, like mail arriving at the adapter.
+	mailForWaiter chan []adapter.Message
 }
 
 func (session *fakeSession) NewMail() ([]adapter.Message, int, error) {

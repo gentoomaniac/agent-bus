@@ -113,6 +113,9 @@ type Adapter struct {
 	closingRate rateLimiter
 
 	notifications notifications
+	// arrival is closed, then dropped, when mail that targets the agent is buffered, to wake
+	// WaitNewMail. It is made on demand.
+	arrival chan struct{}
 	// contextDropped counts the context messages dropped for room since TakeContextDropped.
 	contextDropped int
 	acked          map[string]bool // IDs of the messages this agent sent an ack reply to
@@ -708,6 +711,10 @@ func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delive
 		}
 	}
 	adapter.inbox.add(message)
+	if message.TargetsMe && adapter.arrival != nil {
+		close(adapter.arrival)
+		adapter.arrival = nil
+	}
 	return nil
 }
 
