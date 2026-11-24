@@ -82,6 +82,9 @@ type InboxQuery struct {
 	Channel *bus.Channel
 	// NewOnly leaves out the messages an earlier Inbox call already listed.
 	NewOnly bool
+	// Peek lists without counting as the agent having seen the messages: they are not marked
+	// returned and do not become the parent of its next reply.
+	Peek bool
 }
 
 // Adapter is one agent's session on the bus.
@@ -637,6 +640,9 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 	})
 	if query.Limit > 0 && len(listed) > query.Limit {
 		listed = listed[:query.Limit]
+	}
+	if query.Peek {
+		return listed, nil
 	}
 	for _, message := range listed {
 		adapter.inbox.findByID(message.Envelope.ID).returned = true

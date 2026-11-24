@@ -650,6 +650,18 @@ func TestSendWarnsWhenTheAutomaticMarkReadFails(t *testing.T) {
 	}
 }
 
+func TestMarkReadAllLeavesASkippedRequestNewForWait(t *testing.T) {
+	b := newTestBus(t, alice, bob)
+	a, bobClient := b.connect(alice), b.connect(bob)
+	send(t, a, bob, map[string]any{"type": "request", "body": map[string]any{"text": "do it"}})
+	for decode[markReadOut](t, call(t, bobClient, "mark_read", map[string]any{"all": true})).Unanswered == 0 {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if fresh := decode[messagesOut](t, call(t, bobClient, "wait_for_messages", map[string]any{"timeout_s": 5})); len(fresh.Messages) != 1 {
+		t.Errorf("wait after mark_read all = %+v, want the request the agent never saw", fresh)
+	}
+}
+
 func TestPluralWording(t *testing.T) {
 	if got := plural(1, "message"); got != "1 message" {
 		t.Errorf("plural(1) = %q", got)

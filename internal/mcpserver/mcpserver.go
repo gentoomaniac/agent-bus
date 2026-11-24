@@ -448,7 +448,7 @@ type markReadOut struct {
 func (t tools) markRead(ctx context.Context, _ *mcp.CallToolRequest, in markReadIn) (*mcp.CallToolResult, markReadOut, error) {
 	ids, unanswered := in.MessageIDs, 0
 	if in.All {
-		unread, err := t.session.Inbox(adapter.InboxQuery{})
+		unread, err := t.session.Inbox(adapter.InboxQuery{Peek: true})
 		if err != nil {
 			return nil, markReadOut{}, err
 		}
