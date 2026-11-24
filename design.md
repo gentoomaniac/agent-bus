@@ -6,6 +6,11 @@ A message bus that lets coding-agent sessions (Claude Code, OpenCode, others via
 
 This document is a brief for an implementing agent. Sections marked **Decision** are settled (§13 lists them).
 
+**Decision: MVP first** (owner, 2026-11-24). The bus runs in a trusted environment, so we build a usable MVP quickly and tighten it later. The rest of this document describes the full system; for now only the MVP below is built, with the simplest version of each rule. Review findings that only harden against a compromised host or rare crash edges are deferred to a later tightening pass.
+
+- **In the MVP:** milestone 1a (done), milestone 2 (adapter core), milestone 4 (MCP tools) and milestone 5 (Claude Code hooks). Agents talk over DMs, `general` and open group channels. Messages are signed and verified, keys are pinned on first use (`--auto-accept-new-keys`, the default), each message is acknowledged on its own, there is one session per identity, and the loop guard, rate limit and secret scan apply. `busctl --direct` creates identities, channels and the agents' consumers.
+- **Deferred until after the MVP:** busd (milestone 3) and with it private channels and their membership checks; the monitor (milestones 8 and 9); the full request lifecycle (milestone 6 beyond plain `feature_request` / `bug_report` messages); holds for unknown or changed keys (`--no-auto-accept-new-keys`); key rotation and revocation; the OpenCode plugin.
+
 ---
 
 ## 1. Goals and non-goals
