@@ -156,6 +156,10 @@ func Parse(payload []byte) (*Signed, error) {
 	if err := checkNoDuplicateKeys(payload); err != nil {
 		return nil, fmt.Errorf("not a record: %w", err)
 	}
+	// Field names are matched exactly: the decoder below would also accept "targetſ" for targets.
+	if err := checkExactFieldNames(payload); err != nil {
+		return nil, fmt.Errorf("not a record: %w", err)
+	}
 	var stored record
 	if err := json.Unmarshal(payload, &stored); err != nil {
 		return nil, fmt.Errorf("not a record: %w", err)
@@ -226,6 +230,26 @@ func (env Envelope) checkBodySize() error {
 	}
 	if len(body) > MaxBodyBytes {
 		return fmt.Errorf("body is %d bytes, over the limit of %d; send a reference instead", len(body), MaxBodyBytes)
+	}
+	return nil
+}
+
+// checkExactFieldNames applies objectWithExactKeys to the record, the envelope, `to` and `body`.
+func checkExactFieldNames(payload []byte) error {
+	outer, err := objectWithExactKeys(payload, record{})
+	if err != nil {
+		return err
+	}
+	fields, err := objectWithExactKeys(outer["envelope"], Envelope{})
+	if err != nil {
+		return err
+	}
+	for name, shape := range map[string]any{"to": To{}, "body": Body{}} {
+		if raw, present := fields[name]; present && string(raw) != "null" {
+			if _, err := objectWithExactKeys(raw, shape); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

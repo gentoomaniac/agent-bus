@@ -242,7 +242,7 @@ func TestCheckNoDuplicateKeys(t *testing.T) {
 			t.Errorf("%s: %v, want nil", ok, err)
 		}
 	}
-	for _, bad := range []string{`{"a":1,"a":2}`, `{"a":{"b":1,"b":2}}`, `[{"a":1,"a":1}]`, `{"body":1,"Body":2}`, `{"a":1} {}`} {
+	for _, bad := range []string{`{"a":1,"a":2}`, `{"a":{"b":1,"b":2}}`, `[{"a":1,"a":1}]`, `{"body":1,"Body":2}`, `{"targets":1,"targetſ":2}`, `{"k":1,"K":2}`, `{"a":1} {}`} {
 		if checkNoDuplicateKeys([]byte(bad)) == nil {
 			t.Errorf("%s: nil, want error", bad)
 		}
@@ -364,5 +364,25 @@ func TestParseValidatesTheSchema(t *testing.T) {
 	// A field this version does not know is ignored, and still covered by the signature.
 	if _, err := Parse(recordOf(strings.Replace(validEnvelope, `"hops":0`, `"hops":0,"future":{"x":1}`, 1))); err != nil {
 		t.Errorf("an unknown field was refused: %v", err)
+	}
+}
+
+func TestFieldNamesMustMatchExactly(t *testing.T) {
+	for name, change := range map[string][2]string{
+		"upper-case envelope field":     {`"targets":`, `"Targets":`},
+		"Unicode-folded envelope field": {`"targets":`, `"targetſ":`},
+		"Kelvin sign in key_fp":         {`"key_fp":`, `"\u212aey_fp":`},
+		"to field":                      {`"kind":`, `"Kind":`},
+		"body field":                    {`"text":`, `"Text":`},
+		"outer field":                   {`"envelope":`, `"Envelope":`},
+	} {
+		raw := strings.Replace(validEnvelope, change[0], change[1], 1)
+		record := recordOf(raw)
+		if name == "outer field" {
+			record = []byte(strings.Replace(string(record), `"envelope":`, `"Envelope":`, 1))
+		}
+		if _, err := Parse(record); err == nil {
+			t.Errorf("%s: the envelope was parsed", name)
+		}
 	}
 }

@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -161,6 +163,46 @@ func writeString(out *bytes.Buffer, text string) {
 	out.WriteByte('"')
 }
 
+// foldKey maps every rune to the smallest of its case-folding orbit (what strings.EqualFold treats
+// as equal), so keys that Go's decoder would merge get the same result.
+func foldKey(key string) string {
+	return strings.Map(func(r rune) rune {
+		smallest := r
+		for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
+			smallest = min(smallest, folded)
+		}
+		return smallest
+	}, key)
+}
+
+// objectWithExactKeys reads a JSON object whose keys the decoder will map onto the fields of
+// shape's struct type and refuses a key that is not a field's exact name but would be read as one
+// (another case, or a Unicode fold like "targetſ"). Other readers match names exactly and would
+// not see the field. Unknown keys that are no alias of a field are fine.
+func objectWithExactKeys(raw []byte, shape any) (map[string]json.RawMessage, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	var fields []string
+	shapeType := reflect.TypeOf(shape)
+	for i := 0; i < shapeType.NumField(); i++ {
+		name, _, _ := strings.Cut(shapeType.Field(i).Tag.Get("json"), ",")
+		fields = append(fields, name)
+	}
+	for key := range object {
+		if slices.Contains(fields, key) {
+			continue
+		}
+		for _, field := range fields {
+			if strings.EqualFold(key, field) {
+				return nil, fmt.Errorf("key %q is an alias of the field %q: field names must match exactly", key, field)
+			}
+		}
+	}
+	return object, nil
+}
+
 // checkNoDuplicateKeys walks the JSON value in raw and fails if any object repeats a key.
 func checkNoDuplicateKeys(raw []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -191,14 +233,14 @@ func walkNoDuplicates(decoder *json.Decoder) error {
 			if err != nil {
 				return err
 			}
-			// encoding/json matches struct fields case-insensitively, so "body" and "Body"
-			// count as the same key.
+			// encoding/json matches struct fields by Unicode case folding, so "body", "Body" and
+			// "BODY" are the same key to it, and so are "targets" and "targetſ".
 			key, _ := keyToken.(string)
-			key = strings.ToLower(key)
-			if seen[key] {
+			folded := foldKey(key)
+			if seen[folded] {
 				return fmt.Errorf("duplicate key %q", key)
 			}
-			seen[key] = true
+			seen[folded] = true
 			if err := walkNoDuplicates(decoder); err != nil {
 				return err
 			}
