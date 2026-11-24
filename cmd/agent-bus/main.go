@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/hook"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/mcpserver"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 	"github.com/alecthomas/kong"
@@ -26,7 +28,7 @@ import (
 )
 
 type CLI struct {
-	Agent     string        `help:"The identity to act as, <name>@<owner>." required:"" aliases:"identity" env:"BUS_AGENT"`
+	Agent     string        `help:"The identity to act as, <name>@<owner>. Required except for pending." aliases:"identity" env:"BUS_AGENT"`
 	ConfigDir string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
 	Broker    string        `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
 	CACert    string        `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
@@ -38,6 +40,7 @@ type CLI struct {
 	Inbox   InboxCmd   `cmd:"" help:"Fetch new mail and print the unread messages as JSON."`
 	Ack     AckCmd     `cmd:"" help:"Fetch new mail and acknowledge the given message IDs."`
 	MCP     MCPCmd     `cmd:"" name:"mcp" help:"Serve the adapter as an MCP server on stdin and stdout."`
+	Pending PendingCmd `cmd:"" help:"For a harness hook: report this session's new mail. Asks the session's MCP server, no identity needed."`
 }
 
 type MessageFlags struct {
@@ -115,7 +118,35 @@ func (cmd *AckCmd) Run(ctx context.Context, session *adapter.Adapter) error {
 type MCPCmd struct{}
 
 func (cmd *MCPCmd) Run(ctx context.Context, session *adapter.Adapter) error {
+	// Only the lock holder answers hooks; a failure here only costs the end-of-turn check.
+	if session.Ready() == nil {
+		if stop, err := hook.Listen(hook.Dir(), session); err != nil {
+			log.Printf("agent-bus: no hook socket: %v", err)
+		} else {
+			defer stop()
+		}
+	}
 	return mcpserver.Serve(ctx, session, &mcp.StdioTransport{})
+}
+
+type PendingCmd struct {
+	Format string `help:"hook: the Stop hook's decision. session-start: the SessionStart hook's context." required:"" enum:"hook,session-start"`
+}
+
+// Run prints nothing and succeeds unless there is mail to report: a hook must never fail its
+// session. It does not read the hook's stdin (so stop_hook_active is not consulted): a message is
+// reported once, so a Stop hook that fires again after its own block finds nothing new.
+func (cmd *PendingCmd) Run() error {
+	op, format := hook.NewMail, hook.StopOutput
+	if cmd.Format == "session-start" {
+		op, format = hook.Summary, hook.SessionStartOutput
+	}
+	if reply, ok := hook.Ask(hook.Dir(), op); ok {
+		if output := format(reply); output != "" {
+			fmt.Println(output)
+		}
+	}
+	return nil
 }
 
 func main() {
@@ -130,17 +161,21 @@ func main() {
 		defer cancel()
 	}
 
-	session, closeSession, err := cli.open()
-	kongCtx.FatalIfErrorf(err)
-	defer closeSession()
-
 	kongCtx.BindTo(ctx, (*context.Context)(nil))
-	kongCtx.Bind(session)
+	if kongCtx.Command() != "pending" {
+		session, closeSession, err := cli.open()
+		kongCtx.FatalIfErrorf(err)
+		defer closeSession()
+		kongCtx.Bind(session)
+	}
 	kongCtx.FatalIfErrorf(kongCtx.Run())
 }
 
 // open connects as the agent and takes the identity. closeSession releases both.
 func (cli *CLI) open() (session *adapter.Adapter, closeSession func(), err error) {
+	if cli.Agent == "" {
+		return nil, nil, errors.New("--agent is required")
+	}
 	if err := bus.ValidateAgentID(cli.Agent); err != nil {
 		return nil, nil, err
 	}

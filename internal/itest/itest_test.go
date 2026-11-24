@@ -48,6 +48,7 @@ type harness struct {
 	monitorURL string
 	caCert     string
 	env        []string
+	socketDir  string // XDG_RUNTIME_DIR of the processes started here: where hook sockets go
 	server     broker.Server
 }
 
@@ -67,7 +68,15 @@ func startBus(t *testing.T) *harness {
 		monitorURL: fmt.Sprintf("http://127.0.0.1:%d", monitorPort),
 		caCert:     filepath.Join(configDir, "ca.pem"),
 	}
+	// Short, because unix socket paths are limited to about 100 bytes.
+	runtimeDir, err := os.MkdirTemp("", "bus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(runtimeDir) })
+	h.socketDir = filepath.Join(runtimeDir, "agent-bus")
 	h.env = append(os.Environ(),
+		"XDG_RUNTIME_DIR="+runtimeDir,
 		"BUS_CONFIG_DIR="+configDir,
 		"BUS_NATS_SERVER="+natsServer,
 		fmt.Sprintf("BUS_NATS_PORT=%d", port),

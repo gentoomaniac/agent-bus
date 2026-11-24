@@ -102,6 +102,45 @@ naming the identity and the holder's PID. Not in the MVP: `join`/`leave` (use
 `busctl --direct channel join`), `history`, `requests`, private channels, `list_agents`, and an
 `inbox` filter by channel.
 
+### Delivery hooks
+
+An agent only sees mail when it calls a tool, so two Claude Code hooks tell it. Add them to the
+project's `.claude/settings.json` (or `.claude/settings.local.json`), next to the `claude mcp add`
+registration above; nothing here edits your settings for you:
+
+    {
+      "hooks": {
+        "Stop": [
+          {"hooks": [{"type": "command", "command": "agent-bus pending --format=hook"}]}
+        ],
+        "SessionStart": [
+          {"hooks": [{"type": "command", "command": "agent-bus pending --format=session-start"}]}
+        ]
+      }
+    }
+
+`agent-bus` must be on the path of the hook (or use an absolute path). The hooks need no `--agent`:
+`pending` does not open the identity, it asks the MCP server of its own session. That server (the
+lock holder only) listens on `$XDG_RUNTIME_DIR/agent-bus/<pid>.sock` (directory mode 0700, else
+`/tmp/agent-bus-<uid>/`), named after its parent process, Claude Code. The hook walks up its own
+process ancestors, through `/proc` (Linux only), to the first PID with a socket. So each session
+only ever reaches its own adapter, and a session whose adapter lost the identity lock, or has none,
+gets silence. The socket is removed when the server ends.
+
+- `Stop`: when the adapter holds mail it has not reported yet, the hook prints
+  `{"decision":"block","reason":...}` and Claude continues instead of stopping. The reason gives the
+  count and up to five one-line summaries (sender, type, title, each marked UNTRUSTED, never the
+  message text) and tells Claude to call `inbox`. Each message is reported once, so the hook that
+  fires again after its own block is silent; this also stands in for `stop_hook_active`, which the
+  hook does not read. Reports are at least 10 seconds apart (design.md §8 rule 3); held-back mail
+  is reported by the next hook. If the session goes idle right after, that mail waits for the
+  next turn or session; `inbox` lists it all along.
+- `SessionStart`: prints `additionalContext` with the unread mail, if any. The hook races the MCP
+  server's start, so on a session's very first moments it may find no adapter or an empty inbox.
+
+Every failure (no socket, no answer within 2 seconds, nothing to report) is exit 0 with no output.
+An idle, stopped session is still not woken (design.md §7).
+
 ## Code layout
 
 `internal/bus` holds the broker-neutral model and the two interfaces (`Transport`, `Admin`).
@@ -135,6 +174,7 @@ holder's PID. Alerts go to `alerts.log` only; `busctl alerts` does not exist yet
 The adapter also remembers, in memory, which buffered messages the delivery hooks already told the
 agent about (`NewMail`, `UnreadSummary`): new mail is reported once, and not again within 10 seconds
 of the last report (design.md §8 rule 3; held-back mail is reported by the next call).
+`internal/hook` is the socket between the MCP server and the hooks, and the hook output formats.
 `internal/mcpserver` is the MCP server of one adapter session (official Go SDK, pinned in `go.mod`).
 `internal/trust` is the `known_agents` file of an identity (pinned public keys, design.md §6) and
 trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name
@@ -186,5 +226,9 @@ install`), then starts and stops its own server (temporary config directory, ran
 - `agent-bus mcp` as a real stdio process (`mcp_test.go`): alice's `send` reaches bob's
   `wait_for_messages` framed as untrusted and bob acks it; a second server on one identity fails
   every tool and names the holder; SIGTERM ends a server and frees the identity.
+- The hooks (`hook_test.go`): `agent-bus pending --format=hook` as a child of the same process as
+  an MCP server is silent without mail, blocks once for a message from another session without
+  its text, then is silent; `session-start` summarises it; mail for a second session (another
+  parent PID) is not reported to the first; the sockets are gone when both servers end.
 - The registry and catalogue hold what `register` and `channel create` wrote; `busctl` needs
   `--direct`, refuses a second registration and gives up on a dead broker.
