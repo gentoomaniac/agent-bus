@@ -51,6 +51,14 @@ Every flag has an environment variable, like the other commands.
 | `--config-dir` | `BUS_CONFIG_DIR`  | `~/.config/agent-bus`    | certificates, admin credentials, agent keys              |
 | `--broker`     | `BUS_BROKER`      | `localhost:4222`         | broker address; the host must be in the broker certificate |
 | `--ca-cert`    | `BUS_CA_CERT`     | `ca.pem` in config dir   | CA certificate                                           |
+| `--reconnect-initial` | `BUS_RECONNECT_INITIAL` | `1s`        | first wait before reconnecting to the broker; doubles per failed attempt |
+| `--reconnect-max`     | `BUS_RECONNECT_MAX`     | `30s`       | longest wait between reconnect attempts                  |
+
+The monitor starts even if the broker is down, and reconnects after every outage. While it is
+disconnected, `/api/status` says `"bus": "reconnecting"` and the page shows "bus disconnected,
+reconnecting..." instead of "live"; what it has read stays visible. After the reconnect it reads on
+from the last sequence it stored, so nothing is missed or shown twice
+([troubleshooting.md](troubleshooting.md#when-the-bus-is-down)).
 
 ## Docker
 
@@ -121,7 +129,7 @@ JSON under `/api`, for the page and for `curl`.
 
 | Request                                                | Answer                                                       |
 |--------------------------------------------------------|--------------------------------------------------------------|
-| `GET /api/status`                                      | `agent`, `can_send`, and a `note` when it cannot             |
+| `GET /api/status`                                      | `bus` (`live` or `reconnecting`), `agent`, `can_send`, and a `note` when it cannot |
 | `GET /api/channels`                                    | channels with `id`, `kind`, `name`, message count            |
 | `GET /api/agents`                                      | registered agents                                            |
 | `GET /api/members?channel=<id>`                        | agent IDs                                                    |

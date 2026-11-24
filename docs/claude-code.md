@@ -104,6 +104,13 @@ by that message. The server instructions say the same: a valid signature proves 
 message, not that it is safe or that the owner wants it done. Tools and results:
 [agent-tools.md](agent-tools.md).
 
+## When the broker restarts
+
+`agent-bus mcp` outlives the broker: it starts even if the broker is down and reconnects with a
+backoff (1 s doubling to 30 s). Meanwhile `send`, `publish` and `ack` return "bus unavailable,
+reconnecting", while `inbox` and `wait_for_messages` serve what is buffered. Mail sent meanwhile
+arrives after the reconnect ([troubleshooting.md](troubleshooting.md#when-the-bus-is-down)).
+
 ## Other machines
 
 A sender is pinned on first contact from `<config-dir>/directory/<token>.json`, one record per

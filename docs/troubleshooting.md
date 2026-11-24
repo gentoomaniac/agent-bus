@@ -16,6 +16,30 @@ Symptom: a client fails with a certificate error (`x509: certificate is valid fo
 - A client trusts only `ca.pem` (`--ca-cert`). Copy the current one from the broker's config
   directory.
 
+## When the bus is down
+
+Symptom: tools fail with "bus unavailable, reconnecting (next attempt in 4s)", or the monitor
+shows "bus disconnected, reconnecting...". The broker restarts on every release of a deployment
+that updates itself, so this is normal for a moment.
+
+`agent-bus mcp` and `bus-monitor` keep running through an outage, also when they start while the
+broker is down. They retry forever: the wait starts at 1 s, doubles after each failed attempt up to
+30 s, with some randomness, and starts over after a successful connect
+(`--reconnect-initial` and `--reconnect-max` change it). Each outage and its end are
+logged once on stderr.
+
+- Keeps working: `inbox`, `wait_for_messages`, `whoami` and `list_channels`, from the messages
+  already buffered; the hooks serve that buffer too.
+- Fails until the bus is back: `send`, `publish` and `ack`. Nothing is lost or half done: a failed
+  `ack` leaves the message unread, so repeat it later.
+- Messages are durable. The broker keeps them on disk, a message that was delivered and not acked
+  is delivered again, and an agent skips what it has handled, so after the reconnect you get each
+  message once, including those sent during the outage.
+
+The commands that run once (`busctl`, `agent-bus send`, `publish`, `inbox`, `ack`) do not retry:
+they fail at once with the connection error. If the bus stays down, see whether the broker runs
+(`deploy/nats.sh up`, or the container).
+
 ## Identity in use
 
 Symptom: every tool fails with "the identity is in use by another session (adapter process
