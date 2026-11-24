@@ -310,6 +310,8 @@ func TestMentionedTargets(t *testing.T) {
 		"mail me at x@o or @alloy":       nil,
 		"line one\n@a@o line two":        {"a@o"},
 		"meeting @all-hands at 3":        nil,
+		"meeting @all_hands at 3":        nil,
+		"@allX and @all@":                nil,
 		"@all, please read":              {"@all"},
 		"@all.":                          {"@all"},
 	} {

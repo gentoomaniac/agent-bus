@@ -13,7 +13,6 @@ import (
 	"math/big"
 	"regexp"
 	"slices"
-	"strings"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
@@ -209,6 +208,9 @@ func (env Envelope) CheckTargets() error {
 	return nil
 }
 
+// mentionWordChar is a character that continues a word, so "@all" followed by it is another word.
+var mentionWordChar = regexp.MustCompile(`[A-Za-z0-9_@-]`)
+
 // mention is an `@<agent-id>` or `@all` token that starts the text or follows a space or
 // punctuation, so the owner part of an ID such as `lib-x@bob` is not read as a mention.
 var mention = regexp.MustCompile(`(?:^|[\s(\[,;:])@([a-z0-9-]+@[a-z0-9-]+|all)`)
@@ -220,15 +222,14 @@ func MentionedTargets(text string) []string {
 	for _, match := range mention.FindAllStringSubmatchIndex(text, -1) {
 		name := text[match[2]:match[3]]
 		if name == "all" {
-			// "@all-hands" or "@all@x" is not "@all": the name must end there.
-			if rest := text[match[3]:]; rest != "" && strings.ContainsAny(rest[:1], "abcdefghijklmnopqrstuvwxyz0123456789-@") {
+			// "@all-hands", "@all_hands" or "@allX" is not "@all": the word must end there.
+			if rest := text[match[3]:]; rest != "" && mentionWordChar.MatchString(rest[:1]) {
 				continue
 			}
 			return []string{TargetAll}
 		}
-		match := []string{"", name}
-		if !slices.Contains(targets, match[1]) {
-			targets = append(targets, match[1])
+		if !slices.Contains(targets, name) {
+			targets = append(targets, name)
 		}
 	}
 	return targets

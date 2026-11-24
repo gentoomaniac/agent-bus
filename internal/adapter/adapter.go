@@ -237,8 +237,9 @@ var ErrBadTargets = errors.New("invalid targets")
 
 // targetsFor fills in the targets of an outgoing message (design.md §5): a DM targets its
 // recipient; in a channel they are the ones given, else the mentions in the text, plus the author
-// of the message being answered; a request or question with none goes to @all. Anything else
-// aimed at nobody is refused.
+// of the message being answered (always for an explicit reply_to, for an inferred parent only on
+// closing and plain messages); a request or question with none goes to @all. Anything else aimed
+// at nobody is refused.
 func (adapter *Adapter) targetsFor(ctx context.Context, to bus.Channel, message Outgoing, replied *parent, explicitReply bool) ([]string, error) {
 	if to.Kind == bus.DM {
 		if message.Targets != nil && !slices.Equal(message.Targets, []string{to.Name}) {
