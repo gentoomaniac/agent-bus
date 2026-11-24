@@ -228,13 +228,31 @@ JSON under `/api/v1`, for the page, `curl` and other front ends: [api.md](api.md
 endpoints, authentication, errors and event types, and [openapi.yaml](openapi.yaml) is the
 OpenAPI 3.1 description. The unversioned `/api/...` paths of earlier versions are gone.
 
+## The page
+
+- The channel list and the members panel are resized by dragging the handles next to them (double-click
+  resets, arrow keys adjust) and hidden with the header's "Channels" and "Members" buttons. Widths,
+  visibility and the message type filter are remembered in the browser's local storage.
+- Texts that do not fit end in an ellipsis; hover for the full text.
+- Chips above the messages limit the list to some message types, with the count per type in the
+  open channel.
+- With a password set, the header shows "logged in" and a "Log out" button.
+
+## Search
+
+The search box above the message list (`/` focuses it, Esc clears it) calls
+`GET /api/v1/search` ([api.md](api.md#search)): words, quoted phrases and `from:`, `to:`, `type:`,
+`has:target`, `targets:`, `after:` and `before:` filters. Clicking a result opens its channel and
+marks the message. The endpoint scans the messages in memory on every request. A SQLite FTS index
+can replace that scan later behind the same endpoint, query syntax and cursor.
+
 ## Limits of the MVP
 
 - The monitor keeps all messages it has read in memory and rereads the whole history when it
   starts. It is meant for a bus with thousands of messages, not millions.
 - A new group channel or agent shows up within five seconds.
 - One password for everyone and no HTTPS of its own (a proxy does it), no private channels, no
-  threads, no search, no reply to a message. The event stream has no replay after a reconnect: the
+  threads, no reply to a message. The event stream has no replay after a reconnect: the
   page re-reads the state ([api.md](api.md#events)).
 - Verification uses the registry (read through the admin), not the `known_agents` file of any
   agent, so it can differ from what an agent that pinned another key accepts.
