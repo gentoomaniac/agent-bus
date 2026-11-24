@@ -64,6 +64,10 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
 `internal/bus` holds the broker-neutral model and the two interfaces (`Transport`, `Admin`).
 `internal/broker` implements them on NATS JetStream and is the only package that imports the NATS
 client library (`internal/itest` also does, to test against a real server).
+`internal/envelope` is the signed message (design.md §5, §6): its fields, the canonical JSON that is
+signed, signing and the stateless checks (size, version, `to`, timestamp). The canonical form is
+RFC 8785 (JCS), implemented in the package for the JSON subset the bus produces (integers up to
+2^53, no floats); a message with other numbers cannot be verified.
 
 ## Tests
 
