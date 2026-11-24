@@ -738,3 +738,18 @@ func TestPublishWarnsOfTargetsThatDoNotReadTheChannel(t *testing.T) {
 		t.Errorf("publish to an unknown channel: %q", text)
 	}
 }
+
+func TestMessagesCarryTheirStreamSequence(t *testing.T) {
+	b := newTestBus(t, alice, bob)
+	a, bobClient := b.connect(alice), b.connect(bob)
+	send(t, a, bob, map[string]any{"body": map[string]any{"text": "one"}})
+	send(t, a, bob, map[string]any{"body": map[string]any{"text": "two"}})
+	var listed messagesOut
+	for len(listed.Messages) < 2 {
+		time.Sleep(50 * time.Millisecond)
+		listed = decode[messagesOut](t, call(t, bobClient, "inbox", nil))
+	}
+	if first, second := listed.Messages[0], listed.Messages[1]; first.Seq == 0 || second.Seq <= first.Seq {
+		t.Errorf("seq = %d, %d, want increasing stream sequences", first.Seq, second.Seq)
+	}
+}

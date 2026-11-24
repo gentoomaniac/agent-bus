@@ -415,3 +415,24 @@ func TestClosingRepliesPassTheHopLimitOnceButNewMessagesDoNot(t *testing.T) {
 		t.Error("a closing reply to a closing reply went past the limit")
 	}
 }
+
+func TestInboxKeepsStreamOrderWithinAThreadAndListsTargetedThreadsFirst(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	b.register(carol)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob, deliverAll)
+	chatter := publishTo(t, a, "general", aimedAt("message", "other topic", carol))
+	parent := publishTo(t, a, "general", aimedAt("message", "context for carol", carol))
+	reply := publishTo(t, a, "general", Outgoing{Type: "answer", Body: envelope.Body{Text: "to bob"}, Targets: []string{bob}, ReplyTo: parent})
+	poll(t, bobAdapter)
+
+	got := inboxIDs(t, bobAdapter)
+	if want := []string{parent, reply, chatter}; !slices.Equal(got, want) {
+		t.Errorf("inbox = %v, want the thread of the targeted reply, in stream order, first: %v", got, want)
+	}
+	if bobAdapter.recent.id != reply {
+		t.Errorf("the reply parent is %s, want the targeted %s", bobAdapter.recent.id, reply)
+	}
+}

@@ -763,8 +763,8 @@ func (adapter *Adapter) alert(format string, args ...any) error {
 	return errors.Join(err, file.Close())
 }
 
-// Inbox lists the verified messages the agent has not acked: those that target it first, each
-// group oldest first. Reading them makes the newest targeted one (or else the newest) the parent
+// Inbox lists the verified messages the agent has not acked: threads with mail for it first, each
+// message in stream order. Reading them makes the newest targeted one (or else the newest) the parent
 // of the agent's next reply (§8 rule 3).
 func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 	if err := adapter.Ready(); err != nil {
@@ -789,14 +789,20 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 		listed = append(listed, *message)
 		listed[len(listed)-1].Acked = adapter.acked[message.Envelope.ID]
 	}
+	// Threads that have mail for the agent come first, and every message keeps its stream order, so
+	// an untargeted parent is never listed after the targeted reply to it.
+	targetedThreads := map[string]bool{}
+	for _, message := range listed {
+		targetedThreads[message.Envelope.Thread] = targetedThreads[message.Envelope.Thread] || message.TargetsMe
+	}
 	slices.SortStableFunc(listed, func(a, b Message) int {
-		switch {
-		case a.TargetsMe == b.TargetsMe:
-			return 0
-		case a.TargetsMe:
-			return -1
+		if aFirst, bFirst := targetedThreads[a.Envelope.Thread], targetedThreads[b.Envelope.Thread]; aFirst != bFirst {
+			if aFirst {
+				return -1
+			}
+			return 1
 		}
-		return 1
+		return cmp.Compare(a.Sequence, b.Sequence)
 	})
 	if query.Limit > 0 && len(listed) > query.Limit {
 		listed = listed[:query.Limit]
@@ -808,12 +814,14 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 		adapter.inbox.findByID(message.Envelope.ID).returned = true
 	}
 	if len(listed) > 0 {
-		// Targeted messages come first, so the one before the first other is the newest of them.
-		parent := len(listed) - 1
-		if lastTargeted := slices.IndexFunc(listed, func(m Message) bool { return !m.TargetsMe }) - 1; lastTargeted >= 0 {
-			parent = lastTargeted
+		// The newest targeted message, or else the newest.
+		parent := listed[0]
+		for _, message := range listed {
+			if message.TargetsMe != parent.TargetsMe && message.TargetsMe || message.TargetsMe == parent.TargetsMe && message.Sequence > parent.Sequence {
+				parent = message
+			}
 		}
-		adapter.recent.id, adapter.recent.channel, adapter.recent.at = listed[parent].Envelope.ID, listed[parent].Channel, adapter.config.Now()
+		adapter.recent.id, adapter.recent.channel, adapter.recent.at = parent.Envelope.ID, parent.Channel, adapter.config.Now()
 	}
 	return listed, nil
 }

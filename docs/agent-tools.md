@@ -60,8 +60,8 @@ first. Parameters, all optional: `id` (only that message, with its full text), `
 this many) and `types` (only these message types).
 
 The result keeps token use low. The untrusted-data `notice` appears once per result, not per
-message (it names the auto-accept rule in force). A message has only `id`, `from`, `type`,
-`text`, `thread` and `time` (minutes, UTC), plus when they apply `channel` (not for a DM), `title`,
+message (it names the auto-accept rule in force). A message has only `id`, `seq` (its stream sequence: the canonical order, comparable across
+channels), `from`, `type`, `text`, `thread` and `time` (minutes, UTC), plus when they apply `channel` (not for a DM), `title`,
 `refs`, `targets_me`, `reply_to`, `first_contact` and `truncated`. Signatures, key fingerprints
 and hops are not shown. A `text` over 2000 bytes is cut and marked `truncated`; ask with `id` for
 the whole message. Of the messages that do not target the agent (`--deliver=all`) at most 10 are

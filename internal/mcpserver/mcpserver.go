@@ -350,6 +350,7 @@ type inboxIn struct {
 // message is a delivered message in its compact form: empty and default fields are left out.
 type message struct {
 	ID           string   `json:"id"`
+	Seq          uint64   `json:"seq"` // stream sequence: the canonical order of messages
 	From         string   `json:"from"`
 	Channel      string   `json:"channel,omitempty"` // not set for a DM to the agent
 	Type         string   `json:"type"`
@@ -395,7 +396,7 @@ func (t tools) framed(unread []adapter.Message, full bool) messagesOut {
 		}
 		env := delivered.Envelope
 		compact := message{
-			ID: env.ID, From: env.From, Type: env.Type, Title: env.Body.Title, Text: env.Body.Text, Refs: env.Body.Refs,
+			ID: env.ID, Seq: delivered.Sequence, From: env.From, Type: env.Type, Title: env.Body.Title, Text: env.Body.Text, Refs: env.Body.Refs,
 			TargetsMe: delivered.TargetsMe, Acked: delivered.Acked, Thread: env.Thread, Time: env.TS.UTC().Format("2006-01-02T15:04Z"),
 			FirstContact: delivered.FirstContact,
 		}
