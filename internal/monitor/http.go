@@ -8,12 +8,15 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 )
 
 const (
 	defaultMessageLimit = 100
 	maxMessageLimit     = 1000
-	eventKeepAlive      = 15 * time.Second // keeps proxies and the browser from closing a quiet event stream
+	maxSendBytes        = 2 * envelope.MaxRecordBytes // the body limit is enforced when the message is signed
+	eventKeepAlive      = 15 * time.Second            // keeps proxies and the browser from closing a quiet event stream
 )
 
 //go:embed web/index.html
@@ -37,6 +40,7 @@ func (monitor *Monitor) Handler() http.Handler {
 	mux.HandleFunc("GET /api/members", monitor.serveMembers)
 	mux.HandleFunc("GET /api/messages", monitor.serveMessages)
 	mux.HandleFunc("GET /api/events", monitor.serveEvents)
+	mux.HandleFunc("POST /api/send", monitor.serveSend)
 	return mux
 }
 
@@ -80,6 +84,33 @@ func parseUint(text string, fallback uint64) (uint64, error) {
 		return fallback, nil
 	}
 	return strconv.ParseUint(text, 10, 64)
+}
+
+// serveSend posts a message and answers {"id": ...}. It insists on a JSON content type, which a
+// page on another origin cannot send without the browser asking this server first.
+func (monitor *Monitor) serveSend(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-Type") != "application/json" {
+		http.Error(w, "send wants Content-Type: application/json", http.StatusUnsupportedMediaType)
+		return
+	}
+	var request SendRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSendBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	id, err := monitor.Send(r.Context(), request)
+	switch {
+	case errors.Is(err, ErrReadOnly):
+		http.Error(w, err.Error(), http.StatusForbidden)
+	case errors.Is(err, ErrInvalidRequest):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusBadGateway)
+	default:
+		writeJSON(w, map[string]string{"id": id})
+	}
 }
 
 // serveEvents streams every new message as a server-sent event named "message". The stream ends

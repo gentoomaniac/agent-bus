@@ -82,6 +82,10 @@ type Agent struct {
 type Config struct {
 	Admin   bus.Admin
 	History bus.Transport
+	// Sender posts messages as one agent. Without it the monitor is read-only, and ReadOnlyNote,
+	// if set, says why.
+	Sender       Sender
+	ReadOnlyNote string
 	// Report is told about errors that do not stop the monitor, such as a failed read.
 	Report func(error)
 }
@@ -309,7 +313,17 @@ func dmAgents(id string) ([]string, bool) {
 
 // Status says what the monitor can do besides reading.
 func (monitor *Monitor) Status() Status {
-	return Status{Note: "read-only: the monitor was started without --agent"}
+	sender := monitor.config.Sender
+	if sender == nil {
+		return Status{Note: cmp.Or(monitor.config.ReadOnlyNote, "read-only: the monitor was started without --agent")}
+	}
+	status := Status{Agent: sender.AgentID()}
+	if err := sender.Ready(); err != nil {
+		status.Note = err.Error()
+		return status
+	}
+	status.CanSend = true
+	return status
 }
 
 // Agents lists the registered agents.
