@@ -90,7 +90,9 @@ type Adapter struct {
 	mu     sync.Mutex // guards everything below and the stores above
 	inbox  inbox
 	rate   rateLimiter
-	recent struct {
+
+	notifications notifications
+	recent        struct {
 		id string
 		at time.Time
 	}

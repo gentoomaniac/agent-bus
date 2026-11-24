@@ -132,6 +132,9 @@ message already handled is skipped, one already buffered gets `InProgress`, a ne
 parent must be known locally, and a parent at 6 hops stops the send. If another process holds the
 identity lock, `Open` still returns an adapter, but every method fails with an error naming the
 holder's PID. Alerts go to `alerts.log` only; `busctl alerts` does not exist yet.
+The adapter also remembers, in memory, which buffered messages the delivery hooks already told the
+agent about (`NewMail`, `UnreadSummary`): new mail is reported once, and not again within 10 seconds
+of the last report (design.md §8 rule 3; held-back mail is reported by the next call).
 `internal/mcpserver` is the MCP server of one adapter session (official Go SDK, pinned in `go.mod`).
 `internal/trust` is the `known_agents` file of an identity (pinned public keys, design.md §6) and
 trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name
