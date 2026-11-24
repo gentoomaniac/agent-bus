@@ -5,6 +5,7 @@
 package presence
 
 import (
+	"slices"
 	"strings"
 	"time"
 )
@@ -29,6 +30,11 @@ const (
 	OfflineAfter = 90 * time.Second
 	// UnresponsiveAfter is how long targeted mail may wait unseen at an idle agent.
 	UnresponsiveAfter = 10 * time.Minute
+	// WorkingStaleAfter is how long a working session may stay silent before it is shown idle:
+	// Claude Code runs no Stop hook when the user interrupts a turn.
+	WorkingStaleAfter = 10 * time.Minute
+	// WorkerStaleAfter is how long a worker may run without its stop before it is dropped.
+	WorkerStaleAfter = 60 * time.Minute
 
 	maxRecent    = 10
 	maxWorkers   = 10
@@ -41,8 +47,9 @@ const (
 	EventStop         = "stop"          // the turn ended
 	EventTool         = "tool"          // a tool starts: Tool and Detail say which
 	EventToolDone     = "tool-done"     // a tool ended
-	EventWorkerStart  = "worker-start"  // a subagent starts: Detail is its description
-	EventWorkerEnd    = "worker-end"    // a subagent ended
+	EventAgentCall    = "agent-call"    // the tool that launches a subagent is called: Detail is its description
+	EventWorkerStart  = "worker-start"  // a subagent started: AgentID, and Detail as a fallback description
+	EventWorkerEnd    = "worker-end"    // the subagent AgentID ended
 	EventFailure      = "failure"       // the turn ended on an error: Detail is the kind
 	EventNeedsOwner   = "needs-owner"   // the harness waits for the human
 	EventSessionStart = "session-start" // a session begins: idle, nothing running
@@ -54,10 +61,13 @@ type Event struct {
 	Kind   string `json:"kind"`
 	Tool   string `json:"tool,omitempty"`
 	Detail string `json:"detail,omitempty"`
+	// AgentID identifies a subagent in worker events.
+	AgentID string `json:"agent_id,omitempty"`
 }
 
 // Worker is a subagent that is running.
 type Worker struct {
+	ID          string    `json:"id,omitempty"`
 	Description string    `json:"description"`
 	Since       time.Time `json:"since"`
 }
@@ -102,14 +112,18 @@ type Tracker struct {
 	activity      string
 	activitySince time.Time
 	workers       []Worker
+	unclaimed     []string // descriptions of subagent launches no subagent has claimed yet
 	recent        []Entry
+	lastEventAt   time.Time
 }
 
 // NewTracker starts idle: the session is waiting for its first prompt.
-func NewTracker(now time.Time) *Tracker { return &Tracker{state: Idle, since: now} }
+func NewTracker(now time.Time) *Tracker { return &Tracker{state: Idle, since: now, lastEventAt: now} }
 
 // Apply changes the state for one event. Unknown kinds are ignored.
 func (tracker *Tracker) Apply(event Event, now time.Time) {
+	tracker.lastEventAt = now
+	tracker.dropStaleWorkers(now)
 	switch event.Kind {
 	case EventPrompt:
 		tracker.enter(Working, now)
@@ -125,18 +139,28 @@ func (tracker *Tracker) Apply(event Event, now time.Time) {
 	case EventToolDone:
 		tracker.enter(Working, now)
 		tracker.activity = ""
+	case EventAgentCall:
+		tracker.enter(Working, now)
+		tracker.unclaimed = append(tracker.unclaimed, clip(event.Detail))
+		if len(tracker.unclaimed) > maxWorkers {
+			tracker.unclaimed = tracker.unclaimed[1:]
+		}
 	case EventWorkerStart:
 		tracker.enter(Working, now)
-		tracker.workers = append(tracker.workers, Worker{Description: clip(event.Detail), Since: now})
+		// The subagent is taken to be the launch that came last.
+		description := clip(event.Detail)
+		if last := len(tracker.unclaimed) - 1; last >= 0 {
+			description, tracker.unclaimed = tracker.unclaimed[last], tracker.unclaimed[:last]
+		}
+		tracker.workers = append(tracker.workers, Worker{ID: event.AgentID, Description: description, Since: now})
 		if len(tracker.workers) > maxWorkers {
 			tracker.workers = tracker.workers[1:]
 		}
-		tracker.note("worker: "+clip(event.Detail), now)
+		tracker.note("worker: "+description, now)
 	case EventWorkerEnd:
-		// Subagents are not told apart: the oldest one is taken to be the one that ended.
-		if len(tracker.workers) > 0 {
-			tracker.note("worker done: "+tracker.workers[0].Description, now)
-			tracker.workers = tracker.workers[1:]
+		if i := slices.IndexFunc(tracker.workers, func(worker Worker) bool { return worker.ID == event.AgentID }); i >= 0 {
+			tracker.note("worker done: "+tracker.workers[i].Description, now)
+			tracker.workers = slices.Delete(tracker.workers, i, i+1)
 		}
 	case EventFailure:
 		kind := errorKind(event.Detail)
@@ -170,6 +194,12 @@ func (tracker *Tracker) enter(state string, now time.Time) {
 func (tracker *Tracker) clearRunning() {
 	tracker.activity = ""
 	tracker.workers = nil
+	tracker.unclaimed = nil
+}
+
+// dropStaleWorkers forgets workers whose stop never came.
+func (tracker *Tracker) dropStaleWorkers(now time.Time) {
+	tracker.workers = slices.DeleteFunc(tracker.workers, func(worker Worker) bool { return now.Sub(worker.Since) >= WorkerStaleAfter })
 }
 
 func (tracker *Tracker) note(text string, now time.Time) {
@@ -182,6 +212,7 @@ func (tracker *Tracker) note(text string, now time.Time) {
 // Record is the presence to publish at the given time. An idle agent that has left targeted mail
 // unseen for UnresponsiveAfter is unresponsive: it does not react, whatever its harness reports.
 func (tracker *Tracker) Record(now time.Time, mail Mail) Record {
+	tracker.dropStaleWorkers(now)
 	record := Record{
 		State: tracker.state, Since: tracker.since, Updated: now, Activity: tracker.activity,
 		Workers: append([]Worker(nil), tracker.workers...), Recent: append([]Entry(nil), tracker.recent...),
@@ -190,7 +221,10 @@ func (tracker *Tracker) Record(now time.Time, mail Mail) Record {
 	if tracker.activity != "" {
 		record.ActivitySince = tracker.activitySince
 	}
-	if overdue := mail.OldestUnseen.Add(UnresponsiveAfter); tracker.state == Idle && !mail.OldestUnseen.IsZero() && !now.Before(overdue) {
+	if tracker.state == Working && now.Sub(tracker.lastEventAt) >= WorkingStaleAfter {
+		record.State, record.Since = Idle, tracker.lastEventAt.Add(WorkingStaleAfter)
+	}
+	if overdue := mail.OldestUnseen.Add(UnresponsiveAfter); record.State == Idle && !mail.OldestUnseen.IsZero() && !now.Before(overdue) {
 		record.State, record.Since = Unresponsive, overdue
 	}
 	return record

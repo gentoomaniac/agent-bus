@@ -70,14 +70,19 @@ func TestToolsWorkersAndRecentActivity(t *testing.T) {
 		t.Errorf("after the tool: %+v", got)
 	}
 
-	tracker.Apply(Event{Kind: EventWorkerStart, Detail: "review the diff"}, at(5))
-	tracker.Apply(Event{Kind: EventWorkerStart, Detail: "run tests"}, at(6))
-	if got := tracker.Record(at(7), Mail{}); len(got.Workers) != 2 || got.Workers[0].Description != "review the diff" {
+	tracker.Apply(Event{Kind: EventAgentCall, Detail: "review the diff"}, at(5))
+	tracker.Apply(Event{Kind: EventWorkerStart, AgentID: "a1", Detail: "Explore"}, at(5))
+	tracker.Apply(Event{Kind: EventAgentCall, Detail: "run tests"}, at(6))
+	tracker.Apply(Event{Kind: EventWorkerStart, AgentID: "a2", Detail: "general"}, at(6))
+	tracker.Apply(Event{Kind: EventWorkerStart, AgentID: "a3", Detail: "Plan"}, at(6)) // no launch left to claim
+	if got := tracker.Record(at(7), Mail{}); len(got.Workers) != 3 || got.Workers[0].Description != "review the diff" || got.Workers[1].Description != "run tests" || got.Workers[2].Description != "Plan" {
 		t.Errorf("workers = %+v", got.Workers)
 	}
-	tracker.Apply(Event{Kind: EventWorkerEnd}, at(8))
-	if got := tracker.Record(at(9), Mail{}); len(got.Workers) != 1 || got.Workers[0].Description != "run tests" {
-		t.Errorf("workers after one ended = %+v", got.Workers)
+	tracker.Apply(Event{Kind: EventWorkerEnd, AgentID: "a1"}, at(8))
+	tracker.Apply(Event{Kind: EventWorkerEnd, AgentID: "unknown"}, at(8))
+	tracker.Apply(Event{Kind: EventWorkerEnd, AgentID: "a3"}, at(8))
+	if got := tracker.Record(at(9), Mail{}); len(got.Workers) != 1 || got.Workers[0].ID != "a2" {
+		t.Errorf("workers after a1 and a3 ended = %+v", got.Workers)
 	}
 	tracker.Apply(Event{Kind: EventSessionEnd}, at(10))
 	if got := tracker.Record(at(11), Mail{}); len(got.Workers) != 0 {
@@ -94,9 +99,37 @@ func TestToolsWorkersAndRecentActivity(t *testing.T) {
 
 func TestTextIsClipped(t *testing.T) {
 	long := strings.Repeat("x", 500)
-	got := record(t, Event{Kind: EventTool, Tool: "Bash", Detail: long}, Event{Kind: EventWorkerStart, Detail: "multi\nline " + long})
+	got := record(t, Event{Kind: EventTool, Tool: "Bash", Detail: long}, Event{Kind: EventWorkerStart, AgentID: "a", Detail: "multi\nline " + long})
 	if len([]rune(got.Activity)) > maxTextRunes || len([]rune(got.Workers[0].Description)) > maxTextRunes || strings.Contains(got.Workers[0].Description, "\n") {
 		t.Errorf("not clipped: %q, %q", got.Activity, got.Workers[0].Description)
+	}
+}
+
+func TestAWorkerWithoutItsStopIsDroppedAfterAnHour(t *testing.T) {
+	tracker := NewTracker(start)
+	tracker.Apply(Event{Kind: EventWorkerStart, AgentID: "a1", Detail: "lost"}, start)
+	if got := tracker.Record(start.Add(WorkerStaleAfter-time.Second), Mail{}); len(got.Workers) != 1 {
+		t.Errorf("before the limit: %+v", got.Workers)
+	}
+	if got := tracker.Record(start.Add(WorkerStaleAfter), Mail{}); len(got.Workers) != 0 {
+		t.Errorf("after the limit: %+v", got.Workers)
+	}
+}
+
+func TestSilentWorkingSessionIsShownIdleWithItsLastActivity(t *testing.T) {
+	tracker := NewTracker(start)
+	tracker.Apply(Event{Kind: EventTool, Tool: "Edit", Detail: "a.go"}, start)
+	got := tracker.Record(start.Add(WorkingStaleAfter-time.Second), Mail{})
+	if got.State != Working {
+		t.Errorf("before the limit: %+v", got)
+	}
+	got = tracker.Record(start.Add(WorkingStaleAfter), Mail{})
+	if got.State != Idle || !got.Since.Equal(start.Add(WorkingStaleAfter)) || got.Activity != "Edit a.go" {
+		t.Errorf("after the limit: %+v", got)
+	}
+	tracker.Apply(Event{Kind: EventToolDone}, start.Add(WorkingStaleAfter+time.Second))
+	if got := tracker.Record(start.Add(WorkingStaleAfter+2*time.Second), Mail{}); got.State != Working {
+		t.Errorf("a new event must show working again: %+v", got)
 	}
 }
 
@@ -111,8 +144,8 @@ func TestIdleAgentWithUnseenMailBecomesUnresponsive(t *testing.T) {
 	if got.State != Unresponsive || !got.Since.Equal(arrived.Add(UnresponsiveAfter)) {
 		t.Errorf("after the limit: %+v", got)
 	}
-	tracker.Apply(Event{Kind: EventPrompt}, arrived)
-	if got := tracker.Record(arrived.Add(time.Hour), mail); got.State != Working {
+	tracker.Apply(Event{Kind: EventPrompt}, arrived.Add(5*time.Minute))
+	if got := tracker.Record(arrived.Add(UnresponsiveAfter+time.Minute), mail); got.State != Working {
 		t.Errorf("a working agent is busy, not unresponsive: %+v", got)
 	}
 }

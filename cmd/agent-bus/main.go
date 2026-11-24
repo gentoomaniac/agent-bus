@@ -179,7 +179,7 @@ func (cmd *PendingCmd) Run() error {
 }
 
 type EventCmd struct {
-	Kind string `help:"The hook this runs for, named like the Claude Code hook." required:"" enum:"user-prompt,stop,pre-tool,post-tool,subagent-stop,stop-failure,notification,session-start,session-end"`
+	Kind string `help:"The hook this runs for, named like the Claude Code hook." required:"" enum:"user-prompt,stop,pre-tool,post-tool,subagent-start,subagent-stop,stop-failure,notification,session-start,session-end"`
 }
 
 const (

@@ -11,12 +11,12 @@ import (
 
 // Hooks that `agent-bus event --kind` understands, named like the Claude Code hooks they report.
 var Kinds = []string{
-	"user-prompt", "stop", "pre-tool", "post-tool", "subagent-stop", "stop-failure",
+	"user-prompt", "stop", "pre-tool", "post-tool", "subagent-start", "subagent-stop", "stop-failure",
 	"notification", "session-start", "session-end",
 }
 
-// subagentTools are the tools that start a worker.
-var subagentTools = []string{"Agent", "Task"}
+// subagentTool is the tool that launches a subagent.
+const subagentTool = "Agent"
 
 // hookInput is the part of a hook's JSON that presence reads. It never keeps file contents or
 // whole commands.
@@ -28,8 +28,9 @@ type hookInput struct {
 		Path         string `json:"path"`
 		Command      string `json:"command"`
 		Description  string `json:"description"`
-		SubagentType string `json:"subagent_type"`
 	} `json:"tool_input"`
+	AgentID          string `json:"agent_id"`
+	AgentType        string `json:"agent_type"`
 	Error            string `json:"error"`
 	NotificationType string `json:"notification_type"`
 }
@@ -46,20 +47,16 @@ func EventFor(kind string, input []byte) (presence.Event, bool) {
 	case "stop":
 		return presence.Event{Kind: presence.EventStop}, true
 	case "pre-tool":
-		for _, name := range subagentTools {
-			if parsed.ToolName == name {
-				description := parsed.ToolInput.Description
-				if description == "" {
-					description = parsed.ToolInput.SubagentType
-				}
-				return presence.Event{Kind: presence.EventWorkerStart, Detail: description}, true
-			}
+		if parsed.ToolName == subagentTool {
+			return presence.Event{Kind: presence.EventAgentCall, Detail: parsed.ToolInput.Description}, true
 		}
 		return presence.Event{Kind: presence.EventTool, Tool: parsed.ToolName, Detail: toolDetail(parsed)}, true
 	case "post-tool":
 		return presence.Event{Kind: presence.EventToolDone}, true
+	case "subagent-start":
+		return presence.Event{Kind: presence.EventWorkerStart, AgentID: parsed.AgentID, Detail: parsed.AgentType}, true
 	case "subagent-stop":
-		return presence.Event{Kind: presence.EventWorkerEnd}, true
+		return presence.Event{Kind: presence.EventWorkerEnd, AgentID: parsed.AgentID}, true
 	case "stop-failure":
 		return presence.Event{Kind: presence.EventFailure, Detail: parsed.Error}, true
 	case "notification":

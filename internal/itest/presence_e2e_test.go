@@ -99,6 +99,7 @@ func TestPresenceEndToEnd(t *testing.T) {
 		h.runEvent(t, agentBus, "user-prompt", `{"prompt":"do the secret thing"}`)
 		h.runEvent(t, agentBus, "pre-tool", `{"tool_name":"Edit","tool_input":{"file_path":"/work/project/main.go","new_string":"SECRET"}}`)
 		h.runEvent(t, agentBus, "pre-tool", `{"tool_name":"Agent","tool_input":{"description":"review the diff"}}`)
+		h.runEvent(t, agentBus, "subagent-start", `{"agent_id":"a1","agent_type":"Explore"}`)
 		h.runEvent(t, agentBus, "pre-tool", `{"tool_name":"Bash","tool_input":{"command":"go test ./... --token SECRET"}}`)
 		view := waitForPresence(t, server, bob, func(view monitor.Presence) bool { return view.State == presence.Working && len(view.Workers) == 1 })
 		if view.Activity != "Bash go" || view.Workers[0].Description != "review the diff" || view.ActivitySince.IsZero() {
@@ -108,7 +109,7 @@ func TestPresenceEndToEnd(t *testing.T) {
 			t.Errorf("content leaked into presence: %+v", view)
 		}
 		if len(view.Recent) != 3 {
-			t.Errorf("recent = %+v, want the three tool starts", view.Recent)
+			t.Errorf("recent = %+v, want two tool starts and the worker", view.Recent)
 		}
 
 		// Another agent reads it through the bus as list_agents does.
@@ -117,7 +118,7 @@ func TestPresenceEndToEnd(t *testing.T) {
 			t.Errorf("alice reads %+v, %v, %v", record, known, err)
 		}
 
-		h.runEvent(t, agentBus, "subagent-stop", `{}`)
+		h.runEvent(t, agentBus, "subagent-stop", `{"agent_id":"a1","agent_type":"Explore"}`)
 		waitForPresence(t, server, bob, func(view monitor.Presence) bool { return len(view.Workers) == 0 })
 	})
 
