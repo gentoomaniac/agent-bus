@@ -73,8 +73,10 @@ bin/busctl admin init
 ### init
 
 Creates stream `BUS` (every conversation channel, infinite retention, a 24-hour dedupe window) in
-account `BUS`, and stream `LEDGER` and the key-value buckets `registry` and `catalogue` in
-`CONTROL`. Safe to repeat.
+account `BUS`, stream `PRESENCE` (the last presence record of each agent, see
+[monitor.md](monitor.md#presence)), and stream `LEDGER` and the key-value buckets `registry` and
+`catalogue` in `CONTROL`. It also regenerates every agent's grants, so after upgrading from a
+release without presence, running `init` once is all it takes. Safe to repeat.
 
 ```sh
 bin/busctl --direct init

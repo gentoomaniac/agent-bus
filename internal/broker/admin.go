@@ -103,7 +103,8 @@ func (admin *Admin) Setup(ctx context.Context) error {
 			return fmt.Errorf("creating bucket %s: %w", bucket.Bucket, admin.control.explain(err))
 		}
 	}
-	return nil
+	// Agents registered by an older release get the grants of this one (presence).
+	return admin.updateAuth(ctx, func(*busAuth) error { return nil })
 }
 
 func (admin *Admin) PutAgentRecord(ctx context.Context, record bus.AgentRecord) error {

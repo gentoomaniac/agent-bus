@@ -55,8 +55,9 @@ type Delivery struct {
 // Admin is the administrator's path to the broker (design.md §2): channels, accounts and the read
 // cursors an account owns. Its methods are safe to repeat unless they say otherwise.
 type Admin interface {
-	// Setup creates what the bus needs on an empty broker: the message log, the registry, the
-	// catalogue and the membership ledger. Existing ones keep their data.
+	// Setup creates what the bus needs on an empty broker: the message log, the presence stream,
+	// the registry, the catalogue and the membership ledger, and brings every agent's access up to
+	// date. Existing streams keep their data.
 	Setup(ctx context.Context) error
 	// PutAgentRecord writes the agent's registry entry, replacing an earlier one.
 	PutAgentRecord(ctx context.Context, record AgentRecord) error
