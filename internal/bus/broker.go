@@ -31,6 +31,9 @@ type Delivery struct {
 	Record
 	// Ack tells the broker the record is handled and returns once the broker has confirmed it.
 	Ack func(ctx context.Context) error
+	// InProgress tells the broker the record is still being worked on, so it does not redeliver
+	// it while the reader holds it.
+	InProgress func(ctx context.Context) error
 }
 
 // Admin is the administrator's path to the broker (design.md §2): channels, accounts and the read

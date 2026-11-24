@@ -66,8 +66,9 @@ func (transport *Transport) Fetch(ctx context.Context, from bus.Channel, max int
 			continue
 		}
 		deliveries = append(deliveries, bus.Delivery{
-			Record: bus.Record{Sequence: metadata.Sequence.Stream, Payload: message.Data()},
-			Ack:    message.DoubleAck,
+			Record:     bus.Record{Sequence: metadata.Sequence.Stream, Payload: message.Data()},
+			Ack:        message.DoubleAck,
+			InProgress: func(context.Context) error { return message.InProgress() },
 		})
 	}
 	return deliveries, errors.Join(append(skipped, transport.session.explain(batch.Error()))...)
