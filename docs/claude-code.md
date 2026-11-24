@@ -94,6 +94,82 @@ The hook walks up its own process ancestors, through `/proc` (Linux only), to th
 socket. So each session only reaches its own adapter, and a session whose adapter lost the
 identity lock, or has none, gets silence. The socket is removed when the server ends.
 
+## 3. Add the presence hooks
+
+The monitor shows whether the model works, how many subagents ("workers") it runs, what it is doing
+and whether something is wrong with it ([monitor.md](monitor.md#presence)). The session's MCP server
+gets this from hooks, without the model: each runs `agent-bus event --kind=<hook>`, which reads the
+hook's JSON on stdin and passes a compact event over the session's socket. All hooks together, with
+the two delivery hooks of section 2 merged in:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [
+        {"type": "command", "command": "agent-bus pending --format=session-start"},
+        {"type": "command", "command": "agent-bus event --kind=session-start"}
+      ]}
+    ],
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=user-prompt"}]}
+    ],
+    "PreToolUse": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=pre-tool", "async": true}]}
+    ],
+    "PostToolUse": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=post-tool", "async": true}]}
+    ],
+    "SubagentStop": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=subagent-stop"}]}
+    ],
+    "Stop": [
+      {"hooks": [
+        {"type": "command", "command": "agent-bus event --kind=stop"},
+        {"type": "command", "command": "agent-bus pending --format=hook"}
+      ]}
+    ],
+    "StopFailure": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=stop-failure"}]}
+    ],
+    "Notification": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=notification"}]}
+    ],
+    "SessionEnd": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=session-end"}]}
+    ]
+  }
+}
+```
+
+What each does:
+
+| Hook               | `--kind`        | State or effect                                              |
+|--------------------|-----------------|--------------------------------------------------------------|
+| `UserPromptSubmit` | `user-prompt`   | `working`                                                    |
+| `Stop`             | `stop`          | `idle`                                                       |
+| `PreToolUse`       | `pre-tool`      | activity: tool name plus the file's base name or the command's first word; an `Agent` or `Task` call starts a worker with its description |
+| `PostToolUse`      | `post-tool`     | activity cleared, still `working`                            |
+| `SubagentStop`     | `subagent-stop` | a worker ended                                               |
+| `StopFailure`      | `stop-failure`  | `rate_limited` for `rate_limit`, else `error:<error>`        |
+| `Notification`     | `notification`  | `permission_prompt`, `agent_needs_input` and the elicitation dialogs: `waiting_for_owner`; `quota_auto_resume_fired`: `working`; `quota_auto_resume_stale` and `_disabled`: `rate_limited`; the rest ignored |
+| `SessionStart`     | `session-start` | `idle`, workers and activity cleared                         |
+| `SessionEnd`       | `session-end`   | `offline`                                                    |
+
+Only names and short words reach the bus: never file contents, prompts or whole commands, and
+every text is cut to 60 characters. The command prints nothing and always exits 0, with a
+half-second socket timeout, so it can neither fail nor slow a session; with no session behind it it
+does nothing. The tool hooks run `async` so they never hold up a tool call. A subagent is
+recognised by its `SubagentStop`; several at once end oldest first, so the list of workers is
+approximate. Claude Code does not say whether a claude.ai plan usage limit arrives as a
+`StopFailure` with `rate_limit`; the `quota_auto_resume_*` notifications cover the pause it
+announces itself. A `SessionEnd` for `clear` or `resume` shows `offline` until the next
+`SessionStart`.
+
+Without these hooks the agent shows `idle` while its process runs; `offline` and `unresponsive`
+come from the heartbeat and the mail, and need no hook. The heartbeat period is
+`--presence-heartbeat` (`BUS_PRESENCE_HEARTBEAT`, default 30 s).
+
 ## One session per identity
 
 An identity is held by one process at a time (an exclusive lock on `<agent-dir>/lock` holding the

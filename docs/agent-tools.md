@@ -34,11 +34,15 @@ Sends a message to one agent (its DM channel). With `reply_to` the replied-to me
 {"to": "lib-x@bob", "type": "question", "body": {"title": "API", "text": "Is v2 stable?"}}
 ```
 
-Result, the message ID:
+Result, the message ID, and a short `warning` when something is off:
 
 ```json
-{"id": "…"}
+{"id": "…", "warning": "lib-x@bob is rate_limited since 14:02Z; it will get this when it's back."}
 ```
+
+A message to an agent that is `offline`, `unresponsive`, `rate_limited` or in `error:<kind>` is
+sent anyway (messages are durable) and carries that warning. The same field reports a
+replied-to message that stayed unread because the automatic mark-read failed.
 
 ### publish
 
@@ -103,21 +107,26 @@ do not target you. What the agent may do about a request is set by `--auto-accep
 ### mark_read
 
 Marks messages as handled, so they leave the inbox for good (the message type `ack` is something
-else: a reply saying "on it"). Parameters: `message_ids` (list) and `all` (every unread message).
+else: a reply saying "on it"). Parameters: `message_ids` (list) and `all` (every unread message
+except the `request`, `question`, `feature_request` and `bug_report` messages aimed at you, which
+need an answer or a `mark_read` by ID; `unanswered` counts them).
 To close a request aimed at you, answer or decline it instead: a `send` or `publish` with
 `reply_to` marks the replied-to message read by itself, except that a `request`, `question`,
 `feature_request` or `bug_report` aimed at you is only marked read by an `answer` reply. An `ack`
 reply leaves it unread, also after a restart, so promised work is not forgotten. Result:
 
 ```json
-{"marked_read": 1}
+{"marked_read": 1, "unanswered": 1}
 ```
 
 ### wait_for_messages
 
-Blocks until a message is unread or `timeout_s` seconds have passed (default 30, at most 300), and
-returns the unread messages directly, as `inbox` does (no follow-up call), with an empty `messages`
-list on timeout. A message left unread makes it return at once.
+Blocks until there is a message that neither `inbox` nor an earlier `wait_for_messages` has returned
+yet, or `timeout_s` seconds have passed (default 30, at most 300), and returns those messages
+directly, as `inbox` does (no follow-up call), with an empty `messages` list on timeout. An agent
+that idles with unanswered or unread context mail therefore waits instead of spinning; `inbox`
+still lists everything unread. A message you sent an `ack` reply to shows `"acked": true` and stays
+unread until answered.
 
 ```json
 {"timeout_s": 60}
@@ -133,12 +142,21 @@ No parameters. The channels the identity reads: its DM channel, `general` and it
 
 ### list_agents
 
-No parameters. The registered agents of the local directory (`<config-dir>/directory`), sorted,
-yourself included. Every agent reads `general`; the groups of the others are not known.
+Parameter `detail` (boolean, default false). The registered agents of the local directory
+(`<config-dir>/directory`), sorted, yourself included, each with its ID and a one-word state:
+`working`, `idle`, `waiting_for_owner`, `rate_limited`, `error:<kind>`, `unresponsive` or `offline`
+([presence](monitor.md#presence)). Every agent reads `general`; the groups of the others are not
+known.
 
 ```json
-{"agents": ["api-client@alice", "lib-x@bob"]}
+{"agents": [{"id": "api-client@alice", "state": "idle"}, {"id": "lib-x@bob", "state": "working"}]}
 ```
+
+With `detail: true` an agent that is not offline also has `since`, `activity` (tool name and file
+or command word, for example `Edit main.go`), `workers` (descriptions of running subagents),
+`pending` (unread targeted mail) and `recent` (its last activity, with times). Status is for the
+owner's monitor: the server instructions tell the agent not to check it routinely, only to learn
+whether one agent can respond.
 
 ## Limits that apply to sending
 

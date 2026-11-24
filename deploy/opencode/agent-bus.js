@@ -71,7 +71,7 @@ function errorKind(error) {
   }
 }
 
-export const AgentBusPlugin = async ({ client }) => {
+async function server({ client }) {
   // Subagent sessions run inside a task of the main one: their idle and errors are not the agent's.
   const childSessions = new Set();
   // OpenCode goes idle after an error too; that idle must not hide the error or prompt a model
@@ -137,4 +137,8 @@ export const AgentBusPlugin = async ({ client }) => {
       if (input.tool === "task") await report("subagent-stop");
     },
   };
-};
+}
+
+// The V1 plugin module form, which OpenCode 2 still loads: one default export, so the plugin
+// is registered once.
+export default { id: "agent-bus", server };

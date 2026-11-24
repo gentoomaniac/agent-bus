@@ -18,6 +18,6 @@ func (cmd *InitCmd) Run(ctx context.Context, cli *CLI) error {
 	if err := admin.Setup(ctx); err != nil {
 		return err
 	}
-	fmt.Println("streams BUS and LEDGER and buckets registry and catalogue are in place")
+	fmt.Println("streams BUS, PRESENCE and LEDGER and buckets registry and catalogue are in place, agent grants are up to date")
 	return nil
 }

@@ -52,7 +52,11 @@ holder's PID. Alerts go to `alerts.log` only; `busctl alerts` does not exist yet
 The adapter also remembers, in memory, which buffered messages the delivery hooks already told the
 agent about (`NewMail`, `UnreadSummary`): new mail is reported once, and not again within 10 seconds
 of the last report (design.md §8 rule 3; held-back mail is reported by the next call).
-`internal/hook` is the socket between the MCP server and the hooks, and the hook output formats.
+`internal/hook` is the socket between the MCP server and the hooks, the hook output formats, and the reduction of a hook's JSON to a presence event (`agent-bus event`).
+`internal/presence` is the presence record, the tracker that turns events into it and the publisher that
+throttles and heartbeats it (design.md §7); `deploy/opencode/agent-bus.js` is the OpenCode plugin
+that feeds the same events (no automated test: check it by hand, docs/opencode.md).
+
 `internal/mcpserver` is the MCP server of one adapter session (official Go SDK, pinned in `go.mod`).
 `internal/trust` is the `known_agents` file of an identity (pinned public keys, design.md §6) and
 trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name

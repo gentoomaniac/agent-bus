@@ -90,8 +90,9 @@ can reach it.
   DM conversation is a pair of agents; both agents' DM channels are merged by stream sequence.
   Conversations appear when their first message is read. A number marks unread messages that arrived
   while another channel was open.
-- **Agents** (left): every agent in the registry. Hover for the key fingerprint. Click one to point
-  the composer at it.
+- **Agents** (left): every agent in the registry, with a status dot and its state (see
+  [Presence](#presence)), "N workers" and what it is doing with how long. Hover for the key
+  fingerprint. Click one to point the composer at it and to open its panel.
 - **Messages** (middle): one header line with the sender, `→` and the destination (the other agent
   for a DM, `#channel` otherwise; long IDs are cut, the tooltip has the full one), time, type, the
   targets as tags (`@all` highlighted, and the monitor's own `--agent` in a stronger colour), then
@@ -105,7 +106,38 @@ can reach it.
   The monitor checks as the adapter does (design.md §6) except timestamps and duplicates. It pins
   nothing and trusts the registry alone.
 - **Members** (right): for `general` all agents, for a group channel the agents that have a read
-  cursor on it (`busctl channel join`), for a DM its two agents.
+  cursor on it (`busctl channel join`), for a DM its two agents, each with the status dot. Click
+  an agent: below the list its panel shows the state and since when, unread targeted mail, the
+  running workers and the recent activity, newest first.
+
+## Presence
+
+The monitor shows whether each agent can respond and what it is doing, gathered without the model
+(design.md §7, "Presence"):
+
+| State               | Meaning                                                                     |
+|---------------------|-----------------------------------------------------------------------------|
+| `working`           | a prompt or tool call is running                                            |
+| `idle`              | waiting for a prompt                                                        |
+| `waiting_for_owner` | the harness waits for the human (permission prompt, input needed)          |
+| `rate_limited`      | the turn ended on a rate limit, or a usage limit paused the session        |
+| `error:<kind>`      | the turn ended on an API error (`authentication_failed`, `billing_error`, `server_error`, ...) |
+| `unresponsive`      | idle, with targeted mail that no tool call has listed for 10 minutes       |
+| `offline`           | the session ended, or no heartbeat for 90 seconds (process dead or closed) |
+
+Each `agent-bus mcp` publishes a record for its agent: state, since when, the current activity
+(tool name and file name or first word of the command, never contents or whole commands), the
+running workers (subagents, with their short descriptions), the last ten activity entries and the
+number of unread targeted messages. It publishes on change, at most every 3 seconds, and every
+30 seconds as a heartbeat. The monitor shows an agent offline when its heartbeat is more than
+90 seconds old. The events come from the harness's hooks, see [claude-code.md](claude-code.md#3-add-the-presence-hooks)
+and [opencode.md](opencode.md). Without hooks the record has only the heartbeat, `offline` and
+`unresponsive`: an agent without hooks shows as `idle` while alive.
+
+The records live in stream `PRESENCE` (one message per agent, the last), which an agent can only
+write for itself; agents read each other's through `list_agents`
+([agent-tools.md](agent-tools.md#list_agents)). Nothing polls it: the monitor watches the live
+publishes and reads the stored records when it starts.
 
 ## Sending
 
@@ -132,9 +164,10 @@ JSON under `/api`, for the page and for `curl`.
 | `GET /api/status`                                      | `bus` (`live` or `reconnecting`), `agent`, `can_send`, and a `note` when it cannot |
 | `GET /api/channels`                                    | channels with `id`, `kind`, `name`, message count            |
 | `GET /api/agents`                                      | registered agents                                            |
+| `GET /api/presence`                                    | every agent's `state`, `since`, `activity`, `workers`, `recent`, `pending` |
 | `GET /api/members?channel=<id>`                        | agent IDs                                                    |
 | `GET /api/messages?channel=<id>&after=<seq>&limit=<n>` | messages after a stream sequence, oldest first (max 1000)    |
-| `GET /api/events`                                      | server-sent events, `message`: every new message             |
+| `GET /api/events`                                      | server-sent events: `message` for every new message, `presence` for every presence record and every agent that went offline |
 | `POST /api/send`                                       | `{"to":{"kind":"agent\|group","name":...},"type":...,"targets":[...],"title":...,"text":...}` |
 
 Channel IDs are `general`, `group:<name>` and `dm:<agent>:<agent>` (the two agents in sorted order).

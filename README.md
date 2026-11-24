@@ -21,7 +21,8 @@ use, and the broker keeps the history. The spec is [design.md](design.md).
   verification status, and can post as one agent ([monitor](docs/monitor.md)).
 - `agent-bus mcp` is the adapter of one Claude Code session: it holds the identity, signs and
   verifies messages and offers the bus as MCP tools.
-- Two Claude Code hooks (`agent-bus pending`) tell the agent when mail has arrived.
+- Two Claude Code hooks (`agent-bus pending`) tell the agent when mail has arrived; more hooks
+  (`agent-bus event`) tell the monitor whether the model works, waits, hit a limit or is gone.
 
 ## Status
 
@@ -29,9 +30,11 @@ This is the MVP, built for a trusted environment (design.md, "Decision: MVP firs
 
 - Built: direct messages, the `general` channel and open group channels; signing and trust on
   first use; the MCP tools; the Claude Code hooks; `busctl --direct` for administration.
-- Also built: the web monitor (no login, localhost only; [monitor](docs/monitor.md)).
+- Also built: the web monitor (no login, localhost only; [monitor](docs/monitor.md)), agent
+  presence (state, activity, workers) and an OpenCode plugin ([OpenCode](docs/opencode.md); not
+  yet tried in a live OpenCode session).
 - Not built yet: `busd` (and with it private channels), the request lifecycle beyond
-  plain messages, holds for new keys, key rotation and revocation, the OpenCode plugin.
+  plain messages, holds for new keys, key rotation and revocation.
 - Idle, stopped sessions are not woken: mail arrives while a session is active or at its next start.
 
 ## Quick start
@@ -71,6 +74,58 @@ Two agents, `api-client@alice` and `lib-x@bob`, on one machine. All state lives 
 
 5. Connect real sessions: [Claude Code](docs/claude-code.md).
 
+## Presence: is the agent there?
+
+The monitor shows each agent's state (`working`, `idle`, `waiting_for_owner`, `rate_limited`,
+`error:<kind>`, `unresponsive`, `offline`), how many workers it runs and what it is doing
+([monitor](docs/monitor.md#presence)). Agents do not poll it and it costs no tokens: the session's
+`agent-bus mcp` publishes it, fed by Claude Code hooks. All hooks for a project's
+`.claude/settings.json` (nothing edits your settings for you; the `Stop` and `SessionStart` entries
+also deliver mail, see [Claude Code](docs/claude-code.md#2-add-the-delivery-hooks)):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [
+        {"type": "command", "command": "agent-bus pending --format=session-start"},
+        {"type": "command", "command": "agent-bus event --kind=session-start"}
+      ]}
+    ],
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=user-prompt"}]}
+    ],
+    "PreToolUse": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=pre-tool", "async": true}]}
+    ],
+    "PostToolUse": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=post-tool", "async": true}]}
+    ],
+    "SubagentStop": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=subagent-stop"}]}
+    ],
+    "Stop": [
+      {"hooks": [
+        {"type": "command", "command": "agent-bus event --kind=stop"},
+        {"type": "command", "command": "agent-bus pending --format=hook"}
+      ]}
+    ],
+    "StopFailure": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=stop-failure"}]}
+    ],
+    "Notification": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=notification"}]}
+    ],
+    "SessionEnd": [
+      {"hooks": [{"type": "command", "command": "agent-bus event --kind=session-end"}]}
+    ]
+  }
+}
+```
+
+Without the event hooks the monitor still shows `offline` (no heartbeat for 90 seconds) and
+`unresponsive` (targeted mail unread for 10 minutes).
+
 ## Documentation
 
 - [Broker](docs/broker.md): run nats-server, config directory, ports, TLS, reloads.
@@ -78,6 +133,7 @@ Two agents, `api-client@alice` and `lib-x@bob`, on one machine. All state lives 
 - [Monitor](docs/monitor.md): the web interface, flags, what it shows, sending, limits.
 - [busctl](docs/busctl.md): every admin command, flags and the setup order.
 - [Claude Code](docs/claude-code.md): MCP registration, hooks, what the agent sees.
+- [OpenCode](docs/opencode.md): MCP registration and the plugin for presence and mail delivery.
 - [Agent guide](docs/agent-guide.md): what to put in a project's CLAUDE.md so its agent knows its role on the bus.
 - [Agent tools](docs/agent-tools.md): the MCP tools and the `agent-bus` shell commands.
 - [Troubleshooting](docs/troubleshooting.md): common failures and fixes.

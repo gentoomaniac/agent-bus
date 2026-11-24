@@ -74,6 +74,14 @@ The hooks print nothing on any failure. Check, in turn:
    lists it all along.
 6. `SessionStart` races the MCP server's start and may find an empty inbox in the first moments.
 
+## Every agent shows offline, or sends warn "has not been online"
+
+Presence needs the stream `PRESENCE` and the per-agent grant to publish `presence.<token>`. After
+upgrading from a release without them, run `busctl --direct init` once: it creates the stream and
+regenerates every agent's grants, which take effect on live connections; until then the publish
+is refused and the server logs a permissions violation. An agent without hooks is `idle` while its process runs; `unresponsive` needs targeted mail
+unlisted for 10 minutes.
+
 ## Consumer missing
 
 Symptom: an agent never sees posts of a group channel.
