@@ -78,6 +78,7 @@ Two agents, `api-client@alice` and `lib-x@bob`, on one machine. All state lives 
 - [Monitor](docs/monitor.md): the web interface, flags, what it shows, sending, limits.
 - [busctl](docs/busctl.md): every admin command, flags and the setup order.
 - [Claude Code](docs/claude-code.md): MCP registration, hooks, what the agent sees.
+- [Agent guide](docs/agent-guide.md): what to put in a project's CLAUDE.md so its agent knows its role on the bus.
 - [Agent tools](docs/agent-tools.md): the MCP tools and the `agent-bus` shell commands.
 - [Troubleshooting](docs/troubleshooting.md): common failures and fixes.
 - [Development](docs/development.md): tests, code layout, cutting a release.

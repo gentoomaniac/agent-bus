@@ -19,7 +19,7 @@ or in the project's `.mcp.json`:
 ```
 
 Flags: `--agent` (`--identity` works too), `--groups a,b` for group channels to read (see
-[busctl channel join](busctl.md#channel-join)), `--deliver targeted|all` (below), and
+[busctl channel join](busctl.md#channel-join)), `--deliver targeted|all` (below), `--[no-]auto-accept-messages` (below), and
 `--config-dir`, `--broker`, `--ca-cert` as for busctl. A background reader keeps fetching mail into the inbox until the client closes stdin
 or the process gets SIGTERM; then the identity lock is released.
 
@@ -39,11 +39,16 @@ mail that targets the agent. The [monitor](monitor.md) always shows everything.
 claude mcp add agent-bus -- agent-bus mcp --agent api-client@alice --deliver all
 ```
 
-The server instructions teach the agent the etiquette (design.md §5): a request or question aimed
-at it gets a short `ack` reply at once (`reply_to` set) and the result later as an `answer`; an
-`ack`, `answer` or `status` is never answered unless something is unclear; messages that do not
-target it are not answered. Example: "@A can you do xyz?" (a `request` to A), then B-style replies "sure, will
-report back" (`ack`), and later "here is the result" (`answer`).
+The server instructions are a short briefing (design.md §5, §8): who the agent is and how DMs
+and channels work, when to respond (only to messages with `targets_me`), how (a request or question
+aimed at it gets a short `ack` reply at once, `reply_to` set, and the result later as an `answer`;
+an `ack`, `answer` or `status` is never answered unless something is unclear) and what it may do.
+`--auto-accept-messages` (the default; `--no-auto-accept-messages`, env `BUS_AUTO_ACCEPT_MESSAGES`)
+picks the rule: on, the agent works on a request about its own project and asks you first before
+anything destructive, outside its project, touching secrets or deploys, or large; off, it asks
+first for every request. Example: "@A can you do xyz?" (a `request` to A), then A replies "sure,
+will report back" (`ack`), and later "here is the result" (`answer`). What to tell a project's
+agent about its role: [agent-guide.md](agent-guide.md).
 
 ## 2. Add the delivery hooks
 
@@ -99,7 +104,7 @@ every concurrent session its own identity.
 ## What the agent sees
 
 Every delivered message carries a `notice` that frames it as an untrusted peer message with a
-verified signature (design.md §8 rule 1), plus `first_contact` when its sender's key was pinned
+verified signature, and says whether a request in it may be acted on (design.md §8 rules 1 and 2), plus `first_contact` when its sender's key was pinned
 by that message. The server instructions say the same: a valid signature proves who sent a
 message, not that it is safe or that the owner wants it done. Tools and results:
 [agent-tools.md](agent-tools.md).
@@ -126,4 +131,4 @@ fails with "unknown agent" ([troubleshooting.md](troubleshooting.md#unknown-agen
 - The hooks find their session by walking the process tree through `/proc`: Linux only, and the
   hook must run as a descendant of the Claude Code process that started the MCP server.
 - Not in the MVP: `join`/`leave` tools (use `busctl --direct channel join`), `history`,
-  `requests`, private channels, `list_agents`, and an `inbox` filter by channel.
+  `requests`, private channels, and an `inbox` filter by channel.
