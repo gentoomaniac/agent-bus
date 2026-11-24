@@ -95,6 +95,10 @@ func (store *Store) remember(pin Pin) {
 	store.pins[pin.AgentID] = append(store.pins[pin.AgentID], pin)
 }
 
+// Unpinned is a store that holds no pins and must not be added to. Resolving against it trusts the
+// registry alone, for a reader that only displays messages, like the monitor (design.md §10a).
+func Unpinned() *Store { return &Store{pins: map[string][]Pin{}} }
+
 // Pins returns the keys pinned for the agent.
 func (store *Store) Pins(agentID string) []Pin { return store.pins[agentID] }
 
