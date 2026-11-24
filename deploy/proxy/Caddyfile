@@ -1,0 +1,14 @@
+# Caddy in front of the web monitor: it gets the certificate and does the TLS (docs/monitor.md).
+# Start the monitor with --behind-proxy and --public-url https://<this host>.
+#
+# BUS_PUBLIC_HOST is the host name clients use; "localhost" makes Caddy use its own local CA, for a
+# trial. The monitor is reached as agent-bus:8080 in docker-compose.proxy.yaml; change the upstream
+# for another setup.
+{$BUS_PUBLIC_HOST:localhost} {
+	reverse_proxy agent-bus:8080 {
+		# Pass the event stream through at once instead of collecting it.
+		flush_interval -1
+	}
+	# Caddy keeps the client's Host header and sets X-Forwarded-For/-Proto/-Host itself, replacing
+	# what the client sent. The monitor takes the proxy's address as a --trusted-proxy.
+}
