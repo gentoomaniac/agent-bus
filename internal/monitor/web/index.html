@@ -41,7 +41,10 @@
   li.item { padding: 5px 12px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
   li.item:hover { background: var(--hover); }
   li.item.selected { background: var(--selected); font-weight: 600; }
+  /* Long text is cut with an ellipsis and carries its full text as a tooltip; states never wrap. */
+  .cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   li.item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li.item .unread { flex: none; }
   li.member { padding: 4px 12px; cursor: pointer; }
   li.member:hover { background: var(--hover); }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; flex: none; background: var(--muted); }
@@ -54,33 +57,38 @@
   .dot.offline { background: transparent; border: 1px solid var(--muted); }
   li.item > div { flex: 1; min-width: 0; }
   .agent-line { display: flex; align-items: center; min-width: 0; }
-  .agent-line .label, .agent-line .state { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .agent-line .label { flex: 0 1 auto; }
-  .agent-line .state { flex: 0 100 auto; padding-left: 6px; }
-  .agent-sub { margin-left: 15px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+  .agent-line .label { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agent-line .state { flex: none; padding-left: 6px; white-space: nowrap; }
+  .agent-sub { margin-left: 15px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #agent-detail { border-top: 1px solid var(--border); padding-bottom: 12px; }
   #agent-detail .entry { padding: 2px 12px; font-size: 12px; overflow-wrap: anywhere; }
+  h2.cut { display: block; }
   .unread { background: var(--accent); color: var(--accent-text); border-radius: 9px; padding: 0 6px; font-size: 11px; }
   .muted { color: var(--muted); }
   .empty { padding: 4px 12px; color: var(--muted); }
   header { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
   header .title { font-weight: 600; font-size: 16px; }
+  header .left > div { min-width: 0; }
+  header .left .title, header .left .muted { display: inline-block; max-width: 100%; vertical-align: bottom; }
   #live { font-size: 12px; color: var(--muted); }
   #live.on { color: var(--ok); }
   #messages { flex: 1; overflow-y: auto; padding: 8px 16px; min-height: 0; }
   .message { padding: 8px 0; border-bottom: 1px solid var(--border); }
   .message .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+  .message .meta > * { white-space: nowrap; }
+  .message .meta > .cut { max-width: min(30ch, 100%); }
   .message .from { font-weight: 600; }
   .message .title { font-weight: 600; margin-top: 2px; }
   .message .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
   .message .reason { color: var(--muted); font-size: 12px; margin-top: 2px; }
-  .pill { font-size: 11px; border: 1px solid var(--border); border-radius: 9px; padding: 0 7px; color: var(--muted); }
+  .pill { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; font-size: 11px; border: 1px solid var(--border); border-radius: 9px; padding: 0 7px; color: var(--muted); }
   .pill.target { color: var(--accent); border-color: var(--accent); }
   .pill.me { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
   .pill.all { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); font-weight: 600; }
   .targets-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
   #targets { flex-wrap: wrap; align-items: center; font-size: 12px; }
-  #targets label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+  #targets label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; max-width: 30ch; }
+  #targets label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #targets input { padding: 0; }
   .badge { font-size: 11px; border-radius: 9px; padding: 0 7px; font-weight: 600; }
   .badge.verified { background: var(--ok-bg); color: var(--ok); }
@@ -128,7 +136,7 @@
     <header>
       <div class="left">
         <button class="toggle" id="toggle-sidebar" type="button" title="Show or hide the channel list" aria-pressed="true">Channels</button>
-        <div><span class="title" id="channel-title">Select a channel</span> <span class="muted" id="channel-description"></span></div>
+        <div><span class="title cut" id="channel-title">Select a channel</span> <span class="muted cut" id="channel-description"></span></div>
       </div>
       <div class="right"><span id="live">connecting...</span><button id="logout" type="button" hidden>Log out</button>
         <button class="toggle" id="toggle-members" type="button" title="Show or hide the members panel" aria-pressed="true">Members</button></div>
@@ -156,7 +164,6 @@
 
 // Messages are untrusted: everything is put on the page with textContent, never as HTML.
 const ALL = "@all";
-const MAX_ID_CHARS = 28;
 const MESSAGE_TYPES = ["message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"];
 const REFRESH_MS = 5000;
 const PAGE_SIZE = 500;
@@ -394,7 +401,8 @@ function agentSummary(view) {
   const parts = [];
   if (view.workers && view.workers.length) parts.push(view.workers.length + (view.workers.length === 1 ? " worker" : " workers"));
   if (view.activity) parts.push(view.activity + " (" + ago(view.activity_since) + ")");
-  return parts.length ? el("div", { class: "agent-sub" }, parts.join(" \u00b7 ")) : "";
+  const text = parts.join(" \u00b7 ");
+  return parts.length ? el("div", { class: "agent-sub", title: text }, text) : "";
 }
 
 function showDetail(agentId) {
@@ -410,7 +418,7 @@ function renderDetail() {
   const workers = (view.workers || []).map((w) => el("div", { class: "entry" }, w.description + " (" + ago(w.since) + ")"));
   const recent = (view.recent || []).slice().reverse().map((e) => el("div", { class: "entry" }, el("span", { class: "muted" }, ago(e.at) + " ago "), e.text));
   box.replaceChildren(
-    el("h2", {}, state.detailAgent),
+    el("h2", { class: "cut", title: state.detailAgent }, state.detailAgent),
     el("div", { class: "entry" }, el("span", { class: "dot " + stateClass(view.state) }), view.state + since),
     ...(view.pending ? [el("div", { class: "entry" }, view.pending + " unread targeted")] : []),
     ...(workers.length ? [el("h2", {}, "Workers"), ...workers] : []),
@@ -422,7 +430,7 @@ function renderSidebar() {
   const dmItems = state.channels.filter((c) => c.kind === "dm");
   const item = (channel) => {
     const unread = state.unread.get(channel.id);
-    return el("li", { class: "item" + (channel.id === state.selected ? " selected" : ""), title: channel.description || "", onclick: () => select(channel.id) },
+    return el("li", { class: "item" + (channel.id === state.selected ? " selected" : ""), title: describeChannel(channel) + (channel.description ? ": " + channel.description : ""), onclick: () => select(channel.id) },
       el("span", { class: "label" }, describeChannel(channel)), unread ? el("span", { class: "unread" }, String(unread)) : "");
   };
   $("channels").replaceChildren(...channelItems.map(item));
@@ -430,7 +438,7 @@ function renderSidebar() {
   $("agents").replaceChildren(...(state.agents.length ? state.agents.map((agent) => {
     if (agent.removed) {
       return el("li", { class: "item removed", title: agent.fingerprint },
-        el("div", {}, el("span", { class: "agent-line" }, el("span", { class: "dot" }), el("span", { class: "label" }, agent.id), el("span", { class: "muted state" }, "removed"))));
+        el("div", {}, el("span", { class: "agent-line", title: agent.id + " (removed)" }, el("span", { class: "dot" }), el("span", { class: "label" }, agent.id), el("span", { class: "muted state" }, "removed"))));
     }
     const view = presenceOf(agent.id);
     return el("li", { class: "item", title: agent.fingerprint, onclick: () => { document.forms.composer.target.value = "agent:" + agent.id; showDetail(agent.id); } },
@@ -446,25 +454,23 @@ function renderMembers() {
 
 function renderHeader() {
   const channel = state.channels.find((c) => c.id === state.selected);
-  $("channel-title").textContent = channel ? describeChannel(channel) : "Select a channel";
+  const title = channel ? describeChannel(channel) : "Select a channel";
+  $("channel-title").textContent = title;
+  $("channel-title").title = title;
   $("channel-description").textContent = channel ? channel.description || "" : "";
-}
-
-// Long agent IDs are cut for the one-line header; the full ID stays in the tooltip.
-function shorten(id) {
-  return id.length > MAX_ID_CHARS ? id.slice(0, MAX_ID_CHARS - 1) + "\u2026" : id;
+  $("channel-description").title = channel ? channel.description || "" : "";
 }
 
 // "-> recipient" for a direct message (the envelope's to is an agent), "-> #channel" otherwise.
 function destination(message) {
   const isDM = message.channel.startsWith("dm:");
   const label = isDM ? message.to : "#" + message.to;
-  return el("span", { class: "muted", title: label }, "\u2192 " + shorten(label));
+  return el("span", { class: "muted cut", title: label }, "\u2192 " + label);
 }
 
 function renderMessage(message, channel) {
   const meta = el("div", { class: "meta" },
-    el("span", { class: "from", title: message.from || "" }, shorten(message.from || "unknown sender")),
+    el("span", { class: "from cut", title: message.from || "" }, message.from || "unknown sender"),
     ...(message.to ? [destination(message)] : []),
     el("span", { class: "muted", title: message.time || "" }, message.time ? new Date(message.time).toLocaleString() : ""),
     ...(message.type ? [el("span", { class: "pill" }, message.type)] : []),
@@ -472,8 +478,7 @@ function renderMessage(message, channel) {
     el("span", { class: "muted" }, "#" + message.sequence));
   const targets = (message.targets || []).map((target) => {
     const mine = target === state.status.agent;
-    const pill = el("span", { class: "pill " + (target === ALL ? "all" : mine ? "me" : "target"), title: target }, shorten(target));
-    return pill;
+    return el("span", { class: "pill " + (target === ALL ? "all" : mine ? "me" : "target"), title: target }, target);
   });
   return el("div", { class: "message" }, meta,
     ...(targets.length ? [el("div", { class: "targets-row" }, ...targets)] : []),
@@ -523,7 +528,7 @@ function renderTargets() {
     const box = el("input", { type: "checkbox", value: id, ...(isDM ? { disabled: "" } : {}) });
     box.checked = state.picked.has(id);
     box.addEventListener("change", () => (box.checked ? state.picked.add(id) : state.picked.delete(id)));
-    return el("label", {}, box, id);
+    return el("label", { title: id }, box, el("span", {}, id));
   }));
 }
 
