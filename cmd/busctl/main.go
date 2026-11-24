@@ -39,6 +39,10 @@ type CLI struct {
 		Remove AgentRemoveCmd `cmd:"" help:"Remove an agent: delete its account and consumers and revoke its key. The ID is never reused."`
 	} `cmd:"" help:"Registered agents."`
 
+	Directory struct {
+		Export DirectoryExportCmd `cmd:"" help:"Write the record of every agent, removed ones included, to a directory agents can use as their local directory."`
+	} `cmd:"" help:"The agents' directory of keys."`
+
 	Channel struct {
 		Create ChannelCreateCmd `cmd:"" help:"Create a group channel and add it to the catalogue."`
 		Join   ChannelJoinCmd   `cmd:"" help:"Let a registered agent read a group channel from now on."`

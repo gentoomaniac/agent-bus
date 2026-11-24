@@ -202,19 +202,59 @@ func (adapter *Adapter) DeliversAll() bool { return adapter.config.Deliver == De
 // Channels are the channels the adapter reads: the agent's DM channel, general and its groups.
 func (adapter *Adapter) Channels() []bus.Channel { return slices.Clone(adapter.channels) }
 
-// Agents are the agents of the local directory, sorted. Only a directory that can be listed
+// directoryRecords reads every record of the local directory. Only a directory that can be listed
 // (trust.FileDirectory) supports it.
-func (adapter *Adapter) Agents(ctx context.Context) ([]string, error) {
-	if err := adapter.Ready(); err != nil {
-		return nil, err
-	}
+func (adapter *Adapter) directoryRecords(ctx context.Context) ([]bus.AgentRecord, error) {
 	lister, ok := adapter.config.Directory.(interface {
-		List(context.Context) ([]string, error)
+		Records(context.Context) ([]bus.AgentRecord, error)
 	})
 	if !ok {
 		return nil, errors.New("this directory cannot list agents")
 	}
-	return lister.List(ctx)
+	return lister.Records(ctx)
+}
+
+// Agents are the agents of the local directory that were not removed, sorted.
+func (adapter *Adapter) Agents(ctx context.Context) ([]string, error) {
+	if err := adapter.Ready(); err != nil {
+		return nil, err
+	}
+	records, err := adapter.directoryRecords(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var agentIDs []string
+	for _, record := range records {
+		if !record.Removed() {
+			agentIDs = append(agentIDs, record.AgentID)
+		}
+	}
+	return agentIDs, nil
+}
+
+// RefreshDirectory re-reads the local directory and remembers the fingerprint of every revoked key
+// in it, in revoked_keys. From then on messages signed by such a key are rejected, pinned or not.
+// Revocations are only ever added: a directory that lost a record does not un-revoke anything.
+func (adapter *Adapter) RefreshDirectory(ctx context.Context) error {
+	if err := adapter.Ready(); err != nil {
+		return err
+	}
+	records, err := adapter.directoryRecords(ctx)
+	if err != nil {
+		return err
+	}
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	for _, record := range records {
+		for _, key := range record.Keys {
+			if key.Revoked {
+				if err := adapter.trust.Revoke(record.AgentID, key.Fingerprint); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (adapter *Adapter) Fingerprint() string { return adapter.keyFP }
@@ -229,12 +269,25 @@ func (adapter *Adapter) Send(ctx context.Context, to string, message Outgoing) (
 	if err := adapter.Ready(); err != nil {
 		return "", err
 	}
-	if _, err := adapter.config.Directory.Lookup(ctx, to); errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("unknown agent %s: it has no entry in the directory", to)
-	} else if err != nil {
+	if err := adapter.checkRecipient(ctx, to); err != nil {
 		return "", err
 	}
 	return adapter.post(ctx, bus.DMChannel(to), message)
+}
+
+// checkRecipient refuses an agent that has no directory record or was removed.
+func (adapter *Adapter) checkRecipient(ctx context.Context, agentID string) error {
+	record, err := adapter.config.Directory.Lookup(ctx, agentID)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("unknown agent %s: it has no entry in the directory", agentID)
+	}
+	if err != nil {
+		return err
+	}
+	if record.Removed() {
+		return fmt.Errorf("agent removed: %s", agentID)
+	}
+	return nil
 }
 
 // Publish posts to `general` or a group channel.
@@ -301,10 +354,8 @@ func (adapter *Adapter) targetsFor(ctx context.Context, to bus.Channel, message 
 		if target == envelope.TargetAll {
 			continue
 		}
-		if _, err := adapter.config.Directory.Lookup(ctx, target); errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("%w: unknown agent %s: it has no entry in the directory", ErrBadTargets, target)
-		} else if err != nil {
-			return nil, err
+		if err := adapter.checkRecipient(ctx, target); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrBadTargets, err)
 		}
 	}
 	return targets, nil

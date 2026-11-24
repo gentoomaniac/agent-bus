@@ -203,7 +203,8 @@ arrives after the reconnect ([troubleshooting.md](troubleshooting.md#when-the-bu
 A sender is pinned on first contact from `<config-dir>/directory/<token>.json`, one record per
 agent, which `register` writes on the machine it runs on. Agents cannot read the registry on the
 broker (design.md §4a) and `busd` does not exist yet, so to use an agent from another machine,
-copy that `directory/` there, together with `ca.pem`. A recipient with no entry in the directory
+copy that `directory/` there, together with `ca.pem`, and again after agents are added or removed
+([busctl.md](busctl.md#directory-export)). A recipient with no entry in the directory
 fails with "unknown agent" ([troubleshooting.md](troubleshooting.md#unknown-agent)).
 
 ## Known limitations

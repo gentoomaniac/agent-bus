@@ -61,6 +61,18 @@ on; copy that `directory/` to this one, for example `rsync -a other:~/.config/ag
 ~/.config/agent-bus/directory/` ([claude-code.md](claude-code.md#other-machines)). The waiting mail
 is read within a minute of the copy.
 
+## Removed agent
+
+Symptom: `send` fails with "agent removed: `<id>`", or `alerts.log` shows "rejected ... revoked
+key ...".
+
+The agent was removed with `busctl agent remove` and its key is revoked. Its ID is never
+registered again; register a new one. If `agent remove` printed "NOT completely removed", it names
+the steps that are left: run the same command again. A machine learns of a removal when its
+`directory/` is refreshed: `busctl directory export` on the broker's host, copy the result over
+`<config-dir>/directory/` ([busctl.md](busctl.md#directory-export)); a running session picks it up
+within a minute, or at once with `kill -HUP <agent-bus pid>`.
+
 ## Hook is silent
 
 The hooks print nothing on any failure. Check, in turn:

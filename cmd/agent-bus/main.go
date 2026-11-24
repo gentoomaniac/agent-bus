@@ -47,6 +47,8 @@ type CLI struct {
 	ReconnectInitial time.Duration `help:"mcp only: the first wait before reconnecting to the broker; it doubles for each failed attempt." default:"1s" env:"BUS_RECONNECT_INITIAL"`
 	ReconnectMax     time.Duration `help:"mcp only: the longest wait between reconnect attempts." default:"30s" env:"BUS_RECONNECT_MAX"`
 
+	DirectoryRefresh time.Duration `help:"mcp only: how often the local directory is re-read for revoked keys (also on SIGHUP)." default:"1m" env:"BUS_DIRECTORY_REFRESH"`
+
 	PresenceHeartbeat time.Duration `help:"mcp only: how often an unchanged presence record is published; readers call an agent offline after three times this." default:"30s" env:"BUS_PRESENCE_HEARTBEAT"`
 
 	Send     SendCmd     `cmd:"" help:"Send a message to one agent."`
@@ -144,6 +146,7 @@ func (cmd *MCPCmd) Run(ctx context.Context, cli *CLI, session *adapter.Adapter) 
 	// Only the lock holder answers hooks and publishes presence; a failure here only costs the
 	// end-of-turn check and the owner's view.
 	if session.Ready() == nil {
+		go refreshDirectory(ctx, session, cli.DirectoryRefresh)
 		publisher := presence.NewPublisher(session, cli.PresenceHeartbeat, time.Now)
 		publishing := make(chan struct{})
 		publishCtx, stopPublishing := context.WithCancel(ctx)
@@ -156,6 +159,27 @@ func (cmd *MCPCmd) Run(ctx context.Context, cli *CLI, session *adapter.Adapter) 
 		}
 	}
 	return mcpserver.Serve(ctx, session, &mcp.StdioTransport{})
+}
+
+// refreshDirectory re-reads the local directory on a timer and on SIGHUP until ctx ends. The
+// directory is copied in by hand until busd exists (docs/busctl.md), so a failure is only logged.
+func refreshDirectory(ctx context.Context, session *adapter.Adapter, interval time.Duration) {
+	hangups := make(chan os.Signal, 1)
+	signal.Notify(hangups, syscall.SIGHUP)
+	defer signal.Stop(hangups)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		case <-hangups:
+		}
+		if err := session.RefreshDirectory(ctx); err != nil {
+			log.Printf("agent-bus: refreshing the directory: %v", err)
+		}
+	}
 }
 
 type PendingCmd struct {
@@ -270,6 +294,10 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 	if err != nil {
 		transport.Close()
 		return nil, nil, err
+	}
+	// A command or session starts with the revocations the directory has now.
+	if err := session.RefreshDirectory(context.Background()); err != nil && session.Ready() == nil {
+		log.Printf("agent-bus: reading the directory: %v", err)
 	}
 	return session, func() { session.Close(); transport.Close() }, nil
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
 // findAgent reads one agent's registry record.
@@ -143,4 +144,30 @@ func tombstone(record bus.AgentRecord, now time.Time) bus.AgentRecord {
 		current.RevokedAt = &now
 	}
 	return record
+}
+
+type DirectoryExportCmd struct {
+	Dir string `arg:"" type:"path" help:"Where to write <agent-token>.json, one record per agent."`
+}
+
+// Run writes the whole registry, tombstones included: they are how an agent learns a key is
+// revoked. Copying the result into the other machines' config-dir/directory is up to the owner.
+func (cmd *DirectoryExportCmd) Run(ctx context.Context, cli *CLI) error {
+	admin, err := cli.adminClient()
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+	records, err := admin.Agents(ctx)
+	if err != nil {
+		return err
+	}
+	directory := trust.FileDirectory(cmd.Dir)
+	for _, record := range records {
+		if err := directory.Write(record); err != nil {
+			return err
+		}
+	}
+	fmt.Printf("exported %d agent records to %s\n", len(records), cmd.Dir)
+	return nil
 }

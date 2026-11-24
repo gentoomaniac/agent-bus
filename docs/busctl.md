@@ -165,6 +165,28 @@ bin/busctl --direct agent remove api-client@alice
 Other agents keep trusting the removed key until they refresh their directory
 ([directory export](#directory-export)).
 
+### directory export
+
+Writes the registry's record of every agent, removed ones included, to a directory as
+`<token>.json`. It is the source of the agents' local `directory/`.
+
+```sh
+bin/busctl --direct directory export /tmp/directory
+```
+
+To sync it to another machine, export and copy it over that machine's directory in one line:
+
+```sh
+bin/busctl --direct directory export /tmp/directory && rsync -a /tmp/directory/ other:~/.config/agent-bus/directory/
+```
+
+A running `agent-bus mcp` re-reads its directory every minute (`--directory-refresh`) and on
+`SIGHUP`. It then keeps the fingerprints of all revoked keys in `<agent-dir>/revoked_keys` and
+rejects messages signed by them, even from a pinned key ("revoked key" in `alerts.log`). Sending to
+a removed agent fails with "agent removed", and `list_agents` leaves it out. Run the export again
+after every `agent remove` and `register`. An automatic refresh over the bus comes with `busd`
+and enrollment (design.md §4c).
+
 ## Not built yet
 
 `busctl alerts` (alerts go to `<agent-dir>/alerts.log` only) and every command that needs `busd`.

@@ -15,9 +15,9 @@ import (
 
 // FileDirectory is the MVP registry read path: a directory of `<agent-token>.json` files, one
 // AgentRecord each. `busctl register` writes the record of every new agent there, next to the
-// config directory's other files. Agents have no read access to the registry on the broker
+// config directory's other files, and `busctl directory export` writes all records of the registry. Agents have no read access to the registry on the broker
 // (design.md §4a) and busd, which will serve it, does not exist yet. A machine that did not run
-// the registration gets the files by copying the directory; the owner owns every machine.
+// the registration gets the files by copying an export; the owner owns every machine.
 type FileDirectory string
 
 // DirectoryPath is where a config directory keeps its FileDirectory.
@@ -42,20 +42,27 @@ func (dir FileDirectory) Lookup(_ context.Context, agentID string) (bus.AgentRec
 	return record, nil
 }
 
-// List returns the IDs of the registered agents, sorted.
-func (dir FileDirectory) List(context.Context) ([]string, error) {
+// Records returns the record of every agent in the directory, removed ones included, sorted by
+// agent ID.
+func (dir FileDirectory) Records(ctx context.Context) ([]bus.AgentRecord, error) {
 	entries, err := os.ReadDir(string(dir))
 	if err != nil {
 		return nil, err
 	}
-	var agentIDs []string
+	var records []bus.AgentRecord
 	for _, entry := range entries {
-		if token, isRecord := strings.CutSuffix(entry.Name(), ".json"); isRecord {
-			agentIDs = append(agentIDs, bus.AgentIDFromToken(token))
+		token, isRecord := strings.CutSuffix(entry.Name(), ".json")
+		if !isRecord {
+			continue
 		}
+		record, err := dir.Lookup(ctx, bus.AgentIDFromToken(token))
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
 	}
-	slices.Sort(agentIDs)
-	return agentIDs, nil
+	slices.SortFunc(records, func(a, b bus.AgentRecord) int { return strings.Compare(a.AgentID, b.AgentID) })
+	return records, nil
 }
 
 // Write stores a record, replacing an earlier one.
