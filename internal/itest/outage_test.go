@@ -124,9 +124,9 @@ func TestBrokerOutage(t *testing.T) {
 	t.Run("tools that need the broker report the outage, the others work from the buffer", func(t *testing.T) {
 		_, ids := inbox(t, bobServer)
 		for tool, arguments := range map[string]map[string]any{
-			"send":    {"to": alice, "body": map[string]any{"text": "x"}},
-			"publish": {"channel": "general", "body": map[string]any{"text": "x"}, "targets": []string{"@all"}},
-			"ack":     {"message_ids": ids},
+			"send":      {"to": alice, "body": map[string]any{"text": "x"}},
+			"publish":   {"channel": "general", "body": map[string]any{"text": "x"}, "targets": []string{"@all"}},
+			"mark_read": {"message_ids": ids},
 		} {
 			eventually(t, tool+" to report the outage", func() bool {
 				text, isError := bobServer.call(t, tool, arguments)
@@ -172,8 +172,8 @@ func TestBrokerOutage(t *testing.T) {
 		if !slices.Equal(texts, want) {
 			t.Errorf("bob's inbox = %v, want %v", texts, want)
 		}
-		if text, isError := bobServer.call(t, "ack", map[string]any{"message_ids": ids}); isError {
-			t.Errorf("ack after the outage: %s", text)
+		if text, isError := bobServer.call(t, "mark_read", map[string]any{"message_ids": ids}); isError {
+			t.Errorf("mark_read after the outage: %s", text)
 		}
 		if texts, _ := inbox(t, bobServer); len(texts) != 0 {
 			t.Errorf("acked messages are back: %v", texts)

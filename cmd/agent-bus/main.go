@@ -44,12 +44,12 @@ type CLI struct {
 	ReconnectInitial time.Duration `help:"mcp only: the first wait before reconnecting to the broker; it doubles for each failed attempt." default:"1s" env:"BUS_RECONNECT_INITIAL"`
 	ReconnectMax     time.Duration `help:"mcp only: the longest wait between reconnect attempts." default:"30s" env:"BUS_RECONNECT_MAX"`
 
-	Send    SendCmd    `cmd:"" help:"Send a message to one agent."`
-	Publish PublishCmd `cmd:"" help:"Post to general or a group channel."`
-	Inbox   InboxCmd   `cmd:"" help:"Fetch new mail and print the unread messages as JSON."`
-	Ack     AckCmd     `cmd:"" help:"Fetch new mail and acknowledge the given message IDs."`
-	MCP     MCPCmd     `cmd:"" name:"mcp" help:"Serve the adapter as an MCP server on stdin and stdout."`
-	Pending PendingCmd `cmd:"" help:"For a harness hook: report this session's new mail. Asks the session's MCP server, no identity needed."`
+	Send     SendCmd     `cmd:"" help:"Send a message to one agent."`
+	Publish  PublishCmd  `cmd:"" help:"Post to general or a group channel."`
+	Inbox    InboxCmd    `cmd:"" help:"Fetch new mail and print the unread messages as JSON."`
+	MarkRead MarkReadCmd `cmd:"" name:"mark-read" aliases:"ack" help:"Fetch new mail and mark the given message IDs read."`
+	MCP      MCPCmd      `cmd:"" name:"mcp" help:"Serve the adapter as an MCP server on stdin and stdout."`
+	Pending  PendingCmd  `cmd:"" help:"For a harness hook: report this session's new mail. Asks the session's MCP server, no identity needed."`
 }
 
 type MessageFlags struct {
@@ -117,11 +117,11 @@ func (cmd *InboxCmd) Run(ctx context.Context, session *adapter.Adapter) error {
 	return pollErr
 }
 
-type AckCmd struct {
-	IDs []string `arg:"" help:"Message IDs to acknowledge."`
+type MarkReadCmd struct {
+	IDs []string `arg:"" help:"Message IDs to mark read."`
 }
 
-func (cmd *AckCmd) Run(ctx context.Context, session *adapter.Adapter) error {
+func (cmd *MarkReadCmd) Run(ctx context.Context, session *adapter.Adapter) error {
 	pollErr := session.Poll(ctx)
 	return errors.Join(pollErr, session.Ack(ctx, cmd.IDs))
 }

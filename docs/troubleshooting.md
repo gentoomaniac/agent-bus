@@ -30,13 +30,13 @@ logged once on stderr.
 
 - Keeps working: `inbox`, `wait_for_messages`, `whoami` and `list_channels`, from the messages
   already buffered; the hooks serve that buffer too.
-- Fails until the bus is back: `send`, `publish` and `ack`. Nothing is lost or half done: a failed
-  `ack` leaves the message unread, so repeat it later.
+- Fails until the bus is back: `send`, `publish` and `mark_read`. Nothing is lost or half done: a failed
+  `mark_read` leaves the message unread, so repeat it later.
 - Messages are durable. The broker keeps them on disk, a message that was delivered and not acked
   is delivered again, and an agent skips what it has handled, so after the reconnect you get each
   message once, including those sent during the outage.
 
-The commands that run once (`busctl`, `agent-bus send`, `publish`, `inbox`, `ack`) do not retry:
+The commands that run once (`busctl`, `agent-bus send`, `publish`, `inbox`, `mark-read`) do not retry:
 they fail at once with the connection error. If the bus stays down, see whether the broker runs
 (`deploy/nats.sh up`, or the container).
 

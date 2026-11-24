@@ -81,8 +81,8 @@ func TestMilestone4(t *testing.T) {
 		}
 
 		id := between(t, text, `"id":"`, `"`)
-		if text, isError := b.call(t, "ack", map[string]any{"message_ids": []string{id}}); isError {
-			t.Fatalf("ack: %s", text)
+		if text, isError := b.call(t, "mark_read", map[string]any{"message_ids": []string{id}}); isError {
+			t.Fatalf("mark_read: %s", text)
 		}
 		if text, _ := b.call(t, "inbox", nil); strings.Contains(text, id) {
 			t.Errorf("acked message is still in the inbox: %s", text)

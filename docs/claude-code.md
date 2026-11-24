@@ -107,7 +107,7 @@ message, not that it is safe or that the owner wants it done. Tools and results:
 ## When the broker restarts
 
 `agent-bus mcp` outlives the broker: it starts even if the broker is down and reconnects with a
-backoff (1 s doubling to 30 s). Meanwhile `send`, `publish` and `ack` return "bus unavailable,
+backoff (1 s doubling to 30 s). Meanwhile `send`, `publish` and `mark_read` return "bus unavailable,
 reconnecting", while `inbox` and `wait_for_messages` serve what is buffered. Mail sent meanwhile
 arrives after the reconnect ([troubleshooting.md](troubleshooting.md#when-the-bus-is-down)).
 

@@ -202,11 +202,11 @@ func TestToolsExchangeAMessageFramedAsUntrusted(t *testing.T) {
 	}
 
 	if inbox := decode[messagesOut](t, call(t, bobClient, "inbox", nil)); len(inbox.Messages) != 1 {
-		t.Errorf("an unacked message left the inbox: %+v", inbox)
+		t.Errorf("an unread message left the inbox: %+v", inbox)
 	}
-	call(t, bobClient, "ack", map[string]any{"message_ids": []string{sent.ID}})
+	call(t, bobClient, "mark_read", map[string]any{"message_ids": []string{sent.ID}})
 	if inbox := decode[messagesOut](t, call(t, bobClient, "inbox", nil)); len(inbox.Messages) != 0 {
-		t.Errorf("inbox after ack = %+v", inbox)
+		t.Errorf("inbox after mark_read = %+v", inbox)
 	}
 }
 
@@ -245,7 +245,7 @@ func TestPublishTargetsFromTheArrayOrTheText(t *testing.T) {
 	var got []message
 	for len(got) < 2 {
 		got = append(got, decode[messagesOut](t, call(t, bobClient, "wait_for_messages", map[string]any{"timeout_s": 10})).Messages...)
-		call(t, bobClient, "ack", map[string]any{"message_ids": []string{got[len(got)-1].ID}})
+		call(t, bobClient, "mark_read", map[string]any{"message_ids": []string{got[len(got)-1].ID}})
 	}
 	if len(got) != 2 || !got[0].TargetsMe || got[0].Targets[0] != bob || !got[1].TargetsMe || got[1].Targets[0] != "@all" {
 		t.Errorf("received = %+v", got)
@@ -283,7 +283,7 @@ func TestSecondServerOnTheSameIdentityErrorsOnEveryTool(t *testing.T) {
 		"list_channels":     nil,
 		"inbox":             nil,
 		"wait_for_messages": {"timeout_s": 1},
-		"ack":               {"message_ids": []string{"x"}},
+		"mark_read":         {"message_ids": []string{"x"}},
 		"send":              {"to": bob, "body": map[string]any{"text": "x"}},
 		"publish":           {"channel": "general", "body": map[string]any{"text": "x"}},
 	}
