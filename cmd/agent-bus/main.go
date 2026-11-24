@@ -27,7 +27,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// version is set at release time: -ldflags "-X main.version=...".
+var version = "dev"
+
 type CLI struct {
+	Version kong.VersionFlag `help:"Print the version and exit."`
+
 	Agent     string        `help:"The identity to act as, <name>@<owner>. Required except for pending." aliases:"identity" env:"BUS_AGENT"`
 	ConfigDir string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
 	Broker    string        `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
@@ -151,7 +156,7 @@ func (cmd *PendingCmd) Run() error {
 
 func main() {
 	var cli CLI
-	kongCtx := kong.Parse(&cli, kong.Name("agent-bus"), kong.Description("Adapter of the agent bus."))
+	kongCtx := kong.Parse(&cli, kong.Name("agent-bus"), kong.Vars{"version": version}, kong.Description("Adapter of the agent bus."))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

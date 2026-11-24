@@ -16,7 +16,12 @@ import (
 	"github.com/alecthomas/kong"
 )
 
+// version is set at release time: -ldflags "-X main.version=...".
+var version = "dev"
+
 type CLI struct {
+	Version kong.VersionFlag `help:"Print the version and exit."`
+
 	ConfigDir  string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
 	Broker     string        `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
 	CACert     string        `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
@@ -87,7 +92,7 @@ func (cli *CLI) adminClient() (bus.Admin, error) {
 
 func main() {
 	var cli CLI
-	kongCtx := kong.Parse(&cli, kong.Name("busctl"), kong.Description("Admin CLI of the agent bus."))
+	kongCtx := kong.Parse(&cli, kong.Name("busctl"), kong.Vars{"version": version}, kong.Description("Admin CLI of the agent bus."))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
