@@ -75,6 +75,22 @@ func TestAPI(t *testing.T) {
 	}
 }
 
+func TestServesThePage(t *testing.T) {
+	server := httptest.NewServer(runMonitor(t, newFakeBus(t)).Handler())
+	defer server.Close()
+	response, err := http.Get(server.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK || !strings.HasPrefix(response.Header.Get("Content-Type"), "text/html") {
+		t.Errorf("GET /: status %d, content type %q", response.StatusCode, response.Header.Get("Content-Type"))
+	}
+	if other, _ := http.Get(server.URL + "/elsewhere"); other.StatusCode != http.StatusNotFound {
+		t.Errorf("GET /elsewhere: status %d, want 404", other.StatusCode)
+	}
+}
+
 func TestEventStreamDeliversNewMessages(t *testing.T) {
 	alice := newTestAgent("api-client@alice")
 	fake := newFakeBus(t, alice)

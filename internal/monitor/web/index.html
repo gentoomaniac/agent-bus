@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent bus monitor</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #667085; --border: #dfe3ea;
+    --accent: #3b5bdb; --accent-text: #ffffff; --hover: #eef1f6; --selected: #e3e9fb;
+    --ok: #1a7f37; --ok-bg: #dcf5e3; --warn: #8a5a00; --warn-bg: #fff1cc; --bad: #b42318; --bad-bg: #fde4e1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151c; --panel: #1a1e28; --text: #e6e9f0; --muted: #98a2b3; --border: #2b3140;
+      --accent: #7c93f5; --accent-text: #10131a; --hover: #232938; --selected: #2a3350;
+      --ok: #6fd48a; --ok-bg: #173424; --warn: #f0c565; --warn-bg: #3a2d10; --bad: #ff8f85; --bad-bg: #3d1a17;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif; }
+  #app { display: grid; grid-template-columns: 260px minmax(0, 1fr) 220px; height: 100%; }
+  aside, main { background: var(--panel); min-height: 0; display: flex; flex-direction: column; }
+  #sidebar { border-right: 1px solid var(--border); overflow-y: auto; }
+  #members-panel { border-left: 1px solid var(--border); overflow-y: auto; }
+  h1, h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 16px 12px 6px; }
+  h1 { margin-top: 12px; color: var(--text); font-size: 14px; text-transform: none; letter-spacing: 0; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li.item { padding: 5px 12px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  li.item:hover { background: var(--hover); }
+  li.item.selected { background: var(--selected); font-weight: 600; }
+  li.item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li.member { padding: 4px 12px; overflow-wrap: anywhere; }
+  .unread { background: var(--accent); color: var(--accent-text); border-radius: 9px; padding: 0 6px; font-size: 11px; }
+  .muted { color: var(--muted); }
+  .empty { padding: 4px 12px; color: var(--muted); }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  header .title { font-weight: 600; font-size: 16px; }
+  #live { font-size: 12px; color: var(--muted); }
+  #live.on { color: var(--ok); }
+  #messages { flex: 1; overflow-y: auto; padding: 8px 16px; min-height: 0; }
+  .message { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .message .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+  .message .from { font-weight: 600; }
+  .message .title { font-weight: 600; margin-top: 2px; }
+  .message .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
+  .message .reason { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .pill { font-size: 11px; border: 1px solid var(--border); border-radius: 9px; padding: 0 7px; color: var(--muted); }
+  .badge { font-size: 11px; border-radius: 9px; padding: 0 7px; font-weight: 600; }
+  .badge.verified { background: var(--ok-bg); color: var(--ok); }
+  .badge.unknown_sender { background: var(--warn-bg); color: var(--warn); }
+  .badge.rejected { background: var(--bad-bg); color: var(--bad); }
+  form { border-top: 1px solid var(--border); padding: 10px 16px; display: grid; gap: 6px; }
+  form .row { display: flex; gap: 6px; }
+  form .row > * { min-width: 0; }
+  form input[name=title] { flex: 1; }
+  select, input, textarea, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+  textarea { width: 100%; resize: vertical; min-height: 56px; }
+  button { background: var(--accent); color: var(--accent-text); border-color: var(--accent); cursor: pointer; }
+  button:disabled, select:disabled, input:disabled, textarea:disabled { opacity: .55; cursor: not-allowed; }
+  #send-note { font-size: 12px; color: var(--muted); }
+  #send-note.error { color: var(--bad); }
+  @media (max-width: 900px) {
+    #app { grid-template-columns: 200px minmax(0, 1fr); }
+    #members-panel { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <h1>Agent bus monitor</h1>
+    <h2>Channels</h2><ul id="channels"></ul>
+    <h2>Direct messages</h2><ul id="dms"></ul>
+    <h2>Agents</h2><ul id="agents"></ul>
+  </aside>
+  <main>
+    <header>
+      <div><span class="title" id="channel-title">Select a channel</span> <span class="muted" id="channel-description"></span></div>
+      <span id="live">connecting...</span>
+    </header>
+    <div id="messages"></div>
+    <form id="composer">
+      <div class="row">
+        <select name="target" aria-label="Send to"></select>
+        <select name="type" aria-label="Type"></select>
+        <input name="title" placeholder="Title (optional)" aria-label="Title">
+      </div>
+      <textarea name="text" placeholder="Message" aria-label="Message"></textarea>
+      <div class="row"><button type="submit">Send</button><span id="send-note"></span></div>
+    </form>
+  </main>
+  <aside id="members-panel">
+    <h2>Members</h2><ul id="members"></ul>
+  </aside>
+</div>
+<script>
+"use strict";
+
+// Messages are untrusted: everything is put on the page with textContent, never as HTML.
+const MESSAGE_TYPES = ["message", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"];
+const REFRESH_MS = 5000;
+const PAGE_SIZE = 500;
+const STATUS_LABEL = { verified: "verified", unknown_sender: "unknown sender", rejected: "rejected" };
+
+const state = {
+  channels: [], agents: [], members: [], status: { can_send: false, note: "" },
+  selected: null,                 // channel ID
+  messages: new Map(),            // channel ID -> messages ordered by sequence, once loaded
+  unread: new Map(),              // channel ID -> count
+};
+
+const $ = (id) => document.getElementById(id);
+
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (key === "class") node.className = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value);
+  }
+  node.append(...children);
+  return node;
+}
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  if (!response.ok) throw new Error((await response.text()).trim() || response.statusText);
+  return response.json();
+}
+
+// ---- data ----
+
+async function loadMessages(channelId) {
+  const list = [];
+  for (let after = 0; ; ) {
+    const page = await api(`/api/messages?channel=${encodeURIComponent(channelId)}&after=${after}&limit=${PAGE_SIZE}`);
+    list.push(...page);
+    if (page.length < PAGE_SIZE) break;
+    after = page[page.length - 1].sequence;
+  }
+  // Messages that arrived by event while the pages loaded are already in the list.
+  const known = state.messages.get(channelId) || [];
+  for (const message of known) insertMessage(list, message);
+  state.messages.set(channelId, list);
+}
+
+function insertMessage(list, message) {
+  let index = list.length;
+  while (index > 0 && list[index - 1].sequence > message.sequence) index--;
+  if (index > 0 && list[index - 1].sequence === message.sequence) return false;
+  list.splice(index, 0, message);
+  return true;
+}
+
+async function refresh() {
+  try {
+    [state.channels, state.agents, state.status] = await Promise.all([api("/api/channels"), api("/api/agents"), api("/api/status")]);
+    if (state.selected) state.members = await api(`/api/members?channel=${encodeURIComponent(state.selected)}`).catch(() => []);
+  } catch (error) {
+    $("live").textContent = "error: " + error.message;
+    return;
+  }
+  renderSidebar();
+  renderMembers();
+  renderComposer();
+}
+
+async function select(channelId) {
+  state.selected = channelId;
+  state.unread.delete(channelId);
+  history.replaceState(null, "", "#" + encodeURIComponent(channelId));
+  if (!state.messages.has(channelId)) await loadMessages(channelId);
+  await refresh();
+  pointComposerAt(state.channels.find((c) => c.id === channelId));
+  renderMessages(true);
+}
+
+// The composer's target follows the channel that is open: a conversation of the sending agent
+// is answered, anything else is posted to the channel itself.
+function pointComposerAt(channel) {
+  if (!channel) return;
+  const target = document.forms.composer.target;
+  if (channel.kind === "general") target.value = "group:general";
+  else if (channel.kind === "group") target.value = "group:" + channel.name;
+  else if (channel.agents.includes(state.status.agent)) target.value = "agent:" + channel.agents.find((id) => id !== state.status.agent);
+}
+
+// ---- rendering ----
+
+function describeChannel(channel) {
+  return channel.kind === "group" ? "# " + channel.name : channel.kind === "general" ? "# general" : channel.name.replace(" + ", " \u2194 ");
+}
+
+function renderSidebar() {
+  const channelItems = state.channels.filter((c) => c.kind !== "dm");
+  const dmItems = state.channels.filter((c) => c.kind === "dm");
+  const item = (channel) => {
+    const unread = state.unread.get(channel.id);
+    return el("li", { class: "item" + (channel.id === state.selected ? " selected" : ""), title: channel.description || "", onclick: () => select(channel.id) },
+      el("span", { class: "label" }, describeChannel(channel)), unread ? el("span", { class: "unread" }, String(unread)) : "");
+  };
+  $("channels").replaceChildren(...channelItems.map(item));
+  $("dms").replaceChildren(...(dmItems.length ? dmItems.map(item) : [el("li", { class: "empty" }, "none yet")]));
+  $("agents").replaceChildren(...(state.agents.length ? state.agents.map((agent) =>
+    el("li", { class: "item", title: agent.fingerprint, onclick: () => { document.forms.composer.target.value = "agent:" + agent.id; } },
+      el("span", { class: "label" }, agent.id))) : [el("li", { class: "empty" }, "no agents registered")]));
+}
+
+function renderMembers() {
+  $("members").replaceChildren(...(state.members.length ? state.members.map((id) => el("li", { class: "member" }, id)) : [el("li", { class: "empty" }, "none")]));
+}
+
+function renderHeader() {
+  const channel = state.channels.find((c) => c.id === state.selected);
+  $("channel-title").textContent = channel ? describeChannel(channel) : "Select a channel";
+  $("channel-description").textContent = channel ? channel.description || "" : "";
+}
+
+function renderMessage(message, channel) {
+  const meta = el("div", { class: "meta" },
+    el("span", { class: "from" }, message.from || "unknown sender"),
+    ...(channel && channel.kind === "dm" && message.to ? [el("span", { class: "muted" }, "to " + message.to)] : []),
+    el("span", { class: "muted", title: message.time || "" }, message.time ? new Date(message.time).toLocaleString() : ""),
+    ...(message.type ? [el("span", { class: "pill" }, message.type)] : []),
+    el("span", { class: "badge " + message.status }, STATUS_LABEL[message.status] || message.status),
+    el("span", { class: "muted" }, "#" + message.sequence));
+  return el("div", { class: "message" }, meta,
+    ...(message.title ? [el("div", { class: "title" }, message.title)] : []),
+    ...(message.text ? [el("div", { class: "text" }, message.text)] : []),
+    ...(message.reason ? [el("div", { class: "reason" }, message.reason)] : []));
+}
+
+function renderMessages(scrollToEnd) {
+  renderHeader();
+  const box = $("messages");
+  const atEnd = scrollToEnd || box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  const channel = state.channels.find((c) => c.id === state.selected);
+  const list = state.messages.get(state.selected) || [];
+  box.replaceChildren(...(list.length ? list.map((m) => renderMessage(m, channel)) : [el("div", { class: "empty" }, "No messages yet.")]));
+  if (atEnd) box.scrollTop = box.scrollHeight;
+}
+
+function renderComposer() {
+  const form = document.forms.composer;
+  const previous = form.target.value;
+  const groups = state.channels.filter((c) => c.kind === "group");
+  form.target.replaceChildren(
+    el("optgroup", { label: "Channels" }, el("option", { value: "group:general" }, "# general"), ...groups.map((g) => el("option", { value: "group:" + g.name }, "# " + g.name))),
+    el("optgroup", { label: "Direct message" }, ...state.agents.filter((a) => a.id !== state.status.agent).map((a) => el("option", { value: "agent:" + a.id }, a.id))));
+  form.target.value = previous || "group:general";
+  if (!form.target.value) form.target.value = "group:general";
+  if (!form.type.options.length) form.type.replaceChildren(...MESSAGE_TYPES.map((type) => el("option", { value: type }, type)));
+
+  const canSend = state.status.can_send;
+  for (const field of form.elements) field.disabled = !canSend;
+  const note = $("send-note");
+  if (!note.classList.contains("error")) {
+    note.textContent = canSend ? "Sending as " + state.status.agent : state.status.note;
+  }
+}
+
+// ---- sending ----
+
+document.forms.composer.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.target;
+  const [kind, ...nameParts] = form.target.value.split(":");
+  const note = $("send-note");
+  note.classList.remove("error");
+  try {
+    await api("/api/send", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: { kind, name: nameParts.join(":") }, type: form.type.value, title: form.title.value, text: form.text.value }),
+    });
+    form.title.value = form.text.value = "";
+    note.textContent = "Sent.";
+  } catch (error) {
+    note.classList.add("error");
+    note.textContent = error.message;
+    setTimeout(() => { note.classList.remove("error"); renderComposer(); }, 8000);
+  }
+});
+
+// ---- live feed ----
+
+function connectEvents() {
+  const source = new EventSource("/api/events");
+  source.onopen = async () => {
+    $("live").textContent = "live";
+    $("live").className = "on";
+    // Catch up on what was missed while disconnected.
+    state.messages.delete(state.selected);
+    if (state.selected) await loadMessages(state.selected);
+    await refresh();
+    renderMessages(false);
+  };
+  source.onerror = () => {
+    $("live").textContent = "reconnecting...";
+    $("live").className = "";
+  };
+  source.addEventListener("message", async (event) => {
+    const message = JSON.parse(event.data);
+    if (!state.channels.some((c) => c.id === message.channel)) await refresh();
+    const list = state.messages.get(message.channel); // missing until the channel was opened
+    if (message.channel === state.selected) {
+      if (list && insertMessage(list, message)) renderMessages(false);
+    } else {
+      if (list) insertMessage(list, message);
+      state.unread.set(message.channel, (state.unread.get(message.channel) || 0) + 1);
+      renderSidebar();
+    }
+  });
+}
+
+async function start() {
+  await refresh();
+  const wanted = decodeURIComponent(location.hash.slice(1));
+  await select(state.channels.some((c) => c.id === wanted) ? wanted : "general");
+  connectEvents();
+  setInterval(refresh, REFRESH_MS);
+}
+
+start();
+</script>
+</body>
+</html>

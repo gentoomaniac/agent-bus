@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,9 @@ const (
 	eventKeepAlive      = 15 * time.Second // keeps proxies and the browser from closing a quiet event stream
 )
 
+//go:embed web/index.html
+var web embed.FS
+
 // Status says whether the monitor can send, and why not.
 type Status struct {
 	Agent   string `json:"agent,omitempty"` // the identity messages are sent as
@@ -26,6 +30,7 @@ type Status struct {
 // traffic and belongs on localhost (docs/monitor.md).
 func (monitor *Monitor) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, web, "web/index.html") })
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Status()) })
 	mux.HandleFunc("GET /api/channels", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Channels()) })
 	mux.HandleFunc("GET /api/agents", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Agents()) })
