@@ -59,6 +59,18 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
    the bus has no such account, the earlier registration did not complete: the error names the
    directory to remove before rerunning.
 
+## Using the adapter from a shell
+
+`go build -o bin/ ./cmd/agent-bus`. After `busctl --direct register <agent-id>` (and
+`channel create` for groups), `bin/agent-bus --agent <agent-id> send <to> --text "..."`,
+`publish general|<group> --text "..."`, `inbox` (fetches once, prints the unread messages as JSON
+lines) and `ack <id>...` act as that identity. `--groups a,b` adds group channels to read;
+`--config-dir`, `--broker`, `--ca-cert` as for busctl. Every command is its own process holding the
+identity lock while it runs, so this is a test harness: a message fetched by `inbox` and not acked
+is redelivered only after the consumer's one-minute `AckWait`. The MCP server comes in milestone 4.
+A sender is first-contact pinned from `<config-dir>/directory`, which `register` fills on the
+machine it runs on; copy it to other machines (design.md §6, and `internal/trust` above).
+
 ## Code layout
 
 `internal/bus` holds the broker-neutral model and the two interfaces (`Transport`, `Admin`).
