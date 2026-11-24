@@ -280,6 +280,9 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 	if err := adapter.Ready(); err != nil {
 		return "", err
 	}
+	if err := adapter.config.Transport.Unavailable(); err != nil {
+		return "", err
+	}
 	if !slices.Contains(envelope.Types, message.Type) {
 		return "", fmt.Errorf("unknown message type %q, want one of %v", message.Type, envelope.Types)
 	}
@@ -363,6 +366,9 @@ func (adapter *Adapter) Poll(ctx context.Context) error {
 	if err := adapter.Ready(); err != nil {
 		return err
 	}
+	if err := adapter.config.Transport.Unavailable(); err != nil {
+		return err
+	}
 	adapter.pollMu.Lock()
 	defer adapter.pollMu.Unlock()
 	var errs []error
@@ -384,7 +390,9 @@ func (adapter *Adapter) Poll(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// Run reads until the context ends and keeps buffered messages alive at the broker.
+// Run reads until the context ends and keeps buffered messages alive at the broker. It does not
+// report that the bus is unavailable: the connection tells of an outage and its end itself, and it
+// reads on when the bus is back.
 func (adapter *Adapter) Run(ctx context.Context, report func(error)) error {
 	if err := adapter.Ready(); err != nil {
 		return err
@@ -392,14 +400,14 @@ func (adapter *Adapter) Run(ctx context.Context, report func(error)) error {
 	lastKeepAlive := time.Now()
 	for ctx.Err() == nil {
 		before := adapter.buffered()
-		if err := adapter.Poll(ctx); err != nil && ctx.Err() == nil {
+		if err := adapter.Poll(ctx); err != nil && ctx.Err() == nil && !errors.Is(err, bus.ErrUnavailable) {
 			report(err)
 		}
 		if time.Since(lastKeepAlive) >= keepAliveInterval {
 			adapter.mu.Lock()
 			err := adapter.inbox.keepAlive(ctx)
 			adapter.mu.Unlock()
-			if err != nil && ctx.Err() == nil {
+			if err != nil && ctx.Err() == nil && !errors.Is(err, bus.ErrUnavailable) {
 				report(err)
 			}
 			lastKeepAlive = time.Now()
@@ -573,6 +581,10 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 // reports every one.
 func (adapter *Adapter) Ack(ctx context.Context, ids []string) error {
 	if err := adapter.Ready(); err != nil {
+		return err
+	}
+	// Before anything changes: an ack that cannot reach the broker leaves the message unread.
+	if err := adapter.config.Transport.Unavailable(); err != nil {
 		return err
 	}
 	adapter.mu.Lock()

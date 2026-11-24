@@ -39,6 +39,7 @@ type fakeTransport struct {
 	broker *fakeBroker
 	agent  string
 	acks   int
+	down   error // what Unavailable returns
 }
 
 func (broker *fakeBroker) transport(agent string) *fakeTransport {
@@ -83,7 +84,7 @@ func (transport *fakeTransport) History(context.Context, bus.Channel, uint64, in
 
 func (transport *fakeTransport) Close() {}
 
-func (transport *fakeTransport) Unavailable() error { return nil }
+func (transport *fakeTransport) Unavailable() error { return transport.down }
 
 // testBus is a config directory with a registry directory and a clock the tests can move.
 type testBus struct {
@@ -519,5 +520,41 @@ func TestSendToAnUnknownAgentIsRefused(t *testing.T) {
 	_, err := a.Send(context.Background(), bob, text("anyone there?"))
 	if err == nil || !strings.Contains(err.Error(), "unknown agent") || len(b.broker.records) != 0 {
 		t.Errorf("err = %v, %d records", err, len(b.broker.records))
+	}
+}
+
+func TestWhileTheBusIsUnavailableSendAndAckFailAndNothingChanges(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, bobTransport := b.open(bob, deliverAll)
+	ctx := context.Background()
+	id, err := a.Send(ctx, bob, text("hello bob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	poll(t, bobAdapter)
+
+	bobTransport.down = bus.ErrUnavailable
+	if _, err := bobAdapter.Send(ctx, alice, text("hi")); !errors.Is(err, bus.ErrUnavailable) {
+		t.Errorf("send: %v", err)
+	}
+	if _, err := bobAdapter.Publish(ctx, "general", toAll("hi")); !errors.Is(err, bus.ErrUnavailable) {
+		t.Errorf("publish: %v", err)
+	}
+	if err := bobAdapter.Ack(ctx, []string{id}); !errors.Is(err, bus.ErrUnavailable) {
+		t.Errorf("ack: %v", err)
+	}
+	if err := bobAdapter.Poll(ctx); !errors.Is(err, bus.ErrUnavailable) {
+		t.Errorf("poll: %v", err)
+	}
+	if len(inboxOf(t, bobAdapter)) != 1 {
+		t.Error("the buffered message is gone from the inbox")
+	}
+
+	bobTransport.down = nil
+	if err := bobAdapter.Ack(ctx, []string{id}); err != nil || bobTransport.acks != 1 {
+		t.Errorf("ack after recovery: %v, broker acks %d", err, bobTransport.acks)
 	}
 }
