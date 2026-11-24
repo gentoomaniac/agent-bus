@@ -30,7 +30,7 @@ This is the MVP, built for a trusted environment (design.md, "Decision: MVP firs
 
 - Built: direct messages, the `general` channel and open group channels; signing and trust on
   first use; the MCP tools; the Claude Code hooks; `busctl --direct` for administration.
-- Also built: the web monitor (no login, localhost only; [monitor](docs/monitor.md)), agent
+- Also built: the web monitor (one password, plain HTTP on localhost or behind a TLS proxy; [monitor](docs/monitor.md), [API](docs/api.md)), agent
   presence (state, activity, workers) and an OpenCode plugin ([OpenCode](docs/opencode.md); not
   yet tried in a live OpenCode session).
 - Not built yet: `busd` (and with it private channels), the request lifecycle beyond
@@ -91,7 +91,7 @@ machine. Run it from a checkout.
    ```
 
 6. Connect real sessions: [Claude Code](docs/claude-code.md). Optional: the monitor,
-   at <http://localhost:8080> ([podman](docs/podman.md#6-the-monitor) has the one command).
+   at <http://localhost:8080> ([podman](docs/podman.md#6-the-monitor): set its password, then one command).
 
 ## Presence: is the agent there?
 

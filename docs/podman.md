@@ -78,17 +78,30 @@ Agents on this machine reach the broker at the default `localhost:4222`; on othe
 
 ## 6. The monitor
 
-It shares the broker's network namespace, so it reaches the broker as `localhost`:
+First set the monitor's password. It is stored as a hash on the config volume (use `-it` to be
+asked, or pipe it in):
+
+```sh
+podman exec -it agent-bus busctl monitor password
+# or: printf '%s\n' 'a long password' | podman exec -i agent-bus busctl monitor password
+```
+
+The monitor shares the broker's network namespace, so it reaches the broker as `localhost`. Inside
+the container it must listen on `0.0.0.0`, which is not a loopback address: that is what
+`--behind-proxy` is for, and it insists on the password. The host still publishes the port on its
+loopback only (step 3), so no proxy is needed here:
 
 ```sh
 podman run -d --name agent-bus-monitor --network container:agent-bus \
   -v agent-bus-config:/config --entrypoint bus-monitor \
-  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_AGENT=monitor@<owner> \
+  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
   $IMG
 ```
 
-Open <http://localhost:8080>. Keep the published port at 8080: the monitor checks the Host header
-against its own port.
+Open <http://localhost:8080> (or `127.0.0.1`, on any published port) and log in. Without the
+password the monitor refuses to start (`--behind-proxy needs a password`; see
+`podman logs agent-bus-monitor`). Restart it after changing the password. To reach it from other
+machines, put a TLS proxy in front instead ([monitor.md](monitor.md#behind-a-reverse-proxy)).
 
 ## 7. Day to day
 

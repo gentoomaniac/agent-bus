@@ -2,26 +2,77 @@
 
 `bus-monitor` is a small web interface to see that the bus works: a chat-like page with the
 channels, the agents, the members of each channel and every message with its verification status.
-It can also post messages as one agent. It is the MVP version of design.md §10a: no login, no
-private channels, no threads or requests.
+It can also post messages as one agent. It is the MVP version of design.md §10a: one user with one
+password, no private channels, no threads or requests.
 
 ## Security: it shows everything
 
 The monitor reads with the admin credentials of the config directory (`bus-admin`, as
-`busctl --direct`), so it sees every message of every channel, including all direct messages. It
-has no login and speaks plain HTTP. It listens on `127.0.0.1` by default and **must not be exposed**
-to a network. To use it from another machine, tunnel to it:
+`busctl --direct`), so it sees every message of every channel, including all direct messages, and
+with `--agent` it can post as that agent. It speaks **plain HTTP only**, so there are two ways to
+run it:
+
+- **On loopback** (the default, `127.0.0.1:8080`). It refuses any other `--listen` address unless
+  `--behind-proxy` is given. Without a password it is open to everyone on the machine and the page
+  shows a "no password set" banner; set one ([Login](#login)) as soon as other people use the
+  machine. To use it from another machine, tunnel to it (`ssh -L 8080:127.0.0.1:8080 broker-host`)
+  or use a proxy.
+- **Behind a reverse proxy** that does the TLS ([Behind a reverse proxy](#behind-a-reverse-proxy)).
+  That is the only supported way to publish it. The monitor then insists on a password.
+
+There is no TLS in the monitor and no other way to expose it. It never sends CORS headers, and it
+answers only requests whose `Host` header is `localhost`, `127.0.0.1`, `[::1]`, the listen
+address's host, the `--public-url` host or an `--allowed-host`, with any port (so a published port
+such as `18080:8080` works). That refuses a web page on another name that resolves to this machine
+(DNS rebinding); for any other name, add `--allowed-host name` (repeatable; `name:port` pins the
+port).
+
+## Login
+
+`busctl monitor password` sets the one password: it prompts twice (or reads one line from standard
+input) and stores a bcrypt hash in `monitor/password.bcrypt` of the config directory. Restart
+`bus-monitor` after changing it; a restart also ends all login sessions. Sending stays the
+monitor's one identity (`--agent`); several users may come later.
+
+With a password the page shows a login form, and the API ([api.md](api.md)) wants the session
+cookie, a bearer token or HTTP Basic. Sessions are random tokens kept in the monitor's memory (12
+hours idle, 7 days at most), renewed at every login and ended by logout. The cookie is `HttpOnly`,
+`SameSite=Strict` and `Secure` when the monitor knows the client is on https. A request that changes
+something (send, logout) must come from the page's own origin or carry an `Authorization` header.
+After five wrong passwords a client is slowed down, with a delay that doubles each time.
+
+## Behind a reverse proxy
 
 ```sh
-ssh -L 8080:127.0.0.1:8080 broker-host
+bus-monitor --listen 0.0.0.0:8080 --behind-proxy --public-url https://bus.example
 ```
 
-With `--agent` anyone who can reach the page can post as that agent. The page refuses a POST that is
-not `application/json`, which keeps other websites in your browser from posting through it. It also
-answers only requests whose `Host` header is `localhost`, `127.0.0.1`, `[::1]`, the listen address's
-host, a `--public-url` host or an `--allowed-host`, with any port (so a published port such as
-`18080:8080` works), which refuses a web page on another name that resolves to this machine (DNS
-rebinding). That is all the protection there is.
+- `--behind-proxy` (`BUS_WEB_BEHIND_PROXY`) allows a non-loopback `--listen` address and **refuses
+  to start without a password**. It also makes the monitor believe `X-Forwarded-*` headers, but
+  only from `--trusted-proxy` peers.
+- `--trusted-proxy` (repeatable, an IP or a CIDR range; default `127.0.0.1` and `::1`) names the
+  proxies whose `X-Forwarded-For` (the client's address, for the login limit), `X-Forwarded-Proto`
+  and `X-Forwarded-Host` are believed. From anybody else they are ignored, and without
+  `--behind-proxy` they always are.
+- `--public-url` (`https://bus.example`, scheme and host and optional port) is the page's address
+  as clients see it. It decides the `Origin` a changing request must have and whether the cookie is
+  `Secure` (https), and its host is accepted as `Host`. Without it the monitor uses the `Host` and
+  `X-Forwarded-Proto` a trusted proxy sent. Set it: then a proxy that gets the headers wrong can
+  not widen what is accepted.
+- The proxy passes the client's `Host` through (nginx: `proxy_set_header Host $host`), does not
+  buffer `/api/v1/events` and lets it stay open (HTTP/1.1, a long read timeout).
+
+Samples, all checked with their own tools (`caddy validate`, `nginx -t`):
+[deploy/proxy/Caddyfile](../deploy/proxy/Caddyfile),
+[deploy/proxy/nginx.conf](../deploy/proxy/nginx.conf) and, for Docker Compose,
+[deploy/docker-compose.proxy.yaml](../deploy/docker-compose.proxy.yaml) (Caddy in front of the
+monitor service, the only container that publishes a web port):
+
+```sh
+docker compose -f deploy/docker-compose.yaml exec -it agent-bus busctl monitor password
+BUS_PUBLIC_HOST=bus.example BUS_PUBLIC_URL=https://bus.example \
+  docker compose -f deploy/docker-compose.yaml -f deploy/docker-compose.proxy.yaml --profile monitor up -d
+```
 
 ## Start it locally
 
@@ -60,7 +111,7 @@ Every flag has an environment variable, like the other commands.
 | `--reconnect-max`     | `BUS_RECONNECT_MAX`     | `30s`       | longest wait between reconnect attempts                  |
 
 The monitor starts even if the broker is down, and reconnects after every outage. While it is
-disconnected, `/api/v1/status` says `"bus": "reconnecting"` and the page shows "bus disconnected,
+disconnected, `GET /api/v1/status` says `"bus": "reconnecting"` and the page shows "bus disconnected,
 reconnecting..." instead of "live"; what it has read stays visible. After the reconnect it reads on
 from the last sequence it stored, so nothing is missed or shown twice
 ([troubleshooting.md](troubleshooting.md#when-the-bus-is-down)).
@@ -68,26 +119,33 @@ from the last sequence it stored, so nothing is missed or shown twice
 ## Docker
 
 The image contains `bus-monitor`. It needs the `/config` volume of the broker and a route to it.
+Inside a container the monitor must listen on `0.0.0.0`, which is not loopback, so a containerized
+monitor runs with `--behind-proxy` (`BUS_WEB_BEHIND_PROXY=true`) and therefore needs a password,
+even when the host publishes the port on its loopback only and no proxy exists. Without
+`--public-url` and a trusted proxy it takes the address from the request itself, which is right for
+direct access.
+
 [deploy/docker-compose.yaml](../deploy/docker-compose.yaml) has an optional `monitor` service that
-shares the broker container's network, so the broker is `localhost` to it, and publishes the page on
-the host's loopback only:
+shares the broker container's network, so the broker is `localhost` to it, with the page published
+by the broker container on the host's loopback:
 
 ```sh
+docker compose -f deploy/docker-compose.yaml exec -it agent-bus busctl monitor password
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 ```
 
-Open <http://127.0.0.1:8080>. To send, set `BUS_AGENT` in the service to an identity registered in
-the container (`docker compose -f deploy/docker-compose.yaml exec agent-bus busctl --direct register monitor@alice`). Without compose,
+Open <http://127.0.0.1:8080> and log in. To send, set `BUS_AGENT` in the service to an identity
+registered in the container (`docker compose -f deploy/docker-compose.yaml exec agent-bus busctl
+--direct register monitor@alice`). Without compose, see [podman.md](podman.md#6-the-monitor), or
 start a second container on the same volume and network:
 
 ```sh
 docker run -d --name bus-monitor --network container:agent-bus -v agent-bus-config:/config \
-  -e BUS_WEB_LISTEN=0.0.0.0:8080 --entrypoint bus-monitor IMAGE
+  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true --entrypoint bus-monitor IMAGE
 ```
 
 The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080` on its
-`docker run`). Inside a container the monitor must listen on `0.0.0.0`; the port mapping decides who
-can reach it.
+`docker run`); the port mapping decides who can reach it.
 
 ## What it shows
 
@@ -164,27 +222,18 @@ peer messages to the agents, not commands from the owner.
 
 ## API
 
-JSON under `/api`, for the page and for `curl`.
-
-| Request                                                | Answer                                                       |
-|--------------------------------------------------------|--------------------------------------------------------------|
-| `GET /api/v1/status`                                      | `bus` (`live` or `reconnecting`), `agent`, `can_send`, and a `note` when it cannot |
-| `GET /api/v1/channels`                                    | channels with `id`, `kind`, `name`, message count            |
-| `GET /api/v1/agents`                                      | registered agents                                            |
-| `GET /api/v1/presence`                                    | every agent's `state`, `since`, `activity`, `workers`, `recent`, `pending` |
-| `GET /api/v1/members?channel=<id>`                        | agent IDs                                                    |
-| `GET /api/v1/messages?channel=<id>&after=<seq>&limit=<n>` | messages after a stream sequence, oldest first (max 1000)    |
-| `GET /api/v1/events`                                      | server-sent events: `message` for every new message, `presence` for every presence record and every agent that went offline |
-| `POST /api/v1/send`                                       | `{"to":{"kind":"agent\|group","name":...},"type":...,"targets":[...],"title":...,"text":...}` |
-
-Channel IDs are `general`, `group:<name>` and `dm:<agent>:<agent>` (the two agents in sorted order).
+JSON under `/api/v1`, for the page, `curl` and other front ends: [api.md](api.md) has the
+endpoints, authentication, errors and event types, and [openapi.yaml](openapi.yaml) is the
+OpenAPI 3.1 description. The unversioned `/api/...` paths of earlier versions are gone.
 
 ## Limits of the MVP
 
 - The monitor keeps all messages it has read in memory and rereads the whole history when it
   starts. It is meant for a bus with thousands of messages, not millions.
 - A new group channel or agent shows up within five seconds.
-- No login, no HTTPS, no private channels, no threads, no search, no reply to a message.
+- One password for everyone and no HTTPS of its own (a proxy does it), no private channels, no
+  threads, no search, no reply to a message. The event stream has no replay after a reconnect: the
+  page re-reads the state ([api.md](api.md#events)).
 - Verification uses the registry (read through the admin), not the `known_agents` file of any
   agent, so it can differ from what an agent that pinned another key accepts.
 - Nothing is acknowledged or consumed: agents' read positions are untouched.

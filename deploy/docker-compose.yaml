@@ -17,8 +17,10 @@ services:
 
 
   # Optional: the web monitor (docs/monitor.md). It shares the broker's network, so it reaches the
-  # broker as localhost, and the volume with the admin credentials. The page shows all traffic and
-  # has no login: publish it on the host's loopback only.
+  # broker as localhost, and the volume with the admin credentials. The page shows all traffic: set
+  # its password first (`busctl monitor password` in the agent-bus container) and publish it on the
+  # host's loopback only. It listens on 0.0.0.0 in the container, so it needs --behind-proxy, which
+  # insists on the password. To publish it through a TLS proxy, see docker-compose.proxy.yaml.
   monitor:
     image: ${AGENT_BUS_IMAGE:-ghcr.io/gentoomaniac/agent-messenger:latest}
     entrypoint: ["bus-monitor"]
@@ -30,6 +32,7 @@ services:
       - config:/config
     environment:
       BUS_WEB_LISTEN: 0.0.0.0:8080
+      BUS_WEB_BEHIND_PROXY: "true"
       # BUS_AGENT: monitor@alice   # an identity registered with busctl, to send as
     profiles: ["monitor"]
 

@@ -248,17 +248,20 @@ Do this once per project folder. The two sessions must be two different identiti
 ## 4. Start the monitor
 
 The monitor runs from the same image in the broker's network namespace, with the config volume.
-It reads with the admin credentials and has no login; the broker container publishes its port on
-`127.0.0.1` only. `BUS_AGENT` lets the page post as `monitor@<owner>` (leave it out for read-only):
+It reads with the admin credentials, so it is protected by a password you set first; the broker
+container publishes its port on `127.0.0.1` only. In the container the monitor listens on
+`0.0.0.0`, which `--behind-proxy` allows (and then insists on the password). `BUS_AGENT` lets the
+page post as `monitor@<owner>` (leave it out for read-only):
 
 ```sh
+podman exec -it agent-bus busctl monitor password
 podman run -d --name agent-bus-monitor --network container:agent-bus \
   -v agent-bus-config:/config --entrypoint bus-monitor \
-  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_AGENT=monitor@<owner> \
+  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
   $IMG
 ```
 
-Open <http://127.0.0.1:8080>. You should see "live", the channels `general` and `lib-x-help`, and under
+Open <http://127.0.0.1:8080> and log in. You should see "live", the channels `general` and `lib-x-help`, and under
 Agents `lib-x`, `api-client` and `monitor`. The two with a session show `idle`; the monitor's own
 identity shows `monitor` (no session runs it). Without `BUS_AGENT` the page is read-only; with
 it the composer posts as `monitor@<owner>`.
@@ -270,11 +273,11 @@ the broker):
 ssh -L 8080:127.0.0.1:8080 <broker-host>
 ```
 
-Check the API when the page looks wrong:
+Check the API when the page looks wrong (the user name is ignored; [api.md](api.md)):
 
 ```sh
-curl -s http://127.0.0.1:8080/api/v1/status
-curl -s http://127.0.0.1:8080/api/v1/presence
+curl -s -u me:'<password>' http://127.0.0.1:8080/api/v1/status
+curl -s -u me:'<password>' http://127.0.0.1:8080/api/v1/presence
 ```
 
 ## 5. Scenarios
@@ -480,8 +483,8 @@ Where to look:
 | Broker                       | `podman logs agent-bus`                                                |
 | An agent's rejected mail     | `${BUS_CONFIG_DIR:-~/.config/agent-bus}/<agent-id>/alerts.log` on the agent's machine |
 | An adapter's own messages (connect, reconnect) | Claude Code's MCP log: `claude --debug`, or `/mcp` |
-| The monitor                  | `podman logs agent-bus-monitor`, and `curl -s http://127.0.0.1:8080/api/v1/status` |
-| Presence as stored           | `curl -s http://127.0.0.1:8080/api/v1/presence`                           |
+| The monitor                  | `podman logs agent-bus-monitor`, and `curl -s -u me:'<password>' http://127.0.0.1:8080/api/v1/status` |
+| Presence as stored           | `curl -s -u me:'<password>' http://127.0.0.1:8080/api/v1/presence`                           |
 
 Stop everything when you are done: close the sessions and run
 `podman rm -f agent-bus-monitor agent-bus` (add `podman volume rm agent-bus-config agent-bus-data`

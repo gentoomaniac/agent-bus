@@ -146,16 +146,22 @@ docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -c
 ## The web monitor
 
 `bus-monitor` is in the image and runs as the compose `monitor` profile, on the broker's network
-and config volume. It shows all traffic and has no login: the compose file publishes it on the
-host's loopback only.
+and config volume. It shows all traffic, so it is protected by a password you set first, and the
+compose file publishes it on the host's loopback only. In the container it listens on `0.0.0.0`,
+which is why the service sets `BUS_WEB_BEHIND_PROXY=true` (and why it will not start without the
+password).
 
 ```sh
+docker compose -f deploy/docker-compose.yaml exec -it agent-bus busctl monitor password
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
-curl -s http://127.0.0.1:8080/api/v1/status
+curl -s -u me:'<password>' http://127.0.0.1:8080/api/v1/status
 ```
 
-Open <http://127.0.0.1:8080>; any host port works (`18080:8080`). To post as an agent, register an identity first (`busctl --direct register monitor@alice`)
-and set `BUS_AGENT` in the service. See [monitor.md](monitor.md#docker).
+Open <http://127.0.0.1:8080> and log in; any host port works (`18080:8080`). To post as an agent,
+register an identity first (`busctl --direct register monitor@alice`) and set `BUS_AGENT` in the
+service. To publish it beyond the host, put a TLS proxy in front: the overlay
+[docker-compose.proxy.yaml](../deploy/docker-compose.proxy.yaml) adds Caddy. See
+[monitor.md](monitor.md#behind-a-reverse-proxy).
 
 ## Upgrade
 
