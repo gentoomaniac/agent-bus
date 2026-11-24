@@ -8,7 +8,7 @@ import (
 )
 
 type AdminInitCmd struct {
-	Force bool `help:"Replace existing passwords. The registered agents stay; a running server must be restarted to take the new ones."`
+	Force bool `help:"Replace existing passwords, also to finish an admin init that failed half way. The registered agents stay; a running server must be restarted to take the new ones."`
 }
 
 // Run creates the passwords of bus-admin and control-admin and writes the server's authorization
