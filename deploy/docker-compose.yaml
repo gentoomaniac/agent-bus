@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     ports:
       - "4222:4222"
+      - "127.0.0.1:8080:8080" # the monitor's page, see the monitor service
     volumes:
       - config:/config
       - data:/data
@@ -12,6 +13,24 @@ services:
     #   BUS_LISTEN_IP: 0.0.0.0
     #   BUS_NATS_PORT: 4222
     #   BUS_MONITOR_PORT: 8222
+
+
+  # Optional: the web monitor (docs/monitor.md). It shares the broker's network, so it reaches the
+  # broker as localhost, and the volume with the admin credentials. The page shows all traffic and
+  # has no login: publish it on the host's loopback only.
+  monitor:
+    image: ghcr.io/gentoomaniac/agent-messenger:latest
+    entrypoint: ["bus-monitor"]
+    restart: unless-stopped
+    network_mode: "service:agent-bus"
+    depends_on:
+      - agent-bus
+    volumes:
+      - config:/config
+    environment:
+      BUS_WEB_LISTEN: 0.0.0.0:8080
+      # BUS_AGENT: monitor@alice   # an identity registered with busctl, to send as
+    profiles: ["monitor"]
 
 volumes:
   config:
