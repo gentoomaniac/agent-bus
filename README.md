@@ -70,7 +70,10 @@ ends.
 `internal/adapter` is the adapter core. Its handled set (design.md §4) is the append-only file
 `<agent-dir>/handled.jsonl`, synced to disk before the broker is acked: verified messages by
 (destination, sender, ID) with a digest of the signed record, rejected deliveries by stream sequence
-only. No SQLite: a file read into memory at start is enough for one identity.
+only. No SQLite: a file read into memory at start is enough for one identity. Outgoing messages
+are rate limited (30 per 10 minutes, in memory) and their bodies scanned for obvious secrets
+(private keys, AWS, GitHub, Slack and Anthropic tokens, bearer tokens, `password=`-style
+assignments); a match blocks the send.
 `internal/trust` is the `known_agents` file of an identity (pinned public keys, design.md §6) and
 trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name
 a key in it that is not revoked, and the key is pinned (`tofu`) after the signature verified. A
