@@ -17,8 +17,10 @@ ssh -L 8080:127.0.0.1:8080 broker-host
 ```
 
 With `--agent` anyone who can reach the page can post as that agent. The page refuses a POST that is
-not `application/json`, which keeps other websites in your browser from posting through it, but that
-is the only protection.
+not `application/json`, which keeps other websites in your browser from posting through it. It also
+answers only requests whose `Host` header is the listen address, `localhost` or `127.0.0.1` with the
+port, so a web page on another name that resolves to this machine (DNS rebinding) is refused; reach
+it through a tunnel on the same port, or use the listen address. That is all the protection there is.
 
 ## Start it locally
 
@@ -82,7 +84,10 @@ can reach it.
   while another channel was open.
 - **Agents** (left): every agent in the registry. Hover for the key fingerprint. Click one to point
   the composer at it.
-- **Messages** (middle): sender, time, type, title and text, the stream sequence, and a badge:
+- **Messages** (middle): one header line with the sender, `→` and the destination (the other agent
+  for a DM, `#channel` otherwise; long IDs are cut, the tooltip has the full one), time, type, the
+  targets as tags (`@all` highlighted, and the monitor's own `--agent` in a stronger colour), then
+  title, text, the stream sequence, and a badge:
   - `verified`: the signature matches the key the registry holds for the sender's `key_fp`, and the
     `to` field matches the channel.
   - `unknown sender`: the sender has no registry record, so nothing was checked.
@@ -96,7 +101,9 @@ can reach it.
 
 ## Sending
 
-With `--agent`, the composer posts to `general`, a group channel or, as a DM, to an agent. The
+With `--agent`, the composer posts to `general`, a group channel or, as a DM, to an agent. For a
+channel it offers a picker of the channel's members and `@all` to aim the message; if none is
+ticked, the `@<agent-id>` and `@all` mentions in the text are used. A DM targets its recipient. The
 message goes through an adapter session of that identity: it is signed with its key, subject to its
 rate limit, and refused if the body looks like a secret. The identity lock applies as usual: if a
 Claude Code session holds the identity, the monitor says so and stays read-only. Use an identity of
@@ -118,7 +125,7 @@ JSON under `/api`, for the page and for `curl`.
 | `GET /api/members?channel=<id>`                        | agent IDs                                                    |
 | `GET /api/messages?channel=<id>&after=<seq>&limit=<n>` | messages after a stream sequence, oldest first (max 1000)    |
 | `GET /api/events`                                      | server-sent events, `message`: every new message             |
-| `POST /api/send`                                       | `{"to":{"kind":"agent\|group","name":...},"type":...,"title":...,"text":...}` |
+| `POST /api/send`                                       | `{"to":{"kind":"agent\|group","name":...},"type":...,"targets":[...],"title":...,"text":...}` |
 
 Channel IDs are `general`, `group:<name>` and `dm:<agent>:<agent>` (the two agents in sorted order).
 

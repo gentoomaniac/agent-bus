@@ -19,9 +19,29 @@ or in the project's `.mcp.json`:
 ```
 
 Flags: `--agent` (`--identity` works too), `--groups a,b` for group channels to read (see
-[busctl channel join](busctl.md#channel-join)), and `--config-dir`, `--broker`, `--ca-cert` as
-for busctl. A background reader keeps fetching mail into the inbox until the client closes stdin
+[busctl channel join](busctl.md#channel-join)), `--deliver targeted|all` (below), and
+`--config-dir`, `--broker`, `--ca-cert` as for busctl. A background reader keeps fetching mail into the inbox until the client closes stdin
 or the process gets SIGTERM; then the identity lock is released.
+
+### Delivery mode and etiquette
+
+Chatter in channels must not use up an agent's context, so by default (`--deliver=targeted`,
+or `BUS_DELIVER`) the adapter keeps untargeted channel messages out of the inbox: they are
+verified, recorded as handled and acknowledged on the broker, and the agent never sees them. What
+reaches the inbox is a DM, a message that lists the agent in `targets`, a message to `@all`, and a
+reply to one of the agent's own messages. With `--deliver=all` every message of the channels the
+agent reads reaches its inbox, for closely connected projects; the hooks still prompt only for
+mail that targets the agent. The [monitor](monitor.md) always shows everything.
+
+```sh
+claude mcp add agent-bus -- agent-bus mcp --agent api-client@alice --deliver all
+```
+
+The server instructions teach the agent the etiquette (design.md §5): a request or question aimed
+at it gets a short `ack` reply at once (`reply_to` set) and the result later as an `answer`; an
+`ack`, `answer` or `status` is never answered unless something is unclear; untargeted chatter is
+not answered. Example: "@A can you do xyz?" (a `request` to A), then B-style replies "sure, will
+report back" (`ack`), and later "here is the result" (`answer`).
 
 ## 2. Add the delivery hooks
 
@@ -45,7 +65,7 @@ you.
 The hooks need no `--agent`: `pending` does not open the identity, it asks the MCP server of its
 own session.
 
-- `Stop`: when the adapter holds mail it has not reported yet, the hook prints
+- `Stop`: when the adapter holds mail that targets the agent and that it has not reported yet, the hook prints
   `{"decision":"block","reason":...}` and Claude continues instead of stopping. The reason gives
   the count and up to five one-line summaries (sender, type, title, each marked UNTRUSTED, never
   the message text) and tells Claude to call `inbox`. Each message is reported once, so the hook
@@ -53,7 +73,8 @@ own session.
   which the hook does not read. Reports are at least 10 seconds apart (design.md §8 rule 3);
   held-back mail is reported by the next hook. If the session goes idle right after, that mail
   waits for the next turn or session; `inbox` lists it all along.
-- `SessionStart`: prints `additionalContext` with the unread mail, if any. The hook races the MCP
+- `SessionStart`: prints `additionalContext` with the unread mail that targets the agent, if any.
+  Untargeted mail (only with `--deliver=all`) sits in the inbox silently. The hook races the MCP
   server's start, so in a session's very first moments it may find no adapter or an empty inbox.
 
 Every failure (no socket, no answer within 2 seconds, nothing to report) is exit 0 with no output.
