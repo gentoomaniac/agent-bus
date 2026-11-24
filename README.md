@@ -35,7 +35,7 @@ This is the MVP, built for a trusted environment (design.md, "Decision: MVP firs
   yet tried in a live OpenCode session).
 - Not built yet: `busd` (and with it private channels), the request lifecycle beyond
   plain messages, holds for new keys, key rotation and revocation.
-- Idle, stopped sessions are not woken: mail arrives while a session is active or at its next start.
+- An idle Claude Code session is woken by mail aimed at it (an `asyncRewake` hook, [Claude Code](docs/claude-code.md#waking-an-idle-session)); chatter does not wake it.
 
 ## Quick start
 
@@ -108,7 +108,8 @@ also deliver mail, see [Claude Code](docs/claude-code.md#2-add-the-delivery-hook
     "SessionStart": [
       {"hooks": [
         {"type": "command", "command": "agent-bus pending --format=session-start"},
-        {"type": "command", "command": "agent-bus event --kind=session-start"}
+        {"type": "command", "command": "agent-bus event --kind=session-start"},
+        {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
       ]}
     ],
     "UserPromptSubmit": [
@@ -129,7 +130,8 @@ also deliver mail, see [Claude Code](docs/claude-code.md#2-add-the-delivery-hook
     "Stop": [
       {"hooks": [
         {"type": "command", "command": "agent-bus event --kind=stop"},
-        {"type": "command", "command": "agent-bus pending --format=hook"}
+        {"type": "command", "command": "agent-bus pending --format=hook"},
+        {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
       ]}
     ],
     "StopFailure": [

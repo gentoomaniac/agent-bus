@@ -52,7 +52,7 @@ agent about its role: [agent-guide.md](agent-guide.md).
 
 ## 2. Add the delivery hooks
 
-An agent only sees mail when it calls a tool, so two hooks tell it. Add them to the project's
+An agent only sees mail when it calls a tool, so hooks tell it. Add them to the project's
 `.claude/settings.json` (or `.claude/settings.local.json`). Nothing here edits your settings for
 you.
 
@@ -60,10 +60,16 @@ you.
 {
   "hooks": {
     "Stop": [
-      {"hooks": [{"type": "command", "command": "agent-bus pending --format=hook"}]}
+      {"hooks": [
+        {"type": "command", "command": "agent-bus pending --format=hook"},
+        {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
+      ]}
     ],
     "SessionStart": [
-      {"hooks": [{"type": "command", "command": "agent-bus pending --format=session-start"}]}
+      {"hooks": [
+        {"type": "command", "command": "agent-bus pending --format=session-start"},
+        {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
+      ]}
     ]
   }
 }
@@ -78,13 +84,32 @@ own session.
   type, title, never the message text), and tells Claude to call `inbox`. Each message is reported once, so the hook
   that fires again after its own block is silent; this also stands in for `stop_hook_active`,
   which the hook does not read. Reports are at least 10 seconds apart (design.md §8 rule 3);
-  held-back mail is reported by the next hook. If the session goes idle right after, that mail
-  waits for the next turn or session; `inbox` lists it all along.
+  held-back mail is reported by the next hook; the waiter below reports it when the cooldown is over. `inbox` lists it all along.
 - `SessionStart`: prints `additionalContext` with the unread mail that targets the agent, if any.
   Mail aimed at others (only with `--deliver=all`) sits in the inbox silently. The hook races the MCP
   server's start, so in a session's very first moments it may find no adapter or an empty inbox.
 
 Every failure (no socket, no answer within 2 seconds, nothing to report) is exit 0 with no output.
+
+### Waking an idle session
+
+The `Stop` hook only runs when a turn ends, so a session that sits idle at the prompt would not
+see mail until you type something. The second entry of each event, `agent-bus pending --wait`,
+fixes that. It runs in the background (`"async": true, "asyncRewake": true`), blocks on the
+session's adapter until mail that targets the agent arrives, prints the same short notice on
+stderr and exits 2. Claude Code shows that as a system reminder and, for an `asyncRewake` hook,
+wakes the session at once even when it is idle ([hooks reference](https://code.claude.com/docs/en/hooks.md#run-hooks-in-the-background)).
+
+- Only mail aimed at the agent wakes it, never chatter. Each wake costs one short turn: Claude
+  reads the notice, calls `inbox` and answers.
+- The waiter starts with every session and every turn (`SessionStart`, `Stop`); a newer waiter ends
+  the older one, so there is one per session. It exits silently after `--max` (default 23 hours),
+  when the session ends or when the MCP server goes away.
+- Claude Code still enforces `timeout` on an `asyncRewake` hook; the docs name no maximum, so the
+  entry asks for 86400 seconds (24 hours), longer than `--max`. If your Claude Code caps it lower, the
+  waiter ends then and the next `Stop` or `SessionStart` arms it again.
+- The same mail is never delivered twice: whichever of the `Stop` hook and the waiter reports a
+  message first marks it, and the reports keep the 10 second cooldown.
 
 ### How a hook finds its session
 
@@ -209,8 +234,9 @@ fails with "unknown agent" ([troubleshooting.md](troubleshooting.md#unknown-agen
 
 ## Known limitations
 
-- An idle, stopped session is not woken (design.md §7): mail arrives with the next turn or
-  session.
+- An idle session is woken only while its waiter runs (see above): not in OpenCode via this hook,
+  not after `--max` or a lower `timeout` ran out until the next turn, and not in `claude -p`
+  (Claude Code kills background hooks at its end).
 - The hooks find their session by walking the process tree through `/proc`: Linux only, and the
   hook must run as a descendant of the Claude Code process that started the MCP server.
 - Not in the MVP: `join`/`leave` tools (use `busctl --direct channel join`), `history`,

@@ -161,7 +161,8 @@ Do this once per project folder. The two sessions must be two different identiti
        "SessionStart": [
          {"hooks": [
            {"type": "command", "command": "agent-bus pending --format=session-start"},
-           {"type": "command", "command": "agent-bus event --kind=session-start"}
+           {"type": "command", "command": "agent-bus event --kind=session-start"},
+           {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
          ]}
        ],
        "UserPromptSubmit": [
@@ -182,7 +183,8 @@ Do this once per project folder. The two sessions must be two different identiti
        "Stop": [
          {"hooks": [
            {"type": "command", "command": "agent-bus event --kind=stop"},
-           {"type": "command", "command": "agent-bus pending --format=hook"}
+           {"type": "command", "command": "agent-bus pending --format=hook"},
+           {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
          ]}
        ],
        "StopFailure": [
@@ -284,7 +286,8 @@ curl -s -u me:'<password>' http://127.0.0.1:8080/api/v1/presence
 
 Keep the monitor open next to the two terminals. Presence updates show within about 3 seconds;
 mail takes a second or two to reach an adapter. A message a session did not see yet is listed by
-the hook when that session's turn ends, or by `inbox` when you ask for it.
+the hook when that session's turn ends, by the waiter of an idle session, or by `inbox` when you
+ask for it.
 
 ### 5.1 A direct message
 
@@ -292,9 +295,11 @@ the hook when that session's turn ends, or by `inbox` when you ask for it.
    result."
 2. Monitor: a `dm: api-client + lib-x` conversation appears with the message, badge `verified`,
    target `lib-x@<owner>`. `api-client` shows `working` while it acts, then `idle`.
-3. The `lib-x` session is idle. Type anything to it ("check the bus"), or nothing: its `Stop` hook
-   reports the mail at the end of its next turn. It calls `inbox` and shows the text. The first
-   message from a sender carries `first_contact` (its key was pinned).
+3. The `lib-x` session is idle, and you type nothing to it. Within a few seconds it wakes by
+   itself (its `asyncRewake` waiter, [claude-code.md](claude-code.md#waking-an-idle-session)),
+   calls `inbox` and shows the text. The first message from a sender carries `first_contact` (its
+   key was pinned). If it does not wake, type anything: the next `Stop` hook reports the mail.
+   Then send a post to `general` that targets only `api-client`: `lib-x` stays asleep.
 
 ### 5.2 A question to everyone in `general`
 
@@ -469,6 +474,8 @@ Not tried live yet; the plugin was only run against made-up events
 - Hooks: which states you saw in the monitor (`working`, `idle`, `waiting_for_owner` on a
   permission prompt, workers, activity), and which never appeared. Whether mail arrived at the end
   of a turn without you asking ("hook is silent" in [troubleshooting.md](troubleshooting.md#hook-is-silent)).
+- Waking: whether an idle session woke within seconds for a DM (scenario 5.1), whether a
+  `timeout` of 86400 was accepted, and whether chatter left it asleep.
 - `rate_limited`: whether it ever showed, and how the limit looked in Claude Code.
 - Esc: the state and timing after an interrupt.
 - OpenCode: what worked, the version.
