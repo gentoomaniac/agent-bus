@@ -22,8 +22,15 @@ type Presence struct {
 	Pending       int               `json:"pending,omitempty"`
 }
 
+// ownState is the state of the monitor's own identity: it publishes no presence, and is there as
+// long as the monitor runs.
+const ownState = "monitor"
+
 // presenceOf is the view of a record at a time. An offline agent shows no activity: it is stale.
 func (monitor *Monitor) presenceOf(agent string, record presence.Record, now time.Time) Presence {
+	if sender := monitor.config.Sender; sender != nil && sender.AgentID() == agent {
+		return Presence{Agent: agent, State: ownState}
+	}
 	state := record.StateAt(now, monitor.offlineAfter())
 	view := Presence{Agent: agent, State: state, Since: record.Since, Pending: record.Pending, Recent: record.Recent}
 	if state == presence.Offline {

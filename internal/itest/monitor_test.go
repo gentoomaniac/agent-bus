@@ -167,6 +167,12 @@ func TestMonitor(t *testing.T) {
 		}
 	})
 
+	t.Run("shows its own identity as monitor", func(t *testing.T) {
+		if view := presenceFor(t, server, monitorAgent); view.State != "monitor" {
+			t.Errorf("presence of %s = %+v, want state monitor", monitorAgent, view)
+		}
+	})
+
 	t.Run("shows both direct messages and the group post as verified", func(t *testing.T) {
 		dm := waitForMonitorMessages(t, server, "dm:"+alice+":"+bob, 2)
 		if dm[0].Text != "dm hello" || dm[1].Text != "dm answer" || dm[0].Sequence >= dm[1].Sequence {
