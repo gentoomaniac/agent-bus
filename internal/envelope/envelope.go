@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"regexp"
+	"slices"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
@@ -27,13 +29,16 @@ const (
 )
 
 // Types are the message types of §5.
-var Types = []string{"message", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack", "key_rotation", "invite"}
+var Types = []string{"message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack", "key_rotation", "invite"}
 
 // Destination kinds. `general` is the group named "general".
 const (
 	ToAgent = "agent"
 	ToGroup = "group"
 )
+
+// TargetAll in targets aims a message at everyone who reads the channel.
+const TargetAll = "@all"
 
 type To struct {
 	Kind string `json:"kind"`
@@ -53,6 +58,7 @@ type Envelope struct {
 	From    string    `json:"from"`
 	To      To        `json:"to"`
 	Type    string    `json:"type"`
+	Targets []string  `json:"targets"`
 	Thread  string    `json:"thread"`
 	ReplyTo *string   `json:"reply_to"`
 	Hops    int       `json:"hops"`
@@ -107,8 +113,14 @@ func NewID(now time.Time) string {
 	return string(id[:])
 }
 
-// Sign returns the record to publish. It refuses a body or record over the size limits.
+// Sign returns the record to publish. It refuses invalid targets and a body or record over the size limits.
 func Sign(env Envelope, key ed25519.PrivateKey) ([]byte, error) {
+	if err := env.CheckTargets(); err != nil {
+		return nil, err
+	}
+	if env.Targets == nil {
+		env.Targets = []string{} // signed as [], not null
+	}
 	body, err := json.Marshal(env.Body)
 	if err != nil {
 		return nil, err
@@ -168,7 +180,47 @@ func Parse(payload []byte) (*Signed, error) {
 	if env.Version != Version {
 		return nil, fmt.Errorf("unsupported envelope version %d", env.Version)
 	}
+	if err := env.CheckTargets(); err != nil {
+		return nil, err
+	}
 	return &Signed{Envelope: env, canonical: canonical, signature: signature}, nil
+}
+
+// CheckTargets accepts agent IDs without duplicates, or the single value "@all", or nothing.
+func (env Envelope) CheckTargets() error {
+	if slices.Equal(env.Targets, []string{TargetAll}) {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, target := range env.Targets {
+		if err := bus.ValidateAgentID(target); err != nil {
+			return fmt.Errorf("invalid target: %w", err)
+		}
+		if seen[target] {
+			return fmt.Errorf("target %s is listed twice", target)
+		}
+		seen[target] = true
+	}
+	return nil
+}
+
+// mention is an `@<agent-id>` or `@all` token that starts the text or follows a space or
+// punctuation, so the owner part of an ID such as `lib-x@bob` is not read as a mention.
+var mention = regexp.MustCompile(`(?:^|[\s(\[,;:])@([a-z0-9-]+@[a-z0-9-]+|all\b)`)
+
+// MentionedTargets reads the targets a text names: the agent IDs it mentions in order, or just
+// "@all" if it mentions that. It returns nil when there is no mention.
+func MentionedTargets(text string) []string {
+	var targets []string
+	for _, match := range mention.FindAllStringSubmatch(text, -1) {
+		if match[1] == "all" {
+			return []string{TargetAll}
+		}
+		if !slices.Contains(targets, match[1]) {
+			targets = append(targets, match[1])
+		}
+	}
+	return targets
 }
 
 func (signed *Signed) Verify(key ed25519.PublicKey) bool {

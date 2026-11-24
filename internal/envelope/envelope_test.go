@@ -2,7 +2,9 @@ package envelope
 
 import (
 	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -46,7 +48,7 @@ func TestCanonicalizeRefusesWhatItCannotFormat(t *testing.T) {
 func testEnvelope(public ed25519.PublicKey) Envelope {
 	return Envelope{
 		Version: Version, ID: NewID(time.Now()), TS: time.Now().UTC().Truncate(time.Second),
-		From: "a@o", To: To{Kind: ToAgent, Name: "b@o"}, Type: "message", Thread: "T", Hops: 1,
+		From: "a@o", To: To{Kind: ToAgent, Name: "b@o"}, Type: "message", Targets: []string{"c@o"}, Thread: "T", Hops: 1,
 		KeyFP: identity.Fingerprint(public), Body: Body{Text: "héllo \"world\""},
 	}
 }
@@ -79,6 +81,7 @@ func TestAnyAlteredFieldFailsVerification(t *testing.T) {
 	for _, change := range []struct{ old, new string }{
 		{`"b@o"`, `"c@o"`}, {`"hops":1`, `"hops":0`}, {`"type":"message"`, `"type":"answer"`},
 		{`"from":"a@o"`, `"from":"x@o"`}, {`"text":"h`, `"text":"H`}, {`"reply_to":null`, `"reply_to":"X"`},
+		{`"targets":["c@o"]`, `"targets":["@all"]`},
 	} {
 		altered := strings.Replace(string(payload), change.old, change.new, 1)
 		if altered == string(payload) {
@@ -237,6 +240,77 @@ func TestCheckNoDuplicateKeys(t *testing.T) {
 	for _, bad := range []string{`{"a":1,"a":2}`, `{"a":{"b":1,"b":2}}`, `[{"a":1,"a":1}]`, `{"body":1,"Body":2}`, `{"a":1} {}`} {
 		if checkNoDuplicateKeys([]byte(bad)) == nil {
 			t.Errorf("%s: nil, want error", bad)
+		}
+	}
+}
+
+func TestCheckTargets(t *testing.T) {
+	for targets, want := range map[string]bool{
+		`[]`: true, `["a@o"]`: true, `["a@o","b@o"]`: true, `["@all"]`: true,
+		`["@all","a@o"]`: false, `["a@o","a@o"]`: false, `["nobody"]`: false, `["@all","@all"]`: false,
+	} {
+		var list []string
+		if err := json.Unmarshal([]byte(targets), &list); err != nil {
+			t.Fatal(err)
+		}
+		if err := (Envelope{Targets: list}).CheckTargets(); (err == nil) != want {
+			t.Errorf("targets %s: valid = %v, want %v (%v)", targets, err == nil, want, err)
+		}
+	}
+}
+
+func TestSignRefusesInvalidTargetsAndSignsEmptyAsList(t *testing.T) {
+	public, private := identity.Generate()
+	env := testEnvelope(public)
+	env.Targets = []string{"nobody"}
+	if _, err := Sign(env, private); err == nil {
+		t.Error("an invalid target was signed")
+	}
+	env.Targets = nil
+	payload, err := Sign(env, private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payload), `"targets":[]`) {
+		t.Errorf("no targets should be signed as an empty list: %s", payload)
+	}
+}
+
+func TestParseRefusesInvalidTargets(t *testing.T) {
+	_, private := identity.Generate()
+	raw := `{"v":1,"id":"X","ts":"2026-11-24T10:00:00Z","from":"a@o","to":{"kind":"agent","name":"b@o"},"type":"message","targets":["@all","a@o"],"thread":"T","reply_to":null,"hops":0,"key_fp":"F","body":{}}`
+	canonical, _ := canonicalize([]byte(raw))
+	record, _ := json.Marshal(map[string]any{"envelope": json.RawMessage(raw), "sig": base64.StdEncoding.EncodeToString(ed25519.Sign(private, canonical))})
+	if _, err := Parse(record); err == nil || !strings.Contains(err.Error(), "target") {
+		t.Errorf("invalid targets were parsed: %v", err)
+	}
+}
+
+func TestRecordWithoutTargetsStillParses(t *testing.T) {
+	public, private := identity.Generate()
+	raw := `{"v":1,"id":"X","ts":"2026-11-24T10:00:00Z","from":"a@o","to":{"kind":"agent","name":"b@o"},"type":"message","thread":"T","reply_to":null,"hops":0,"key_fp":"F","body":{}}`
+	canonical, _ := canonicalize([]byte(raw))
+	record, _ := json.Marshal(map[string]any{"envelope": json.RawMessage(raw), "sig": base64.StdEncoding.EncodeToString(ed25519.Sign(private, canonical))})
+	signed, err := Parse(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !signed.Verify(public) || len(signed.Envelope.Targets) != 0 {
+		t.Errorf("old record: verifies = %v, targets = %v", signed.Verify(public), signed.Envelope.Targets)
+	}
+}
+
+func TestMentionedTargets(t *testing.T) {
+	for text, want := range map[string][]string{
+		"hello":                          nil,
+		"@lib-x@bob can you do xyz?":     {"lib-x@bob"},
+		"hi (@a@o), @b@o and @a@o again": {"a@o", "b@o"},
+		"@b@o and @all":                  {"@all"},
+		"mail me at x@o or @alloy":       nil,
+		"line one\n@a@o line two":        {"a@o"},
+	} {
+		if got := MentionedTargets(text); !slices.Equal(got, want) {
+			t.Errorf("%q: got %v, want %v", text, got, want)
 		}
 	}
 }
