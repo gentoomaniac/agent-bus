@@ -309,6 +309,9 @@ func TestMentionedTargets(t *testing.T) {
 		"@b@o and @all":                  {"@all"},
 		"mail me at x@o or @alloy":       nil,
 		"line one\n@a@o line two":        {"a@o"},
+		"meeting @all-hands at 3":        nil,
+		"@all, please read":              {"@all"},
+		"@all.":                          {"@all"},
 	} {
 		if got := MentionedTargets(text); !slices.Equal(got, want) {
 			t.Errorf("%q: got %v, want %v", text, got, want)

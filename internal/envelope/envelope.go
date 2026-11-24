@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
@@ -210,16 +211,22 @@ func (env Envelope) CheckTargets() error {
 
 // mention is an `@<agent-id>` or `@all` token that starts the text or follows a space or
 // punctuation, so the owner part of an ID such as `lib-x@bob` is not read as a mention.
-var mention = regexp.MustCompile(`(?:^|[\s(\[,;:])@([a-z0-9-]+@[a-z0-9-]+|all\b)`)
+var mention = regexp.MustCompile(`(?:^|[\s(\[,;:])@([a-z0-9-]+@[a-z0-9-]+|all)`)
 
 // MentionedTargets reads the targets a text names: the agent IDs it mentions in order, or just
 // "@all" if it mentions that. It returns nil when there is no mention.
 func MentionedTargets(text string) []string {
 	var targets []string
-	for _, match := range mention.FindAllStringSubmatch(text, -1) {
-		if match[1] == "all" {
+	for _, match := range mention.FindAllStringSubmatchIndex(text, -1) {
+		name := text[match[2]:match[3]]
+		if name == "all" {
+			// "@all-hands" or "@all@x" is not "@all": the name must end there.
+			if rest := text[match[3]:]; rest != "" && strings.ContainsAny(rest[:1], "abcdefghijklmnopqrstuvwxyz0123456789-@") {
+				continue
+			}
 			return []string{TargetAll}
 		}
+		match := []string{"", name}
 		if !slices.Contains(targets, match[1]) {
 			targets = append(targets, match[1])
 		}
