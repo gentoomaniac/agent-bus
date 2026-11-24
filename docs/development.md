@@ -46,7 +46,7 @@ record cannot be read is left unacked, so the broker redelivers it after `AckWai
 message already handled is skipped, one already buffered gets `InProgress`, a new one is buffered.
 `Ack` acks the broker first (a confirmed double ack), then writes the handled set, so a failed broker ack leaves the message unread. Sends set `hops` from the parent: the
 `reply_to` the agent names, or else the message it read or acked in the last five minutes; the
-parent must be known locally, and a parent at 6 hops stops the send. If another process holds the
+parent must be known locally, and a parent at 6 hops stops the send, except an ack, answer or status (they may go to 7). If another process holds the
 identity lock, `Open` still returns an adapter, but every method fails with an error naming the
 holder's PID. Alerts go to `alerts.log` only; `busctl alerts` does not exist yet.
 The adapter also remembers, in memory, which buffered messages the delivery hooks already told the

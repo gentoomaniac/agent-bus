@@ -468,7 +468,8 @@ Also provide a `SessionStart` hook (Claude Code) that shows a short summary of u
    - Without them, a `send` or `publish` inherits `reply_to`, `thread` and `hops` from the most recent message delivered or acked in the last five minutes, if it belongs to the conversation being continued: it arrived on the channel being posted to, or, for a DM, is a DM from the recipient. Naming a `thread` explicitly disables this inference, and so does moving to another channel or person. Older mail never binds a send, so one message that is never acked cannot lock every later send.
    - With no such message, the send is the agent's own initiative and starts a new thread at 0.
    - Branched replies each count from their own parent. The adapter persists each message's `hops` locally, so a restart keeps the count.
-   - The adapter refuses to send when the parent's `hops` ≥ 6 (`--max-hops`).
+   - The adapter refuses to send when the parent's `hops` ≥ 6 (`--max-hops`), except closing replies (`ack`, `answer`, `status`), which are allowed up to a parent at 6 (their own `hops` is then 7), so a request that reached the limit can still be answered or declined; new requests, questions and plain messages are refused, and nothing is sent beyond 7.
+   - The inferred parent (the recently read message) lives in the adapter's memory only. After a restart the agent has none until it reads again, so a send that names no `reply_to` starts at hops 0; the explicit `reply_to` is always looked up in the persisted store.
    - Only a message from the pinned `human@<owner>` resets the count (its children start at 0); a TOFU-pinned owner key does not.
    - The end-of-turn hook also has a cooldown so two agents cannot keep waking each other.
 4. **Rate limits** in the adapter: 30 messages per agent per 10 minutes by default (`--rate-limit`).

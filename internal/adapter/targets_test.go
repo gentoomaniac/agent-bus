@@ -384,3 +384,34 @@ func TestInferredParentOfADMIsTheSenderOfTheDMRead(t *testing.T) {
 		t.Errorf("reply_to = %v, want %s", env.ReplyTo, first)
 	}
 }
+
+func TestClosingRepliesPassTheHopLimitOnceButNewMessagesDoNot(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice, func(config *Config) { config.RateLimit = 100 })
+	ctx := context.Background()
+	parent, err := a.Send(ctx, bob, text("root"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Walk a chain of explicit replies to the limit.
+	for hops := 1; hops <= defaultMaxHops; hops++ {
+		if parent, err = a.Send(ctx, bob, Outgoing{Type: "message", Body: envelope.Body{Text: "x"}, ReplyTo: parent}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := a.Send(ctx, bob, Outgoing{Type: "request", Body: envelope.Body{Text: "more"}, ReplyTo: parent}); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Errorf("a request past the limit: %v", err)
+	}
+	closing, err := a.Send(ctx, bob, Outgoing{Type: "answer", Body: envelope.Body{Text: "done"}, ReplyTo: parent})
+	if err != nil {
+		t.Fatalf("a closing reply at the limit: %v", err)
+	}
+	if env := lastEnvelope(t, b); env.Hops != defaultMaxHops+1 {
+		t.Errorf("hops of the closing reply = %d", env.Hops)
+	}
+	if _, err := a.Send(ctx, bob, Outgoing{Type: "ack", Body: envelope.Body{Text: "again"}, ReplyTo: closing}); err == nil {
+		t.Error("a closing reply to a closing reply went past the limit")
+	}
+}

@@ -388,6 +388,9 @@ func (adapter *Adapter) recentInScope(to bus.Channel, recent parent) bool {
 	return adapter.recent.channel == to
 }
 
+// closingTypes end a loop of replies (design.md §5), so the hop limit lets them through once more.
+var closingTypes = []string{"ack", "answer", "status"}
+
 // ErrBadTargets is the error of a message that is aimed at nobody or at an invalid target.
 var ErrBadTargets = errors.New("invalid targets")
 
@@ -470,8 +473,14 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 	id := envelope.NewID(now)
 	hops, thread := 0, message.Thread
 	if inherited != nil {
-		if inherited.hops >= adapter.config.MaxHops {
-			return "", fmt.Errorf("not sent: the conversation is %d replies deep, the limit is %d; wait for a human", inherited.hops, adapter.config.MaxHops)
+		// An ack, answer or status may close the loop one level beyond the limit, so a request that
+		// reached it can still be answered; nothing goes further.
+		limit := adapter.config.MaxHops
+		if slices.Contains(closingTypes, message.Type) {
+			limit++
+		}
+		if inherited.hops >= limit {
+			return "", fmt.Errorf("not sent: the conversation is %d replies deep, the limit is %d; wait for a human", inherited.hops, limit)
 		}
 		hops = inherited.hops + 1
 		replyTo = &inherited.id

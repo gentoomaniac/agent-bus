@@ -167,8 +167,9 @@ whether one agent can respond.
   bearer tokens, `password=`-style assignments); a match blocks the send.
 - Loop guard: `hops` is set from the parent (the `reply_to` named, else the message read or marked read
   in the last five minutes on the channel you post to, or for a DM sent by the recipient; naming a
-  `thread` turns that off); the parent must be known locally, and a parent at 6 hops stops the
-  send.
+  `thread` turns that off); the parent must be known locally, and a parent at 6 hops stops a
+  new request, question or message. An ack, answer or status may still close it (up to 7 hops). The
+  recently read message is forgotten when the adapter restarts.
 - `publish` to a group that is neither read by the agent nor in the catalogue snapshot of its
   directory (`channels`, written by `busctl channel create`) fails with "unknown channel". If
   an explicit target (or @mention) does not read the group according to the snapshot, the result
