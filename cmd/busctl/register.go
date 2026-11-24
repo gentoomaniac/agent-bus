@@ -53,7 +53,7 @@ func (cmd *RegisterCmd) Run(ctx context.Context, cli *CLI) (err error) {
 		}
 		if !registered {
 			return fmt.Errorf("an earlier registration of %s did not complete: %s exists but the broker has no such user; "+
-				"remove %s and run register again", cmd.AgentID, dir, dir)
+				"if no other busctl register for this ID is running, remove %s and run register again", cmd.AgentID, dir, dir)
 		}
 		return fmt.Errorf("%s already has a key on this machine in %s", cmd.AgentID, dir)
 	} else if err != nil {
