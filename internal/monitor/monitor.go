@@ -50,6 +50,7 @@ type Message struct {
 	From     string       `json:"from,omitempty"`
 	To       string       `json:"to,omitempty"`
 	Type     string       `json:"type,omitempty"`
+	Targets  []string     `json:"targets,omitempty"`
 	Thread   string       `json:"thread,omitempty"`
 	ReplyTo  *string      `json:"reply_to,omitempty"`
 	Time     time.Time    `json:"time,omitzero"`
@@ -196,7 +197,7 @@ func (monitor *Monitor) interpret(ctx context.Context, source bus.Channel, recor
 		return message
 	}
 	env := signed.Envelope
-	message.ID, message.From, message.To, message.Type = env.ID, env.From, env.To.Name, env.Type
+	message.ID, message.From, message.To, message.Type, message.Targets = env.ID, env.From, env.To.Name, env.Type, env.Targets
 	message.Thread, message.ReplyTo, message.Time = env.Thread, env.ReplyTo, env.TS
 	message.Title, message.Text, message.Refs = env.Body.Title, env.Body.Text, env.Body.Refs
 

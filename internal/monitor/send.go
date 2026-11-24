@@ -21,7 +21,7 @@ type Sender interface {
 }
 
 // sendTypes are the types a person may send: the ones `agent-bus send` offers.
-var sendTypes = []string{"message", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"}
+var sendTypes = []string{"message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"}
 
 var (
 	// ErrReadOnly is returned by Send when the monitor has no identity to send as.
@@ -32,11 +32,13 @@ var (
 
 // SendRequest is a message the user wrote in the interface. To names an agent (kind "agent"), or
 // a group channel (kind "group"; `general` is the group named "general"), as in an envelope.
+// Targets are the agents picked in the interface; without any, the @mentions in the text count.
 type SendRequest struct {
-	To    envelope.To `json:"to"`
-	Type  string      `json:"type"`
-	Title string      `json:"title"`
-	Text  string      `json:"text"`
+	To      envelope.To `json:"to"`
+	Type    string      `json:"type"`
+	Targets []string    `json:"targets"`
+	Title   string      `json:"title"`
+	Text    string      `json:"text"`
 }
 
 // Send posts the message as the monitor's agent and returns its ID. It then arrives through the
@@ -51,7 +53,13 @@ func (monitor *Monitor) Send(ctx context.Context, request SendRequest) (string, 
 	if request.Title == "" && request.Text == "" {
 		return "", fmt.Errorf("%w: the message has neither a title nor a text", ErrInvalidRequest)
 	}
+	if err := (envelope.Envelope{Targets: request.Targets}).CheckTargets(); err != nil {
+		return "", fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+	}
 	message := adapter.Outgoing{Type: request.Type, Body: envelope.Body{Title: request.Title, Text: request.Text}}
+	if len(request.Targets) > 0 {
+		message.Targets = request.Targets
+	}
 
 	switch request.To.Kind {
 	case envelope.ToAgent:

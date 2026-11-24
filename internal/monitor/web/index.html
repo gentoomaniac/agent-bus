@@ -48,6 +48,12 @@
   .message .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
   .message .reason { color: var(--muted); font-size: 12px; margin-top: 2px; }
   .pill { font-size: 11px; border: 1px solid var(--border); border-radius: 9px; padding: 0 7px; color: var(--muted); }
+  .pill.target { color: var(--accent); border-color: var(--accent); }
+  .pill.all { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); font-weight: 600; }
+  .targets-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+  #targets { flex-wrap: wrap; align-items: center; font-size: 12px; }
+  #targets label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+  #targets input { padding: 0; }
   .badge { font-size: 11px; border-radius: 9px; padding: 0 7px; font-weight: 600; }
   .badge.verified { background: var(--ok-bg); color: var(--ok); }
   .badge.unknown_sender { background: var(--warn-bg); color: var(--warn); }
@@ -88,6 +94,7 @@
         <select name="type" aria-label="Type"></select>
         <input name="title" placeholder="Title (optional)" aria-label="Title">
       </div>
+      <div class="row" id="targets"></div>
       <textarea name="text" placeholder="Message" aria-label="Message"></textarea>
       <div class="row"><button type="submit">Send</button><span id="send-note"></span></div>
     </form>
@@ -100,7 +107,8 @@
 "use strict";
 
 // Messages are untrusted: everything is put on the page with textContent, never as HTML.
-const MESSAGE_TYPES = ["message", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"];
+const ALL = "@all";
+const MESSAGE_TYPES = ["message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"];
 const REFRESH_MS = 5000;
 const PAGE_SIZE = 500;
 const STATUS_LABEL = { verified: "verified", unknown_sender: "unknown sender", rejected: "rejected" };
@@ -110,6 +118,7 @@ const state = {
   selected: null,                 // channel ID
   messages: new Map(),            // channel ID -> messages ordered by sequence, once loaded
   unread: new Map(),              // channel ID -> count
+  picked: new Set(),              // targets ticked in the composer
 };
 
 const $ = (id) => document.getElementById(id);
@@ -227,7 +236,9 @@ function renderMessage(message, channel) {
     ...(message.type ? [el("span", { class: "pill" }, message.type)] : []),
     el("span", { class: "badge " + message.status }, STATUS_LABEL[message.status] || message.status),
     el("span", { class: "muted" }, "#" + message.sequence));
+  const targets = (message.targets || []).map((target) => el("span", { class: "pill " + (target === ALL ? "all" : "target") }, target));
   return el("div", { class: "message" }, meta,
+    ...(targets.length ? [el("div", { class: "targets-row" }, ...targets)] : []),
     ...(message.title ? [el("div", { class: "title" }, message.title)] : []),
     ...(message.text ? [el("div", { class: "text" }, message.text)] : []),
     ...(message.reason ? [el("div", { class: "reason" }, message.reason)] : []));
@@ -254,16 +265,33 @@ function renderComposer() {
   if (!form.target.value) form.target.value = "group:general";
   if (!form.type.options.length) form.type.replaceChildren(...MESSAGE_TYPES.map((type) => el("option", { value: type }, type)));
 
+  renderTargets();
   const canSend = state.status.can_send;
-  for (const field of form.elements) field.disabled = !canSend;
+  for (const field of form.elements) field.disabled = !canSend || (field.type === "checkbox" && form.target.value.startsWith("agent:"));
   const note = $("send-note");
   if (!note.classList.contains("error")) {
     note.textContent = canSend ? "Sending as " + state.status.agent : state.status.note;
   }
 }
 
+// The picker offers the members of the open channel and @all. A direct message needs none: it
+// targets its recipient. Mentions typed in the text are read by the monitor when none is ticked.
+function renderTargets() {
+  const form = document.forms.composer;
+  const isDM = form.target.value.startsWith("agent:");
+  const choices = [ALL, ...state.members.filter((id) => id !== state.status.agent)];
+  state.picked = new Set([...state.picked].filter((id) => choices.includes(id)));
+  $("targets").replaceChildren(el("span", { class: "muted" }, "Aimed at:"), ...choices.map((id) => {
+    const box = el("input", { type: "checkbox", value: id, ...(isDM ? { disabled: "" } : {}) });
+    box.checked = state.picked.has(id);
+    box.addEventListener("change", () => (box.checked ? state.picked.add(id) : state.picked.delete(id)));
+    return el("label", {}, box, id);
+  }));
+}
+
 // ---- sending ----
 
+document.forms.composer.target.addEventListener("change", renderTargets);
 document.forms.composer.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.target;
@@ -273,9 +301,11 @@ document.forms.composer.addEventListener("submit", async (event) => {
   try {
     await api("/api/send", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: { kind, name: nameParts.join(":") }, type: form.type.value, title: form.title.value, text: form.text.value }),
+      body: JSON.stringify({ to: { kind, name: nameParts.join(":") }, type: form.type.value, targets: form.target.value.startsWith("agent:") ? [] : [...state.picked], title: form.title.value, text: form.text.value }),
     });
     form.title.value = form.text.value = "";
+    state.picked.clear();
+    renderTargets();
     note.textContent = "Sent.";
   } catch (error) {
     note.classList.add("error");

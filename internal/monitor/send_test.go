@@ -15,8 +15,9 @@ import (
 
 // fakeSender records what the monitor sends.
 type fakeSender struct {
-	ready error
-	sent  []string // "<destination>: <text>"
+	ready   error
+	sent    []string // "<destination>: <text>"
+	targets [][]string
 }
 
 func (*fakeSender) AgentID() string     { return "monitor@alice" }
@@ -24,11 +25,13 @@ func (sender *fakeSender) Ready() error { return sender.ready }
 
 func (sender *fakeSender) Send(_ context.Context, to string, message adapter.Outgoing) (string, error) {
 	sender.sent = append(sender.sent, "agent "+to+": "+message.Body.Text)
+	sender.targets = append(sender.targets, message.Targets)
 	return "ID1", nil
 }
 
 func (sender *fakeSender) Publish(_ context.Context, channel string, message adapter.Outgoing) (string, error) {
 	sender.sent = append(sender.sent, "group "+channel+": "+message.Body.Text)
+	sender.targets = append(sender.targets, message.Targets)
 	return "ID2", nil
 }
 
@@ -57,6 +60,7 @@ func TestSendValidation(t *testing.T) {
 		"malformed agent":     func(r *SendRequest) { r.To = envelope.To{Kind: envelope.ToAgent, Name: "Bob"} },
 		"unregistered agent":  func(r *SendRequest) { r.To = envelope.To{Kind: envelope.ToAgent, Name: "who@ever"} },
 		"unknown destination": func(r *SendRequest) { r.To.Kind = "private" },
+		"invalid target":      func(r *SendRequest) { r.Targets = []string{"Bob"} },
 	} {
 		request := valid
 		change(&request)
@@ -81,6 +85,22 @@ func TestSendValidation(t *testing.T) {
 		if got := sender.sent[len(sender.sent)-1]; got != want {
 			t.Errorf("sent %q, want %q", got, want)
 		}
+	}
+}
+
+func TestSendPassesPickedTargetsAndLeavesMentionsToTheAdapter(t *testing.T) {
+	sender := &fakeSender{}
+	monitor := monitorWithSender(t, sender)
+	request := SendRequest{To: envelope.To{Kind: envelope.ToGroup, Name: "general"}, Type: "request", Text: "@lib-x@bob please", Targets: []string{"lib-x@bob"}}
+	if _, err := monitor.Send(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	request.Targets = []string{}
+	if _, err := monitor.Send(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.targets) != 2 || len(sender.targets[0]) != 1 || sender.targets[1] != nil {
+		t.Errorf("targets passed on = %v, want the picked one and then nil", sender.targets)
 	}
 }
 

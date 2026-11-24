@@ -89,12 +89,12 @@ func newTestAgent(id string) *testAgent {
 	return &testAgent{id: id, key: private, fp: identity.Fingerprint(public)}
 }
 
-// sign returns the record the agent publishes to a channel.
-func (agent *testAgent) sign(t *testing.T, to bus.Channel, text string) []byte {
+// sign returns the record the agent publishes to a channel, aimed at the targets.
+func (agent *testAgent) sign(t *testing.T, to bus.Channel, text string, targets ...string) []byte {
 	t.Helper()
 	payload, err := envelope.Sign(envelope.Envelope{
 		Version: envelope.Version, ID: envelope.NewID(time.Now()), TS: time.Now().UTC(), From: agent.id, To: envelope.ToFor(to),
-		Type: "message", Thread: "t", KeyFP: agent.fp, Body: envelope.Body{Text: text},
+		Type: "message", Targets: targets, Thread: "t", KeyFP: agent.fp, Body: envelope.Body{Text: text},
 	}, agent.key)
 	if err != nil {
 		t.Fatal(err)
@@ -156,6 +156,18 @@ func TestVerificationStatus(t *testing.T) {
 	}
 	if messages[0].From != alice.id || messages[0].Text != "hello" {
 		t.Errorf("first message = %+v", messages[0])
+	}
+}
+
+func TestMessagesShowTheirTargets(t *testing.T) {
+	alice := newTestAgent("api-client@alice")
+	fake := newFakeBus(t, alice)
+	fake.store(bus.GeneralChannel(), 1, alice.sign(t, bus.GeneralChannel(), "a request", envelope.TargetAll))
+	fake.store(bus.GeneralChannel(), 2, alice.sign(t, bus.GeneralChannel(), "a request", "lib-x@bob", "docs@carol"))
+
+	messages := waitForMessages(t, runMonitor(t, fake), "general", 2)
+	if !slices.Equal(messages[1].Targets, []string{"lib-x@bob", "docs@carol"}) {
+		t.Errorf("targets = %v", messages[1].Targets)
 	}
 }
 
