@@ -119,13 +119,13 @@ func TestIdleAgentWithUnseenMailBecomesUnresponsive(t *testing.T) {
 
 func TestReadersCallAnAgentOfflineWithoutHeartbeat(t *testing.T) {
 	published := Record{State: Working, Updated: start}
-	if got := published.StateAt(start.Add(OfflineAfter)); got != Working {
+	if got := published.StateAt(start.Add(OfflineAfter), OfflineAfter); got != Working {
 		t.Errorf("at the limit = %q", got)
 	}
-	if got := published.StateAt(start.Add(OfflineAfter + time.Second)); got != Offline {
+	if got := published.StateAt(start.Add(OfflineAfter+time.Second), OfflineAfter); got != Offline {
 		t.Errorf("past the limit = %q", got)
 	}
-	if got := (Record{State: Offline, Updated: start}).StateAt(start); got != Offline {
+	if got := (Record{State: Offline, Updated: start}).StateAt(start, OfflineAfter); got != Offline {
 		t.Errorf("an explicit offline = %q", got)
 	}
 }

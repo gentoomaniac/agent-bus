@@ -17,6 +17,7 @@ import (
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
@@ -89,6 +90,9 @@ type Config struct {
 	ReadOnlyNote string
 	// Report is told about errors that do not stop the monitor, such as a failed read.
 	Report func(error)
+	// OfflineAfter is how long an agent may go without a heartbeat before it is shown offline;
+	// zero means presence.OfflineAfter.
+	OfflineAfter time.Duration
 }
 
 // Monitor follows every channel and answers the web interface's questions.
@@ -97,22 +101,30 @@ type Monitor struct {
 	registry *registry
 	trust    *trust.Store
 
-	mu          sync.Mutex
-	groups      []bus.TopicRecord
-	messages    map[string][]Message // by channel ID, ordered by sequence
-	followed    map[string]bool      // sources that have a reader, by channel name
-	subscribers map[chan Message]struct{}
-	followers   sync.WaitGroup
+	mu         sync.Mutex
+	groups     []bus.TopicRecord
+	messages   map[string][]Message // by channel ID, ordered by sequence
+	followed   map[string]bool      // sources that have a reader, by channel name
+	followers  sync.WaitGroup
+	messageHub hub[Message]
+
+	presenceMu    sync.Mutex
+	records       map[string]presence.Record // last record by agent ID
+	shownState    map[string]string          // state last announced, by agent ID
+	askedPresence map[string]bool            // agents whose stored record was read at start
+	presenceHub   hub[Presence]
 }
 
 func New(config Config) *Monitor {
 	return &Monitor{
-		config:      config,
-		registry:    &registry{admin: config.Admin},
-		trust:       trust.Unpinned(),
-		messages:    map[string][]Message{},
-		followed:    map[string]bool{},
-		subscribers: map[chan Message]struct{}{},
+		config:        config,
+		registry:      &registry{admin: config.Admin},
+		trust:         trust.Unpinned(),
+		messages:      map[string][]Message{},
+		followed:      map[string]bool{},
+		records:       map[string]presence.Record{},
+		shownState:    map[string]string{},
+		askedPresence: map[string]bool{},
 	}
 }
 
@@ -120,6 +132,7 @@ func New(config Config) *Monitor {
 // agent's DM channel, started as they appear.
 func (monitor *Monitor) Run(ctx context.Context) {
 	defer monitor.followers.Wait()
+	monitor.followers.Go(func() { monitor.followPresence(ctx) })
 	for {
 		if err := monitor.discover(ctx); err != nil && ctx.Err() == nil {
 			monitor.report(err)
@@ -260,14 +273,7 @@ func (monitor *Monitor) add(message Message) {
 		return
 	}
 	monitor.messages[message.Channel] = slices.Insert(list, index, message)
-	for subscriber := range monitor.subscribers {
-		select {
-		case subscriber <- message:
-		default: // too slow: closing it makes the client reconnect and read what it missed
-			delete(monitor.subscribers, subscriber)
-			close(subscriber)
-		}
-	}
+	monitor.messageHub.publish(message)
 }
 
 func compareSequence(stored Message, sequence uint64) int {
@@ -277,18 +283,7 @@ func compareSequence(stored Message, sequence uint64) int {
 // Subscribe returns the messages added from now on. The channel is closed when the subscriber
 // falls behind; unsubscribe is safe to call then.
 func (monitor *Monitor) Subscribe() (messages <-chan Message, unsubscribe func()) {
-	subscriber := make(chan Message, subscriberBuffer)
-	monitor.mu.Lock()
-	monitor.subscribers[subscriber] = struct{}{}
-	monitor.mu.Unlock()
-	return subscriber, func() {
-		monitor.mu.Lock()
-		defer monitor.mu.Unlock()
-		if _, subscribed := monitor.subscribers[subscriber]; subscribed {
-			delete(monitor.subscribers, subscriber)
-			close(subscriber)
-		}
-	}
+	return monitor.messageHub.subscribe()
 }
 
 // Channels lists general, the catalogued group channels and the DM conversations seen so far.

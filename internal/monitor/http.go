@@ -49,6 +49,7 @@ func (monitor *Monitor) Handler(listen string) http.Handler {
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Status()) })
 	mux.HandleFunc("GET /api/channels", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Channels()) })
 	mux.HandleFunc("GET /api/agents", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Agents()) })
+	mux.HandleFunc("GET /api/presence", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Presences()) })
 	mux.HandleFunc("GET /api/members", monitor.serveMembers)
 	mux.HandleFunc("GET /api/messages", monitor.serveMessages)
 	mux.HandleFunc("GET /api/events", monitor.serveEvents)
@@ -134,9 +135,9 @@ func (monitor *Monitor) serveSend(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveEvents streams every new message as a server-sent event named "message". The stream ends
-// when the client leaves or falls too far behind; the browser then reconnects and reads what it
-// missed from /api/messages.
+// serveEvents streams every new message as a server-sent event named "message" and every presence
+// change as one named "presence". The stream ends when the client leaves or falls too far behind;
+// the browser then reconnects and reads what it missed from /api/messages and /api/presence.
 func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -145,6 +146,8 @@ func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	messages, unsubscribe := monitor.Subscribe()
 	defer unsubscribe()
+	views, unsubscribeViews := monitor.SubscribePresence()
+	defer unsubscribeViews()
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	fmt.Fprint(w, ": connected\n\n")
@@ -167,6 +170,15 @@ func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+		case view, open := <-views:
+			if !open {
+				return
+			}
+			data, err := json.Marshal(view)
+			if err != nil {
+				return
+			}
+			fmt.Fprintf(w, "event: presence\ndata: %s\n\n", data)
 		}
 		flusher.Flush()
 	}

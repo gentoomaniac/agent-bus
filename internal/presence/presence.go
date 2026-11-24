@@ -80,9 +80,10 @@ type Record struct {
 	Pending       int       `json:"pending,omitempty"` // targeted mail the agent has not marked read
 }
 
-// StateAt is the state a reader shows: offline when the record says so or its heartbeat is overdue.
-func (record Record) StateAt(now time.Time) string {
-	if record.State == Offline || now.Sub(record.Updated) > OfflineAfter {
+// StateAt is the state a reader shows: offline when the record says so or its last heartbeat is
+// more than offlineAfter ago (OfflineAfter unless a reader chooses otherwise).
+func (record Record) StateAt(now time.Time, offlineAfter time.Duration) string {
+	if record.State == Offline || now.Sub(record.Updated) > offlineAfter {
 		return Offline
 	}
 	return record.State

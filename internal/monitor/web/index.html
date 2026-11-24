@@ -32,7 +32,18 @@
   li.item:hover { background: var(--hover); }
   li.item.selected { background: var(--selected); font-weight: 600; }
   li.item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  li.member { padding: 4px 12px; overflow-wrap: anywhere; }
+  li.member { padding: 4px 12px; overflow-wrap: anywhere; cursor: pointer; }
+  li.member:hover { background: var(--hover); }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; flex: none; background: var(--muted); }
+  .dot.working { background: var(--ok); }
+  .dot.idle { background: var(--accent); }
+  .dot.waiting_for_owner, .dot.rate_limited { background: var(--warn); }
+  .dot.unresponsive, .dot.error { background: var(--bad); }
+  .dot.offline { background: transparent; border: 1px solid var(--muted); }
+  .agent-line { display: flex; align-items: center; min-width: 0; }
+  .agent-sub { margin-left: 15px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+  #agent-detail { border-top: 1px solid var(--border); padding-bottom: 12px; }
+  #agent-detail .entry { padding: 2px 12px; font-size: 12px; overflow-wrap: anywhere; }
   .unread { background: var(--accent); color: var(--accent-text); border-radius: 9px; padding: 0 6px; font-size: 11px; }
   .muted { color: var(--muted); }
   .empty { padding: 4px 12px; color: var(--muted); }
@@ -102,6 +113,7 @@
   </main>
   <aside id="members-panel">
     <h2>Members</h2><ul id="members"></ul>
+    <div id="agent-detail"></div>
   </aside>
 </div>
 <script>
@@ -117,6 +129,8 @@ const STATUS_LABEL = { verified: "verified", unknown_sender: "unknown sender", r
 
 const state = {
   channels: [], agents: [], members: [], status: { can_send: false, note: "" },
+  presence: new Map(),            // agent ID -> presence view
+  detailAgent: null,              // agent ID whose recent activity is shown
   selected: null,                 // channel ID
   messages: new Map(),            // channel ID -> messages ordered by sequence, once loaded
   unread: new Map(),              // channel ID -> count
@@ -168,7 +182,9 @@ function insertMessage(list, message) {
 
 async function refresh() {
   try {
-    [state.channels, state.agents, state.status] = await Promise.all([api("/api/channels"), api("/api/agents"), api("/api/status")]);
+    let views;
+    [state.channels, state.agents, state.status, views] = await Promise.all([api("/api/channels"), api("/api/agents"), api("/api/status"), api("/api/presence")]);
+    state.presence = new Map(views.map((view) => [view.agent, view]));
     if (state.selected) state.members = await api(`/api/members?channel=${encodeURIComponent(state.selected)}`).catch(() => []);
   } catch (error) {
     $("live").textContent = "error: " + error.message;
@@ -206,6 +222,59 @@ function describeChannel(channel) {
   return channel.kind === "group" ? "# " + channel.name : channel.kind === "general" ? "# general" : channel.name.replace(" + ", " \u2194 ");
 }
 
+// ---- presence ----
+
+// The dot's color class: every error:<kind> state looks the same.
+function stateClass(stateName) {
+  return stateName.startsWith("error:") ? "error" : stateName;
+}
+
+function ago(time) {
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(time).getTime()) / 1000));
+  if (seconds < 60) return seconds + "s";
+  if (seconds < 3600) return Math.floor(seconds / 60) + "m";
+  return Math.floor(seconds / 3600) + "h";
+}
+
+function presenceOf(agentId) {
+  return state.presence.get(agentId) || { agent: agentId, state: "offline" };
+}
+
+// The agent's ID with its status dot and state.
+function agentLine(agentId, view) {
+  return el("span", { class: "agent-line", title: agentId + ": " + view.state },
+    el("span", { class: "dot " + stateClass(view.state) }), el("span", { class: "label" }, agentId),
+    el("span", { class: "muted" }, "\u00a0" + view.state));
+}
+
+// "N workers" and what the agent is doing, with how long.
+function agentSummary(view) {
+  const parts = [];
+  if (view.workers && view.workers.length) parts.push(view.workers.length + (view.workers.length === 1 ? " worker" : " workers"));
+  if (view.activity) parts.push(view.activity + " (" + ago(view.activity_since) + ")");
+  return parts.length ? el("div", { class: "agent-sub" }, parts.join(" \u00b7 ")) : "";
+}
+
+function showDetail(agentId) {
+  state.detailAgent = agentId;
+  renderDetail();
+}
+
+function renderDetail() {
+  const box = $("agent-detail");
+  if (!state.detailAgent) { box.replaceChildren(); return; }
+  const view = presenceOf(state.detailAgent);
+  const since = view.since ? " for " + ago(view.since) : "";
+  const workers = (view.workers || []).map((w) => el("div", { class: "entry" }, w.description + " (" + ago(w.since) + ")"));
+  const recent = (view.recent || []).slice().reverse().map((e) => el("div", { class: "entry" }, el("span", { class: "muted" }, ago(e.at) + " ago "), e.text));
+  box.replaceChildren(
+    el("h2", {}, state.detailAgent),
+    el("div", { class: "entry" }, el("span", { class: "dot " + stateClass(view.state) }), view.state + since),
+    ...(view.pending ? [el("div", { class: "entry" }, view.pending + " unread targeted")] : []),
+    ...(workers.length ? [el("h2", {}, "Workers"), ...workers] : []),
+    el("h2", {}, "Recent activity"), ...(recent.length ? recent : [el("div", { class: "entry muted" }, "none")]));
+}
+
 function renderSidebar() {
   const channelItems = state.channels.filter((c) => c.kind !== "dm");
   const dmItems = state.channels.filter((c) => c.kind === "dm");
@@ -216,13 +285,17 @@ function renderSidebar() {
   };
   $("channels").replaceChildren(...channelItems.map(item));
   $("dms").replaceChildren(...(dmItems.length ? dmItems.map(item) : [el("li", { class: "empty" }, "none yet")]));
-  $("agents").replaceChildren(...(state.agents.length ? state.agents.map((agent) =>
-    el("li", { class: "item", title: agent.fingerprint, onclick: () => { document.forms.composer.target.value = "agent:" + agent.id; } },
-      el("span", { class: "label" }, agent.id))) : [el("li", { class: "empty" }, "no agents registered")]));
+  $("agents").replaceChildren(...(state.agents.length ? state.agents.map((agent) => {
+    const view = presenceOf(agent.id);
+    return el("li", { class: "item", title: agent.fingerprint, onclick: () => { document.forms.composer.target.value = "agent:" + agent.id; showDetail(agent.id); } },
+      el("div", {}, agentLine(agent.id, view), agentSummary(view)));
+  }) : [el("li", { class: "empty" }, "no agents registered")]));
+  renderDetail();
 }
 
 function renderMembers() {
-  $("members").replaceChildren(...(state.members.length ? state.members.map((id) => el("li", { class: "member" }, id)) : [el("li", { class: "empty" }, "none")]));
+  $("members").replaceChildren(...(state.members.length ? state.members.map((id) =>
+    el("li", { class: "member", onclick: () => showDetail(id) }, agentLine(id, presenceOf(id)))) : [el("li", { class: "empty" }, "none")]));
 }
 
 function renderHeader() {
@@ -353,6 +426,12 @@ function connectEvents() {
     await refresh();
     renderMessages(false);
   };
+  source.addEventListener("presence", (event) => {
+    const view = JSON.parse(event.data);
+    state.presence.set(view.agent, view);
+    renderSidebar();
+    renderMembers();
+  });
   source.onerror = () => {
     state.feedOpen = false;
     showLive();
