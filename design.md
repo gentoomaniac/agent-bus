@@ -300,6 +300,19 @@ So a former member's message, whatever its `ts` and whether newly written or rep
 
 ---
 
+## 4c. Agent enrollment with mTLS (planned)
+
+**Decision** (owner, 2026-11-24, after a design review): agents get client certificates from the bus CA through a Puppet-style enrollment flow, replacing agent passwords. Planned after agent removal, the protocol fixes and the minimal monitor API.
+
+- **Request.** `agent-bus enroll --broker <host> --agent <id>` creates the TLS key and CSR on the agent's machine (an existing agent keeps its signing key, ID, consumers and local state; a new one also creates its Ed25519 key). Keys never leave the machine. The request carries the agent ID, CSR, public signing key with proof of possession, hostname and a fresh nonce; its approval code is derived from all of these, so it cannot be reused for another request. `--waitforcert` keeps retrying until the request is approved or rejected.
+- **Trust in the broker.** The CA fingerprint is confirmed against the value the central machine shows (or the CA certificate is copied once), never taken from the enrollment endpoint alone.
+- **Enrollment login.** A shared enrollment login on a separate listener may only send a request and receive its own reply (dedicated inbox namespace), with size, pending-count, expiry and rate limits and no BUS, JetStream or admin access. It requests approval; it never proves identity. Optional autosigning: a request carrying a configured enrollment secret (like Puppet's challenge password) is approved automatically; off by default.
+- **Approval.** The monitor's "pending agents" list (ID, hostname, fingerprints, code) or `busctl ca list` / `busctl ca sign <id>` / `busctl ca reject <id>`. The monitor holds the CA key (mode 0600, never served, logged or exported); it is local-only and exposed only through a reverse proxy. Approvals are single-use and expire, and never overwrite an existing identity silently.
+- **Certificates.** Built by us from the approved ID, never copied from the CSR: client-auth only, not a CA, bounded validity, one URI SAN that nats-server's `verify_and_map` maps to the agent's user. A renew/reissue command exists before certificates expire.
+- **Broker.** The mapped mTLS listener and the password/enrollment listener are separate; admin users and the monitor get certificates before agents are switched; password logins are retired only after certificate login is verified (documented rollback). The generated authorization files model explicit roles (agent, admin, monitor, enrollment) and authentication modes, round-tripped without loss.
+- **Removal.** Removing an agent drops its mapping and reloads; a removed ID is never reused while certificates issued for it are valid (tombstones in the registry). Agents learn about new and removed agents through a directory refresh and keep revoked fingerprints locally, checked even for pinned keys.
+- **Docker.** One supported topology lets the monitor reload nats-server (for example sharing the broker container's PID namespace); config is mounted as a directory so atomic replacement stays visible.
+
 ## 5. Message envelope
 
 JSON, UTF-8. The record value:
@@ -707,3 +720,7 @@ Added by the owner on 2026-11-24 (JetStream review fixes):
 Added by the owner on 2026-11-24 (presence):
 
 37. **Presence for the owner's monitor, from hooks, in stream `PRESENCE`.** Each adapter publishes its agent's state, activity, workers and unread targeted mail on change (at most every 3 seconds) and as a 30-second heartbeat; hooks (Claude Code) and a plugin (OpenCode) feed it through `agent-bus event`; readers call an agent offline after 90 seconds without a heartbeat; an idle agent with targeted mail unseen for 10 minutes is `unresponsive`. One message per agent in a separate stream of the `BUS` account, written only by the agent itself. Agents do not poll it; sending to an agent that cannot respond still works and warns. `wait_for_messages` returns only mail not yet returned, a message the agent sent an `ack` for shows `acked`, and `mark_read all` leaves unanswered requests and questions (§7, §9, §10a, docs/monitor.md).
+
+Added by the owner on 2026-11-24 (access control):
+
+38. **Puppet-style mTLS enrollment, planned (§4c).** Agents enroll with a CSR, the owner approves in the monitor or with `busctl ca sign`, the monitor holds the CA key; optional autosigning with an enrollment secret; separate enrollment listener; certificates built from the approved ID; removed IDs not reused while their certificates are valid. Order: agent removal with directory refresh, the protocol fixes, the minimal monitor API, then enrollment, then the VS Code extension.
