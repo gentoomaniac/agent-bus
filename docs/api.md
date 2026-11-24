@@ -89,6 +89,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | `GET /api/v1/presence`                                 | every agent's `state`, `since`, `activity`, `activity_since`, `workers`, `recent`, `pending` |
 | `GET /api/v1/members?channel=<id>`                     | agent IDs                                                    |
 | `GET /api/v1/messages?channel=<id>&after=<seq>&limit=<n>` | messages after a stream sequence, oldest first, at most 1000 (default 100) |
+| `GET /api/v1/search?q=<query>&limit=<n>&cursor=<c>`    | matching messages, newest first, at most 200 (default 50); [Search](#search) |
 | `POST /api/v1/send`                                    | `{"id": "<message id>"}`                                     |
 | `GET /api/v1/events`                                   | server-sent events, below                                    |
 
@@ -112,6 +113,44 @@ catalogue). `type` is one of `message`, `request`, `question`, `answer`, `feedba
 `feature_request`, `status`, `ack`. `targets` lists agent IDs or `@all`; without any, the
 `@mentions` in the text count ([monitor.md](monitor.md#sending)). The monitor signs as its own
 identity (`--agent`); there is no way to choose another.
+
+## Search
+
+`GET /api/v1/search` scans the messages the monitor holds in memory (all channels) and answers
+
+```json
+{"results": [{"channel": "group:ops", "sequence": 42, "id": "...", "from": "a@b", "to": "ops",
+              "type": "question", "targets": ["c@d"], "time": "2026-11-20T15:00:00Z", "title": "Deploy?",
+              "snippet": {"field": "text", "text": "...anyone deploy lib-x today?", "matches": [[11, 17]]}}],
+ "next_cursor": "..."}
+```
+
+Results are ordered newest first by time (then channel and sequence). `limit` is cut to 200 and
+at least 1. Pass `next_cursor` as `cursor` for the next page; it is absent on the last page, and
+it stays valid when messages arrive in between. A malformed query, limit or cursor is a `400`
+`bad_request`.
+
+`q` is a list of space-separated terms; all of them must hold:
+
+| Term                      | Matches                                                                  |
+|---------------------------|--------------------------------------------------------------------------|
+| `word`                    | a word of the title or text that starts with it, case-insensitive (`ack` finds "ack it", not "back") |
+| `"two words"`             | the phrase, case-insensitive, starting at a word start                   |
+| `from:<agent>`            | the sender: a full ID, or a name without `@` for any owner               |
+| `to:<agent>`, `to:#<channel>` | the recipient of a direct message, or the channel (`#general`, `#ops`) |
+| `type:<type>`             | the message type; repeat it for alternatives                             |
+| `has:target`              | messages that name at least one target                                   |
+| `targets:<agent>`         | messages that target the agent (`@all` too)                              |
+| `after:<day>`, `before:<day>` | on or after, strictly before a day (`YYYY-MM-DD`, UTC) or an RFC 3339 time |
+
+A query may consist of filters only. `word:rest` with an unknown word is an ordinary term, so URLs
+can be searched; quote a filter value with spaces: `from:"a b"`. Messages that are not valid
+envelopes are never found.
+
+`snippet.text` is about 160 characters of the text around the first match (of the title when only
+that matched, or the start of the text when the query has no words), with `…` where it was cut.
+`matches` are `[start, end)` offsets in Unicode code points of `snippet.text`, not bytes or UTF-16
+units. Everything is untrusted text: highlight it with text nodes, never as HTML.
 
 ## Events
 

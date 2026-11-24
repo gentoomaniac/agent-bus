@@ -122,7 +122,7 @@ func statusWith(t *testing.T, server *httptest.Server, headers map[string]string
 
 func TestEverythingButTheLoginNeedsThePassword(t *testing.T) {
 	server, _ := serveWithPassword(t, Access{})
-	for _, path := range []string{"/api/v1/status", "/api/v1/channels", "/api/v1/agents", "/api/v1/presence", "/api/v1/members?channel=general", "/api/v1/messages", "/api/v1/events"} {
+	for _, path := range []string{"/api/v1/status", "/api/v1/channels", "/api/v1/agents", "/api/v1/presence", "/api/v1/members?channel=general", "/api/v1/messages", "/api/v1/search?q=x", "/api/v1/events"} {
 		response, body := call(t, server, "GET", path, "", nil)
 		if response.StatusCode != http.StatusUnauthorized || errorCode(body) != "unauthenticated" {
 			t.Errorf("GET %s without login: %d %s", path, response.StatusCode, body)

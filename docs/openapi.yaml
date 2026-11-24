@@ -163,6 +163,37 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+  /api/v1/search:
+    get:
+      operationId: searchMessages
+      summary: Find messages in all channels, newest first.
+      description: |
+        Words and "quoted phrases" must all appear (case-insensitive, at word starts) in the title or
+        text. Filters: `from:<agent>`, `to:<agent>` or `to:#<channel>`, `type:<type>` (repeatable),
+        `has:target`, `targets:<agent>`, `after:<day>` and `before:<day>` (`YYYY-MM-DD` or RFC 3339).
+        See api.md for the details.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, maxLength: 500 }
+        - name: limit
+          in: query
+          description: At most this many; larger values are cut to 200.
+          schema: { type: integer, minimum: 1, default: 50 }
+        - name: cursor
+          in: query
+          description: The `next_cursor` of the previous page.
+          schema: { type: string }
+      responses:
+        "200":
+          description: "The hits. Their texts are untrusted, show them as text."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/send:
     post:
       operationId: sendMessage
@@ -342,6 +373,36 @@ components:
         title: { type: string }
         text: { type: string }
         refs: { type: array, items: { type: string } }
+    SearchResult:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required: [channel, sequence, snippet]
+            properties:
+              channel: { type: string }
+              sequence: { type: integer }
+              id: { type: string }
+              from: { type: string }
+              to: { type: string }
+              type: { type: string }
+              targets: { type: array, items: { type: string } }
+              time: { type: string, format: date-time }
+              title: { type: string }
+              snippet:
+                type: object
+                required: [field, text]
+                properties:
+                  field: { type: string, enum: [text, title] }
+                  text: { type: string }
+                  matches:
+                    type: array
+                    description: "[start, end) offsets in Unicode code points of `text`."
+                    items: { type: array, items: { type: integer }, minItems: 2, maxItems: 2 }
+        next_cursor: { type: string, description: Present when more results follow. }
     SendRequest:
       type: object
       required: [to, type]

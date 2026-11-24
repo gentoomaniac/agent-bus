@@ -69,6 +69,7 @@ func (monitor *Monitor) handler(access Access, now func() time.Time) (http.Handl
 	mux.HandleFunc("GET /api/v1/presence", read(func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Presences()) }))
 	mux.HandleFunc("GET /api/v1/members", read(monitor.serveMembers))
 	mux.HandleFunc("GET /api/v1/messages", read(monitor.serveMessages))
+	mux.HandleFunc("GET /api/v1/search", read(monitor.serveSearch))
 	mux.HandleFunc("GET /api/v1/events", read(func(w http.ResponseWriter, r *http.Request) {
 		who := principalOf(r)
 		monitor.serveEvents(w, r, func() bool { return who.token == "" || login.auth.isLive(who.token) })
@@ -127,6 +128,24 @@ func (monitor *Monitor) serveMessages(w http.ResponseWriter, r *http.Request) {
 		messages = []Message{}
 	}
 	writeJSON(w, messages)
+}
+
+// serveSearch answers ?q=<query>&limit=<n>&cursor=<cursor>, newest first. The query syntax is in
+// docs/api.md; limit is cut to maxSearchLimit and the cursor is the previous page's next_cursor.
+func (monitor *Monitor) serveSearch(w http.ResponseWriter, r *http.Request) {
+	params := r.URL.Query()
+	limit, limitErr := parseUint(params.Get("limit"), defaultSearchLimit)
+	query, queryErr := ParseQuery(params.Get("q"))
+	if err := errors.Join(limitErr, queryErr); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	result, err := monitor.Search(query, int(max(1, min(limit, maxSearchLimit))), params.Get("cursor"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeJSON(w, result)
 }
 
 func parseUint(text string, fallback uint64) (uint64, error) {
