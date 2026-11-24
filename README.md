@@ -16,3 +16,10 @@ All local state lives in `~/.config/agent-bus/` (`--config-dir` or `BUS_CONFIG_D
 3. `bin/busctl admin init` creates the admin (SCRAM superuser) password in
    `~/.config/agent-bus/admin/password` (mode 0600). The broker is bootstrapped with it and
    busctl connects with it. It never lives in the repo.
+4. `deploy/broker.sh up` starts Redpanda (pod manifest `deploy/redpanda.yaml`, started with
+   `podman kube play`) and waits until it is ready. `deploy/broker.sh down` stops it and keeps its
+   data, `down --purge` deletes the data too. Settings are environment variables
+   (`BUS_CONFIG_DIR`, `BUS_POD_NAME`, `BUS_KAFKA_PORT`, `BUS_ADVERTISE_HOST`; see the script).
+   The broker has only a TLS + SASL/SCRAM listener, topic auto-creation is off and ACLs are
+   enforced. For clients on other machines set `BUS_ADVERTISE_HOST` to a name that is in the
+   certificate's SANs. The image tag is pinned in the manifest.
