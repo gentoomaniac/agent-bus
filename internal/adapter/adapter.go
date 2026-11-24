@@ -53,6 +53,10 @@ type Config struct {
 	// cursors must exist (busctl creates them); joining through busd comes later.
 	Groups []string
 
+	// AutoAccept says the agent may act on a request aimed at it without asking its owner
+	// (design.md §8 rule 2). It only changes what the MCP server tells the agent.
+	AutoAccept bool
+
 	Deliver       string // DeliverTargeted (default) or DeliverAll
 	InboxMessages int    // default DefaultInboxMessages
 	InboxBytes    int    // default DefaultInboxBytes
@@ -179,6 +183,8 @@ func (adapter *Adapter) Close() error {
 func (adapter *Adapter) Ready() error { return adapter.lockErr }
 
 func (adapter *Adapter) AgentID() string { return adapter.config.AgentID }
+
+func (adapter *Adapter) AutoAccept() bool { return adapter.config.AutoAccept }
 
 // Channels are the channels the adapter reads: the agent's DM channel, general and its groups.
 func (adapter *Adapter) Channels() []bus.Channel { return slices.Clone(adapter.channels) }

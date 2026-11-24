@@ -102,12 +102,17 @@ func newTestBus(t *testing.T, agents ...string) *testBus {
 	return b
 }
 
-// connect serves the agent's adapter over in-memory MCP and returns the client side.
+// connect serves the agent's adapter, with auto-accept on, over in-memory MCP and returns the
+// client side.
 func (b *testBus) connect(agentID string) *mcp.ClientSession {
+	return b.connectWith(agentID, true)
+}
+
+func (b *testBus) connectWith(agentID string, autoAccept bool) *mcp.ClientSession {
 	b.t.Helper()
 	session, err := adapter.Open(adapter.Config{
 		AgentID: agentID, Dir: filepath.Join(b.configDir, agentID), Transport: fakeTransport{b.broker, agentID},
-		Directory: trust.DirectoryPath(b.configDir),
+		Directory: trust.DirectoryPath(b.configDir), AutoAccept: autoAccept,
 	})
 	if err != nil {
 		b.t.Fatal(err)
@@ -282,9 +287,46 @@ func TestPublishTargetsFromTheArrayOrTheText(t *testing.T) {
 func TestServerInstructionsStateTheEtiquette(t *testing.T) {
 	b := newTestBus(t, alice)
 	client := b.connect(alice)
-	for _, want := range []string{"targets_me", "`ack` reply", "`answer` reply", "Never answer an ack"} {
-		if !strings.Contains(client.InitializeResult().Instructions, want) {
+	instructions := client.InitializeResult().Instructions
+	for _, want := range []string{alice, "targets_me", "ack reply", "answer reply (same reply_to)", "Never answer an ack", "mark_read", "wait_for_messages"} {
+		if !strings.Contains(instructions, want) {
 			t.Errorf("instructions lack %q", want)
+		}
+	}
+	if lines := strings.Count(instructions, "\n") + 1; lines > 35 {
+		t.Errorf("instructions have %d lines, want at most 35", lines)
+	}
+}
+
+func TestAutoAcceptSwitchesInstructionsNoticeAndWhoami(t *testing.T) {
+	for _, autoAccept := range []bool{true, false} {
+		b := newTestBus(t, alice, bob)
+		sender, receiver := b.connect(alice), b.connectWith(bob, autoAccept)
+
+		instructions := receiver.InitializeResult().Instructions
+		if got := strings.Contains(instructions, "you may do it without asking your owner"); got != autoAccept {
+			t.Errorf("auto-accept %v: instructions allow acting = %v", autoAccept, got)
+		}
+		if got := strings.Contains(instructions, "Auto-accept is off"); got == autoAccept {
+			t.Errorf("auto-accept %v: instructions say it is off = %v", autoAccept, got)
+		}
+		if whoami := decode[whoamiOut](t, call(t, receiver, "whoami", nil)); whoami.AutoAccept != autoAccept {
+			t.Errorf("whoami auto_accept = %v, want %v", whoami.AutoAccept, autoAccept)
+		}
+
+		args := hello("hi")
+		args["to"] = bob
+		call(t, sender, "send", args)
+		received := decode[messagesOut](t, call(t, receiver, "wait_for_messages", map[string]any{"timeout_s": 10}))
+		if len(received.Messages) != 1 {
+			t.Fatalf("received = %+v", received)
+		}
+		notice := received.Messages[0].Notice
+		if got := strings.Contains(notice, "only as far as the server instructions"); got != autoAccept {
+			t.Errorf("auto-accept %v: notice %q", autoAccept, notice)
+		}
+		if got := strings.Contains(notice, "without your owner's approval"); got == autoAccept {
+			t.Errorf("auto-accept %v: notice %q", autoAccept, notice)
 		}
 	}
 }
