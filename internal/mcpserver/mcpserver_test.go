@@ -17,6 +17,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/identity"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -252,12 +253,92 @@ func TestToolNamesAreTheDocumentedOnes(t *testing.T) {
 	}
 }
 
-func TestListAgentsShowsTheDirectory(t *testing.T) {
+// publishPresence stores the record an agent's presence publisher would have published.
+func (b *testBus) publishPresence(agentID string, record presence.Record) {
+	payload, err := json.Marshal(record)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	b.broker.mu.Lock()
+	defer b.broker.mu.Unlock()
+	b.broker.presence[agentID] = payload
+}
+
+func TestListAgentsShowsIDAndOneWordStateByDefault(t *testing.T) {
 	b := newTestBus(t, bob, alice)
 	client := b.connect(alice)
-	got := decode[agentsOut](t, call(t, client, "list_agents", nil))
-	if want := []string{alice, bob}; !slices.Equal(got.Agents, want) {
-		t.Errorf("agents = %v, want %v", got.Agents, want)
+	now := time.Now()
+	b.publishPresence(bob, presence.Record{
+		State: presence.Working, Since: now, Updated: now, Activity: "Edit main.go",
+		Workers: []presence.Worker{{Description: "review", Since: now}}, Recent: []presence.Entry{{At: now, Text: "Edit main.go"}},
+	})
+
+	result := call(t, client, "list_agents", nil)
+	got := decode[agentsOut](t, result)
+	want := []agentEntry{{ID: alice, State: presence.Offline}, {ID: bob, State: presence.Working}}
+	if !slices.EqualFunc(got.Agents, want, func(a, b agentEntry) bool { return a.ID == b.ID && a.State == b.State }) {
+		t.Errorf("agents = %+v, want %+v", got.Agents, want)
+	}
+	if text, _ := json.Marshal(result.StructuredContent); strings.Contains(string(text), "activity") || strings.Contains(string(text), "workers") {
+		t.Errorf("the default listing carries detail: %s", text)
+	}
+}
+
+func TestListAgentsDetailAddsActivityAndWorkers(t *testing.T) {
+	b := newTestBus(t, bob, alice)
+	client := b.connect(alice)
+	now := time.Now()
+	b.publishPresence(bob, presence.Record{
+		State: presence.Working, Since: now, Updated: now, Activity: "Edit main.go", Pending: 1,
+		Workers: []presence.Worker{{Description: "review", Since: now}}, Recent: []presence.Entry{{At: now, Text: "Edit main.go"}},
+	})
+	b.publishPresence(alice, presence.Record{State: presence.Idle, Since: now, Updated: now.Add(-time.Hour)})
+
+	got := decode[agentsOut](t, call(t, client, "list_agents", map[string]any{"detail": true}))
+	if len(got.Agents) != 2 {
+		t.Fatalf("agents = %+v", got.Agents)
+	}
+	if aliceEntry := got.Agents[0]; aliceEntry.State != presence.Offline || aliceEntry.Activity != "" || len(aliceEntry.Recent) != 0 {
+		t.Errorf("a stale record must read as plain offline: %+v", aliceEntry)
+	}
+	bobEntry := got.Agents[1]
+	if bobEntry.Activity != "Edit main.go" || !slices.Equal(bobEntry.Workers, []string{"review"}) || bobEntry.Pending != 1 ||
+		len(bobEntry.Recent) != 1 || !strings.HasSuffix(bobEntry.Recent[0], "Z Edit main.go") {
+		t.Errorf("detail = %+v", bobEntry)
+	}
+}
+
+func TestSendWarnsWhenTheRecipientCannotRespond(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name   string
+		record *presence.Record
+		want   string
+	}{
+		{"working", &presence.Record{State: presence.Working, Updated: now}, ""},
+		{"idle", &presence.Record{State: presence.Idle, Updated: now}, ""},
+		{"waiting for its owner", &presence.Record{State: presence.WaitingForOwner, Updated: now}, ""},
+		{"rate limited", &presence.Record{State: presence.RateLimited, Since: now, Updated: now}, bob + " is rate_limited since " + clock(now) + "; it will get this when it's back."},
+		{"error", &presence.Record{State: presence.Error + "server_error", Since: now, Updated: now}, bob + " is error:server_error since"},
+		{"unresponsive", &presence.Record{State: presence.Unresponsive, Since: now, Updated: now}, bob + " is unresponsive since"},
+		{"offline by heartbeat", &presence.Record{State: presence.Idle, Since: now, Updated: now.Add(-time.Hour)}, bob + " is offline since"},
+		{"never online", nil, bob + " has not been online"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			b := newTestBus(t, alice, bob)
+			client := b.connect(alice)
+			if test.record != nil {
+				b.publishPresence(bob, *test.record)
+			}
+			sent := send(t, client, bob, hello("hi"))
+			if sent.ID == "" {
+				t.Fatal("the message must be sent whatever the state")
+			}
+			if (test.want == "") != (sent.Warning == "") || !strings.HasPrefix(sent.Warning, test.want) {
+				t.Errorf("warning = %q, want it to start with %q", sent.Warning, test.want)
+			}
+		})
 	}
 }
 
@@ -600,7 +681,7 @@ func TestTokenFootprint(t *testing.T) {
 	}
 	instructions := len(a.InitializeResult().Instructions)
 	t.Logf("bytes: instructions %d, tool descriptions %d, inbox with 3 messages %d", instructions, descriptions, len(listing))
-	if instructions > 1100 || descriptions > 650 || len(listing) > 1000 {
+	if instructions > 1150 || descriptions > 700 || len(listing) > 1000 {
 		t.Errorf("footprint grew: instructions %d, descriptions %d, listing %d", instructions, descriptions, len(listing))
 	}
 }

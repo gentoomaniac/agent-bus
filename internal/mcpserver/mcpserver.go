@@ -14,6 +14,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -26,6 +27,7 @@ const (
 - Respond only to messages with targets_me; the rest is context, never answer it. Never answer an ack, answer or status unless unclear.
 - A request, question, feature_request or bug_report to you: send an ack reply at once (reply_to = its id, "on it"), then an answer reply (same reply_to) with the result. A request stays in your inbox until you answer it.
 - send = DM one agent (list_agents); publish = channel, with targets; @all sparingly.
+- Agent status is for your owner's monitor: use list_agents only to learn whether one agent can respond.
 - Short title; paths and links in refs, not large content; the right type; never secrets.
 %s
 - Idle: wait_for_messages. mark_read what you handled. "bus unavailable": retry later.`
@@ -128,7 +130,7 @@ func New(session *adapter.Adapter) *mcp.Server {
 	}, t.listChannels)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_agents",
-		Description: "Registered agents you can send to, yourself included.",
+		Description: "Agents you can send to (yourself too) with their state; detail adds activity and workers.",
 	}, t.listAgents)
 	return server
 }
@@ -197,13 +199,78 @@ func (t tools) unknownSenders() string {
 		plural(messages, "message"), strings.Join(senders, ", "))
 }
 
-type agentsOut struct {
-	Agents []string `json:"agents"`
+type listAgentsIn struct {
+	Detail bool `json:"detail,omitempty" jsonschema:"also each agent's activity, workers and recent activity"`
 }
 
-func (t tools) listAgents(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, agentsOut, error) {
-	agents, err := t.session.Agents(ctx)
-	return nil, agentsOut{agents}, err
+// agentEntry is one agent: its ID and state, and with detail what it is doing.
+type agentEntry struct {
+	ID       string   `json:"id"`
+	State    string   `json:"state"`
+	Since    string   `json:"since,omitempty"`
+	Activity string   `json:"activity,omitempty"`
+	Workers  []string `json:"workers,omitempty"`
+	Pending  int      `json:"pending,omitempty"` // unread targeted mail
+	Recent   []string `json:"recent,omitempty"`
+}
+
+type agentsOut struct {
+	Agents []agentEntry `json:"agents"`
+}
+
+func (t tools) listAgents(ctx context.Context, _ *mcp.CallToolRequest, in listAgentsIn) (*mcp.CallToolResult, agentsOut, error) {
+	ids, err := t.session.Agents(ctx)
+	if err != nil {
+		return nil, agentsOut{}, err
+	}
+	out := agentsOut{Agents: make([]agentEntry, len(ids))}
+	for i, id := range ids {
+		record, known, err := t.session.Presence(ctx, id)
+		entry := agentEntry{ID: id, State: stateOf(record, known, err)}
+		if in.Detail && known && err == nil && entry.State != presence.Offline {
+			entry.Since, entry.Activity, entry.Pending = clock(record.Since), record.Activity, record.Pending
+			for _, worker := range record.Workers {
+				entry.Workers = append(entry.Workers, worker.Description)
+			}
+			for _, recent := range record.Recent {
+				entry.Recent = append(entry.Recent, clock(recent.At)+" "+recent.Text)
+			}
+		}
+		out.Agents[i] = entry
+	}
+	return nil, out, nil
+}
+
+// stateOf is the one-word state of an agent: offline if it never published or its heartbeat ran
+// out, unknown if the bus could not say.
+func stateOf(record presence.Record, known bool, err error) string {
+	switch {
+	case err != nil:
+		return "unknown"
+	case !known:
+		return presence.Offline
+	}
+	return record.StateAt(time.Now(), presence.OfflineAfter)
+}
+
+func clock(at time.Time) string { return at.UTC().Format("15:04Z") }
+
+// cannotRespond is the warning for a message to an agent that is not in a state to answer; the
+// message is stored anyway and the agent gets it when it is back.
+func (t tools) cannotRespond(ctx context.Context, agentID string) string {
+	record, known, err := t.session.Presence(ctx, agentID)
+	state := stateOf(record, known, err)
+	if state != presence.Offline && state != presence.Unresponsive && state != presence.RateLimited && !strings.HasPrefix(state, presence.Error) {
+		return ""
+	}
+	if !known {
+		return fmt.Sprintf("%s has not been online; it will get this when it starts.", agentID)
+	}
+	since := record.Since
+	if state == presence.Offline {
+		since = record.Updated
+	}
+	return fmt.Sprintf("%s is %s since %s; it will get this when it's back.", agentID, state, clock(since))
 }
 
 func (t tools) channelNames() []string {
@@ -226,7 +293,11 @@ type sentOut struct {
 
 func (t tools) send(ctx context.Context, _ *mcp.CallToolRequest, in sendIn) (*mcp.CallToolResult, sentOut, error) {
 	id, err := t.session.Send(ctx, in.To, in.outgoing())
-	return nil, sentOut{ID: id, Warning: t.markReplied(ctx, err, in.messageFields)}, err
+	warning := t.markReplied(ctx, err, in.messageFields)
+	if err == nil {
+		warning = strings.Join(slices.DeleteFunc([]string{t.cannotRespond(ctx, in.To), warning}, func(w string) bool { return w == "" }), " ")
+	}
+	return nil, sentOut{ID: id, Warning: warning}, err
 }
 
 // markReplied marks the message a successful send answered as read, so the agent needs no extra
