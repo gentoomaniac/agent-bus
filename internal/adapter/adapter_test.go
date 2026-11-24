@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -336,6 +337,16 @@ func (b *testBus) idOfFirst(t *testing.T) string {
 	return signed.Envelope.ID
 }
 
+func TestChannelsAreDMGeneralAndGroups(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	a, _ := b.open(alice, func(config *Config) { config.Groups = []string{"dev"} })
+	want := []bus.Channel{bus.DMChannel(alice), bus.GeneralChannel(), bus.GroupChannel("dev")}
+	if got := a.Channels(); !slices.Equal(got, want) {
+		t.Errorf("Channels() = %v, want %v", got, want)
+	}
+}
+
 func TestSecondAdapterOnTheSameIdentityFailsEveryOperation(t *testing.T) {
 	b := newTestBus(t)
 	b.register(alice)
@@ -350,6 +361,7 @@ func TestSecondAdapterOnTheSameIdentityFailsEveryOperation(t *testing.T) {
 	_, errs["inbox"] = second.Inbox(InboxQuery{})
 	errs["ack"] = second.Ack(ctx, []string{"x"})
 	errs["run"] = second.Run(ctx, func(error) {})
+	errs["ready"] = second.Ready()
 	for operation, err := range errs {
 		var held identity.HeldError
 		if !errors.As(err, &held) || !strings.Contains(err.Error(), alice) {

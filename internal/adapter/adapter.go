@@ -161,9 +161,14 @@ func (adapter *Adapter) Close() error {
 	return errors.Join(adapter.handled.close(), adapter.lock.Release())
 }
 
-func (adapter *Adapter) ready() error { return adapter.lockErr }
+// Ready returns the error every operation fails with when another process holds the identity
+// (§3), and nil otherwise.
+func (adapter *Adapter) Ready() error { return adapter.lockErr }
 
 func (adapter *Adapter) AgentID() string { return adapter.config.AgentID }
+
+// Channels are the channels the adapter reads: the agent's DM channel, general and its groups.
+func (adapter *Adapter) Channels() []bus.Channel { return slices.Clone(adapter.channels) }
 
 func (adapter *Adapter) Fingerprint() string { return adapter.keyFP }
 
@@ -174,7 +179,7 @@ func (adapter *Adapter) Send(ctx context.Context, to string, message Outgoing) (
 	if err := bus.ValidateAgentID(to); err != nil {
 		return "", err
 	}
-	if err := adapter.ready(); err != nil {
+	if err := adapter.Ready(); err != nil {
 		return "", err
 	}
 	if _, err := adapter.config.Directory.Lookup(ctx, to); errors.Is(err, fs.ErrNotExist) {
@@ -215,7 +220,7 @@ func (adapter *Adapter) findParent(id string) (parent, bool) {
 }
 
 func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoing) (string, error) {
-	if err := adapter.ready(); err != nil {
+	if err := adapter.Ready(); err != nil {
 		return "", err
 	}
 	if !slices.Contains(envelope.Types, message.Type) {
@@ -293,7 +298,7 @@ func digestOf(payload []byte) string {
 // Poll fetches each channel once and verifies what it got. It returns the errors of channels that
 // could not be read after processing the rest.
 func (adapter *Adapter) Poll(ctx context.Context) error {
-	if err := adapter.ready(); err != nil {
+	if err := adapter.Ready(); err != nil {
 		return err
 	}
 	adapter.pollMu.Lock()
@@ -319,7 +324,7 @@ func (adapter *Adapter) Poll(ctx context.Context) error {
 
 // Run reads until the context ends and keeps buffered messages alive at the broker.
 func (adapter *Adapter) Run(ctx context.Context, report func(error)) error {
-	if err := adapter.ready(); err != nil {
+	if err := adapter.Ready(); err != nil {
 		return err
 	}
 	lastKeepAlive := time.Now()
@@ -440,7 +445,7 @@ func (adapter *Adapter) alert(format string, args ...any) error {
 // Inbox lists the verified messages the agent has not acked, oldest first. Reading them makes the
 // newest one the parent of the agent's next reply (§8 rule 3).
 func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
-	if err := adapter.ready(); err != nil {
+	if err := adapter.Ready(); err != nil {
 		return nil, err
 	}
 	adapter.mu.Lock()
@@ -468,7 +473,7 @@ func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 // crash in between redelivers a message that is then skipped. It goes on after an error and
 // reports every one.
 func (adapter *Adapter) Ack(ctx context.Context, ids []string) error {
-	if err := adapter.ready(); err != nil {
+	if err := adapter.Ready(); err != nil {
 		return err
 	}
 	adapter.mu.Lock()
