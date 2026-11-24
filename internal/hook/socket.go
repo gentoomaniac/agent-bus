@@ -14,15 +14,20 @@ import (
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
 )
 
 const (
 	// connectionTimeout bounds one request on either side: a hook must never hang its session.
 	connectionTimeout = 2 * time.Second
+	// eventTimeout is shorter: an event hook runs on every tool call and must not slow the session,
+	// and SessionEnd hooks get 1.5 seconds in all.
+	eventTimeout = 500 * time.Millisecond
 
 	// Requests: what a hook asks of the adapter.
 	NewMail = "new-mail" // mail not told yet (Stop hook)
 	Summary = "summary"  // all unread mail (SessionStart hook)
+	event   = "event"    // a presence event; the reply is empty
 )
 
 // Mail is one message as a hook shows it. The title is peer data and untrusted.
@@ -36,12 +41,16 @@ type Reply struct {
 	Unread int // all unread messages, told or not
 }
 
-type request struct{ Op string }
+type request struct {
+	Op    string
+	Event *presence.Event `json:",omitempty"`
+}
 
-// Session is the adapter as the hooks see it.
+// Session is the adapter and the presence publisher as the hooks see them.
 type Session interface {
 	NewMail() (fresh []adapter.Message, unread int, err error)
 	UnreadSummary() ([]adapter.Message, error)
+	Event(presence.Event)
 }
 
 // Dir is the private directory of the sockets: $XDG_RUNTIME_DIR/agent-bus, or a per-user one in
@@ -100,6 +109,12 @@ func serve(connection net.Conn, session Session) {
 	case Summary:
 		messages, err = session.UnreadSummary()
 		unread = len(messages)
+	case event:
+		if asked.Event != nil {
+			session.Event(*asked.Event)
+		}
+		json.NewEncoder(connection).Encode(Reply{})
+		return
 	default:
 		return
 	}
@@ -125,23 +140,34 @@ func titleOf(message adapter.Message) string {
 // Ask puts the request to the adapter of this process's session: the nearest ancestor with a
 // socket in dir. It returns false when there is none or it does not answer.
 func Ask(dir, op string) (Reply, bool) {
+	return ask(dir, request{Op: op}, connectionTimeout)
+}
+
+// Send tells the adapter of this process's session about a presence event, and says whether it
+// got there.
+func Send(dir string, presenceEvent presence.Event) bool {
+	_, ok := ask(dir, request{Op: event, Event: &presenceEvent}, eventTimeout)
+	return ok
+}
+
+func ask(dir string, asked request, timeout time.Duration) (Reply, bool) {
 	for pid := os.Getppid(); pid > 1; pid = parentOf(pid) {
-		if reply, ok := askSocket(socketPath(dir, pid), op); ok {
+		if reply, ok := askSocket(socketPath(dir, pid), asked, timeout); ok {
 			return reply, true
 		}
 	}
 	return Reply{}, false
 }
 
-func askSocket(path, op string) (Reply, bool) {
-	connection, err := net.DialTimeout("unix", path, connectionTimeout)
+func askSocket(path string, asked request, timeout time.Duration) (Reply, bool) {
+	connection, err := net.DialTimeout("unix", path, timeout)
 	if err != nil {
 		return Reply{}, false
 	}
 	defer connection.Close()
-	connection.SetDeadline(time.Now().Add(connectionTimeout))
+	connection.SetDeadline(time.Now().Add(timeout))
 	var reply Reply
-	if json.NewEncoder(connection).Encode(request{op}) != nil || json.NewDecoder(connection).Decode(&reply) != nil {
+	if json.NewEncoder(connection).Encode(asked) != nil || json.NewDecoder(connection).Decode(&reply) != nil {
 		return Reply{}, false
 	}
 	return reply, true

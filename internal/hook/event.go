@@ -1,0 +1,100 @@
+package hook
+
+import (
+	"encoding/json"
+	"path/filepath"
+	"strings"
+
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
+)
+
+// Hooks that `agent-bus event --kind` understands, named like the Claude Code hooks they report.
+var Kinds = []string{
+	"user-prompt", "stop", "pre-tool", "post-tool", "subagent-stop", "stop-failure",
+	"notification", "session-start", "session-end",
+}
+
+// subagentTools are the tools that start a worker.
+var subagentTools = []string{"Agent", "Task"}
+
+// hookInput is the part of a hook's JSON that presence reads. It never keeps file contents or
+// whole commands.
+type hookInput struct {
+	ToolName  string `json:"tool_name"`
+	ToolInput struct {
+		FilePath     string `json:"file_path"`
+		NotebookPath string `json:"notebook_path"`
+		Path         string `json:"path"`
+		Command      string `json:"command"`
+		Description  string `json:"description"`
+		SubagentType string `json:"subagent_type"`
+	} `json:"tool_input"`
+	Error            string `json:"error"`
+	NotificationType string `json:"notification_type"`
+}
+
+// EventFor turns the JSON a hook of the given kind received into a presence event. It says false
+// for a hook that tells presence nothing. A hook input that cannot be read still gives the event
+// its kind alone says.
+func EventFor(kind string, input []byte) (presence.Event, bool) {
+	var parsed hookInput
+	_ = json.Unmarshal(input, &parsed) // a malformed input leaves the fields empty
+	switch kind {
+	case "user-prompt":
+		return presence.Event{Kind: presence.EventPrompt}, true
+	case "stop":
+		return presence.Event{Kind: presence.EventStop}, true
+	case "pre-tool":
+		for _, name := range subagentTools {
+			if parsed.ToolName == name {
+				description := parsed.ToolInput.Description
+				if description == "" {
+					description = parsed.ToolInput.SubagentType
+				}
+				return presence.Event{Kind: presence.EventWorkerStart, Detail: description}, true
+			}
+		}
+		return presence.Event{Kind: presence.EventTool, Tool: parsed.ToolName, Detail: toolDetail(parsed)}, true
+	case "post-tool":
+		return presence.Event{Kind: presence.EventToolDone}, true
+	case "subagent-stop":
+		return presence.Event{Kind: presence.EventWorkerEnd}, true
+	case "stop-failure":
+		return presence.Event{Kind: presence.EventFailure, Detail: parsed.Error}, true
+	case "notification":
+		return notificationEvent(parsed.NotificationType)
+	case "session-start":
+		return presence.Event{Kind: presence.EventSessionStart}, true
+	case "session-end":
+		return presence.Event{Kind: presence.EventSessionEnd}, true
+	}
+	return presence.Event{}, false
+}
+
+// notificationEvent maps the notifications that say the model waits for the human or that a usage
+// limit stopped or resumed it. The others (idle prompts, auth messages) say nothing new.
+func notificationEvent(notificationType string) (presence.Event, bool) {
+	switch notificationType {
+	case "permission_prompt", "agent_needs_input", "elicitation_dialog", "elicitation_url_dialog":
+		return presence.Event{Kind: presence.EventNeedsOwner}, true
+	case "quota_auto_resume_fired":
+		return presence.Event{Kind: presence.EventPrompt}, true
+	case "quota_auto_resume_stale", "quota_auto_resume_disabled":
+		return presence.Event{Kind: presence.EventFailure, Detail: "rate_limit"}, true
+	}
+	return presence.Event{}, false
+}
+
+// toolDetail is what the monitor shows next to the tool name: the base name of the file it works
+// on or the first word of its command.
+func toolDetail(input hookInput) string {
+	if command := strings.Fields(input.ToolInput.Command); len(command) > 0 {
+		return filepath.Base(command[0])
+	}
+	for _, path := range []string{input.ToolInput.FilePath, input.ToolInput.NotebookPath, input.ToolInput.Path} {
+		if path != "" {
+			return filepath.Base(path)
+		}
+	}
+	return ""
+}

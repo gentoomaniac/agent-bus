@@ -10,6 +10,7 @@ import (
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
 )
 
 func TestStopOutputBlocksWithCountAndFiveMarkedSummaries(t *testing.T) {
@@ -60,6 +61,7 @@ func TestSessionStartOutputIsAdditionalContext(t *testing.T) {
 type fakeSession struct {
 	err    error
 	asked  []string
+	events []presence.Event
 	titled string
 }
 
@@ -76,6 +78,10 @@ func (session *fakeSession) UnreadSummary() ([]adapter.Message, error) {
 func (session *fakeSession) messages() []adapter.Message {
 	body := envelope.Body{Title: session.titled, Text: "first line\nsecond"}
 	return []adapter.Message{{Envelope: envelope.Envelope{From: "bob@alice", Type: "question", Body: body}}}
+}
+
+func (session *fakeSession) Event(event presence.Event) {
+	session.events = append(session.events, event)
 }
 
 // A hook asks from this very process, whose parent is also the parent the listener names its

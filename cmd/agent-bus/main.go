@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -22,6 +23,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/hook"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/mcpserver"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 	"github.com/alecthomas/kong"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -45,12 +47,15 @@ type CLI struct {
 	ReconnectInitial time.Duration `help:"mcp only: the first wait before reconnecting to the broker; it doubles for each failed attempt." default:"1s" env:"BUS_RECONNECT_INITIAL"`
 	ReconnectMax     time.Duration `help:"mcp only: the longest wait between reconnect attempts." default:"30s" env:"BUS_RECONNECT_MAX"`
 
+	PresenceHeartbeat time.Duration `help:"mcp only: how often an unchanged presence record is published; readers call an agent offline after three times this." default:"30s" env:"BUS_PRESENCE_HEARTBEAT"`
+
 	Send     SendCmd     `cmd:"" help:"Send a message to one agent."`
 	Publish  PublishCmd  `cmd:"" help:"Post to general or a group channel."`
 	Inbox    InboxCmd    `cmd:"" help:"Fetch new mail and print the unread messages as JSON."`
 	MarkRead MarkReadCmd `cmd:"" name:"mark-read" aliases:"ack" help:"Fetch new mail and mark the given message IDs read."`
 	MCP      MCPCmd      `cmd:"" name:"mcp" help:"Serve the adapter as an MCP server on stdin and stdout."`
 	Pending  PendingCmd  `cmd:"" help:"For a harness hook: report this session's new mail. Asks the session's MCP server, no identity needed."`
+	Event    EventCmd    `cmd:"" help:"For a harness hook: tell the session's MCP server what the harness is doing (presence). Reads the hook's JSON on stdin, prints nothing, always succeeds."`
 }
 
 type MessageFlags struct {
@@ -129,10 +134,22 @@ func (cmd *MarkReadCmd) Run(ctx context.Context, session *adapter.Adapter) error
 
 type MCPCmd struct{}
 
-func (cmd *MCPCmd) Run(ctx context.Context, session *adapter.Adapter) error {
-	// Only the lock holder answers hooks; a failure here only costs the end-of-turn check.
+// hookSession is what the hooks reach: the adapter's mail and the presence publisher's events.
+type hookSession struct {
+	*adapter.Adapter
+	*presence.Publisher
+}
+
+func (cmd *MCPCmd) Run(ctx context.Context, cli *CLI, session *adapter.Adapter) error {
+	// Only the lock holder answers hooks and publishes presence; a failure here only costs the
+	// end-of-turn check and the owner's view.
 	if session.Ready() == nil {
-		if stop, err := hook.Listen(hook.Dir(), session); err != nil {
+		publisher := presence.NewPublisher(session, cli.PresenceHeartbeat, time.Now)
+		publishing := make(chan struct{})
+		publishCtx, stopPublishing := context.WithCancel(ctx)
+		go func() { publisher.Run(publishCtx); close(publishing) }()
+		defer func() { stopPublishing(); <-publishing }()
+		if stop, err := hook.Listen(hook.Dir(), hookSession{session, publisher}); err != nil {
 			log.Printf("agent-bus: no hook socket: %v", err)
 		} else {
 			defer stop()
@@ -161,6 +178,34 @@ func (cmd *PendingCmd) Run() error {
 	return nil
 }
 
+type EventCmd struct {
+	Kind string `help:"The hook this runs for, named like the Claude Code hook." required:"" enum:"user-prompt,stop,pre-tool,post-tool,subagent-stop,stop-failure,notification,session-start,session-end"`
+}
+
+const (
+	stdinTimeout  = time.Second // the command must never hold its session up
+	maxStdinBytes = 1 << 20
+)
+
+// Run prints nothing and succeeds whatever happens: a hook must never fail or slow its session,
+// and presence is only for the owner's monitor.
+func (cmd *EventCmd) Run() error {
+	input := make(chan []byte, 1)
+	go func() {
+		data, _ := io.ReadAll(io.LimitReader(os.Stdin, maxStdinBytes))
+		input <- data
+	}()
+	var data []byte
+	select {
+	case data = <-input:
+	case <-time.After(stdinTimeout):
+	}
+	if event, ok := hook.EventFor(cmd.Kind, data); ok {
+		hook.Send(hook.Dir(), event)
+	}
+	return nil
+}
+
 func main() {
 	var cli CLI
 	kongCtx := kong.Parse(&cli, kong.Name("agent-bus"), kong.Vars{"version": version}, kong.Description("Adapter of the agent bus."))
@@ -174,7 +219,8 @@ func main() {
 	}
 
 	kongCtx.BindTo(ctx, (*context.Context)(nil))
-	if kongCtx.Command() != "pending" {
+	kongCtx.Bind(&cli)
+	if kongCtx.Command() != "pending" && kongCtx.Command() != "event" {
 		session, closeSession, err := cli.open(kongCtx.Command() == "mcp")
 		kongCtx.FatalIfErrorf(err)
 		defer closeSession()
