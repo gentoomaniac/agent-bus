@@ -9,12 +9,13 @@ It runs in the broker container, holds the CA key, signs certificates, keeps the
 enrollment requests (received through the enrollment login) and makes every auth-file change and
 reload, so nothing reloads nats-server across containers. It has no HTTP interface. The owner
 approves requests in a TUI, `agent-busctl ca review`, or with `agent-busctl ca list|sign|reject`;
-the monitor only shows how many are pending.
+the monitor only shows how many are pending. The monitor has no way to approve: it runs from a config
+directory of its own with read-only logins and no CA key ([access control](access-control.md#phase-b-implemented-the-enrollment-flow)).
 
 > **Status: a minimal busd is built (decision 41); the rest is planned (milestone 3).** What exists
 > is `cmd/busd`, started by the broker container's entrypoint: it holds the CA key (`ca.key`, read
-> from the config directory, never logged, served or exported), logs in as the two admin users
-> (certificates if present, else passwords), keeps the pending enrollment requests, approves and
+> from the config directory, never logged, served or exported), serves CONTROL as its own narrow login (`busd`, password; it
+> falls back to `control-admin` with a warning on a setup that has none) and uses `bus-admin` for BUS, keeps the pending enrollment requests, approves and
 > rejects them, and makes the auth-file changes and confirmed reloads locally. Its API is request/reply on
 > `busd.enroll.*` and `busd.ca.*` subjects of the `CONTROL` account (the signed `busd.<method>`
 > protocol below is not built); it publishes the pending count for the monitor; it has no HTTP
