@@ -360,7 +360,8 @@ const STATUS_LABEL = { verified: "verified", unknown_sender: "unknown sender", r
 
 const state = {
   channels: [], agents: [], members: [],
-  emptyDirects: new Map(),        // channel ID -> direct message opened from the sidebar that has no message yet status: { can_send: false, note: "" },
+  emptyDirects: new Map(),        // channel ID -> direct message opened from the sidebar that has no message yet
+  status: { can_send: false, note: "" },
   presence: new Map(),            // agent ID -> presence view
   detailAgent: null,              // agent ID whose recent activity is shown
   selected: null,                 // channel ID
@@ -1031,7 +1032,7 @@ async function select(channelId) {
 // Opens the conversation with an agent, as an empty one while the two have no messages yet.
 function openDirect(agentId) {
   const self = state.status.agent;
-  if (!self) return;
+  if (!self) return; // a monitor without --agent cannot send, so there is no conversation to open
   const agents = [self, agentId].sort();
   const id = "dm:" + agents.join(":");
   if (!channelById(id)) state.emptyDirects.set(id, { id, kind: "dm", name: agents.join(" + "), description: "", agents, messages: 0, last_sequence: 0 });
@@ -1045,7 +1046,7 @@ function channelById(channelId) {
 
 // Where the composer posts: always the open channel. A direct message can be written only by one
 // of its two agents; for anything else this is null.
-function destination() {
+function composerDestination() {
   const channel = channelById(state.selected);
   if (!channel) return null;
   if (channel.kind === "general") return { kind: "group", name: "general" };
@@ -1416,7 +1417,7 @@ function renderComposer() {
   if (!form.type.options.length) form.type.replaceChildren(...MESSAGE_TYPES.map((type) => el("option", { value: type }, type)));
 
   renderTargets();
-  const to = destination();
+  const to = composerDestination();
   const canSend = state.status.can_send && to !== null;
   for (const field of form.elements) field.disabled = !canSend || (field.id === "target-input" && to?.kind === "agent");
   const note = $("send-note");
@@ -1438,7 +1439,7 @@ function targetChoices() {
 let typedFor = null; // the channel the target input's text was typed for
 
 function renderTargets() {
-  const to = destination();
+  const to = composerDestination();
   const isDM = to !== null && to.kind === "agent";
   const choices = targetChoices();
   state.picked = new Set(isDM ? [] : [...state.picked].filter((id) => choices.includes(id)));
@@ -1680,7 +1681,7 @@ function showSendError(message) {
 document.forms.composer.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.target;
-  const to = destination();
+  const to = composerDestination();
   $("send-note").classList.remove("error");
   try {
     if (to.kind !== "agent") resolveTargetInput();
