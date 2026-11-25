@@ -78,7 +78,7 @@ files `nats/auth.conf` and `nats/control-auth.conf`. No broker needed.
 
 | Flag      | Meaning                                                                          |
 |-----------|----------------------------------------------------------------------------------|
-| `--force` | replace existing passwords, also to finish an `admin init` that failed half way; registered agents stay (grants and certificate mappings untouched), a running server must be restarted. Both admin users are password users again, so their certificates are renamed to `client.pem.retired` and `client.key.retired`; restart `bus-monitor` too |
+| `--force` | replace existing passwords, also to finish an `admin init` that failed half way; registered agents stay (grants and certificate mappings untouched), a running server must be restarted. Both admin users are password users again, so their certificates are renamed to `client.pem.retired` and `client.key.retired`; restart `bus-monitor` too only if it still uses the admin logins |
 
 ```sh
 bin/agent-busctl admin init
@@ -245,7 +245,7 @@ an error, not a silent fall back to the password.
 | Flag         | Meaning                                                                       |
 |--------------|-------------------------------------------------------------------------------|
 | `--switch`   | also switch the agent to certificate login (below)                            |
-| `--admin`    | instead of an agent: issue for `bus-admin` and `control-admin` and switch both at once. The tools in this config directory log in with the new files from then on; restart `bus-monitor`, which logs in as these users |
+| `--admin`    | instead of an agent: issue for `bus-admin` and `control-admin` and switch both at once. The tools in this config directory log in with the new files from then on; restart `bus-monitor` only if it still uses these users (an old config directory without `monitor init`; it warns) |
 | `--validity` | how long the certificate is valid, default `8760h`; must be positive and is cut off at the CA's expiry, and a CA that is not valid now issues nothing |
 
 `cert issue --admin` never locks the admin tools out. For each admin (`bus-admin` first) it writes
@@ -265,7 +265,7 @@ admin init --force`, then a restart of the broker. It resets both admin users to
 retires the admin certificates and keeps every agent's grants. Automatic recovery of interrupted
 migrations is later hardening.
 
-The `agent-bus` and `bus-monitor` of this machine, and `agent-busctl`, use `client.pem` and
+The `agent-bus` of this machine, `agent-busctl`, and `bus-monitor` for the agent it sends as, use `client.pem` and
 `client.key` as soon as the identity's directory has them, and the password otherwise. So an agent
 running on this machine must be switched right after the issue (`--switch`); for an agent on
 another machine, copy both files into its folder on that machine, then switch.

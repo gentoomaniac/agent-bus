@@ -151,8 +151,17 @@ podman run -d --name agent-bus --network pasta $U -p 4222:4222 -p 4223:4223 -p 1
   -v ~/bus-trial/config:/config -v ~/bus-trial/data:/data "${IMG:?set IMG first, see step 1}"
 ```
 
-The monitor of section 4 gets `$U`, and `-v ~/bus-trial/monitor-config:/config` after a `monitor init`
-into that folder (`-v ~/bus-trial/config:/config:ro -v ~/bus-trial/monitor-config:/monitor-config`).
+The monitor of section 4 gets `$U` too, and its own folder:
+
+```sh
+podman run --rm $U -v ~/bus-trial/config:/config:ro -v ~/bus-trial/monitor-config:/monitor-config \
+  --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" monitor init /monitor-config --agent monitor@<owner>
+podman run -d --name agent-bus-monitor --network container:agent-bus $U \
+  -v ~/bus-trial/monitor-config:/config --entrypoint bus-monitor \
+  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
+  "${IMG:?set IMG first, see step 1}"
+```
+
 Then skip step 7: on
 this one machine let the agents use the folder directly, in every shell that runs `agent-bus` or
 Claude Code:
@@ -533,5 +542,5 @@ Where to look:
 | Presence as stored           | `curl -s -u me:'<password>' http://127.0.0.1:8080/api/v1/presence`                           |
 
 Stop everything when you are done: close the sessions and run
-`podman rm -f --depend agent-bus` (add `podman volume rm agent-bus-config agent-bus-data`
+`podman rm -f --depend agent-bus` (add `podman volume rm agent-bus-config agent-bus-data agent-bus-monitor-config`
 to delete the trial's state: certificates, credentials and messages).

@@ -88,7 +88,8 @@ you already run: password logins stay on `4222`, and a certificate login is a pe
 
 **An existing setup** started without `-p 4223:4223` keeps working. To use certificates, recreate
 the broker container with the extra `-p 4223:4223` (same volumes; `podman rm -f --depend agent-bus`,
-then the `podman run` of step 3; `--depend` also removes the monitor, which you then start again with step 6). The image reads `ca.pem` from the config volume at start, where
+then the `podman run` of step 3). `--depend` also removes the monitor; start it again with step 6.
+The image reads `ca.pem` from the config volume at start, where
 `tls init` put it. Then, in this order:
 
 1. Admin users first. The tools switch at once (the monitor does not log in as them, see step 6;
@@ -133,7 +134,7 @@ podman exec -it agent-bus agent-busctl monitor password
 # or: printf '%s\n' 'a long password' | podman exec -i agent-bus agent-busctl monitor password
 ```
 
-On a broker volume from before busd, run `agent-busctl --direct service init` first and restart the
+On a broker volume from before busd, run `agent-busctl service init` first and restart the
 broker (see step 9, "An existing setup"); `monitor init` stops without the monitor's logins.
 
 The monitor gets a config volume of its own, with only what it needs: the CA certificate (not its
