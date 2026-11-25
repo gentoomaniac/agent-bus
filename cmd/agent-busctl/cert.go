@@ -189,6 +189,7 @@ type CertSwitchCmd struct {
 	AgentID  string `arg:"" optional:"" name:"agent-id" help:"The registered agent to switch."`
 	Admin    bool   `help:"Switch the two admin users back to password login; needs --password. cert issue --admin switches them to certificates."`
 	Password bool   `help:"Switch back to password login (the rollback)."`
+	Force    bool   `help:"Switch an agent to its certificate although none was issued in this config directory (it is made on its machine, see cert sign). The agent cannot log in until its files are there."`
 }
 
 // Run changes how the broker lets the identity in, and returns once the reload is confirmed. The
@@ -233,6 +234,15 @@ func (cmd *CertSwitchCmd) Run(ctx context.Context, cli *CLI) error {
 		return err
 	}
 	dir := creds.AgentDir(cli.ConfigDir, cmd.AgentID)
+	if !cmd.Password && !cmd.Force {
+		hasCert, err := creds.HasClientCert(dir)
+		if err != nil {
+			return err
+		}
+		if !hasCert {
+			return fmt.Errorf("no certificate was issued for %s here: run `cert issue %s` first, or pass --force for a certificate made elsewhere", cmd.AgentID, cmd.AgentID)
+		}
+	}
 	hash, err := cmd.passwordHash(dir)
 	if err != nil {
 		return err

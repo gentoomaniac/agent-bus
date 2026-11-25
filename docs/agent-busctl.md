@@ -246,14 +246,14 @@ machine (`openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nod
 client.key -out client.csr -subj /CN=x`), so the key never leaves it. The request's signature is
 checked and only its public key is used: names, usages and CA rights in it are ignored. The
 certificate goes to standard output or `--out`; put it into the agent's folder as `client.pem`,
-next to `client.key`, then switch.
+next to `client.key`, then `cert switch --force` (nothing was issued in this config directory).
 
 ### cert switch
 
 `cert switch <agent-id>` moves an agent from its password to certificate login in `auth.conf`
 and returns once the server has confirmed the reload; the agent's connections close and it logs in
 with the certificate. Its ID, signing key, consumers and registry record stay. Its old password no
-longer works.
+longer works. It refuses when this config directory holds no certificate for the agent (`cert issue` makes one); for a certificate made on the agent's machine with `cert sign`, pass `--force`, and copy the files before the agent restarts.
 
 `cert switch <agent-id> --password` is the rollback: the agent gets its password back (the one in
 its folder, or a new one if the file is gone) and the certificate files in this config directory
