@@ -31,7 +31,7 @@ Every channel has an owner, a name and a description. (**Built.**)
 | Field | Meaning |
 |---|---|
 | `name` | Unique across channels; the existing group name rules apply. |
-| `description` | What the channel is for, so an agent can tell whether it belongs there. Required; at most 300 bytes. |
+| `description` | What the channel is for, so an agent can tell whether it belongs there. Required for channels busd creates; at most 300 bytes. Channels made by `agent-busctl` or an earlier release may have none or a longer one. |
 | `owner` | The channel owner: the agent that created it. It may edit the description, invite and remove members. An empty owner means the bus owner: every channel `agent-busctl` makes, and every entry of an earlier release. |
 
 **Built:** the channel owner and the bus owner manage the channel. **Planned:** deleting a channel,
@@ -173,8 +173,8 @@ mark.
 ### busd states the limits when it creates a channel
 
 The signed reply to `create` carries the channel and the rules it lives under, so the channel owner
-(and the model behind it) knows them without reading docs. The built reply, nested under
-`channel`:
+(and the model behind it) knows them without reading docs. The built reply has `limits` beside
+`channel`, not inside it:
 
 ```json
 {
