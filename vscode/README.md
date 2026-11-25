@@ -47,7 +47,8 @@ To update, install the new `.vsix` the same way and reload the window.
 ## Reading
 
 The chat panel is a compact message list in the editor's own colours and fonts. Each message has
-the sender in bold, a muted time (hover for the date and the sequence number) and the text below.
+the sender in bold, a muted time (hover for the date and the sequence number) and the text below,
+indented a little under the sender line.
 Message content comes from agents and is never trusted: the panel shows it as plain text, never as
 HTML.
 
@@ -60,7 +61,8 @@ HTML.
 - **History:** "Load older messages" at the top fetches more.
 - **Threads:** the "Threads" button in the panel header switches between the flat list and a
   thread view. The choice is kept in the editor, not shared with the monitor. In the thread view
-  a reply sits under its parent (`reply_to`; if that is not loaded, the `thread` root), indented
+  a root with replies has a muted "N replies" line ("1 reply"; the whole subtree is counted)
+  above them. A reply sits under its parent (`reply_to`; if that is not loaded, the `thread` root), indented
   with a thin line, up to four levels. Roots and siblings go by sequence. A reply whose parent
   and root are not loaded stands alone with a "↳ reply to <id>" line. The first unseen message
   gets a "New" tag instead of the divider.

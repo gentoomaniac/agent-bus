@@ -2,7 +2,7 @@
 import { matchTargets, mentionBefore } from "../completion";
 import { continuesGroup, insertMessage } from "../messages";
 import type { ChatState, FromWebview, ToWebview } from "../protocol";
-import { ThreadRow, threadRows } from "../threads";
+import { ThreadRow, ThreadSummary, summarizeThreads, threadRows } from "../threads";
 import { ALL, DEFAULT_TYPE, MESSAGE_TYPES, Message } from "../types";
 
 declare function acquireVsCodeApi(): { postMessage(message: FromWebview): void };
@@ -81,6 +81,13 @@ function renderMessage(row: ThreadRow, continued: boolean, isNew: boolean): HTML
   return item;
 }
 
+// "N replies" under a root, counting its whole subtree; "new" when the subtree holds unseen mail.
+function renderReplies(summary: ThreadSummary): HTMLElement {
+  const line = el("div", "replies muted", summary.replies === 1 ? "1 reply" : summary.replies + " replies");
+  if (summary.unseen) line.append(" ", el("span", "new", "new"));
+  return line;
+}
+
 // Draws the list again. It keeps the distance from the bottom, so new messages at the end and
 // older ones at the top leave what the reader looks at in place; the first drawing goes to the
 // first unseen message, or to the end. The flat list marks it with a "New" divider above it; the
@@ -97,6 +104,7 @@ function render(first = false): void {
   }
   const firstUnseen = messages.find((message) => message.sequence > dividerAfter && message.from !== self);
   const rows: ThreadRow[] = threaded ? threadRows(messages) : messages.map((message) => ({ message, depth: 0 }));
+  const summaries = threaded ? summarizeThreads(rows, (message) => message.sequence > dividerAfter && message.from !== self) : undefined;
   let marked: HTMLElement | undefined;
   let previous: Message | undefined;
   for (const row of rows) {
@@ -109,6 +117,8 @@ function render(first = false): void {
     const item = renderMessage(row, !threaded && continuesGroup(previous, row.message), isNew && threaded);
     if (isNew && threaded) marked = item;
     list.append(item);
+    const summary = summaries?.get(row.message);
+    if (summary?.replies) list.append(renderReplies(summary));
     previous = row.message;
   }
   if (first) (marked ?? list.lastElementChild)?.scrollIntoView({ block: marked ? "start" : "end" });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { threadRows } from "../threads";
+import { summarizeThreads, threadRows } from "../threads";
 import { Message } from "../types";
 
 const message = (sequence: number, id: string, extra: Partial<Message> = {}): Message => ({ sequence, id, channel: "general", status: "verified", ...extra });
@@ -32,6 +32,23 @@ test("the indent stops at four levels", () => {
   const chain = [message(1, "m0")];
   for (let i = 1; i <= 6; i++) chain.push(message(i + 1, "m" + i, { reply_to: "m" + (i - 1), thread: "m0" }));
   assert.deepEqual(shape(chain), ["m0:0", "m1:1", "m2:2", "m3:3", "m4:4", "m5:4", "m6:4"]);
+});
+
+test("summarizeThreads counts the whole subtree and finds unseen mail in it", () => {
+  const messages = [
+    message(1, "a"),
+    message(2, "a1", { reply_to: "a" }),
+    message(3, "a1x", { reply_to: "a1" }),
+    message(4, "b"),
+    message(5, "c"),
+    message(6, "c1", { reply_to: "c" }),
+  ];
+  const summaries = summarizeThreads(threadRows(messages), (m) => m.sequence > 5);
+  const byId = (id: string) => summaries.get(messages.find((m) => m.id === id)!);
+  assert.deepEqual(byId("a"), { replies: 2, unseen: false });
+  assert.deepEqual(byId("b"), { replies: 0, unseen: false });
+  assert.deepEqual(byId("c"), { replies: 1, unseen: true });
+  assert.equal(summaries.size, 3);
 });
 
 test("a reference to a later or the same message does not make a cycle", () => {

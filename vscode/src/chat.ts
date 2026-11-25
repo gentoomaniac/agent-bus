@@ -193,7 +193,9 @@ export class ChatPanels implements vscode.Disposable {
   .verified { color: var(--vscode-descriptionForeground); font-size: 0.85em; cursor: default; }
   .warning { color: var(--vscode-editorWarning-foreground); font-size: 0.85em; }
   .warning.rejected { color: var(--vscode-errorForeground); }
+  .title, .text, .message > .warning { margin-left: 1.25em; }
   .title { font-weight: bold; }
+  .replies { padding: 0 12px 2px calc(12px + 1.25em); font-size: 0.85em; }
   .text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .divider { display: flex; align-items: center; gap: 8px; margin: 6px 12px; color: var(--vscode-errorForeground); font-size: 0.85em; }
   .divider::after { content: ""; flex: 1; border-top: 1px solid var(--vscode-errorForeground); }
