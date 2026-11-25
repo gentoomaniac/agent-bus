@@ -404,11 +404,18 @@ machine (an SSH destination). Run this machine's identity on one machine only, a
    podman restart "$BROKER_NAME"
    ```
 
-2. On the second machine, set the variables below and enroll, with the enrollment password and the
-   CA fingerprint of this trial ([podman.md](podman.md#9-enrolling-a-new-machine)):
+2. On the second machine, declare the trial's variables in every shell you use there, then enroll,
+   with the enrollment password and the CA fingerprint of this trial
+   ([podman.md](podman.md#9-enrolling-a-new-machine)). The ports are the host ports of section 2,
+   and the config folder is trial-only, so the enrollment never touches a real
+   `~/.config/agent-bus` on that machine:
 
    ```sh
+   export REMOTE_TRIAL="$HOME/bus-trial-remote"       # everything the trial creates on this machine
+   export BUS_CONFIG_DIR="$REMOTE_TRIAL/agents"       # trial-only identities, not ~/.config/agent-bus
+   export BROKER_PORT=14222 CERT_PORT=14223           # the values of the broker's machine
    export BUS_BROKER="bus.example.com:$BROKER_PORT" BUS_MAPPED_PORT="$CERT_PORT"
+   mkdir -p "$BUS_CONFIG_DIR"
    agent-bus enroll --agent remote@alice --ca-fingerprint "$CA_FP" --enroll-password "$ENROLL_PASSWORD" --waitforcert=10m
    ```
 
@@ -423,7 +430,7 @@ machine (an SSH destination). Run this machine's identity on one machine only, a
    hooks and role text as in section 3:
 
    ```sh
-   mkdir -p "$HOME/bus-trial-remote" && cd "$HOME/bus-trial-remote"
+   mkdir -p "$REMOTE_TRIAL/project" && cd "$REMOTE_TRIAL/project"
    claude mcp add --scope project agent-bus -- agent-bus mcp --agent remote@alice
    ```
 
@@ -452,16 +459,21 @@ identity no Claude Code session holds, and a disposable project folder.
    ```sh
    cat > "$OPENCODE_DIR/opencode.json" <<EOF
    {
+     "\$schema": "https://opencode.ai/config.json",
      "mcp": {
-       "agent-bus": {
-         "type": "local",
-         "command": ["agent-bus", "mcp", "--agent", "opencode-1@$OWNER"],
-         "enabled": true
+       "servers": {
+         "agent-bus": {
+           "type": "local",
+           "command": ["agent-bus", "mcp", "--agent", "opencode-1@$OWNER"]
+         }
        }
      }
    }
    EOF
    ```
+
+   This is the form of [opencode.md](opencode.md#1-register-the-mcp-server) with the trial's
+   identity: OpenCode 2 takes server names under `mcp.servers` and needs no `enabled` field.
 
 3. Start OpenCode in `$OPENCODE_DIR` with `agent-bus` on its path and check in the monitor: the
    agent is `idle`; a prompt makes it `working` with tool activity; a subagent shows a worker; a DM
@@ -497,13 +509,21 @@ Where to look:
 
 Close the sessions, then remove only what the trial created: its two containers and its directory.
 The projects, `.mcp.json` files, hooks and `CLAUDE.md` files are inside `$TRIAL`, so they go with it.
-Check the variable first: an empty `$TRIAL` must never reach `rm`.
+The function checks the variables first and returns before it removes anything if one is empty: an
+empty `$TRIAL` must never reach the removal.
 
 ```sh
-test -n "$TRIAL" && test -n "$BROKER_NAME" && test -n "$MONITOR_NAME" || echo "variables not set"
-podman rm -f "$MONITOR_NAME" "$BROKER_NAME"
-rm -rf "$TRIAL"
+cleanup_trial() {
+  if [ -z "$TRIAL" ] || [ -z "$BROKER_NAME" ] || [ -z "$MONITOR_NAME" ]; then
+    echo "variables not set: nothing removed" >&2
+    return 1
+  fi
+  podman rm -f "$MONITOR_NAME" "$BROKER_NAME"
+  rm -rf "$TRIAL"
+}
+cleanup_trial
 ```
 
-Delete the second machine's `$HOME/bus-trial-remote` and its `BUS_CONFIG_DIR` the same way. Your own
+On the second machine remove `$REMOTE_TRIAL`, which holds its `BUS_CONFIG_DIR` and project folder,
+after checking that the variable is set (`echo "$REMOTE_TRIAL"`). Your own
 `~/.config/agent-bus` and any other `agent-bus` container were never used by the trial.
