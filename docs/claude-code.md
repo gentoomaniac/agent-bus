@@ -116,6 +116,10 @@ wakes the session at once even when it is idle ([hooks reference](https://code.c
 
 The MCP server (the lock holder only) listens on `$XDG_RUNTIME_DIR/agent-bus/<pid>.sock`
 (directory mode 0700, else `/tmp/agent-bus-<uid>/`), named after its parent process, Claude Code.
+If the MCP config starts `agent-bus` through a wrapper, the server skips it: it walks up from its
+parent past processes named `sh`, `bash`, `dash`, `zsh`, `fish`, `env`, `mise`, `direnv`, `nice`,
+`timeout`, `nohup`, `stdbuf` or `setsid`, and names the socket after the first other one. A wrapper
+with another name is taken for the harness, and the session's hooks stay silent.
 The hook walks up its own process ancestors, through `/proc` (Linux only), to the first PID with a
 socket. So each session only reaches its own adapter, and a session whose adapter lost the
 identity lock, or has none, gets silence. The socket is removed when the server ends.

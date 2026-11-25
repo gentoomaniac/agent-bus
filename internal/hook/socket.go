@@ -1,5 +1,5 @@
 // Package hook connects the harness's delivery hooks to the adapter of their own session (docs/design/delivery.md). The MCP server and the hook are both started by the harness, so the adapter listens on a
-// unix socket named after its parent process and the hook finds it by walking up its own ancestors.
+// unix socket named after its parent process (past any wrappers) and the hook finds it by walking up its own ancestors.
 package hook
 
 import (
@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -75,8 +76,9 @@ func socketPath(dir string, harnessPID int) string {
 	return filepath.Join(dir, strconv.Itoa(harnessPID)+".sock")
 }
 
-// Listen serves the hook requests of this process's session, on a socket named after the parent
-// process, until stop is called. A socket left by a crashed process of the same name is replaced.
+// Listen serves the hook requests of this process's session, on a socket named after the harness
+// (the parent process, past any wrappers), until stop is called. A socket left by a crashed
+// process of the same name is replaced.
 func Listen(dir string, session Session) (stop func(), err error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
@@ -84,7 +86,9 @@ func Listen(dir string, session Session) (stop func(), err error) {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return nil, err
 	}
-	path := socketPath(dir, os.Getppid())
+	harness := harnessPID(os.Getppid(), readProcess)
+	log.Printf("agent-bus: hook socket named after harness PID %d (parent %d)", harness, os.Getppid())
+	path := socketPath(dir, harness)
 	os.Remove(path)
 	listener, err := net.Listen("unix", path)
 	if err != nil {
@@ -274,18 +278,52 @@ func askSocket(ctx context.Context, path string, asked request) (Reply, bool) {
 	return reply, true
 }
 
-// parentOf reads the parent PID from /proc (Linux); 0 ends the walk.
-func parentOf(pid int) int {
+// wrappers are the processes that only start another one, by their name in /proc. An MCP config
+// that starts agent-bus through one of them makes the wrapper its parent, which no hook has among
+// its ancestors.
+var wrappers = map[string]bool{
+	"sh": true, "bash": true, "dash": true, "zsh": true, "fish": true,
+	"env": true, "mise": true, "direnv": true, "nice": true, "timeout": true,
+	"nohup": true, "stdbuf": true, "setsid": true,
+}
+
+// harnessPID is the first ancestor from pid up that is not a wrapper. It stops at the wrapper itself
+// when the walk would reach PID 1 or fail.
+func harnessPID(pid int, read func(pid int) (name string, parent int)) int {
+	// A real process tree has no cycles; the bound only guards against a broken /proc reader.
+	for depth := 0; depth < 64; depth++ {
+		name, parent := read(pid)
+		if !wrappers[name] || parent <= 1 {
+			return pid
+		}
+		pid = parent
+	}
+	return pid
+}
+
+// readProcess reads the name and the parent PID of a process from /proc (Linux); a parent of 0
+// ends the walk.
+func readProcess(pid int) (name string, parent int) {
 	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
-		return 0
+		return "", 0
 	}
-	// The command name in parentheses may contain spaces; the fields after it are fixed.
-	_, afterName, found := strings.Cut(string(stat), ") ")
-	fields := strings.Fields(afterName)
-	if !found || len(fields) < 2 {
-		return 0
+	// The command name in parentheses may contain spaces and parentheses; the fields after the last
+	// closing one are fixed.
+	text := string(stat)
+	open, close := strings.Index(text, "("), strings.LastIndex(text, ")")
+	if open < 0 || close < open {
+		return "", 0
 	}
-	parent, _ := strconv.Atoi(fields[1])
+	fields := strings.Fields(text[close+1:])
+	if len(fields) < 2 {
+		return "", 0
+	}
+	parent, _ = strconv.Atoi(fields[1])
+	return text[open+1 : close], parent
+}
+
+func parentOf(pid int) int {
+	_, parent := readProcess(pid)
 	return parent
 }

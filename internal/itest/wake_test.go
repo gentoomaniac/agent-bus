@@ -40,8 +40,8 @@ func TestIdleSessionIsWokenByTargetedMailOnly(t *testing.T) {
 	h := startBus(t)
 	h.register(t, carol)
 	h.startMCPServer(t, agentBus, bob)
-	// Alice's server sits behind a shell, so it listens under another PID than bob's.
-	aliceSession := h.connectMCP(t, exec.Command("sh", "-c", `"$0" "$@"; status=$?; exit $status`, agentBus, "mcp", "--agent", alice))
+	// Alice's server sits behind a process that is no wrapper, so it listens under another PID than bob's.
+	aliceSession := h.connectMCP(t, exec.Command(notAWrapper(t, "sh"), "-c", `"$0" "$@"; status=$?; exit $status`, agentBus, "mcp", "--agent", alice))
 	waiter, stderr := h.startWaiter(t, agentBus)
 
 	if text, isError := aliceSession.call(t, "publish", map[string]any{"channel": "general", "targets": []string{carol}, "body": map[string]any{"text": "chatter between others"}}); isError {
