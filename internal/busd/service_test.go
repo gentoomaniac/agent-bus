@@ -42,6 +42,8 @@ type fakeRegistry struct {
 	onCursor func()
 	// accountReads counts the reads of the account list.
 	accountReads int
+	// accountErr fails the next EnsureCertAccount, once: a reload that did not take.
+	accountErr error
 }
 
 func (fake *fakeRegistry) Agents(context.Context) ([]bus.AgentRecord, error) {
@@ -76,7 +78,13 @@ func (fake *fakeRegistry) AgentAccounts(context.Context) ([]string, error) {
 }
 func (fake *fakeRegistry) LastSequence(context.Context) (uint64, error) { return fake.last, nil }
 func (fake *fakeRegistry) EnsureCertAccount(_ context.Context, agentID, certID string) error {
-	fake.accounts = append(fake.accounts, agentID)
+	if err := fake.accountErr; err != nil {
+		fake.accountErr = nil
+		return err
+	}
+	if !slices.Contains(fake.accounts, agentID) {
+		fake.accounts = append(fake.accounts, agentID)
+	}
 	fake.certIDs[agentID] = certID
 	return nil
 }

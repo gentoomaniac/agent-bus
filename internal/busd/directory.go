@@ -252,11 +252,12 @@ func (published *Directory) build(ctx context.Context) (directory.Projection, er
 }
 
 // enrolled are the registry records of the agents whose enrollment is complete: with their read
-// cursors on their DM channel and general and an account, which approval and registration create
-// after the record, the account last. An agent announced before would get mail its cursor never
-// sees, from peers that know it while a failed approval waits to be repeated. A removed agent is
-// always in: its tombstone carries the revocation of its keys. Being made of what the broker
-// holds, the check survives a restart of busd.
+// cursors on their DM channel and general and an account the server runs with, which approval and
+// registration create after the record, the account last, and with no approval of busd's pending
+// half done (a replacement's account exists already, with the old certificate). An agent announced
+// before would get mail its cursor never sees, from peers that know it while a failed approval
+// waits to be repeated. A removed agent is always in: its tombstone carries the revocation of its
+// keys. Being made of what the broker and the state file hold, the check survives a restart of busd.
 func (published *Directory) enrolled(ctx context.Context) ([]bus.AgentRecord, error) {
 	source := published.config.Source
 	records, err := source.Agents(ctx)
@@ -275,14 +276,18 @@ func (published *Directory) enrolled(ctx context.Context) ([]bus.AgentRecord, er
 	if err != nil {
 		return nil, err
 	}
+	unfinished, err := unfinishedApprovals(published.config.ConfigDir)
+	if err != nil {
+		return nil, err
+	}
 	var enrolled []bus.AgentRecord
 	for _, record := range records {
-		if !record.Removed() {
-			if !slices.Contains(dmReaders, record.AgentID) || !slices.Contains(generalReaders, record.AgentID) || !slices.Contains(accounts, record.AgentID) {
-				continue
-			}
+		hasCursors := slices.Contains(dmReaders, record.AgentID) && slices.Contains(generalReaders, record.AgentID)
+		hasAccount := slices.Contains(accounts, record.AgentID)
+		approving := slices.Contains(unfinished, record.AgentID)
+		if record.Removed() || hasCursors && hasAccount && !approving {
+			enrolled = append(enrolled, record)
 		}
-		enrolled = append(enrolled, record)
 	}
 	return enrolled, nil
 }

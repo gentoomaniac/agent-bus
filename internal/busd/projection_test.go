@@ -14,6 +14,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
 )
 
@@ -394,5 +395,120 @@ func TestAReconcileReadsTheAccountsOnce(t *testing.T) {
 
 	if f.registry.accountReads != 1 {
 		t.Errorf("the accounts were read %d times for three agents, want once", f.registry.accountReads)
+	}
+}
+
+func TestAnApprovalIsPublishedOnlyOnceItsAccountTookEffect(t *testing.T) {
+	f := newFixture(t)
+	published := f.directory()
+	ctx := context.Background()
+	publishedKey := func(agentID string) string {
+		t.Helper()
+		if _, err := published.Reconcile(ctx); err != nil {
+			t.Fatal(err)
+		}
+		for _, record := range f.syncFrom(published, directory.Version{}).Records {
+			if record.AgentID == agentID {
+				return record.PublicKey
+			}
+		}
+		return ""
+	}
+
+	// A new agent whose account's reload did not take: record and cursors are there.
+	first := f.submit("new@x", f.newKey(), "")
+	f.registry.accountErr = errors.New("the server did not confirm the reload")
+	if result := f.sign(first.Code, false); result.Error == "" {
+		t.Fatal("the approval did not fail")
+	}
+	if key := publishedKey("new@x"); key != "" {
+		t.Error("an agent whose account did not take effect was published")
+	}
+	if result := f.sign(first.Code, false); result.Error != "" {
+		t.Fatal(result.Error)
+	}
+	oldKey := publishedKey("new@x")
+	if oldKey == "" {
+		t.Fatal("the finished approval was not published")
+	}
+
+	// A replacement whose account switch did not take: the account is there, with the old login.
+	replacement := f.submit("new@x", f.newKey(), "")
+	f.registry.accountErr = errors.New("the server did not confirm the reload")
+	if result := f.sign(replacement.Code, true); result.Error == "" {
+		t.Fatal("the replacement did not fail")
+	}
+	if key := publishedKey("new@x"); key != "" {
+		t.Errorf("the unfinished replacement was published with key %q", key)
+	}
+	if result := f.sign(replacement.Code, true); result.Error != "" {
+		t.Fatal(result.Error)
+	}
+	if key := publishedKey("new@x"); key == "" || key == oldKey {
+		t.Errorf("after the replacement finished, the published key is %q", key)
+	}
+	// Made of the state file and the broker: a restart of busd sees the same.
+	if reply := f.syncFrom(f.directory(), directory.Version{}); len(reply.Records) != 1 {
+		t.Errorf("after a restart: %d records", len(reply.Records))
+	}
+}
+
+func TestARejectionAfterAFailedApprovalShowsTheAgentAgain(t *testing.T) {
+	f := newFixture(t)
+	published := f.directory()
+	ctx := context.Background()
+	key := f.newKey()
+	f.enroll("old@x", key)
+	listed := func() bool {
+		t.Helper()
+		if _, err := published.Reconcile(ctx); err != nil {
+			t.Fatal(err)
+		}
+		return len(f.syncFrom(published, directory.Version{}).Records) == 1
+	}
+	if !listed() {
+		t.Fatal("the enrolled agent is not published")
+	}
+
+	// It enrolls again with its own key, and the account switch does not take.
+	again := f.submit("old@x", key, "")
+	f.registry.accountErr = errors.New("the server did not confirm the reload")
+	if result := f.sign(again.Code, false); result.Error == "" {
+		t.Fatal("the approval did not fail")
+	}
+	if listed() {
+		t.Error("the agent was published while its approval was half done")
+	}
+
+	if result := f.service.Reject(enroll.RejectCommand{Ref: again.Code}); result.Error != "" {
+		t.Fatal(result.Error)
+	}
+	if !listed() {
+		t.Error("after the rejection the agent is still left out")
+	}
+}
+
+func TestAnAutosignedApprovalIsSavedBeforeItIsAnnounced(t *testing.T) {
+	f := newFixture(t)
+	f.service.limiter = rate.NewLimiter(rate.Inf, 1)
+	if err := os.MkdirAll(filepath.Join(f.dir, enrollDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.dir, enrollDir, "autosign"), []byte("sesame\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var unfinishedWhenTold []string
+	f.service.config.DirectoryChanged = func() {
+		var err error
+		if unfinishedWhenTold, err = unfinishedApprovals(f.dir); err != nil {
+			t.Error(err)
+		}
+	}
+
+	if reply := f.submit("auto@x", f.newKey(), "sesame"); reply.Status != enroll.StatusApproved {
+		t.Fatalf("autosign: %+v", reply)
+	}
+	if len(unfinishedWhenTold) != 0 {
+		t.Errorf("when the directory was told, the state on disk still had %v approving", unfinishedWhenTold)
 	}
 }

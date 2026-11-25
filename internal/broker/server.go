@@ -3,7 +3,9 @@ package broker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"net/http"
 	"os"
@@ -76,6 +78,11 @@ func (server Server) WritePasswordLogins(hashes map[string]string) error {
 			return err
 		}
 	}
+	// Written without a reload, auth.conf is what the server runs with from its next start: the
+	// copy of an earlier confirmed file would hide the accounts that are valid then.
+	if err := os.Remove(server.path(authFile + confirmedSuffix)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	return nil
 }
 
@@ -98,10 +105,15 @@ func NewServer(configDir, binary, monitorURL string) Server {
 	return Server{Dir: filepath.Join(configDir, "nats"), Binary: binary, MonitorURL: monitorURL}
 }
 
-// hasAgent says whether auth.conf lists the agent.
-// agentAccounts are the agent IDs that have an account in auth.conf, read once.
+// agentAccounts are the agent IDs that have an account the server runs with, read once: from the
+// last auth.conf whose reload was confirmed, not from a replaced file whose reload did not take, so
+// that an account no one can log in with yet does not count. A broker whose auth.conf was never
+// changed since the server started has no confirmed copy, and runs with auth.conf itself.
 func (server Server) agentAccounts() ([]string, error) {
-	current, err := os.ReadFile(server.path(authFile))
+	current, err := os.ReadFile(server.path(authFile + confirmedSuffix))
+	if errors.Is(err, os.ErrNotExist) {
+		current, err = os.ReadFile(server.path(authFile))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("reading the authorization file (has `agent-busctl admin init` run?): %w", err)
 	}
@@ -119,6 +131,7 @@ func (server Server) agentAccounts() ([]string, error) {
 	return agentIDs, nil
 }
 
+// hasAgent says whether auth.conf lists the agent.
 func (server Server) hasAgent(agentToken string) (bool, error) {
 	current, err := os.ReadFile(server.path(authFile))
 	if err != nil {
@@ -211,8 +224,22 @@ func (server Server) updateAuthFile(ctx context.Context, name string, edit func(
 	if err := server.signalReload(); err != nil {
 		return err
 	}
-	return server.confirmReload(ctx, loadedBefore)
+	if err := server.confirmReload(ctx, loadedBefore); err != nil {
+		return err
+	}
+	// The agents' accounts the server runs with, kept apart from the file, which a reload that did
+	// not take leaves replaced (agentAccounts). The change has taken effect whatever happens to the
+	// copy, so a failure only means agentAccounts lags until the next confirmed change.
+	if name == authFile {
+		if err := files.Write(server.path(authFile+confirmedSuffix), []byte(withGeneration(generation+1, newBody)), files.SecretMode, true); err != nil {
+			log.Printf("broker: keeping the copy of the confirmed %s: %v", authFile, err)
+		}
+	}
+	return nil
 }
+
+// confirmedSuffix names the copy of an authorization file that the server confirmed loading.
+const confirmedSuffix = ".confirmed"
 
 func (server Server) path(name string) string { return filepath.Join(server.Dir, name) }
 

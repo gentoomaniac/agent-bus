@@ -359,6 +359,19 @@ Where the build refined or departed from the text above.
   approval therefore announces nothing, and since the check reads only what the broker holds, a
   restart of busd keeps it. busd writes its own machine's lookup file only after the account too.
   The accounts are read once per reconcile, from one parse of the authorization file.
+- An account counts only once the server runs with it: after a confirmed reload, UpdateAuth keeps
+  a copy of the file it confirmed (`nats/auth.conf.confirmed`), and the check reads that copy, not
+  `auth.conf`, which a reload that did not take leaves replaced. (A broker whose `auth.conf` was
+  not changed since the server started has no copy and runs with the file itself; a rewrite
+  without a reload, by `init` or `admin init`, deletes the copy, so that auth.conf counts again
+  after the server's restart. Only the agents' `auth.conf` gets a copy; a copy that cannot be
+  written is logged, the confirmed change stands.) And busd marks an approval `approving` in
+  `enroll/state.json`, on disk before it changes anything; the request's decision clears it:
+  approved (the reload included), rejected or expired. While a pending request has it set, the
+  agent is left out, which also covers a replacement or a repeated enrollment, whose account
+  exists already with the old certificate. The window that remains: after a failed approval of an
+  agent that was published, the agent stays out of the directory until the owner approves again
+  or rejects the request (at most the request's 24 hours, when it expires).
 - The first attempt to approve a request records where the agent's read cursors start (in
   `enroll/state.json`); a repeated approval, after a restart too, starts them there and not at
   the then end of the log, so nothing sent in between is skipped. The position is written to disk
@@ -366,3 +379,6 @@ Where the build refined or departed from the text above.
   between the two cursors cannot start the second one later either. An existing cursor always kept
   its position (the broker refuses to change it), so this was already true when the first
   attempt got as far as creating it.
+- Not fixed (trusted LAN, MVP): the requests of all agents share one wildcard subscription and
+  its callback in busd, so a flood from one authenticated agent can still delay the others'
+  syncs. The signing budget is limited per agent; the queue in front of it is not.

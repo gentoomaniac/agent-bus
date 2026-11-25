@@ -93,6 +93,11 @@ type entry struct {
 	// CursorsAfter is the log position the agent's read cursors start after, taken by the first
 	// attempt to approve, so that a repeated approval starts them at the same place.
 	CursorsAfter *uint64 `json:"cursors_after,omitempty"`
+	// Approving is set, on disk, before an approval changes anything, and cleared by the request's
+	// decision: when the approval has finished, the account's reload included, or when the request
+	// is rejected or expires. While the request is pending with it set, the agent is left out of
+	// the published directory (unfinishedApprovals): its record may be ahead of its login.
+	Approving bool `json:"approving,omitempty"`
 
 	verified enroll.Verified
 }
@@ -149,11 +154,15 @@ func (service *Service) HandleRequest(ctx context.Context, data []byte) enroll.R
 	log.Printf("busd: enrollment request %s from %s for %s (%s), signing key %s", added.code(), verified.Hostname, verified.AgentID, identity, verified.SigningFingerprint)
 
 	if identity != enroll.IdentityReplaces && service.autosignMatches(verified.Secret) {
-		if _, err := service.approve(ctx, added, false, "autosigned"); err != nil {
+		_, err := service.approve(ctx, added, false, "autosigned")
+		// Saved first: the rebuild that the announcement starts reads whether it is still approving.
+		service.saveOrLog()
+		if err != nil {
 			log.Printf("busd: autosign of %s failed, it stays pending: %v", added.code(), err)
 		} else {
 			service.directoryChanged()
 		}
+		return service.reply(added)
 	}
 	service.saveOrLog()
 	return service.reply(added)
@@ -263,8 +272,11 @@ func (service *Service) Reject(command enroll.RejectCommand) enroll.CommandReply
 
 func (request *entry) code() string { return request.verified.Code() }
 
+// decide ends the request, and any approval of it that was under way: an approval that failed
+// and is then rejected leaves the agent as it was before, which the directory shows again.
 func (request *entry) decide(status enroll.Status, message string, now time.Time) {
 	request.Status, request.Message = status, message
+	request.Approving = false
 	request.ExpiresAt = now.Add(requestLifetime)
 }
 
@@ -447,10 +459,10 @@ func (service *Service) approve(ctx context.Context, request *entry, replace boo
 			return "", err
 		}
 		request.CursorsAfter = &last
-		if err := service.save(); err != nil {
-			request.CursorsAfter = nil
-			return "", fmt.Errorf("saving where the read cursors start: %w", err)
-		}
+	}
+	request.Approving = true
+	if err := service.save(); err != nil {
+		return "", fmt.Errorf("saving where the read cursors start: %w", err)
 	}
 	var record bus.AgentRecord
 	if identity == enroll.IdentitySameKey {
@@ -578,6 +590,30 @@ func (service *Service) save() error {
 		return err
 	}
 	return files.Write(service.path(stateFile), data, files.SecretMode, true)
+}
+
+// unfinishedApprovals are the agents whose approval began and has not finished, as the state file
+// in configDir says. It reads the file, not a Service, so that busd's directory can ask under the
+// mutation lock without the service's own lock, which an approval holds while it waits for that one.
+func unfinishedApprovals(configDir string) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(configDir, enrollDir, stateFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var stored []entry
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return nil, fmt.Errorf("reading the enrollment state: %w", err)
+	}
+	var agentIDs []string
+	for _, request := range stored {
+		if request.Approving && request.Status == enroll.StatusPending {
+			agentIDs = append(agentIDs, request.Request.AgentID)
+		}
+	}
+	return agentIDs, nil
 }
 
 // saveOrLog saves after an answer is decided. A failure is logged: the answer in hand is still

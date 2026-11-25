@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -115,5 +116,84 @@ func TestUpdateAuthReportsAReloadThatDidNotTake(t *testing.T) {
 	err := fake.UpdateAuth(ctx, func(string) (string, error) { return "users = []\n", nil })
 	if err == nil || !strings.Contains(err.Error(), "did not confirm the reload") {
 		t.Fatalf("UpdateAuth = %v, want an unconfirmed reload", err)
+	}
+}
+
+func TestOnlyAnAccountWhoseReloadTookCounts(t *testing.T) {
+	agentEntry := func(token string) string {
+		return "  " + userEntry(authUser{role: roleAgent, name: token, mode: modeCert, certID: "c1"}, nil) + ", # agent\n"
+	}
+	update := func(fake Server, timeout time.Duration, tokens ...string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		return fake.UpdateAuth(ctx, func(string) (string, error) {
+			body := "users = [\n"
+			for _, token := range tokens {
+				body += agentEntry(token)
+			}
+			return body + "]\n", nil
+		})
+	}
+
+	fake := newFakeServer(t, true, true)
+	if accounts, err := fake.agentAccounts(); err != nil || len(accounts) != 0 {
+		t.Errorf("before any change, from auth.conf itself: %v, %v", accounts, err)
+	}
+	if err := update(fake, 5*time.Second, "alice_x"); err != nil {
+		t.Fatal(err)
+	}
+	if accounts, err := fake.agentAccounts(); err != nil || !slices.Equal(accounts, []string{"alice@x"}) {
+		t.Errorf("after a confirmed reload: %v, %v", accounts, err)
+	}
+
+	// The same broker, now refusing reloads: auth.conf is replaced, the server runs without bob.
+	stuck := fake
+	stuck.MonitorURL = newFakeServer(t, true, false).MonitorURL
+	if err := update(stuck, 500*time.Millisecond, "alice_x", "bob_x"); err == nil {
+		t.Fatal("the reload was confirmed")
+	}
+	if !strings.Contains(readAuth(t, stuck), "bob_x") {
+		t.Fatal("auth.conf was not replaced, the test proves nothing")
+	}
+	if accounts, err := stuck.agentAccounts(); err != nil || !slices.Equal(accounts, []string{"alice@x"}) {
+		t.Errorf("after a reload that did not take: %v, %v; want only alice", accounts, err)
+	}
+}
+
+func TestTheConfirmedCopyIsOfTheAgentsFileAndGoesWithARewriteWithoutReload(t *testing.T) {
+	fake := newFakeServer(t, true, true)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := fake.UpdateControlAuth(ctx, func(string) (string, error) { return "users = []\n", nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fake.path(controlAuthFile + confirmedSuffix)); err == nil {
+		t.Error("control-auth.conf got a confirmed copy")
+	}
+	if err := fake.UpdateAuth(ctx, func(string) (string, error) { return "users = []\n", nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fake.path(authFile + confirmedSuffix)); err != nil {
+		t.Fatalf("auth.conf has no confirmed copy: %v", err)
+	}
+
+	if err := fake.WritePasswordLogins(map[string]string{BusAdminUser: "$2a$10$one"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fake.path(authFile + confirmedSuffix)); err == nil {
+		t.Error("a rewrite without a reload left the confirmed copy, which would hide its accounts")
+	}
+}
+
+func TestAConfirmedChangeStandsWhenItsCopyCannotBeWritten(t *testing.T) {
+	fake := newFakeServer(t, true, true)
+	if err := os.Mkdir(fake.path(authFile+confirmedSuffix), 0o700); err != nil { // a directory cannot be replaced by a file
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := fake.UpdateAuth(ctx, func(string) (string, error) { return "users = []\n", nil }); err != nil {
+		t.Errorf("UpdateAuth = %v, want the confirmed change to stand", err)
 	}
 }

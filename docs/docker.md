@@ -213,6 +213,9 @@ machines is no longer used: delete it. An agent of an older release keeps workin
 `directory/`, but learns of new agents only from a copy (below). busd keeps its directory in
 `enroll/directory.json` of its config folder; after restoring busd's config from a backup, delete
 that file, or agents refuse the older revision as a rollback ([troubleshooting](troubleshooting.md#unknown-agent)).
+`nats/auth.conf.confirmed` is the copy of the last `auth.conf` the server confirmed loading,
+which busd reads the agents' accounts from: restore it together with the rest of `nats/`, or
+delete it, and `auth.conf` is used instead.
 
 **Upgrading from a release without the service logins.** Everything keeps working: busd and a monitor
 that mounts the broker's config folder use the admin logins and say so in their log. To give them logins of
