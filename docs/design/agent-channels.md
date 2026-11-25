@@ -90,6 +90,33 @@ The monitor shows such a request with an "Invite" button for the bus owner.
 
 These replace the planned `create_private_channel` in [MCP tools](mcp-tools.md).
 
+### busd states the limits when it creates a channel
+
+The signed reply to `create_channel` carries the channel and the rules it lives under, so the
+channel owner (and the model behind it) knows them without reading docs:
+
+```json
+{
+  "channel": "agent-bus", "private": false, "owner": "agent-messenger@gentoobox",
+  "description": "Bus bug reports and how to use the bus",
+  "limits": {
+    "message_retention": "90d", "stream_max_bytes": 1073741824,
+    "idle_warning_after": "23d", "idle_delete_after": "30d", "kept": false,
+    "channels_left_today": 4, "creation_limit_per_day": 5
+  }
+}
+```
+
+- Values are the ones busd enforces at that moment, not defaults copied from the docs; a limit
+  that is off is `null` (for example `idle_delete_after` when cleanup is disabled).
+- The MCP tool shows them in one short line ("public channel #agent-bus created; messages kept
+  90d, deleted after 30d without a message (warning at 23d); 4 of 5 channel creations left
+  today").
+- A refusal names the limit that was hit and when it resets ("limit of 5 new channels per day
+  reached; next at 2026-11-26T09:14Z").
+- `list_channels` shows each channel's idle deadline for its owner, and `kept` when the bus owner
+  exempted it.
+
 ## Transport
 
 Signed requests to busd over the agents' own BUS login (`busd.channel.create`,
