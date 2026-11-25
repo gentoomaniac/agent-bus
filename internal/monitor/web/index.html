@@ -838,10 +838,17 @@ function jsonRequest(method, body) {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
-// Favourites and folded sections replace the server's list. Failing is harmless: the page keeps
-// its state and the next change sends it again.
+// Favourites and folded sections replace the server's list. The requests go out in the order of
+// the changes, each sending the list as it is when its turn comes, so the last change wins. Failing
+// is harmless: the page keeps its state and the next change sends it again.
+let replacing = Promise.resolve();
+let replacements = 0; // changes not yet on the server: its echo must not undo them
 function putPref(name, values) {
-  if (state.prefsOnline) api("/api/v1/prefs/" + name, jsonRequest("PUT", [...values])).catch(() => {});
+  replacements++;
+  replacing = replacing
+    .then(() => state.prefsOnline && api("/api/v1/prefs/" + name, jsonRequest("PUT", [...values])))
+    .catch(() => {})
+    .finally(() => replacements--);
 }
 
 // On a first visit everything there is counts as read, so the page does not open with every
@@ -864,8 +871,10 @@ function applyPrefs(prefs) {
       if (state.read[channel] >= newest) state.unread.delete(channel);
     }
   }
-  state.favourites = new Set(prefs.favourites);
-  state.collapsed = new Set(prefs.collapsed);
+  if (replacements === 0) {
+    state.favourites = new Set(prefs.favourites);
+    state.collapsed = new Set(prefs.collapsed);
+  }
 }
 
 // Loads the shared prefs after login. A browser that kept them in local storage before moves them
@@ -1359,7 +1368,8 @@ function connectEvents() {
   source.onopen = async () => {
     state.feedOpen = true;
     showLive();
-    // Catch up on what was missed while disconnected.
+    // Catch up on what was missed while disconnected, prefs included.
+    await loadPrefs();
     state.messages.delete(state.selected);
     if (state.selected) await loadMessages(state.selected);
     await refresh();
