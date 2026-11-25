@@ -90,6 +90,9 @@ type entry struct {
 	Status      enroll.Status  `json:"status"`
 	Message     string         `json:"message,omitempty"`
 	Certificate string         `json:"certificate,omitempty"`
+	// CursorsAfter is the log position the agent's read cursors start after, taken by the first
+	// attempt to approve, so that a repeated approval starts them at the same place.
+	CursorsAfter *uint64 `json:"cursors_after,omitempty"`
 
 	verified enroll.Verified
 }
@@ -447,24 +450,28 @@ func (service *Service) approve(ctx context.Context, request *entry, replace boo
 			return "", err
 		}
 	}
-	// Written whatever the identity is, from what the registry holds: an approval repeated after a
-	// failure at this step finds the new key in the registry (so it counts as the same key) and
-	// would otherwise leave the old key in the directory.
-	if err := trust.DirectoryPath(service.config.ConfigDir).Write(record); err != nil {
-		return "", err
-	}
-	// A new agent starts at the end of the log, not in the history of `general`. An agent that
-	// enrolls again keeps its cursors, and with them its position.
-	last, err := registry.LastSequence(ctx)
-	if err != nil {
-		return "", err
+	// A new agent starts at the end of the log, not in the history of `general`, at the end as the
+	// first attempt found it. An agent that enrolls again keeps its cursors, and with them its
+	// position.
+	if request.CursorsAfter == nil {
+		last, err := registry.LastSequence(ctx)
+		if err != nil {
+			return "", err
+		}
+		request.CursorsAfter = &last
 	}
 	for _, channel := range []bus.Channel{bus.DMChannel(agentID), bus.GeneralChannel()} {
-		if err := registry.CreateReadCursor(ctx, agentID, channel, last); err != nil {
+		if err := registry.CreateReadCursor(ctx, agentID, channel, *request.CursorsAfter); err != nil {
 			return "", fmt.Errorf("creating the read cursor of %s: %w", channel, err)
 		}
 	}
 	if err := registry.EnsureCertAccount(ctx, agentID, certID); err != nil {
+		return "", err
+	}
+	// Written whatever the identity is, from what the registry holds, and only now that the agent
+	// can be reached: an approval repeated after a failure finds the new key in the registry (so it
+	// counts as the same key) and would otherwise leave the old key in the directory.
+	if err := trust.DirectoryPath(service.config.ConfigDir).Write(record); err != nil {
 		return "", err
 	}
 	if catalogue, err := trust.BuildCatalogue(ctx, registry); err == nil {

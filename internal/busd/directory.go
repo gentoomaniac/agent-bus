@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -33,11 +34,12 @@ const (
 	syncBurst    = 50
 )
 
-// DirectorySource is what the published directory is made of: the registry, the catalogue and the
-// read cursors of the group channels. *broker.Admin implements it.
+// DirectorySource is what the published directory is made of: the registry, the catalogue, the
+// read cursors and the accounts. *broker.Admin implements it.
 type DirectorySource interface {
 	trust.CatalogueSource
 	Agents(ctx context.Context) ([]bus.AgentRecord, error)
+	AccountExists(ctx context.Context, agentID string) (bool, error)
 }
 
 // DirectoryConfig is what a Directory is made of.
@@ -213,7 +215,7 @@ func (published *Directory) build(ctx context.Context) (directory.Projection, er
 		}
 		defer unlock()
 	}
-	records, err := published.config.Source.Agents(ctx)
+	records, err := published.enrolled(ctx)
 	if err != nil {
 		return directory.Projection{}, err
 	}
@@ -222,6 +224,43 @@ func (published *Directory) build(ctx context.Context) (directory.Projection, er
 		return directory.Projection{}, err
 	}
 	return directory.Projection{Records: records, Catalogue: catalogue}.Normalised(), nil
+}
+
+// enrolled are the registry records of the agents whose enrollment is complete: with their read
+// cursors on their DM channel and general and an account, which approval and registration create
+// after the record, the account last. An agent announced before would get mail its cursor never
+// sees, from peers that know it while a failed approval waits to be repeated. A removed agent is
+// always in: its tombstone carries the revocation of its keys. Being made of what the broker
+// holds, the check survives a restart of busd.
+func (published *Directory) enrolled(ctx context.Context) ([]bus.AgentRecord, error) {
+	source := published.config.Source
+	records, err := source.Agents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dmReaders, err := source.ReadCursorHolders(ctx, bus.DMChannel(""))
+	if err != nil {
+		return nil, err
+	}
+	generalReaders, err := source.ReadCursorHolders(ctx, bus.GeneralChannel())
+	if err != nil {
+		return nil, err
+	}
+	var enrolled []bus.AgentRecord
+	for _, record := range records {
+		if !record.Removed() {
+			if !slices.Contains(dmReaders, record.AgentID) || !slices.Contains(generalReaders, record.AgentID) {
+				continue
+			}
+			if exists, err := source.AccountExists(ctx, record.AgentID); err != nil {
+				return nil, err
+			} else if !exists {
+				continue
+			}
+		}
+		enrolled = append(enrolled, record)
+	}
+	return enrolled, nil
 }
 
 func newEpoch() string {

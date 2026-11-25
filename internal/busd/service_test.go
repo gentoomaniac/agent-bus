@@ -36,6 +36,8 @@ type fakeRegistry struct {
 	cursors  []string
 	last     uint64 // the sequence LastSequence reports
 	down     error
+	// cursorErr fails the next CreateReadCursor, once.
+	cursorErr error
 }
 
 func (fake *fakeRegistry) Agents(context.Context) ([]bus.AgentRecord, error) {
@@ -50,8 +52,19 @@ func (fake *fakeRegistry) PutAgentRecord(_ context.Context, record bus.AgentReco
 	return nil
 }
 func (fake *fakeRegistry) CreateReadCursor(_ context.Context, agentID string, channel bus.Channel, afterSequence uint64) error {
-	fake.cursors = append(fake.cursors, fmt.Sprintf("%s %s after %d", agentID, channel, afterSequence))
+	if err := fake.cursorErr; err != nil {
+		fake.cursorErr = nil
+		return err
+	}
+	cursor := fmt.Sprintf("%s %s after ", agentID, channel)
+	if slices.ContainsFunc(fake.cursors, func(existing string) bool { return strings.HasPrefix(existing, cursor) }) {
+		return nil // as the broker does: an existing cursor keeps its position
+	}
+	fake.cursors = append(fake.cursors, fmt.Sprintf("%s%d", cursor, afterSequence))
 	return nil
+}
+func (fake *fakeRegistry) AccountExists(_ context.Context, agentID string) (bool, error) {
+	return slices.Contains(fake.accounts, agentID), nil
 }
 func (fake *fakeRegistry) LastSequence(context.Context) (uint64, error) { return fake.last, nil }
 func (fake *fakeRegistry) EnsureCertAccount(_ context.Context, agentID, certID string) error {
@@ -60,8 +73,19 @@ func (fake *fakeRegistry) EnsureCertAccount(_ context.Context, agentID, certID s
 	return nil
 }
 func (*fakeRegistry) GroupChannels(context.Context) ([]bus.TopicRecord, error) { return nil, nil }
-func (*fakeRegistry) ReadCursorHolders(context.Context, bus.Channel) ([]string, error) {
-	return nil, nil
+func (fake *fakeRegistry) ReadCursorHolders(_ context.Context, channel bus.Channel) ([]string, error) {
+	kind := channel.String()
+	if channel.Kind == bus.DM {
+		kind = "DM"
+	}
+	var holders []string
+	for _, cursor := range fake.cursors {
+		agentID, rest, _ := strings.Cut(cursor, " ")
+		if strings.HasPrefix(rest, kind+" ") {
+			holders = append(holders, agentID)
+		}
+	}
+	return holders, nil
 }
 
 type fixture struct {

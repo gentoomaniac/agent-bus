@@ -2,9 +2,11 @@ package busd
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +16,13 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
 )
+
+// enroll makes an agent whose enrollment is complete: its record, its read cursors and its account.
+func (f *fixture) enroll(agentID string, key ed25519.PrivateKey) {
+	f.register(agentID, key)
+	f.registry.cursors = append(f.registry.cursors, agentID+" DM "+agentID+" after 0", agentID+" general after 0")
+	f.registry.accounts = append(f.registry.accounts, agentID)
+}
 
 func (f *fixture) directory() *Directory {
 	ca, err := tlsinit.LoadCA(filepath.Join(f.dir, "ca.pem"), filepath.Join(f.dir, "ca.key"))
@@ -36,7 +45,7 @@ func (f *fixture) syncFrom(published *Directory, since directory.Version) direct
 
 func TestTheRevisionAdvancesOnlyWhenTheContentChanges(t *testing.T) {
 	f := newFixture(t)
-	f.register("alice@x", f.newKey())
+	f.enroll("alice@x", f.newKey())
 	published := f.directory()
 	ctx := context.Background()
 
@@ -51,7 +60,7 @@ func TestTheRevisionAdvancesOnlyWhenTheContentChanges(t *testing.T) {
 		t.Errorf("an unchanged registry: %v, %v, version %+v, want no change of %+v", changes, err, published.Version(), first)
 	}
 
-	f.register("bob@x", f.newKey())
+	f.enroll("bob@x", f.newKey())
 	changes, err := published.Reconcile(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +76,7 @@ func TestTheRevisionAdvancesOnlyWhenTheContentChanges(t *testing.T) {
 
 func TestARestartKeepsTheVersionAndALostStateStartsANewEpoch(t *testing.T) {
 	f := newFixture(t)
-	f.register("alice@x", f.newKey())
+	f.enroll("alice@x", f.newKey())
 	ctx := context.Background()
 	published := f.directory()
 	if _, err := published.Reconcile(ctx); err != nil {
@@ -97,7 +106,7 @@ func TestARestartKeepsTheVersionAndALostStateStartsANewEpoch(t *testing.T) {
 
 func TestAnUnreadableRegistryChangesNothing(t *testing.T) {
 	f := newFixture(t)
-	f.register("alice@x", f.newKey())
+	f.enroll("alice@x", f.newKey())
 	published := f.directory()
 	ctx := context.Background()
 	if _, err := published.Reconcile(ctx); err != nil {
@@ -130,7 +139,7 @@ func TestAnApprovalTellsTheDirectory(t *testing.T) {
 
 func TestASyncIsAnsweredWithWhatTheAgentLacks(t *testing.T) {
 	f := newFixture(t)
-	f.register("alice@x", f.newKey())
+	f.enroll("alice@x", f.newKey())
 	published := f.directory()
 	ctx := context.Background()
 	if _, err := published.Reconcile(ctx); err != nil {
@@ -145,7 +154,7 @@ func TestASyncIsAnsweredWithWhatTheAgentLacks(t *testing.T) {
 		t.Errorf("an agent at the current version got %s", reply.Kind)
 	}
 
-	f.register("bob@x", f.newKey())
+	f.enroll("bob@x", f.newKey())
 	if _, err := published.Reconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +214,7 @@ func TestTheHeadAnnouncesTheCurrentVersionWithTheLastChanges(t *testing.T) {
 	if _, err := published.Reconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
-	f.register("alice@x", f.newKey())
+	f.enroll("alice@x", f.newKey())
 	if _, err := published.Reconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +237,7 @@ func TestARevisionThatCannotBeSavedIsNotAnnounced(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, head := published.Version(), published.Head()
-	f.register("alice@x", f.newKey())
+	f.enroll("alice@x", f.newKey())
 	// A file stands where the state's directory was: nothing can be written there.
 	if err := os.RemoveAll(filepath.Join(f.dir, enrollDir)); err != nil {
 		t.Fatal(err)
@@ -242,5 +251,65 @@ func TestARevisionThatCannotBeSavedIsNotAnnounced(t *testing.T) {
 	}
 	if published.Version() != before || string(published.Head()) != string(head) {
 		t.Errorf("the version moved to %+v without being saved", published.Version())
+	}
+}
+
+func TestAnEnrollmentIsPublishedOnlyOnceItIsComplete(t *testing.T) {
+	f := newFixture(t)
+	published := f.directory()
+	ctx := context.Background()
+	f.register("half@x", f.newKey()) // the record of an approval that failed after writing it
+	removedAt := f.now
+	f.register("gone@x", f.newKey())
+	tombstone := f.registry.records["gone@x"]
+	tombstone.RemovedAt = &removedAt
+	f.registry.records["gone@x"] = tombstone // removed: no cursors, no account
+	listed := func() []string {
+		t.Helper()
+		if _, err := published.Reconcile(ctx); err != nil {
+			t.Fatal(err)
+		}
+		reply := f.syncFrom(published, directory.Version{})
+		var ids []string
+		for _, record := range reply.Records {
+			ids = append(ids, record.AgentID)
+		}
+		return ids
+	}
+
+	if ids := listed(); !slices.Equal(ids, []string{"gone@x"}) {
+		t.Errorf("published %v, want only the tombstone", ids)
+	}
+	f.registry.cursors = append(f.registry.cursors, "half@x DM half@x after 0", "half@x general after 0")
+	if ids := listed(); !slices.Equal(ids, []string{"gone@x"}) {
+		t.Errorf("with cursors but no account: published %v", ids)
+	}
+	f.registry.accounts = append(f.registry.accounts, "half@x")
+	if ids := listed(); !slices.Equal(ids, []string{"gone@x", "half@x"}) {
+		t.Errorf("once complete: published %v", ids)
+	}
+	// Made of what the broker holds, so a restart of busd changes nothing.
+	if reply := f.syncFrom(f.directory(), directory.Version{}); len(reply.Records) != 2 {
+		t.Errorf("after a restart: %d records", len(reply.Records))
+	}
+}
+
+func TestARepeatedApprovalStartsTheCursorsWhereTheFirstAttemptDid(t *testing.T) {
+	f := newFixture(t)
+	f.registry.last = 42
+	reply := f.submit("new@x", f.newKey(), "")
+	f.registry.cursorErr = errors.New("jetstream unreachable")
+	if result := f.sign(reply.Code, false); result.Error == "" {
+		t.Fatal("the approval did not fail")
+	}
+	f.registry.last = 50 // messages arrived meanwhile
+	f.restart()          // and busd restarted
+
+	if result := f.sign(reply.Code, false); result.Error != "" {
+		t.Fatal(result.Error)
+	}
+
+	if want := []string{"new@x DM new@x after 42", "new@x general after 42"}; !slices.Equal(f.registry.cursors, want) {
+		t.Errorf("cursors %v, want %v", f.registry.cursors, want)
 	}
 }
