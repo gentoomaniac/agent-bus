@@ -34,6 +34,7 @@ const typeSelect = document.getElementById("type") as HTMLSelectElement;
 const targetBox = document.getElementById("targets") as HTMLElement;
 const targetInput = document.getElementById("targetInput") as HTMLInputElement;
 const threadsToggle = document.getElementById("threads") as HTMLButtonElement;
+const bellToggle = document.getElementById("bell") as HTMLButtonElement;
 const completions = document.getElementById("completions") as HTMLElement;
 const titleInput = document.getElementById("title") as HTMLInputElement;
 const textInput = document.getElementById("text") as HTMLTextAreaElement;
@@ -53,6 +54,12 @@ function renderTime(message: Message, className: string): HTMLElement {
   const time = el("span", className + " muted", message.time ? shortTime(message.time, new Date()) : "");
   if (message.time) time.title = `${new Date(message.time).toLocaleString([], { dateStyle: "full", timeStyle: "medium" })} · #${message.sequence}`;
   return time;
+}
+
+function showSubscribed(subscribed: boolean): void {
+  bellToggle.textContent = subscribed ? "🔔" : "🔕";
+  bellToggle.title = subscribed ? "Subscribed: every new message notifies. Click to unsubscribe" : "Subscribe: notify for every new message here";
+  bellToggle.setAttribute("aria-pressed", String(subscribed));
 }
 
 // Asks the host to open the record as stored, in an editor tab.
@@ -363,6 +370,7 @@ function showState(next: ChatState): void {
   document.getElementById("heading")!.textContent = next.title;
   document.getElementById("description")!.textContent = next.description;
   threadsToggle.setAttribute("aria-pressed", String(next.threaded));
+  showSubscribed(next.subscribed);
   composer.hidden = !next.canSend;
   note.hidden = next.canSend;
   note.textContent = next.note;
@@ -549,6 +557,7 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
   else if (data.type === "reveal") reveal(data.sequence);
   else if (data.type === "focusComposer") textInput.focus();
   else if (data.type === "activated") activate();
+  else if (data.type === "subscribed") showSubscribed(data.value);
   else if (data.type === "presence") {
     presence = parsePresenceMarks(data.presence);
     paintDots();
@@ -617,6 +626,10 @@ targetInput.addEventListener("keydown", (event) => {
     event.preventDefault(); // not a send: the message is written in the text box
     textInput.focus();
   }
+});
+
+bellToggle.addEventListener("click", () => {
+  if (state) host.postMessage({ type: "subscribe", value: bellToggle.getAttribute("aria-pressed") !== "true" });
 });
 
 threadsToggle.addEventListener("click", () => {

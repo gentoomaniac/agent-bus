@@ -17,6 +17,7 @@ interface Chat {
   members: string[];
   focusComposer: boolean; // focus it once the page has drawn
   ready: boolean; // the page has asked for its state
+  subscribed: boolean; // what the page shows on its bell
   reveal?: number; // a message to scroll to once the page has it
 }
 
@@ -36,6 +37,7 @@ export class ChatPanels implements vscode.Disposable {
         if (chat.panel.visible) session.model.markRead(message.channel);
       }),
       session.onDidChange(() => {
+        this.chats.forEach((chat, channelId) => this.postSubscribed(channelId, chat));
         const presence = this.presenceMarks();
         const json = JSON.stringify(presence);
         if (json === this.sentPresence) return;
@@ -128,7 +130,7 @@ export class ChatPanels implements vscode.Disposable {
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "dist")],
     });
-    const chat: Chat = { panel, dividerAfter: 0, members: [], focusComposer, ready: false };
+    const chat: Chat = { panel, dividerAfter: 0, members: [], focusComposer, ready: false, subscribed: this.session.prefs.subscribed.has(channelId) };
     this.chats.set(channelId, chat);
     panel.webview.html = this.html(panel.webview);
     panel.onDidDispose(() => {
@@ -175,6 +177,8 @@ export class ChatPanels implements vscode.Disposable {
         const document = await vscode.workspace.openTextDocument({ language: "json", content });
         await vscode.window.showTextDocument(document, { preview: true });
       });
+    } else if (message.type === "subscribe") {
+      this.session.prefs.setSubscribed(channelId, message.value); // its change event posts the new state
     } else if (message.type === "threaded") {
       await this.context.globalState.update(THREADED_KEY, message.value);
       this.chats.forEach((other, otherId) => this.post(otherId, other));
@@ -220,6 +224,13 @@ export class ChatPanels implements vscode.Disposable {
     if (chat.panel.visible) model.markRead(channelId);
   }
 
+  private postSubscribed(channelId: string, chat: Chat): void {
+    const value = this.session.prefs.subscribed.has(channelId);
+    if (value === chat.subscribed) return;
+    chat.subscribed = value;
+    void chat.panel.webview.postMessage({ type: "subscribed", value } satisfies ToWebview);
+  }
+
   private presenceMarks(): Record<string, PresenceMark> {
     return Object.fromEntries([...this.session.model.presence].map(([agent, { state, since }]) => [agent, { state, since }]));
   }
@@ -230,6 +241,7 @@ export class ChatPanels implements vscode.Disposable {
     if (!channel || !model.status) return;
     const destination = destinationOf(channel, model.self);
     const canWrite = destination !== undefined;
+    chat.subscribed = this.session.prefs.subscribed.has(channelId);
     const state: ChatState = {
       title: describeChannel(channel),
       description: channel.description,
@@ -240,6 +252,7 @@ export class ChatPanels implements vscode.Disposable {
       dividerAfter: chat.dividerAfter,
       hasOlder: model.hasOlder(channelId),
       members: chat.members,
+      subscribed: chat.subscribed,
       threaded: this.context.globalState.get<boolean>(THREADED_KEY, false),
       presence: this.presenceMarks(),
       defaultTarget: channel.kind === "dm" && destination ? destination.name : ALL,
@@ -372,7 +385,7 @@ export class ChatPanels implements vscode.Disposable {
 </style>
 </head>
 <body>
-<header><h1 id="heading"></h1><div id="description"></div><button id="searchToggle" class="link" type="button" title="Search messages (Ctrl+F)" aria-pressed="false">Search</button><button id="threads" class="link" type="button" title="Show replies under their parent" aria-pressed="false">Threads</button></header>
+<header><h1 id="heading"></h1><div id="description"></div><button id="searchToggle" class="link" type="button" title="Search messages (Ctrl+F)" aria-pressed="false">Search</button><button id="bell" class="link" type="button" aria-pressed="false"></button><button id="threads" class="link" type="button" title="Show replies under their parent" aria-pressed="false">Threads</button></header>
 <div id="searchbar" role="search" hidden>
   <div id="searchField"><input id="searchInput" type="text" placeholder="Search: words, &quot;phrases&quot;, from: type: targets: after: before:" aria-label="Search messages" autocomplete="off" spellcheck="false"></div>
   <button id="scope" class="pill" type="button" title="Search all channels, not only this one" aria-pressed="false">All channels</button>

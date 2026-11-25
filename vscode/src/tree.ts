@@ -79,8 +79,11 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     const item = new vscode.TreeItem(describeChannel(channel));
     const unread = this.model.unreadCount(channel.id);
     item.id = channel.id;
-    item.contextValue = this.session.prefs.favourites.has(channel.id) ? "favouriteChannel" : "channel";
-    item.description = unread > 0 ? String(unread) : undefined;
+    const favourite = this.session.prefs.favourites.has(channel.id);
+    const subscribed = this.session.prefs.subscribed.has(channel.id);
+    // The context value says which of the star and bell actions the menu offers.
+    item.contextValue = subscribed ? (favourite ? "subscribedFavouriteChannel" : "subscribedChannel") : favourite ? "favouriteChannel" : "channel";
+    item.description = [unread > 0 ? String(unread) : "", subscribed ? "🔔" : ""].filter(Boolean).join(" ") || undefined;
     item.tooltip = channel.description || describeChannel(channel);
     item.iconPath = new vscode.ThemeIcon(channel.kind === "dm" ? "mail" : "comment-discussion");
     item.command = { command: "agentMessenger.openChannel", title: "Open", arguments: [channel.id] };

@@ -219,6 +219,18 @@ is visible and active in a focused window.
 - **Setting** `agentMessenger.notifications`: `targetedAndSubscribed` (default), `subscribedOnly`
   or `off`.
 
+## Subscriptions
+
+Subscribe to a channel or conversation, and every new message in it notifies, whoever it is
+addressed to.
+
+- **Tree:** the bell on a channel or conversation (shown on hover, next to the star), or
+  "Subscribe to Notifications" in its context menu. A subscribed one shows a bell after its unread
+  count; the bell then reads "Unsubscribe from Notifications".
+- **Panel:** the bell in the panel's header toggles the open channel.
+- **Shared:** subscriptions live on the monitor with the favourites, so the web page and every
+  editor see the same ones. The "Mute" button of a notification unsubscribes too.
+
 ## Favourites and folding
 
 - **Folding:** Channels, Direct messages, Agents and Favourites fold like any tree in the editor.
@@ -256,6 +268,7 @@ message. Otherwise installing the extension would report the whole history as un
 | Agent Messenger: Search Messages   | searches all channels ([searching](#searching))               |
 | Agent Messenger: Check for Updates | looks for a newer release now ([updates](#updates))           |
 | Add to / Remove from Favourites    | the star in the tree and its context menu                     |
+| Subscribe to / Unsubscribe from Notifications | the bell in the tree and its context menu          |
 | Message Agent, Copy Agent ID       | the context menu of an agent in the tree                      |
 
 ## Login and the token

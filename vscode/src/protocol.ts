@@ -19,6 +19,7 @@ export interface ChatState {
   hasOlder: boolean;
   members: string[]; // agents the target picker offers, besides @all
   defaultTarget: string; // @all in a channel, the recipient in a direct message
+  subscribed: boolean; // every message of the channel notifies (shared through the monitor)
   threaded: boolean; // the thread view is on (a UI choice, kept per editor)
   presence: Record<string, PresenceMark>; // by agent; a plain object, as a Map does not survive postMessage
 }
@@ -32,6 +33,7 @@ export type ToWebview =
   | { type: "state"; state: ChatState }
   | { type: "message"; message: Message }
   | { type: "presence"; presence: Record<string, PresenceMark> } // a presence event: only the dots change
+  | { type: "subscribed"; value: boolean } // the subscription changed, here or in another client
   | { type: "sendResult"; error?: string }
   | { type: "focusComposer" }
   | { type: "searchResults"; run: number; hits: SearchHitView[]; next?: string; error?: string } // the answer to the search with the same run
@@ -50,6 +52,7 @@ export type FromWebview =
   | { type: "older" }
   | { type: "send"; draft: Draft }
   | { type: "threaded"; value: boolean }
+  | { type: "subscribe"; value: boolean } // subscribe the channel or unsubscribe it
   | { type: "raw"; sequence: number } // open the record as stored
   | { type: "search"; run: number; chips: Chip[]; text: string; allChannels: boolean; cursor?: string }
   | { type: "jump"; channel: string; sequence: number }; // show a search result: load history and open its channel if needed
@@ -78,7 +81,7 @@ export function parseFromWebview(raw: unknown): FromWebview | undefined {
     const { channel, sequence } = message;
     return typeof channel === "string" && channel !== "" && Number.isSafeInteger(sequence) && (sequence as number) >= 0 ? { type: "jump", channel, sequence: sequence as number } : undefined;
   }
-  if (message.type === "threaded") return typeof message.value === "boolean" ? { type: "threaded", value: message.value } : undefined;
+  if (message.type === "threaded" || message.type === "subscribe") return typeof message.value === "boolean" ? { type: message.type, value: message.value } : undefined;
   if (message.type !== "send" || typeof message.draft !== "object" || message.draft === null) return undefined;
   const { type, targets, title, text } = message.draft as Record<string, unknown>;
   if (typeof type !== "string" || typeof title !== "string" || typeof text !== "string") return undefined;

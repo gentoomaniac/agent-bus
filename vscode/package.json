@@ -52,6 +52,8 @@
       { "command": "agentMessenger.checkForUpdates", "title": "Check for Updates", "category": "Agent Messenger" },
       { "command": "agentMessenger.addFavourite", "title": "Add to Favourites", "icon": "$(star-empty)" },
       { "command": "agentMessenger.removeFavourite", "title": "Remove from Favourites", "icon": "$(star-full)" },
+      { "command": "agentMessenger.subscribe", "title": "Subscribe to Notifications", "icon": "$(bell)" },
+      { "command": "agentMessenger.unsubscribe", "title": "Unsubscribe from Notifications", "icon": "$(bell-slash)" },
       { "command": "agentMessenger.messageAgent", "title": "Message Agent" },
       { "command": "agentMessenger.copyAgentId", "title": "Copy Agent ID" }
     ],
@@ -60,6 +62,8 @@
         { "command": "agentMessenger.openChannel", "when": "false" },
         { "command": "agentMessenger.addFavourite", "when": "false" },
         { "command": "agentMessenger.removeFavourite", "when": "false" },
+        { "command": "agentMessenger.subscribe", "when": "false" },
+        { "command": "agentMessenger.unsubscribe", "when": "false" },
         { "command": "agentMessenger.messageAgent", "when": "false" },
         { "command": "agentMessenger.copyAgentId", "when": "false" }
       ],
@@ -67,10 +71,14 @@
         { "command": "agentMessenger.searchMessages", "when": "view == agentMessenger.tree && !agentMessenger.loginRequired", "group": "navigation" }
       ],
       "view/item/context": [
-        { "command": "agentMessenger.addFavourite", "when": "view == agentMessenger.tree && viewItem == channel", "group": "inline" },
-        { "command": "agentMessenger.removeFavourite", "when": "view == agentMessenger.tree && viewItem == favouriteChannel", "group": "inline" },
-        { "command": "agentMessenger.addFavourite", "when": "view == agentMessenger.tree && viewItem == channel", "group": "favourite" },
-        { "command": "agentMessenger.removeFavourite", "when": "view == agentMessenger.tree && viewItem == favouriteChannel", "group": "favourite" },
+        { "command": "agentMessenger.addFavourite", "when": "view == agentMessenger.tree && (viewItem == channel || viewItem == subscribedChannel)", "group": "inline@1" },
+        { "command": "agentMessenger.removeFavourite", "when": "view == agentMessenger.tree && (viewItem == favouriteChannel || viewItem == subscribedFavouriteChannel)", "group": "inline@1" },
+        { "command": "agentMessenger.subscribe", "when": "view == agentMessenger.tree && (viewItem == channel || viewItem == favouriteChannel)", "group": "inline@2" },
+        { "command": "agentMessenger.unsubscribe", "when": "view == agentMessenger.tree && (viewItem == subscribedChannel || viewItem == subscribedFavouriteChannel)", "group": "inline@2" },
+        { "command": "agentMessenger.addFavourite", "when": "view == agentMessenger.tree && (viewItem == channel || viewItem == subscribedChannel)", "group": "favourite" },
+        { "command": "agentMessenger.removeFavourite", "when": "view == agentMessenger.tree && (viewItem == favouriteChannel || viewItem == subscribedFavouriteChannel)", "group": "favourite" },
+        { "command": "agentMessenger.subscribe", "when": "view == agentMessenger.tree && (viewItem == channel || viewItem == favouriteChannel)", "group": "notify" },
+        { "command": "agentMessenger.unsubscribe", "when": "view == agentMessenger.tree && (viewItem == subscribedChannel || viewItem == subscribedFavouriteChannel)", "group": "notify" },
         { "command": "agentMessenger.messageAgent", "when": "view == agentMessenger.tree && viewItem == agent", "group": "agent@1" },
         { "command": "agentMessenger.copyAgentId", "when": "view == agentMessenger.tree && viewItem =~ /^agent/", "group": "agent@2" }
       ]
