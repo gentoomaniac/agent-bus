@@ -223,7 +223,7 @@ silent fall back to the password.
 |--------------|-------------------------------------------------------------------------------|
 | `--switch`   | also switch the agent to certificate login (below)                            |
 | `--admin`    | instead of an agent: issue for `bus-admin` and `control-admin` and switch both at once. The tools in this config directory log in with the new files from then on; restart `bus-monitor`, which logs in as these users |
-| `--validity` | how long the certificate is valid, default `8760h`                            |
+| `--validity` | how long the certificate is valid, default `8760h`; must be positive and is cut off at the CA's expiry, and a CA that is not valid now issues nothing |
 
 The `agent-bus` and `bus-monitor` of this machine, and `agent-busctl`, use `client.pem` and
 `client.key` as soon as the identity's directory has them, and the password otherwise. So an agent

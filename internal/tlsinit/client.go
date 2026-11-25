@@ -56,12 +56,23 @@ func (ca *CA) IssueClientCert(identity string, publicKey crypto.PublicKey, valid
 		return nil, fmt.Errorf("the RSA key has %d bits, at least %d are required", rsaKey.N.BitLen(), minRSABits)
 	}
 	now := time.Now()
+	if validity <= 0 {
+		return nil, fmt.Errorf("the validity must be positive, got %s", validity)
+	}
+	if now.Before(ca.cert.NotBefore) || now.After(ca.cert.NotAfter) {
+		return nil, fmt.Errorf("the CA is not valid now (%s to %s)", ca.cert.NotBefore.Format(time.DateOnly), ca.cert.NotAfter.Format(time.DateOnly))
+	}
+	// A certificate that outlives its CA would stop working with the CA, whatever it says.
+	notAfter := now.Add(validity)
+	if notAfter.After(ca.cert.NotAfter) {
+		notAfter = ca.cert.NotAfter
+	}
 	template := &x509.Certificate{
 		SerialNumber:          newSerial(),
 		Subject:               pkix.Name{CommonName: identity},
 		URIs:                  []*url.URL{uri},
 		NotBefore:             now.Add(-time.Minute),
-		NotAfter:              now.Add(validity),
+		NotAfter:              notAfter,
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,

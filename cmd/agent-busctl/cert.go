@@ -42,7 +42,7 @@ type CertIssueCmd struct {
 	AgentID  string        `arg:"" optional:"" name:"agent-id" help:"The registered agent to issue a certificate for."`
 	Admin    bool          `help:"Issue for the two admin users instead of an agent, and switch them to certificate login: the admin tools use the files at once. The web monitor logs in as these users and must be restarted."`
 	Switch   bool          `help:"Also switch the agent to certificate login, as cert switch does. An agent on this machine uses the files at once, so without this it is locked out until the switch."`
-	Validity time.Duration `help:"How long the certificate is valid. Renew by issuing again." default:"8760h"`
+	Validity time.Duration `help:"How long the certificate is valid (positive, and never past the CA's expiry). Renew by issuing again." default:"8760h"`
 }
 
 // Run creates a key and a certificate for the identity and writes them into its credentials

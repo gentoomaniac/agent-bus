@@ -141,3 +141,29 @@ func TestIssueClientCertRefusesBadIdentities(t *testing.T) {
 		}
 	}
 }
+
+func TestIssueClientCertRefusesBadValidityAndStopsAtTheCA(t *testing.T) {
+	ca, _ := testCA(t)
+	_, public, _ := NewClientKey()
+	for _, validity := range []time.Duration{0, -time.Hour} {
+		if _, err := ca.IssueClientCert(testIdentity, public, validity); err == nil {
+			t.Errorf("validity %s was accepted", validity)
+		}
+	}
+
+	certPEM, err := ca.IssueClientCert(testIdentity, public, 250*365*24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := parseCertPEM(t, certPEM).NotAfter; got.After(ca.cert.NotAfter) {
+		t.Errorf("NotAfter %s is after the CA's %s", got, ca.cert.NotAfter)
+	}
+
+	expired := *ca
+	expiredCert := *ca.cert
+	expiredCert.NotAfter = time.Now().Add(-time.Hour)
+	expired.cert = &expiredCert
+	if _, err := expired.IssueClientCert(testIdentity, public, time.Hour); err == nil {
+		t.Error("an expired CA issued a certificate")
+	}
+}
