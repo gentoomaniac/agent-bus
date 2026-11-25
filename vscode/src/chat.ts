@@ -310,7 +310,14 @@ export class ChatPanels implements vscode.Disposable {
   .depth-4 { margin-left: 48px; }
   .has-new { border-left: 3px solid var(--vscode-focusBorder); }
   #description { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #messages, #results { flex: 1; overflow-y: auto; padding: 4px 0; }
+  #content { flex: 1; display: flex; min-height: 0; }
+  #messages, #results { flex: 1; min-width: 0; overflow-y: auto; padding: 4px 0; }
+  #members { flex: none; width: 13em; overflow-y: auto; padding: 4px 0; border-left: 1px solid var(--vscode-panel-border); }
+  #members h2 { margin: 6px 10px 2px; font-size: 0.8em; font-weight: normal; text-transform: uppercase; color: var(--vscode-descriptionForeground); }
+  .member { display: flex; align-items: center; gap: 4px; padding: 1px 10px; white-space: nowrap; }
+  .member .name { overflow: hidden; text-overflow: ellipsis; }
+  .member .state { margin-left: auto; padding-left: 6px; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
+  @media (max-width: 520px) { #members, #membersToggle { display: none; } }
   #searchbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   #searchField { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px; padding: 2px 6px; }
   #searchField:focus-within { border-color: var(--vscode-focusBorder); }
@@ -413,15 +420,18 @@ export class ChatPanels implements vscode.Disposable {
 </style>
 </head>
 <body>
-<header><h1 id="heading"></h1><div id="description"></div><button id="searchToggle" class="link" type="button" title="Search messages (Ctrl+F)" aria-pressed="false">Search</button><button id="bell" class="link" type="button" aria-pressed="false"></button><button id="threads" class="link" type="button" title="Show replies under their parent" aria-pressed="false">Threads</button></header>
+<header><h1 id="heading"></h1><div id="description"></div><button id="searchToggle" class="link" type="button" title="Search messages (Ctrl+F)" aria-pressed="false">Search</button><button id="bell" class="link" type="button" aria-pressed="false"></button><button id="threads" class="link" type="button" title="Show replies under their parent" aria-pressed="false">Threads</button><button id="membersToggle" class="link" type="button" title="Show the agents that read this channel" aria-pressed="true" hidden>Members</button></header>
 <div id="searchbar" role="search" hidden>
   <div id="searchField"><input id="searchInput" type="text" placeholder="Search: words, &quot;phrases&quot;, from: type: targets: after: before:" aria-label="Search messages" autocomplete="off" spellcheck="false"></div>
   <button id="scope" class="pill" type="button" title="Search all channels, not only this one" aria-pressed="false">All channels</button>
   <button id="searchClose" class="link" type="button" title="Close search (Esc)" aria-label="Close search">×</button>
 </div>
 <div id="types" role="group" aria-label="Message types"></div>
+<div id="content">
 <main id="results" hidden></main>
 <main id="messages"></main>
+<aside id="members" aria-label="Members" hidden></aside>
+</div>
 <div id="note"></div>
 <form id="composer" hidden>
   <ul id="completions" role="listbox" hidden></ul>

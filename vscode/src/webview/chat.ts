@@ -5,6 +5,7 @@ import { parsePresenceMarks } from "../protocol";
 import { Chip, chipTerm, snippetParts, withChip } from "../search";
 import type { ChatState, FromWebview, PresenceMark, SearchHitView, ToWebview } from "../protocol";
 import { presenceClass } from "../presence";
+import { byOwner, groupBy, ownerOf, shortName } from "../names";
 import { shortTime } from "../time";
 import { isSeen } from "../viewport";
 import { ThreadRow, ThreadSummary, summarizeThreads, threadRows } from "../threads";
@@ -48,6 +49,8 @@ const searchField = document.getElementById("searchField") as HTMLElement;
 const scopeToggle = document.getElementById("scope") as HTMLButtonElement;
 const results = document.getElementById("results") as HTMLElement;
 const typeBar = document.getElementById("types") as HTMLElement;
+const memberPane = document.getElementById("members") as HTMLElement;
+const membersToggle = document.getElementById("membersToggle") as HTMLButtonElement;
 
 for (const type of MESSAGE_TYPES) typeSelect.append(new Option(type, type));
 
@@ -100,7 +103,35 @@ function renderDot(from: string): HTMLElement {
 // A presence event changes the dots only: no new drawing, so nothing moves.
 function paintDots(): void {
   for (const dot of list.querySelectorAll<HTMLElement>(".dot")) paintDot(dot, dot.dataset.from ?? "");
+  renderMembers();
 }
+
+// The agents that read the channel, on the right, by owner and with their state. A direct message
+// has none: its two agents are in the title.
+let showMembers = true;
+function renderMembers(): void {
+  const members = state && !isDirect() ? [...state.members].sort(byOwner) : [];
+  membersToggle.hidden = members.length === 0;
+  membersToggle.setAttribute("aria-pressed", String(showMembers));
+  memberPane.hidden = members.length === 0 || !showMembers;
+  memberPane.replaceChildren();
+  for (const { key, items } of groupBy(members, ownerOf)) {
+    memberPane.append(el("h2", "", key || "no owner"));
+    for (const id of items) {
+      const row = el("div", "member");
+      const self = id === state?.self;
+      const mark = self ? undefined : presence.get(id);
+      row.title = id + (mark ? ": " + mark.state : "");
+      row.append(renderDot(id), el("span", "name", shortName(id)), el("span", "state", self ? "you" : (mark?.state ?? "offline").replace(/_/g, " ")));
+      memberPane.append(row);
+    }
+  }
+}
+
+membersToggle.addEventListener("click", () => {
+  showMembers = !showMembers;
+  renderMembers();
+});
 
 // A sender, type or target in a header is a button: it adds its filter to the search and opens it.
 function renderTag(className: string, text: string, chip: Chip): HTMLElement {
@@ -414,6 +445,7 @@ function showState(next: ChatState): void {
   textInput.placeholder = isDirect() ? "Message " + next.defaultTarget : `Message ${next.title.replace(/^# /, "#")} (Enter sends, Shift+Enter for a new line)`;
   if (first || isDirect()) targets = [next.defaultTarget];
   renderTargets();
+  renderMembers();
   messages.length = 0;
   for (const message of next.messages) insertMessage(messages, message);
   render(first);
