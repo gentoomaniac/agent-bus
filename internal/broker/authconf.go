@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/channelapi"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"golang.org/x/crypto/bcrypt"
@@ -38,12 +39,11 @@ var principals = map[string]struct {
 	MonitorControlUser: {roleMonitor, controlAuthFile},
 }
 
-// agentBusdMethods are the busd calls an agent may make (docs/design/jetstream-binding.md). Nothing answers them before
-// milestone 3; the grants are in place so the per-role matrix is complete.
+// agentBusdMethods are the busd calls of docs/design/jetstream-binding.md an agent may make. Nothing
+// answers them yet; the grants are in place so the per-role matrix is complete. The calls busd
+// answers have a subject per agent, below.
 var agentBusdMethods = []string{
-	"nonce", "channel.create", "channel.list", "channel.members", "channel.membership",
-	"channel.invite", "channel.remove", "channel.leave", "channel.join", "history",
-	"registry.get", "registry.changes", "catalogue.list", "agent.rotate",
+	"nonce", "history", "registry.get", "registry.changes", "catalogue.list", "agent.rotate",
 }
 
 // HashPassword is how a password is stored in the generated authorization files.
@@ -259,10 +259,11 @@ func agentPermissions(token string, groups []string) (publish, subscribe []strin
 	for _, method := range agentBusdMethods {
 		publish = append(publish, "busd."+method)
 	}
-	// The directory sync is the one busd call agents make today: a public read, answered in their
-	// inbox (docs/design/directory-v2.md). Each agent has a subject of its own, so busd knows who
-	// asks, to answer only there and to limit each agent on its own.
-	publish = append(publish, directory.SyncSubject(token))
+	// The directory sync (docs/design/directory-v2.md) and the channel requests
+	// (docs/design/agent-channels.md) are the busd calls agents make, answered in their inbox. Each
+	// agent has subjects of its own, so busd knows who asks, to answer only there and to limit each
+	// agent on its own.
+	publish = append(publish, directory.SyncSubject(token), channelapi.Subject(token))
 	return publish, []string{"_INBOX." + token + ".>", directory.SubjectHead}
 }
 
@@ -302,14 +303,14 @@ func permissions(user authUser, groups []string) string {
 	return `{publish: {deny: [">"]}, subscribe: {deny: [">"]}}`
 }
 
-// busdPermissions are what busd needs in CONTROL and no more: it reads the registry and the
-// catalogue, writes registry records, answers requests into inbox space and announces the pending
-// count. It cannot delete a stream, purge one or write the catalogue or the ledger, whatever
-// subject a request tells it to reply on.
+// busdPermissions are what busd needs in CONTROL and no more: it reads and writes the registry and
+// the catalogue (channels agents create), answers requests into inbox space and announces the
+// pending count. It cannot delete a stream, purge one or write the ledger, whatever subject a
+// request tells it to reply on.
 func busdPermissions() string {
 	publish := slices.Concat(
 		kvReadSubjects(registryKV), kvReadSubjects(catalogueKV),
-		[]string{"$KV." + registryKV + ".>", "_INBOX.>", enroll.SubjectPending})
+		[]string{"$KV." + registryKV + ".>", "$KV." + catalogueKV + ".>", "_INBOX.>", enroll.SubjectPending})
 	subscribe := []string{"_INBOX.>", enroll.SubjectRequest, enroll.SubjectStatus, enroll.SubjectList, enroll.SubjectSign, enroll.SubjectReject,
 		enroll.SubjectMonitorRegistry, enroll.SubjectMonitorCatalogue}
 	return allowOnly(publish, subscribe)

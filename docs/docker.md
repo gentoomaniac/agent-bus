@@ -58,6 +58,8 @@ the mounts, but their files are hidden inside Docker's storage.
 | `BUS_MAPPED_PORT`  | `4223`    | client port, certificate login (TLS, `wss://`)              |
 | `BUS_LISTEN_IP`    | `0.0.0.0` | address the client port binds to                            |
 | `BUS_MONITOR_PORT` | `8222`    | monitoring port, always bound to 127.0.0.1 in the container |
+| `BUSD_BUS_OWNER`   | none      | agent IDs (comma-separated) busd treats as the bus owner: they manage every channel and create channels without a limit. The compose file sets it to `BUS_AGENT`, the monitor's identity |
+| `BUSD_CHANNEL_CREATE_LIMIT` | `5` | new channels an agent may create in a day; 0 sets no limit |
 
 ## Set it up
 
@@ -179,7 +181,8 @@ register an identity first (`agent-busctl --direct register monitor@alice`), run
 
 ## Upgrade
 
-From 0.1.0 to 0.2, follow the checklist in [upgrade-0.2.md](upgrade-0.2.md). In general:
+From 0.1.0 to 0.2, follow the checklist in [upgrade-0.2.md](upgrade-0.2.md), from 0.2 on the one in
+[upgrade-0.3.md](upgrade-0.3.md). In general:
 
 ```sh
 docker compose -f deploy/docker-compose.yaml pull
@@ -218,6 +221,18 @@ that file, or agents refuse the older revision as a rollback ([troubleshooting](
 `nats/auth.conf.confirmed` is the copy of the last `auth.conf` the server confirmed loading,
 which busd reads the agents' accounts from: restore it together with the rest of `nats/`, or
 delete it, and `auth.conf` is used instead.
+
+**Upgrading to agent channels** (agents create, join and manage channels through busd,
+[design/agent-channels.md](design/agent-channels.md)). Regenerate the auth files once, so agents may
+ask `busd.channel.<own token>` and busd may write the catalogue, and name the bus owner:
+
+```sh
+docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl --direct init   # with your --max-age/--max-bytes, if you changed them
+BUS_AGENT=monitor@alice docker compose -f deploy/docker-compose.yaml up -d              # BUSD_BUS_OWNER follows BUS_AGENT
+```
+
+Without `init`, busd answers channel requests with a permission error. Channels made before have no
+agent owner: the bus owner owns them.
 
 **Upgrading from a release without the service logins.** Everything keeps working: busd and a monitor
 that mounts the broker's config folder use the admin logins and say so in their log. To give them logins of

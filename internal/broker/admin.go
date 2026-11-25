@@ -279,6 +279,16 @@ func (admin *Admin) ReadCursorHolders(ctx context.Context, channel bus.Channel) 
 	return holders, admin.bus.explain(names.Err())
 }
 
+// Retention is the retention of the message log as its stream has it.
+func (admin *Admin) Retention(ctx context.Context) (bus.Retention, error) {
+	stream, err := admin.bus.stream.Stream(ctx, busStream)
+	if err != nil {
+		return bus.Retention{}, admin.bus.explain(err)
+	}
+	config := stream.CachedInfo().Config
+	return bus.Retention{MaxAge: config.MaxAge, MaxBytes: config.MaxBytes}, nil
+}
+
 func (admin *Admin) LastSequence(ctx context.Context) (uint64, error) {
 	stream, err := admin.bus.stream.Stream(ctx, busStream)
 	if err != nil {

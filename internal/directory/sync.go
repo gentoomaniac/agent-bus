@@ -41,7 +41,9 @@ type Signed struct {
 	Error     string `json:"error,omitempty"`
 }
 
-func sign(ca *tlsinit.CA, domain string, payload any) ([]byte, error) {
+// SignAsBusd signs payload with the CA key, as busd signs what it publishes and answers: the
+// directory, and the replies to channel requests (internal/channelapi). Each kind has its domain.
+func SignAsBusd(ca *tlsinit.CA, domain string, payload any) ([]byte, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -53,9 +55,9 @@ func sign(ca *tlsinit.CA, domain string, payload any) ([]byte, error) {
 	return json.Marshal(Signed{Payload: data, Signature: signature})
 }
 
-// open checks the CA's signature over a Signed message and only then decodes its payload, which
+// OpenFromBusd checks the CA's signature over a Signed message and only then decodes its payload, which
 // must have no field this release does not know.
-func open(caPEM []byte, domain string, message []byte, payload any) error {
+func OpenFromBusd(caPEM []byte, domain string, message []byte, payload any) error {
 	var signed Signed
 	if err := json.Unmarshal(message, &signed); err != nil {
 		return fmt.Errorf("busd's answer is not a signed message: %w", err)
@@ -154,14 +156,14 @@ func (reply SyncReply) Version() Version {
 
 // SignSyncReply is the reply as busd sends it.
 func SignSyncReply(ca *tlsinit.CA, reply SyncReply) ([]byte, error) {
-	return sign(ca, syncDomain, reply)
+	return SignAsBusd(ca, syncDomain, reply)
 }
 
 // VerifySyncReply reads busd's answer to request: signed by the CA in caPEM and bound to exactly
 // this request, so no recorded reply can be played back. A signed error is returned as an error.
 func VerifySyncReply(caPEM, answer, request []byte) (SyncReply, error) {
 	var reply SyncReply
-	if err := open(caPEM, syncDomain, answer, &reply); err != nil {
+	if err := OpenFromBusd(caPEM, syncDomain, answer, &reply); err != nil {
 		return SyncReply{}, err
 	}
 	if reply.RequestHash != RequestHash(request) {

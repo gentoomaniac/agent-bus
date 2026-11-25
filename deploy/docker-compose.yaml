@@ -14,7 +14,9 @@ services:
     volumes:
       - ${AGENT_BUS_HOME:-.}/config:/config
       - ${AGENT_BUS_HOME:-.}/data:/data
-    # environment:
+    environment:
+      # busd: the monitor's identity acts as the bus owner for channels (docs/docker.md)
+      BUSD_BUS_OWNER: ${BUS_AGENT:-}
     #   BUS_LISTEN_IP: 0.0.0.0
     #   BUS_NATS_PORT: 4222
     #   BUS_MAPPED_PORT: 4223

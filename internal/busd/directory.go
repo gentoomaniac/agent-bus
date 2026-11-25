@@ -14,8 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/time/rate"
-
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
@@ -36,8 +34,6 @@ const (
 	syncBurst          = 50
 	callerSyncInterval = time.Second
 	callerSyncBurst    = 5
-	// maxCallerLimiters bounds the limiters kept, one per agent that synced; past it they start over.
-	maxCallerLimiters = 10000
 )
 
 // DirectorySource is what the published directory is made of: the registry, the catalogue, the
@@ -69,11 +65,8 @@ type revision struct {
 // broker, and each change of its content is a new revision, persisted before anyone hears of it.
 // busd is its only writer.
 type Directory struct {
-	config  DirectoryConfig
-	limiter *rate.Limiter
-
-	callersMu sync.Mutex
-	callers   map[string]*rate.Limiter // by agent ID
+	config DirectoryConfig
+	limits *callerLimits
 
 	mu      sync.Mutex
 	current revision
@@ -84,7 +77,7 @@ type Directory struct {
 // NewDirectory reads the projection and version a former run left. State that cannot be read
 // counts as lost: the next projection starts a new epoch, which agents accept as a restore.
 func NewDirectory(config DirectoryConfig) *Directory {
-	published := &Directory{config: config, limiter: rate.NewLimiter(rate.Every(syncInterval), syncBurst)}
+	published := &Directory{config: config, limits: newCallerLimits(syncInterval, syncBurst, callerSyncInterval, callerSyncBurst)}
 	path := published.path()
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -105,6 +98,19 @@ func NewDirectory(config DirectoryConfig) *Directory {
 
 func (published *Directory) path() string {
 	return filepath.Join(published.config.ConfigDir, enrollDir, directoryStateFile)
+}
+
+// Record is the agent's record in the current projection: only agents whose enrollment is
+// complete, and removed ones as tombstones.
+func (published *Directory) Record(agentID string) (bus.AgentRecord, bool) {
+	published.mu.Lock()
+	defer published.mu.Unlock()
+	for _, record := range published.current.Projection.Records {
+		if record.AgentID == agentID {
+			return record, true
+		}
+	}
+	return bus.AgentRecord{}, false
 }
 
 // Version is the version of the current projection; the zero Version before the first one.
@@ -180,7 +186,7 @@ func (published *Directory) signHead(changes []directory.Change) []byte {
 // request; past the caller's rate limit, or busd's, it answers unsigned, without spending a
 // signature.
 func (published *Directory) HandleSync(caller string, request []byte) []byte {
-	if !published.allow(caller) {
+	if !published.limits.allow(caller) {
 		return directory.Unsigned("too many directory requests, try again in a moment")
 	}
 	reply := directory.SyncReply{RequestHash: directory.RequestHash(request)}
@@ -195,21 +201,6 @@ func (published *Directory) HandleSync(caller string, request []byte) []byte {
 		return directory.Unsigned("busd cannot sign the directory")
 	}
 	return signed
-}
-
-// allow takes a sync of caller from its own limit and then from busd's.
-func (published *Directory) allow(caller string) bool {
-	published.callersMu.Lock()
-	defer published.callersMu.Unlock()
-	limiter := published.callers[caller]
-	if limiter == nil {
-		if published.callers == nil || len(published.callers) >= maxCallerLimiters {
-			published.callers = map[string]*rate.Limiter{}
-		}
-		limiter = rate.NewLimiter(rate.Every(callerSyncInterval), callerSyncBurst)
-		published.callers[caller] = limiter
-	}
-	return limiter.Allow() && published.limiter.Allow()
 }
 
 func (published *Directory) answer(since directory.Version, requestHash string) directory.SyncReply {

@@ -194,7 +194,7 @@ func TestSyncsPastTheLimitAreAnsweredWithoutASignature(t *testing.T) {
 	if _, err := published.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	published.limiter = rate.NewLimiter(rate.Every(time.Hour), 1)
+	published.limits.all = rate.NewLimiter(rate.Every(time.Hour), 1)
 	f.syncFrom(published, directory.Version{})
 
 	request := directory.NewSyncRequest(directory.Version{})
@@ -340,7 +340,7 @@ func TestEachAgentIsLimitedOnItsOwnBeneathBusdsLimit(t *testing.T) {
 		t.Error("another agent was refused because of the first one")
 	}
 
-	published.limiter = rate.NewLimiter(rate.Every(time.Hour), 0)
+	published.limits.all = rate.NewLimiter(rate.Every(time.Hour), 0)
 	if answered("fresh@x") {
 		t.Error("an agent within its own limit was answered past busd's")
 	}

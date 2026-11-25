@@ -77,7 +77,7 @@ func TestASignedReplyVerifiesForItsRequestOnly(t *testing.T) {
 		t.Error("a changed payload verified")
 	}
 	// The same payload signed for another purpose of the CA key is not a sync reply.
-	otherDomain, _ := sign(ca, "agent-bus/something-else/v1\n", SyncReply{RequestHash: RequestHash(request), Kind: Unchanged})
+	otherDomain, _ := SignAsBusd(ca, "agent-bus/something-else/v1\n", SyncReply{RequestHash: RequestHash(request), Kind: Unchanged})
 	if _, err := VerifySyncReply(caPEM, otherDomain, request); err == nil {
 		t.Error("a signature of another domain verified")
 	}

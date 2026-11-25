@@ -92,6 +92,8 @@ func TestUserTableGrantsPerAgent(t *testing.T) {
 		`"$JS.ACK.BUS.lib-x_bob__g__release.>"`,
 		`"_INBOX.lib-x_bob.>"`,
 		`"busd.history"`,
+		`"busd.directory.sync.lib-x_bob"`,
+		`"busd.channel.lib-x_bob"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("auth body lacks grant %s", want)

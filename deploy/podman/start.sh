@@ -14,7 +14,8 @@ MONITOR_AGENT="${envAGENT:-${MONITOR_AGENT:-monitor@$USER}}"
 U="--userns=keep-id:uid=10001,gid=10001"
 
 podman rm -f --depend agent-bus 2>/dev/null; podman rm -f agent-bus-monitor 2>/dev/null
-podman run -d --name agent-bus $U --network pasta \
+# The monitor's identity is the bus owner for busd's channel requests (docs/podman.md).
+podman run -d --name agent-bus $U --network pasta -e BUSD_BUS_OWNER="$MONITOR_AGENT" \
   -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
   -v "${BASE_PATH}/config:/config" -v "${BASE_PATH}/data:/data" $IMG
 

@@ -25,12 +25,12 @@ func SignHead(ca *tlsinit.CA, version Version, changes []Change) ([]byte, error)
 	if len(changes) > MaxHeadChanges {
 		head.Changes, head.Truncated = changes[:MaxHeadChanges], true
 	}
-	return sign(ca, headDomain, head)
+	return SignAsBusd(ca, headDomain, head)
 }
 
 // VerifyHead reads a head signed by the CA in caPEM.
 func VerifyHead(caPEM, message []byte) (Head, error) {
 	var head Head
-	err := open(caPEM, headDomain, message, &head)
+	err := OpenFromBusd(caPEM, headDomain, message, &head)
 	return head, err
 }

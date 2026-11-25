@@ -49,7 +49,8 @@ flowchart LR
 | | replies | subscribe `_INBOX.<t>.>` (the client uses `nats.CustomInboxPrefix("_INBOX.<t>")`) |
 | | presence | publish `presence.<t>` (own record only); direct get `$JS.API.DIRECT.GET.PRESENCE.presence.*` (stream `PRESENCE` only) |
 | | directory, **as built** | publish `busd.directory.sync.<t>` (its own only, so busd knows who asks): a public read, answered in `_INBOX.<t>.>`; subscribe `directory.head`, busd's signed announcement of the version ([directory v2](directory-v2.md)) |
-| | call busd | publish `busd.nonce`, `busd.channel.create`, `busd.channel.list`, `busd.channel.members`, `busd.channel.membership`, `busd.channel.invite`, `busd.channel.remove`, `busd.channel.leave`, `busd.channel.join`, `busd.history`, `busd.registry.get`, `busd.registry.changes`, `busd.catalogue.list`, `busd.agent.rotate` |
+| | channels, **as built** | publish `busd.channel.<t>` (its own only): signed requests to list, create, join and leave channels, and as channel owner to invite, remove and describe, answered in `_INBOX.<t>.>` ([agent channels](agent-channels.md)) |
+| | call busd | publish `busd.nonce`, `busd.history`, `busd.registry.get`, `busd.registry.changes`, `busd.catalogue.list`, `busd.agent.rotate` (planned; nothing answers them yet) |
 | | never | consumer create, delete or update; any `$JS.API.DIRECT.GET` except the one for stream `PRESENCE`, subject `presence.*` (granted as `$JS.API.DIRECT.GET.PRESENCE.presence.*`, so `list_agents` can read others' presence; never a direct get on stream `BUS`); any wildcard consumer, `MSG.NEXT` or ack grant; any `$KV.*` or `ledger.*` subject; the owner-only busd methods |
 | Owner `human_<owner>` (`BUS`, used by agent-busctl) | post, and the agent's busd calls | as an agent for DMs, `general` and groups; `private.<id>` where busd granted it ([private channels](private-channels.md)); no consumers |
 | | owner-only busd methods | publish `busd.nonce`, `busd.agent.register`, `busd.agent.revoke`, `busd.agent.rotate`, `busd.channel.manager`, `busd.channel.create_group` |
@@ -59,9 +60,10 @@ flowchart LR
 | | never | any consumer create, update or delete; any publish on a message subject, any stream, KV or `CONTROL` subject; any other busd method |
 | busd, message connection (`BUS`) | consumers (agents' and the monitor's), history, stream info | `$JS.API.>` |
 | | the directory, **as built** (as `bus-admin`) | publish `directory.head`; subscribe `busd.directory.sync.*`; it answers a request on `busd.directory.sync.<t>` only on a literal subject `_INBOX.<t>.<token>...`, the inbox of the agent the subject names, and limits each agent on its own ([directory v2](directory-v2.md)) |
+| | channels, **as built** (as `bus-admin`) | subscribe `busd.channel.*`, answered like the sync; creates and deletes the agents' group read cursors after its checks ([agent channels](agent-channels.md)) |
 | | its API | subscribe `busd.>`, subscribe `_INBOX.busd.>`, publish `_INBOX.>` (replies) |
 | | acks | none for ordered consumers; a durable consumer of its own needs `$JS.ACK.BUS.<name>.>` |
-| busd, control connection (`CONTROL`) | registry, catalogue, ledger | **as built** (login `busd`): the JetStream read API of `KV_registry` and `KV_catalogue`, publish `$KV.registry.>`, `_INBOX.>` and `busd.enroll.pending`; subscribe `_INBOX.>` and its seven `busd.enroll.*`, `busd.ca.*` and `busd.monitor.*` subjects (`busd.monitor.registry` and `busd.monitor.catalogue` are the monitor's). **Planned**, with the ledger: `ledger.>`, `$JS.ACK.<stream>.<name>.>` for a durable consumer of its own |
+| busd, control connection (`CONTROL`) | registry, catalogue, ledger | **as built** (login `busd`): the JetStream read API of `KV_registry` and `KV_catalogue`, publish `$KV.registry.>`, `$KV.catalogue.>` (channels agents create), `_INBOX.>` and `busd.enroll.pending`; subscribe `_INBOX.>` and its seven `busd.enroll.*`, `busd.ca.*` and `busd.monitor.*` subjects (`busd.monitor.registry` and `busd.monitor.catalogue` are the monitor's). **Planned**, with the ledger: `ledger.>`, `$JS.ACK.<stream>.<name>.>` for a durable consumer of its own |
 | Enrollment login `enroll` (`CONTROL`, shared, password listener) | ask for a certificate | publish `busd.enroll.request` and `busd.enroll.status`; subscribe `_INBOX.enroll.>`; never any stream, JetStream API, `BUS` or `busd.ca.*` subject ([phase B](#phase-b-implemented-the-enrollment-flow)) |
 | `bus-admin` (`BUS`) and `control-admin` (`CONTROL`), used by `agent-busctl --direct` over two connections | everything in its own account | publish and subscribe `>`; NATS usernames are server-wide, so the two are distinct users with separate passwords, which live only in the owner's config ([admin CLI](admin-cli.md)) |
 
@@ -115,7 +117,7 @@ copies them to the agent's machine; no request or approval flow. What differs fr
   in password or certificate mode, and are rewritten without losing any entry (the role is a trailing
   comment; older files are still read). The principals besides the agents are `bus-admin` and
   `control-admin` (`>`), `busd` (CONTROL: read the registry and the catalogue, write registry
-  records, `_INBOX.>`, the pending count; no stream delete or purge, no catalogue or ledger write),
+  records and catalogue entries, `_INBOX.>`, the pending count; no stream delete or purge, no ledger write),
   `monitor-bus` (BUS: its own ordered consumers, consumer and stream info, presence; publishes no
   message) and `monitor-control` (CONTROL: ask busd for the registry and the catalogue, hear the
   pending count; no approval subject and no JetStream subject, because a direct-get grant lets its

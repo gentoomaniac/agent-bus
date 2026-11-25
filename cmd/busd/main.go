@@ -13,13 +13,16 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"time"
 
 	"github.com/alecthomas/kong"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/busd"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/channelapi"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
@@ -49,6 +52,9 @@ type CLI struct {
 	MonitorURL   string        `help:"The server's local monitoring endpoint, used to confirm reloads." default:"http://127.0.0.1:8222" env:"BUS_MONITOR_URL"`
 	NATSServer   string        `name:"nats-server" help:"The nats-server binary, used to test configurations. Default: bin/nats-server in the config directory." type:"path" env:"BUS_NATS_SERVER"`
 	CertValidity time.Duration `help:"How long an enrolled agent's certificate is valid." default:"8760h" env:"BUS_CERT_VALIDITY"`
+	// docs/design/agent-channels.md
+	BusOwner           []string `help:"Agent IDs that act as the bus owner in channel requests, such as the monitor's identity (BUS_AGENT): they manage every channel and are exempt from the creation limit." sep:"," env:"BUSD_BUS_OWNER"`
+	ChannelCreateLimit int      `help:"New channels an agent may create in a day; 0 sets no limit." default:"5" env:"BUSD_CHANNEL_CREATE_LIMIT"`
 }
 
 // controlUser is the login busd serves CONTROL with: its own, which can do no more than busd does.
@@ -63,6 +69,16 @@ func (cli *CLI) controlUser() string {
 }
 
 func (cli *CLI) Run() error {
+	// An empty BUSD_BUS_OWNER (compose passes BUS_AGENT, which may be unset) names nobody.
+	cli.BusOwner = slices.DeleteFunc(cli.BusOwner, func(owner string) bool { return owner == "" })
+	for _, owner := range cli.BusOwner {
+		if err := bus.ValidateAgentID(owner); err != nil {
+			return fmt.Errorf("--bus-owner: %w", err)
+		}
+	}
+	if cli.ChannelCreateLimit < 0 {
+		return errors.New("--channel-create-limit: use 0 for no limit, or a positive number")
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -109,15 +125,16 @@ func (cli *CLI) Run() error {
 		LockMutations: func() (func(), error) { return server.LockMutations(reconcileLockWait) },
 	})
 	directoryChanged := make(chan struct{}, 1)
+	directoryChangedNow := func() {
+		select {
+		case directoryChanged <- struct{}{}:
+		default: // a rebuild is due already
+		}
+	}
 	service, err := busd.New(busd.Config{
 		Registry: admin, CA: ca, CACertPEM: caPEM, ConfigDir: cli.ConfigDir, CertValidity: cli.CertValidity,
-		LockMutations: func() (func(), error) { return server.LockMutations(handlerTimeout) },
-		DirectoryChanged: func() {
-			select {
-			case directoryChanged <- struct{}{}:
-			default: // a rebuild is due already
-			}
-		},
+		LockMutations:    func() (func(), error) { return server.LockMutations(handlerTimeout) },
+		DirectoryChanged: directoryChangedNow,
 	})
 	if err != nil {
 		return err
@@ -166,7 +183,20 @@ func (cli *CLI) Run() error {
 		return fmt.Errorf("serving %s.*: %w", directory.SubjectSync, err)
 	}
 	defer stopSync()
-	log.Printf("busd %s: serving enrollment, approval and the directory on the bus", version)
+	channels := busd.NewChannels(busd.ChannelsConfig{
+		Admin: admin, CA: ca, Lookup: published.Record, BusOwners: cli.BusOwner, CreateLimit: cli.ChannelCreateLimit,
+		LockMutations:    func() (func(), error) { return server.LockMutations(handlerTimeout) },
+		DirectoryChanged: directoryChangedNow,
+	})
+	stopChannels, err := admin.ServeAgents(channelapi.SubjectRequest, channels.HandleRequest)
+	if err != nil {
+		return fmt.Errorf("serving %s.*: %w", channelapi.SubjectRequest, err)
+	}
+	defer stopChannels()
+	log.Printf("busd %s: serving enrollment, approval, the directory and channel requests on the bus", version)
+	if len(cli.BusOwner) == 0 {
+		log.Print("busd: no --bus-owner, so only the channel owners manage the channels agents create")
+	}
 
 	reconcile := directoryReconciler(ctx, published, admin)
 	reconcile()

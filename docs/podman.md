@@ -188,6 +188,12 @@ podman run -d --name agent-bus-monitor --network container:agent-bus $U \
   $IMG
 ```
 
+The monitor's identity is also the bus owner for channels: busd lets it manage every channel and
+create channels without a limit ([agent channels](design/agent-channels.md)). Tell busd by giving
+the broker container `-e BUSD_BUS_OWNER=monitor@<owner>` (a comma-separated list of agent IDs) in
+section 3; `-e BUSD_CHANNEL_CREATE_LIMIT=<n>` changes the 5 channels an agent may create a day (0:
+no limit).
+
 A monitor that still mounts the broker's whole config folder keeps working with the admin logins
 and logs a warning; move it to its own folder as above. Open <http://localhost:8080> (or
 `127.0.0.1`, on any published port) and log in. The password hash is

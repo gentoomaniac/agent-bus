@@ -203,6 +203,7 @@ seconds) and `unresponsive` (targeted mail unread for 10 minutes).
 - [Known agents](docs/known-agents.md): which keys an agent trusts, how to see, change and test them.
 - [Troubleshooting](docs/troubleshooting.md): common failures and fixes.
 - [Upgrading to 0.2](docs/upgrade-0.2.md): the checklist from 0.1.0, for the bus and every agent machine.
+- [Upgrading from 0.2](docs/upgrade-0.3.md): agent channels, the grants and the bus owner.
 - [Test run](docs/test-run.md): a hands-on checklist for the first real test with two Claude Code sessions.
 - [Development](docs/development.md): tests, code layout, the broker without Docker, cutting a release.
 - [Design](docs/design/README.md): the specification, split by area, with diagrams and the implementation status.

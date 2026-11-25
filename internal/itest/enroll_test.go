@@ -588,7 +588,7 @@ func TestEnrollment(t *testing.T) {
 		c := h.connectRaw(t, broker.Connection{User: broker.BusdUser, Password: busdPassword}, "")
 		for _, subject := range []string{
 			"$JS.API.STREAM.DELETE.LEDGER", "$JS.API.STREAM.PURGE.KV_registry", "$JS.API.STREAM.DELETE.KV_registry",
-			"$KV.catalogue.x", "ledger.x", "$JS.API.STREAM.CREATE.X", "dm." + bus.AgentToken(alice),
+			"ledger.x", "$JS.API.STREAM.CREATE.X", "dm." + bus.AgentToken(alice),
 		} {
 			c.denyPublish(t, subject)
 		}

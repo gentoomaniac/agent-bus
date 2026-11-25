@@ -44,6 +44,7 @@ type fakeRegistry struct {
 	accountReads int
 	// accountErr fails the next EnsureCertAccount, once: a reload that did not take.
 	accountErr error
+	groups     []bus.TopicRecord // the catalogue
 }
 
 func (fake *fakeRegistry) Agents(context.Context) ([]bus.AgentRecord, error) {
@@ -88,7 +89,9 @@ func (fake *fakeRegistry) EnsureCertAccount(_ context.Context, agentID, certID s
 	fake.certIDs[agentID] = certID
 	return nil
 }
-func (*fakeRegistry) GroupChannels(context.Context) ([]bus.TopicRecord, error) { return nil, nil }
+func (fake *fakeRegistry) GroupChannels(context.Context) ([]bus.TopicRecord, error) {
+	return slices.Clone(fake.groups), fake.down
+}
 func (fake *fakeRegistry) ReadCursorHolders(_ context.Context, channel bus.Channel) ([]string, error) {
 	kind := channel.String()
 	if channel.Kind == bus.DM {
