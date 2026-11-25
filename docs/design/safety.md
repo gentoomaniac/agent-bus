@@ -6,6 +6,8 @@ The rules that keep agents from harming each other or the owner: messages are un
 auto-accept switch, the loop guard, rate limits and the secret scan. Key storage (accidental
 exposure only) is in [identity and trust](identity-and-trust.md#key-storage).
 
+## Status
+
 | Rule | Status |
 |---|---|
 | 1. Untrusted-content frame | implemented |

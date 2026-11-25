@@ -1,41 +1,113 @@
 # Agent Bus design
 
 The design of the Agent Bus, split into focused documents. It was one long specification
-(`design.md`); nothing was dropped, only regrouped. This page is the index: what the bus is, the
-scope decision, a reading order and the build status per area.
+(`design.md`); nothing was dropped, only regrouped. This page is the index: what is built today, a
+reading order, and the scope decisions the build started from.
 
-Document status words used throughout: **implemented** (in the code), **MVP-simplified** (built
-in a simpler form than specified), **planned** (specified, not built).
+Status words used throughout: **implemented** (in the code), **MVP-simplified** (built in a simpler
+form than specified), **planned** (specified, not built), **proposed** (an idea the owner has not
+settled). Each document marks built and planned parts at the section.
 
 ## What the bus is
 
-A message bus that lets coding-agent sessions (Claude Code, OpenCode, others via MCP) on different machines exchange signed messages: direct messages, channel discussions, feedback and feature requests between projects that depend on each other.
-
-**Decision: scope.** One developer runs the whole setup across several of their own machines. There is a single owner and no other users. Defaults favour low friction for that one owner; stricter behaviour is available behind flags.
+A message bus that lets coding-agent sessions (Claude Code, OpenCode, others via MCP) on different
+machines exchange signed messages: direct messages, channel discussions, feedback and feature
+requests between projects that depend on each other.
 
 This design is a brief for an implementing agent. Sections marked **Decision** are settled; the
 [decisions log](decisions.md) lists them with dates.
 
-## Scope: MVP first
+## What is built today
 
-**Decision: MVP first** (owner, 2026-11-24). The bus runs in a trusted environment, so we build a usable MVP quickly and tighten it later. The rest of this document describes the full system; for now only the MVP below is built, with the simplest version of each rule. Review findings that only harden against a compromised host or rare crash edges are deferred to a later tightening pass.
+Where things stand on 2026-11-25. Details and exceptions are in the linked documents.
 
-- **In the MVP:** milestone 1a (done), milestone 2 (adapter core), milestone 4 (MCP tools) and milestone 5 (Claude Code hooks). Agents talk over DMs, `general` and open group channels. Messages are signed and verified, keys are pinned on first use (`--auto-accept-new-keys`, the default), each message is acknowledged on its own, there is one session per identity, and the loop guard, rate limit and secret scan apply. `agent-busctl --direct` creates identities, channels and the agents' consumers.
-- **Deferred until after the MVP:** busd (milestone 3) and with it private channels and their membership checks; the monitor (milestones 8 and 9); the full request lifecycle (milestone 6 beyond plain `feature_request` / `bug_report` messages); holds for unknown or changed keys (`--no-auto-accept-new-keys`); key rotation and revocation; the OpenCode plugin. Built since: the monitor, the OpenCode plugin and a minimal busd. Still deferred: the rest of busd, private channels, holds, and rotation.
+- **Agents talk** over DMs, `general` and open group channels. Messages are signed, verified and
+  pinned on first use; each message is acknowledged on its own; there is one session per identity;
+  the loop guard, rate limit and secret scan apply ([safety](safety.md)).
+- **Delivery** reaches active sessions, the next session start and, through a waiter, idle sessions
+  for targeted mail ([delivery](delivery.md)). Presence is published by hooks ([presence](presence.md)).
+- **Access** is TLS with per-role grants, passwords, and client certificates with an enrollment flow
+  approved by the owner ([access control](access-control.md)).
+- **busd is minimal.** It holds the CA key, handles enrollment and approvals, serves the signed
+  directory to agents ([directory v2](directory-v2.md)), answers channel requests
+  ([channels requested by agents](agent-channels.md)) and the monitor's reads ([busd](busd.md)).
+- **Channels.** Agents create, join and manage public channels; the bus owner has the final say.
+- **Monitor and clients.** The monitor, its API, shared preferences and the VS Code extension
+  ([monitor and API](monitor-and-api.md)); the OpenCode plugin.
+- **MCP tools.** Eight: `whoami`, `send`, `publish`, `inbox`, `mark_read`, `wait_for_messages`,
+  `list_agents`, `channels` ([MCP tools](mcp-tools.md)).
+- **Not built yet:** holds for unknown or changed keys, key rotation and revocation by key, private
+  channels and the membership ledger, the signed `busd.<method>` API, the request lifecycle, the
+  `monitor@<owner>` and `human@<owner>` identities, cleanup of idle channels, and proposed trust
+  roles.
 
-The MVP text above is the plan of 2026-11-24. Since then the monitor, its API, agent presence, the
-OpenCode plugin, agent removal and mTLS phase A were built as well, then phase B (enrollment through
-a minimal busd, decision 41), the monitor's own read-only logins and config directory (decision 42),
-shared preferences (decision 43) and the VS Code extension as an API client of the monitor
-(decision 44). The status table shows where things stand today.
+### Status by area
+
+| Area | Document | Status |
+|---|---|---|
+| Components, boundary to the broker | [architecture](architecture.md) | implemented; busd minimal |
+| Identity, keys, signing, TOFU pins | [identity and trust](identity-and-trust.md) | implemented; the directory is synced from busd |
+| Holds, rotation, revocation by key, `pin` | [identity and trust](identity-and-trust.md) | planned (removal of an agent is implemented) |
+| Channels, records, cursors | [bus model](bus-model.md) | implemented |
+| Two accounts, streams, consumers, dedupe | [JetStream binding](jetstream-binding.md) | implemented; consumers made by `agent-busctl --direct` and busd |
+| Envelope, targets, types, ack and answer | [protocol](protocol.md) | implemented |
+| Request lifecycle | [protocol](protocol.md) | planned |
+| Inbox, per-message acks, hooks, waiter, buffer | [delivery](delivery.md) | implemented; holds planned |
+| Presence | [presence](presence.md) | implemented |
+| Loop guard, rate limit, secret scan, untrusted frame | [safety](safety.md) | implemented (limits are not CLI flags yet) |
+| TLS, per-role grants, password logins, mTLS, enrollment | [access control](access-control.md) | implemented (decision 41) |
+| Signed directory: head, diff sync, notices | [directory v2](directory-v2.md) | implemented |
+| Public channels created by agents | [channels requested by agents](agent-channels.md) | implemented (step 2) |
+| Cleanup of idle channels, private channels by agents | [channels requested by agents](agent-channels.md) | planned |
+| Private channels, membership ledger | [private channels](private-channels.md) | planned |
+| busd | [busd](busd.md) | minimal busd implemented; signed API, ledger and the rest planned |
+| agent-busctl | [admin CLI](admin-cli.md) | partly: setup, register, channels, removal, directory, certificates, enrollment, service and monitor setup |
+| Monitor and API | [monitor and API](monitor-and-api.md) | implemented; own logins and shared prefs; `monitor@<owner>`, durable consumer and `human@` planned |
+| VS Code extension (`vscode/`) | [monitor and API](monitor-and-api.md) | implemented, API client only (decision 44) |
+| MCP tools | [MCP tools](mcp-tools.md) | partly: 8 tools; the rest planned |
+| Deployment, reload, releases | [operations](operations.md) | implemented |
+| Per-receiver trust roles, owner approval, taint marking | [trust between agents](trust.md) | proposed |
+
+Where this index and a document disagree, the document wins. Where a document and the code disagree,
+the code wins, and the document is wrong.
+
+### Where the design and the code differ
+
+The old list of contradictions is replaced by the sections that now say it at the place it matters:
+
+| Topic | Where it is described |
+|---|---|
+| Holds for unknown or changed keys | [Delivery](delivery.md#holds-planned), [identity and trust](identity-and-trust.md#step-3-the-sender) |
+| Flags named in the text but not on the command line (`--max-hops`, `--rate-limit`, `--inbox-buffer`, `--[no-]auto-accept-new-keys`, `--owner-identity`) | [Safety](safety.md#status) |
+| The monitor's identity and consumers | [Monitor and API](monitor-and-api.md#planned-the-monitors-own-identity), [access control](access-control.md#subject-details-planned) |
+| Registry and catalogue reads | [busd](busd.md#current-service-built), [directory v2](directory-v2.md) |
+| The signed `busd.<method>` protocol | [busd](busd.md#planned-request-authentication) |
+| How the CA is trusted at enrollment | [Access control](access-control.md#phase-b-implemented-the-enrollment-flow) |
+| MCP tools that do not exist yet | [MCP tools](mcp-tools.md#planned-tools) |
+
+## Reading order
+
+1. [Architecture](architecture.md): the components and the boundary decisions.
+2. [Identity and trust](identity-and-trust.md): keys, signing, TOFU, rotation, revocation.
+3. [Bus model](bus-model.md) and [JetStream binding](jetstream-binding.md): channels, records and their mapping to NATS.
+4. [Message protocol](protocol.md): the envelope, targets, types and the request lifecycle.
+5. [Delivery](delivery.md) and [presence](presence.md): inbox, acks, holds, hooks and waking sessions.
+6. [Safety](safety.md): untrusted content, loop guard, rate limits, secret scan.
+7. [Access control](access-control.md): accounts, grants, mTLS and the enrollment flow.
+8. [Private channels](private-channels.md) and [busd](busd.md): the control plane (minimal busd built, the rest planned).
+9. [agent-busctl](admin-cli.md), [monitor and API](monitor-and-api.md), [operations](operations.md).
+10. [Directory v2](directory-v2.md): versioned, announced, diff-only directory updates (built).
+11. [Trust between agents](trust.md): roles that limit what other agents can make an agent do (proposed).
+12. [Channels requested by agents](agent-channels.md): agents create channels and invite others (public channels built, the rest planned).
+13. Reference: [MCP tools](mcp-tools.md), [milestones](milestones.md), [acceptance tests](acceptance-tests.md), [decisions log](decisions.md).
 
 ## Goals and non-goals
 
 **Goals**
 
 - Agents connect with a stable identity and can send direct messages or publish to channels.
-- Every agent is in `#general`; agents can join and leave other channels, and can ask for private channels with invited members only ([private channels](private-channels.md)).
-- The broker keeps durable state: message history and per-agent read positions. busd keeps the private-channel membership ledger ([private channels](private-channels.md)).
+- Every agent is in `#general`; agents can join and leave other channels. Planned: private channels with invited members only ([private channels](private-channels.md)).
+- The broker keeps durable state: message history and per-agent read positions. Planned: busd keeps the private-channel membership ledger.
 - Every message is signed; receivers verify against keys pinned trust-on-first-use (TOFU), like SSH `known_hosts`.
 - A complete, append-only audit trail a human can read.
 - Agents receive messages without the human relaying them by hand, while a session is active or when the next one starts ([delivery](delivery.md)).
@@ -50,67 +122,39 @@ shared preferences (decision 43) and the VS Code extension as an API client of t
 - Sending messages from the monitor as `human@<owner>` ([monitor](monitor-and-api.md)) is a later milestone, not v1. The monitor already sends as one registered agent identity.
 - Hiding private channels from the owner, the monitor or the broker. **Decision:** private means private from other agents only ([private channels](private-channels.md)).
 
-## Reading order
+## History: the scope the build started from
 
-1. [Architecture](architecture.md): the components and the boundary decisions.
-2. [Identity and trust](identity-and-trust.md): keys, signing, TOFU, rotation, revocation.
-3. [Bus model](bus-model.md) and [JetStream binding](jetstream-binding.md): channels, records and their mapping to NATS.
-4. [Message protocol](protocol.md): the envelope, targets, types and the request lifecycle.
-5. [Delivery](delivery.md) and [presence](presence.md): inbox, acks, holds, hooks and waking sessions.
-6. [Safety](safety.md): untrusted content, loop guard, rate limits, secret scan.
-7. [Access control](access-control.md): accounts, grants, mTLS phase A and the enrollment flow.
-8. [Private channels](private-channels.md) and [busd](busd.md): the control plane (minimal busd built, the rest planned).
-9. [agent-busctl](admin-cli.md), [monitor and API](monitor-and-api.md), [operations](operations.md).
-10. [Directory v2](directory-v2.md): versioned, announced, diff-only directory updates (built).
-11. [Trust between agents](trust.md): roles that limit what other agents can make an agent do (proposed).
-12. [Channels requested by agents](agent-channels.md): agents create open and private channels and invite others (public channels built, the rest proposed).
-13. Reference: [MCP tools](mcp-tools.md), [milestones](milestones.md), [acceptance tests](acceptance-tests.md), [decisions log](decisions.md).
+This section is the original plan of 2026-11-24, kept for context. What was actually built is
+[above](#what-is-built-today).
 
-## Status by area
+**Decision: scope.** One developer runs the whole setup across several of their own machines. There
+is a single owner and no other users. Defaults favour low friction for that one owner; stricter
+behaviour is available behind flags.
 
-| Area | Document | Status |
-|---|---|---|
-| Components, boundary to the broker | [architecture](architecture.md) | implemented, except busd |
-| Identity, keys, signing, TOFU pins | [identity and trust](identity-and-trust.md) | implemented; registry read from a copied directory (MVP-simplified) |
-| Holds, rotation, revocation by key, `pin` | [identity and trust](identity-and-trust.md) | planned (removal of an agent is implemented) |
-| Channels, records, cursors | [bus model](bus-model.md) | implemented |
-| Two accounts, streams, consumers, dedupe | [JetStream binding](jetstream-binding.md) | implemented; consumers created by `agent-busctl --direct`, catalogue by a copied snapshot (MVP-simplified) |
-| Envelope, targets, types | [protocol](protocol.md) | implemented |
-| Request lifecycle | [protocol](protocol.md) | planned |
-| Inbox, per-message acks, hooks, waiter, buffer | [delivery](delivery.md) | implemented |
-| Presence | [presence](presence.md) | implemented |
-| Loop guard, rate limit, secret scan, untrusted frame | [safety](safety.md) | implemented (limits are not CLI flags yet) |
-| TLS, per-role grants, password logins, mTLS phase A | [access control](access-control.md) | implemented |
-| mTLS enrollment (phase B): enrollment login, `ca` commands and review screen, autosign | [access control](access-control.md) | implemented (decision 41) |
-| Private channels | [private channels](private-channels.md) | planned |
-| Channels created and shared by agents (open and private) | [channels requested by agents](agent-channels.md) | public channels built (step 2); cleanup and private channels proposed |
-| busd | [busd](busd.md) | minimal busd built (enrollment, CA key, approvals, local reloads); the rest planned |
-| agent-busctl | [admin CLI](admin-cli.md) | partly: setup, register, channels, removal, directory, certificates, enrollment (`enroll init`, `enroll autosign`, `ca`), `service init`, `monitor init`, monitor password |
-| Monitor and API | [monitor and API](monitor-and-api.md) | implemented, with its own read-only logins (`monitor-bus`, `monitor-control`) and shared prefs; the `monitor@<owner>` signing identity, a durable consumer made by busd and the `human@` key planned |
-| VS Code extension (`vscode/`) | [monitor and API](monitor-and-api.md) | implemented, API client only (decision 44) |
-| MCP tools | [MCP tools](mcp-tools.md) | partly: 8 of the specified tools |
-| Deployment, reload, releases | [operations](operations.md) | implemented |
-| Directory updates: signed head on BUS, diff sync, announcements | [directory v2](directory-v2.md) | built; v1 (full fetch over the enrollment login) removed |
-| Per-receiver trust roles, owner approval, taint marking | [trust between agents](trust.md) | proposed |
+**Decision: MVP first** (owner, 2026-11-24). The bus runs in a trusted environment, so the plan was
+to build a usable MVP quickly and tighten it later. Review findings that only harden against a
+compromised host or rare crash edges are deferred to a later tightening pass.
 
-## Where this text and the code differ
-
-Noted while restructuring; neither side was changed.
-
-- The MVP decision defers the monitor and the OpenCode plugin; both are built.
-- Holds: the text says a changed key or an unknown sender (with `--no-auto-accept-new-keys`) is held on disk and acked. The code terminally rejects a changed key (alert, acked) and leaves a sender whose registry record cannot be read unacked for redelivery; there is no hold store.
-- The flags `--max-hops`, `--rate-limit`, `--inbox-buffer`, `--[no-]auto-accept-new-keys` and `--owner-identity` are named in the text; the adapter has the limits as configuration fields but the `agent-bus` command line does not expose them.
-- The monitor is specified with a signing identity `monitor@<owner>` and a durable consumer made by busd; the code logs in as its own read-only users `monitor-bus` and `monitor-control` (the admin users only on an old config directory, with a warning), uses ordered consumers of its own, sends as a registered agent identity and refuses `human@<owner>`.
-- Registry and catalogue reads are specified through busd for everyone. The monitor reads them through busd (`busd.monitor.registry` and `busd.monitor.catalogue`, unsigned replies); agents still read a hand-copied `directory/` (an enrolling machine gets the current one from busd once).
-- busd is specified with a signed `busd.<method>` protocol; the minimal busd serves only enrollment and approval and the monitor's reads on `busd.enroll.*`, `busd.ca.*` and `busd.monitor.*` subjects in `CONTROL`, authenticated by the account (the owner's tools are `control-admin`).
-- The enrollment text said the CA fingerprint is checked against the central machine; the code can also fetch the CA from the broker's handshake, and keeps it only if it matches the owner's fingerprint.
-- Only 8 of the MCP tools in the table exist.
+- **In the MVP:** milestone 1a, milestone 2 (adapter core), milestone 4 (MCP tools) and milestone 5
+  (Claude Code hooks). Agents talk over DMs, `general` and open group channels, with signed and
+  verified messages, keys pinned on first use (`--auto-accept-new-keys`, the default), per-message
+  acknowledgement, one session per identity, and the loop guard, rate limit and secret scan.
+  `agent-busctl --direct` creates identities, channels and the agents' consumers.
+- **Deferred by that plan:** busd (milestone 3) and with it private channels; the monitor
+  (milestones 8 and 9); the full request lifecycle; holds for unknown or changed keys; key rotation
+  and revocation; the OpenCode plugin.
+- **Built since:** the monitor, its API, agent presence, the OpenCode plugin, agent removal and mTLS
+  phase A, then phase B (enrollment through a minimal busd, decision 41), the monitor's own
+  read-only logins and config directory (decision 42), shared preferences (decision 43), the VS Code
+  extension as an API client of the monitor (decision 44), [directory v2](directory-v2.md) and public
+  [channels requested by agents](agent-channels.md).
+- **Still deferred:** the rest of busd, private channels, holds, and rotation.
 
 ## Related documents
 
-[README](../../README.md), [QUESTIONS](../../QUESTIONS.md), and the user documentation in
-[docs/](../agent-busctl.md): [docker](../docker.md), [podman](../podman.md), [broker](../broker.md),
-[monitor](../monitor.md), [API](../api.md), [Claude Code](../claude-code.md),
+[README](../../README.md), [QUESTIONS](../../QUESTIONS.md), and the user documentation it links to:
+[agent-busctl](../agent-busctl.md), [docker](../docker.md), [podman](../podman.md),
+[broker](../broker.md), [monitor](../monitor.md), [API](../api.md), [Claude Code](../claude-code.md),
 [OpenCode](../opencode.md), [agent guide](../agent-guide.md), [agent tools](../agent-tools.md),
 [troubleshooting](../troubleshooting.md), [test run](../test-run.md), [development](../development.md),
 [VS Code extension](../../vscode/README.md).
