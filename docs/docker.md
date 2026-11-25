@@ -12,7 +12,7 @@ Every release pushes a multi-arch (linux amd64 and arm64) image to
 `ghcr.io/gentoomaniac/agent-messenger`, tagged with the version and `latest`. It holds the pinned
 `nats-server` (v2.15.3), `busd`, `agent-busctl`, `bus-monitor` and `agent-bus`, and runs as the non-root user `bus` (uid 10001).
 The entrypoint renders `deploy/nats-server.conf` from the environment, starts `busd` beside it when the
-config volume has `ca.key` (enrollment and approval, [podman.md](podman.md#9-enrolling-a-new-machine); `BUS_BUSD=off` skips it) and runs `nats-server` as
+config folder has `ca.key` (enrollment and approval, [podman.md](podman.md#9-enrolling-a-new-machine); `BUS_BUSD=off` skips it) and runs `nats-server` as
 PID 1, so `docker stop` stops it cleanly and `agent-busctl --direct` inside the container can reload it.
 
 To build the image from a checkout instead, for this machine's architecture (docker or podman,
@@ -26,20 +26,28 @@ export AGENT_BUS_IMAGE=agent-messenger:dev
 The compose file uses `$AGENT_BUS_IMAGE` and falls back to `ghcr.io/gentoomaniac/agent-messenger:latest`.
 In the plain `docker run` commands below, replace `IMAGE` with the image name.
 
-### Volumes
+### Mounted folders
 
-| Path      | Content                                                                 |
-|-----------|-------------------------------------------------------------------------|
-| `/config` | `BUS_CONFIG_DIR`: certificates, admin credentials, agent keys, `nats/`  |
-| `/data`   | JetStream storage (`BUS_DATA_DIR`)                                      |
+All state lives in folders on the host, bind-mounted into the container:
 
-The container runs as uid 10001. Named volumes get the right owner automatically. A bind mount
-keeps the owner of the host directory, so give it to that user first:
+| Path              | Host folder       | Content                                                                |
+|-------------------|-------------------|------------------------------------------------------------------------|
+| `/config`         | `config/`         | `BUS_CONFIG_DIR`: certificates, admin credentials, agent keys, `nats/` |
+| `/data`           | `data/`           | JetStream storage (`BUS_DATA_DIR`)                                     |
+| `/monitor-config` | `monitor-config/` | the monitor's own smaller config, see [the web monitor](#the-web-monitor) |
+
+The container runs as uid 10001 and a bind mount keeps the owner of the host folder, so create
+the folders and give them to that user first (rootless Podman does this with
+`--userns=keep-id:uid=10001,gid=10001` instead, see [podman.md](podman.md#1-build-or-pull-the-image)):
 
 ```sh
-mkdir -p ./config ./data
-sudo chown 10001 ./config ./data
+mkdir -p ~/agent-bus/{config,data,monitor-config}
+sudo chown 10001 ~/agent-bus/{config,data,monitor-config}
 ```
+
+The compose file reads the folders from next to itself, or from `AGENT_BUS_HOME`. Copy it
+into `~/agent-bus` (or `export AGENT_BUS_HOME=~/agent-bus`). Named volumes work too if you replace
+the mounts, but their files are hidden inside Docker's storage.
 
 ### Environment variables
 
@@ -53,11 +61,12 @@ sudo chown 10001 ./config ./data
 ## Set it up
 
 [deploy/docker-compose.yaml](../deploy/docker-compose.yaml) has the broker service (`agent-bus`),
-the volumes `config` and `data`, and the optional `monitor` service. Run everything from the
-repository root. The server refuses to start until `/config` holds the certificates and the admin
+the bind mounts of `config/` and `data/`, and the optional `monitor` service. The commands below
+run from the repository root with `AGENT_BUS_HOME=~/agent-bus` exported; with the compose file
+copied into `~/agent-bus`, run them there and write `docker-compose.yaml` for the path. The server refuses to start until `/config` holds the certificates and the admin
 credentials.
 
-1. Create the certificates and admin credentials once, as one-off containers on the config volume.
+1. Create the certificates and admin credentials once, as one-off containers on the config folder.
    Clients must trust `ca.pem` and the broker certificate must name every host they connect to,
    so pass each name or IP with `--san` (without it an agent on another machine fails its TLS
    handshake, [troubleshooting](troubleshooting.md#tls-errors)). `localhost`, `127.0.0.1`, `::1`
@@ -94,19 +103,17 @@ the public records in `/config/directory/`.
 
 ### Without compose
 
-The same with plain `docker run`, on named volumes `agent-bus-config` and `agent-bus-data`:
+The same with plain `docker run`, on the folders of `~/agent-bus` (created and chowned as above):
 
 ```sh
-docker volume create agent-bus-config
-docker volume create agent-bus-data
-docker run --rm -v agent-bus-config:/config --entrypoint agent-busctl IMAGE tls init --san bus.example.org
-docker run --rm -v agent-bus-config:/config --entrypoint agent-busctl IMAGE admin init
-docker run -d --name agent-bus -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 -v agent-bus-config:/config -v agent-bus-data:/data IMAGE
+docker run --rm -v ~/agent-bus/config:/config --entrypoint agent-busctl IMAGE tls init --san bus.example.org
+docker run --rm -v ~/agent-bus/config:/config --entrypoint agent-busctl IMAGE admin init
+docker run -d --name agent-bus -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 -v ~/agent-bus/config:/config -v ~/agent-bus/data:/data IMAGE
 alias agent-busctl='docker exec agent-bus agent-busctl'
 ```
 
-Podman takes the same commands. Rootless podman may not reach the published port over its default
-bridge network; add `--network pasta` (or `--network host`) to `podman run`.
+For Podman use the commands of [podman.md](podman.md), which adds the `--userns` option and
+`--network pasta`.
 
 ## Give an agent machine its files
 
@@ -128,8 +135,8 @@ docker compose -f deploy/docker-compose.yaml exec -T agent-bus \
 
 For another machine, run that with `ssh other 'tar -C ~/.config/agent-bus -xf -'` as the second
 tar. `docker compose cp agent-bus:/config/ca.pem .` works for single files, and
-`docker run --rm -v agent-bus-config:/config:ro --entrypoint tar IMAGE -C /config -cf - ca.pem directory`
-works while the broker is stopped. Treat the agent folder as a secret: it holds the identity.
+`tar -C ~/agent-bus/config -cf - ca.pem directory` works on the host (the folder is owned by uid
+10001: use `sudo`, or the `exec` form above). Treat the agent folder as a secret: it holds the identity.
 
 ### Keep the directory fresh
 
@@ -148,7 +155,7 @@ docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -c
 ## The web monitor
 
 `bus-monitor` is in the image and runs as the compose `monitor` profile, on the broker's network
-and a config volume of its own (no CA key, no admin login; filled by `monitor-init`). It shows all traffic, so it is protected by a password you set first, and the
+and a config folder of its own (no CA key, no admin login; filled by `monitor-init`). It shows all traffic, so it is protected by a password you set first, and the
 compose file publishes it on the host's loopback only. In the container it listens on `0.0.0.0`,
 which is why the service sets `BUS_WEB_BEHIND_PROXY=true` (and why it will not start without the
 password).
@@ -173,12 +180,12 @@ docker compose -f deploy/docker-compose.yaml pull
 docker compose -f deploy/docker-compose.yaml up -d
 ```
 
-The volumes keep the certificates, credentials and messages. Agents reconnect by themselves
+The folders keep the certificates, credentials and messages. Agents reconnect by themselves
 ([troubleshooting](troubleshooting.md#when-the-bus-is-down)).
 
 **Upgrading from a release without the service logins.** Everything keeps working: busd and a monitor
-that mounts the broker's volume use the admin logins and say so in their log. To give them logins of
-their own (busd) and the monitor a config volume without the CA key, once:
+that mounts the broker's config folder use the admin logins and say so in their log. To give them logins of
+their own (busd) and the monitor a config folder without the CA key, once:
 
 ```sh
 docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus service init
