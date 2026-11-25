@@ -45,6 +45,8 @@ export interface Message {
   id?: string;
   from?: string;
   to?: string;
+  thread?: string; // the root message of the thread
+  reply_to?: string; // the parent message
   type?: string;
   targets?: string[];
   time?: string;
@@ -54,6 +56,7 @@ export interface Message {
 
 export const MESSAGE_TYPES = ["message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"];
 export const ALL = "@all";
+export const DEFAULT_TYPE = "message";
 
 export interface SendRequest {
   to: { kind: "agent" | "group"; name: string };

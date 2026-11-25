@@ -1,15 +1,17 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import { ApiError } from "./api";
-import { describeChannel, destinationOf, parseTargets } from "./channels";
+import { describeChannel, destinationOf } from "./channels";
 import { ChatState, FromWebview, ToWebview } from "./protocol";
 import { Session } from "./session";
+import { ALL } from "./types";
 
 const HISTORY = 100; // messages loaded when a channel is opened
 
 interface Chat {
   panel: vscode.WebviewPanel;
   dividerAfter: number; // last-read sequence when the panel was opened or shown again
+  members: string[];
 }
 
 // One chat panel per channel. The page only draws; the monitor is read and written from here.
@@ -42,7 +44,7 @@ export class ChatPanels implements vscode.Disposable {
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "dist")],
     });
-    const chat: Chat = { panel, dividerAfter: 0 };
+    const chat: Chat = { panel, dividerAfter: 0, members: [] };
     this.chats.set(channelId, chat);
     panel.webview.html = this.html(panel.webview);
     panel.onDidDispose(() => this.chats.delete(channelId));
@@ -69,7 +71,7 @@ export class ChatPanels implements vscode.Disposable {
         const channel = model.channels.find((c) => c.id === channelId);
         const destination = channel && destinationOf(channel, model.self);
         if (!destination) throw new Error("this conversation is read-only");
-        await model.api.send({ to: destination, type, targets: parseTargets(targets), title: title.trim() || undefined, text });
+        await model.api.send({ to: destination, type, targets, title: title.trim() || undefined, text });
       } catch (caught) {
         error = (caught as Error).message;
         this.session.report(caught);
@@ -91,7 +93,10 @@ export class ChatPanels implements vscode.Disposable {
   // A visible panel keeps its divider across a reconnect: its messages were read already.
   private async show(channelId: string, chat: Chat, keepDivider = false): Promise<void> {
     const model = this.session.model;
-    await this.guarded(() => model.loadHistory(channelId, HISTORY));
+    await this.guarded(async () => {
+      await model.loadHistory(channelId, HISTORY);
+      chat.members = await model.api.members(channelId);
+    });
     if (!keepDivider) chat.dividerAfter = model.lastRead(channelId);
     this.post(channelId, chat);
     if (chat.panel.visible) model.markRead(channelId);
@@ -101,7 +106,8 @@ export class ChatPanels implements vscode.Disposable {
     const model = this.session.model;
     const channel = model.channels.find((c) => c.id === channelId);
     if (!channel || !model.status) return;
-    const canWrite = destinationOf(channel, model.self) !== undefined;
+    const destination = destinationOf(channel, model.self);
+    const canWrite = destination !== undefined;
     const state: ChatState = {
       title: describeChannel(channel),
       description: channel.description,
@@ -111,6 +117,8 @@ export class ChatPanels implements vscode.Disposable {
       messages: model.messagesOf(channelId),
       dividerAfter: chat.dividerAfter,
       hasOlder: model.hasOlder(channelId),
+      members: chat.members,
+      defaultTarget: channel.kind === "dm" && destination ? destination.name : ALL,
     };
     void chat.panel.webview.postMessage({ type: "state", state } satisfies ToWebview);
   }
@@ -128,34 +136,43 @@ export class ChatPanels implements vscode.Disposable {
   [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; }
   body { display: flex; flex-direction: column; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); }
-  header { padding: 8px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
-  h1 { font-size: 1.2em; margin: 0; }
-  #description, .muted { color: var(--vscode-descriptionForeground); }
-  #messages { flex: 1; overflow-y: auto; padding: 8px 12px; }
-  .message { padding: 6px 0; }
-  .meta, .targets { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .muted, #description { color: var(--vscode-descriptionForeground); }
+  header { display: flex; align-items: baseline; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  h1 { font-size: 1.1em; margin: 0; white-space: nowrap; }
+  #description { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #messages { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .message { padding: 4px 12px; font-family: var(--vscode-editor-font-family, var(--vscode-font-family)); font-size: var(--vscode-editor-font-size, inherit); }
+  .message:hover { background: var(--vscode-list-hoverBackground); }
+  .message.continued { padding-top: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
   .from { font-weight: bold; }
-  .pill { padding: 0 6px; border-radius: 8px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); font-size: 0.85em; }
-  .pill.all { background: var(--vscode-statusBarItem-warningBackground); color: var(--vscode-statusBarItem-warningForeground); }
-  .pill.me { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  .badge { font-size: 0.85em; }
-  .badge.verified { color: var(--vscode-testing-iconPassed); }
-  .badge.unknown_sender { color: var(--vscode-editorWarning-foreground); }
-  .badge.rejected, .reason { color: var(--vscode-errorForeground); }
-  .title { font-weight: bold; margin-top: 4px; }
-  .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
-  .divider { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--vscode-errorForeground); font-weight: bold; }
-  .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid var(--vscode-errorForeground); }
-  .older { display: block; margin: 0 auto 8px; }
-  #composer { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--vscode-panel-border); }
-  #composer .row { display: flex; gap: 6px; }
-  #targets, #title { flex: 1; }
-  input, select, textarea, button { font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 3px 6px; }
-  button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
+  .time { font-size: 0.85em; }
+  .badge { padding: 0 5px; border-radius: 3px; font-size: 0.8em; color: var(--vscode-descriptionForeground); border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); }
+  .badge.me { color: var(--vscode-foreground); border-color: var(--vscode-focusBorder); }
+  .verified { color: var(--vscode-descriptionForeground); font-size: 0.85em; cursor: default; }
+  .warning { color: var(--vscode-editorWarning-foreground); font-size: 0.85em; }
+  .warning.rejected { color: var(--vscode-errorForeground); }
+  .title { font-weight: bold; }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .divider { display: flex; align-items: center; gap: 8px; margin: 6px 12px; color: var(--vscode-errorForeground); font-size: 0.85em; }
+  .divider::after { content: ""; flex: 1; border-top: 1px solid var(--vscode-errorForeground); }
+  .older { display: block; margin: 4px auto 8px; }
+  input, select, textarea, button { font: inherit; }
+  button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; padding: 3px 10px; cursor: pointer; }
+  button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
   button:disabled { opacity: 0.5; cursor: default; }
-  textarea { min-height: 4em; resize: vertical; }
   #note { padding: 8px 12px; border-top: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); }
-  #problem { color: var(--vscode-errorForeground); }
+  #composer { margin: 8px 12px 10px; border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); background: var(--vscode-input-background); border-radius: 4px; }
+  #composer:focus-within { border-color: var(--vscode-focusBorder); }
+  #composer textarea, #composer input { display: block; box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: transparent; border: 0; outline: 0; padding: 6px 8px; }
+  #composer textarea { resize: none; max-height: 12em; }
+  #title { font-weight: bold; border-bottom: 1px solid var(--vscode-panel-border); }
+  #toolbar { display: flex; align-items: center; gap: 6px; padding: 2px 6px 4px; }
+  #toolbar select { max-width: 14em; color: var(--vscode-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border); font-size: 0.9em; padding: 1px 2px; }
+  #toolbar .link { color: var(--vscode-textLink-foreground); background: transparent; padding: 0 4px; font-size: 0.9em; }
+  #toolbar .spacer { flex: 1; }
+  #hint { font-size: 0.85em; }
+  #problem { color: var(--vscode-errorForeground); font-size: 0.9em; }
 </style>
 </head>
 <body>
@@ -163,13 +180,17 @@ export class ChatPanels implements vscode.Disposable {
 <main id="messages"></main>
 <div id="note" hidden></div>
 <form id="composer" hidden>
-  <div class="row">
+  <input id="title" placeholder="Title" aria-label="Title" hidden>
+  <textarea id="text" rows="1" placeholder="Message" aria-label="Message"></textarea>
+  <div id="toolbar">
     <select id="type" aria-label="Type"></select>
-    <input id="targets" placeholder="Targets: agent IDs or @all" aria-label="Targets">
-    <input id="title" placeholder="Title (optional)" aria-label="Title">
+    <select id="target" aria-label="To"></select>
+    <button id="toggleTitle" class="link" type="button">+ title</button>
+    <span class="spacer"></span>
+    <span id="problem"></span>
+    <span id="hint" class="muted">Enter sends, Shift+Enter adds a line</span>
+    <button id="send" type="submit">Send</button>
   </div>
-  <textarea id="text" placeholder="Message (Ctrl+Enter sends)" aria-label="Message"></textarea>
-  <div class="row"><button id="send" type="submit">Send</button><span id="problem"></span></div>
 </form>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

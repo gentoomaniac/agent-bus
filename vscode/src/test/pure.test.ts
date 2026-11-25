@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { categorize, describeChannel, destinationOf, parseTargets } from "../channels";
+import { categorize, describeChannel, destinationOf } from "../channels";
 import { nextBackoff } from "../events";
-import { insertMessage, isTargeted, unreadMessages } from "../messages";
+import { continuesGroup, insertMessage, isTargeted, unreadMessages } from "../messages";
 import { SseParser } from "../sse";
 import { Channel, Message } from "../types";
 
@@ -66,11 +66,6 @@ test("destinationOf aims at the channel, or at the peer of a DM the agent is in"
   assert.equal(destinationOf(dm, "c@z"), undefined);
 });
 
-test("parseTargets splits on commas and spaces", () => {
-  assert.deepEqual(parseTargets(" a@x, @all  b@y,"), ["a@x", "@all", "b@y"]);
-  assert.deepEqual(parseTargets(""), []);
-});
-
 test("nextBackoff doubles up to the maximum", () => {
   assert.equal(nextBackoff(1000, 30000), 2000);
   assert.equal(nextBackoff(20000, 30000), 30000);
@@ -88,4 +83,17 @@ test("categorize moves favourites out of their category and ignores unknown ones
 
   const starred = categorize([general, group, dm], new Set(["dm:a:b", "group:ops", "group:gone"]));
   assert.deepEqual([ids(starred.favourites), ids(starred.channels), ids(starred.directMessages)], [["group:ops", "dm:a:b"], ["general"], []]);
+});
+
+test("continuesGroup joins the same sender within five minutes only", () => {
+  const first = message(1, { from: "a@x", time: "2026-11-24T12:00:00Z", targets: ["@all"] });
+  const at = (time: string, extra: Partial<Message> = {}) => message(2, { from: "a@x", targets: ["@all"], time, ...extra });
+  assert.equal(continuesGroup(undefined, first), false);
+  assert.equal(continuesGroup(first, at("2026-11-24T12:05:00Z")), true);
+  assert.equal(continuesGroup(first, at("2026-11-24T12:05:01Z")), false);
+  assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { from: "b@y" })), false);
+  assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { type: "question" })), false);
+  assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { targets: ["b@y"] })), false);
+  assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { title: "New topic" })), false);
+  assert.equal(continuesGroup(first, at("not a time")), false);
 });

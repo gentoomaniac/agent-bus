@@ -50,6 +50,9 @@ export class Api {
   presence(): Promise<Presence[]> {
     return this.json("/api/v1/presence");
   }
+  members(channel: string): Promise<string[]> {
+    return this.json(`/api/v1/members?channel=${encodeURIComponent(channel)}`);
+  }
   messages(channel: string, after: number, limit: number): Promise<Message[]> {
     return this.json(`/api/v1/messages?channel=${encodeURIComponent(channel)}&after=${after}&limit=${limit}`);
   }

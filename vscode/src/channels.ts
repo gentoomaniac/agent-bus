@@ -15,11 +15,6 @@ export function destinationOf(channel: Channel, self: string): SendRequest["to"]
   return { kind: "agent", name: agents.find((id) => id !== self) ?? self };
 }
 
-// "a@x, @all  b@y" -> ["a@x", "@all", "b@y"]
-export function parseTargets(input: string): string[] {
-  return input.split(/[\s,]+/).filter((target) => target !== "");
-}
-
 export interface ChannelCategories {
   favourites: Channel[];
   channels: Channel[];

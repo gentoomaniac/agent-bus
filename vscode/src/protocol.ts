@@ -10,6 +10,8 @@ export interface ChatState {
   messages: Message[];
   dividerAfter: number; // the "New" divider goes before the first message after this sequence
   hasOlder: boolean;
+  members: string[]; // agents the target picker offers, besides @all
+  defaultTarget: string; // @all in a channel, the recipient in a direct message
 }
 
 export type ToWebview =
@@ -19,7 +21,7 @@ export type ToWebview =
 
 export interface Draft {
   type: string;
-  targets: string;
+  targets: string[]; // empty: the @mentions in the text count
   title: string;
   text: string;
 }
