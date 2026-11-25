@@ -62,11 +62,13 @@
   button.section::before { content: "\25be"; display: inline-block; width: 1em; transition: transform .1s; }
   button.section[aria-expanded=false]::before { transform: rotate(-90deg); }
   button.section:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  /* The star moves a channel to Favourites and back; it shows on hover, and always on a favourite. */
-  button.star { all: unset; cursor: pointer; flex: none; color: var(--side-muted); visibility: hidden; padding: 0 2px; }
-  li.item:hover button.star, button.star:focus-visible, button.star.on { visibility: visible; }
-  button.star.on { color: var(--warn); }
+  /* The star moves a channel to Favourites and back; it shows on hover or focus, always on a favourite or a touch screen. */
+  /* Hidden by opacity, not visibility, so the keyboard still reaches it; it takes the row's text color. */
+  button.star { all: unset; cursor: pointer; flex: none; color: inherit; opacity: 0; padding: 0 2px; }
+  li.item:hover button.star, li.item:focus-within button.star { opacity: .6; }
+  button.star.on, button.star:focus-visible { opacity: 1; }
   button.star:focus-visible { outline: 2px solid var(--accent); }
+  @media (hover: none) { button.star { opacity: .6; } }
   li.item.has-unread .label { font-weight: 700; color: var(--side-text); }
   /* The line above the first message that arrived since the channel was last looked at. */
   .new-marker { display: flex; align-items: center; gap: 8px; margin: 6px 0; color: var(--mention); font-size: var(--font-xs); font-weight: 700; }
@@ -950,6 +952,17 @@ function toggleFavourite(channelId) {
   if (!state.favourites.delete(channelId)) state.favourites.add(channelId);
   saveSetting(FAVOURITES_KEY, [...state.favourites]);
   renderSidebar();
+  // The list was rebuilt: keep the keyboard on the star that moved.
+  document.querySelector(`button.star[data-channel="${CSS.escape(channelId)}"]`)?.focus();
+}
+
+const sectionButton = (section) => document.querySelector(`button.section[data-section="${section}"]`);
+
+// Folds or unfolds a section's list as far as the markup goes; what a folded list still shows is up to its caller.
+function syncSection(section) {
+  const folded = state.collapsed.has(section);
+  sectionButton(section).setAttribute("aria-expanded", String(!folded));
+  return folded;
 }
 
 for (const button of document.querySelectorAll("button.section")) {
@@ -967,8 +980,7 @@ function isUnseen(channel) {
 
 // A folded section keeps the open channel and the unread ones, as in Slack.
 function fillSection(section, channels, emptyText) {
-  const folded = state.collapsed.has(section);
-  $(section).previousElementSibling.firstElementChild.setAttribute("aria-expanded", String(!folded));
+  const folded = syncSection(section);
   const shown = folded ? channels.filter((c) => c.id === state.selected || isUnseen(c)) : channels;
   $(section).replaceChildren(...(shown.length ? shown.map(channelItem) : folded || !emptyText ? [] : [el("li", { class: "empty" }, emptyText)]));
 }
@@ -976,7 +988,7 @@ function fillSection(section, channels, emptyText) {
 function channelItem(channel) {
   const unread = state.unread.get(channel.id);
   const favourite = state.favourites.has(channel.id);
-  const star = el("button", { type: "button", class: "star" + (favourite ? " on" : ""), title: favourite ? "Remove from Favourites" : "Move to Favourites", "aria-label": favourite ? "Remove from Favourites" : "Move to Favourites", "aria-pressed": String(favourite),
+  const star = el("button", { type: "button", class: "star" + (favourite ? " on" : ""), "data-channel": channel.id, title: favourite ? "Remove from Favourites" : "Move to Favourites", "aria-label": "Favourite", "aria-pressed": String(favourite),
     onclick: (event) => { event.stopPropagation(); toggleFavourite(channel.id); } }, favourite ? "\u2605" : "\u2606");
   return el("li", { class: "item" + (channel.id === state.selected ? " selected" : "") + (isUnseen(channel) ? " has-unread" : ""), title: describeChannel(channel) + (channel.description ? ": " + channel.description : ""), onclick: () => select(channel.id) },
     channel.kind === "dm" ? pairLabel(channel.agents) : el("span", { class: "label" }, describeChannel(channel)), unread ? el("span", { class: "unread" }, String(unread)) : "", star);
@@ -988,7 +1000,8 @@ function renderSidebar() {
   $("favourites-section").hidden = favourites.length === 0;
   fillSection("favourites", favourites);
   fillSection("channels", others.filter((c) => c.kind !== "dm"));
-  fillSection("dms", others.filter((c) => c.kind === "dm"), "none yet");
+  // "none yet" only while there is no conversation at all, not when all of them are favourites.
+  fillSection("dms", others.filter((c) => c.kind === "dm"), state.channels.some((c) => c.kind === "dm") ? "" : "none yet");
   $("agents").replaceChildren(...(state.agents.length ? state.agents.map((agent) => {
     if (agent.removed) {
       return el("li", { class: "item removed", title: agent.fingerprint },
@@ -998,8 +1011,7 @@ function renderSidebar() {
     return el("li", { class: "item", title: agent.fingerprint, onclick: () => { document.forms.composer.target.value = "agent:" + agent.id; showDetail(agent.id); } },
       el("div", {}, agentLine(agent.id, view), agentSummary(view)));
   }) : [el("li", { class: "empty" }, "no agents registered")]));
-  $("agents").hidden = state.collapsed.has("agents");
-  $("agents").previousElementSibling.firstElementChild.setAttribute("aria-expanded", String(!$("agents").hidden));
+  $("agents").hidden = syncSection("agents");
   renderDetail();
 }
 
