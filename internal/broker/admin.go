@@ -63,14 +63,16 @@ func (admin *Admin) Close() {
 // ReleaseOnClose makes Close call release, for a lock the caller holds as long as it administers.
 func (admin *Admin) ReleaseOnClose(release func()) { admin.release = release }
 
-func (admin *Admin) Setup(ctx context.Context) error {
+// Setup applies the retention to BUS, the one stream of conversations. The membership ledger is
+// not a log of messages and keeps everything.
+func (admin *Admin) Setup(ctx context.Context, retention bus.Retention) error {
 	_, err := admin.bus.stream.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:       busStream,
 		Subjects:   busSubjects,
 		Storage:    jetstream.FileStorage,
 		Retention:  jetstream.LimitsPolicy,
-		MaxAge:     0,
-		MaxBytes:   -1,
+		MaxAge:     retention.MaxAge,
+		MaxBytes:   retention.MaxBytes,
 		MaxMsgs:    -1,
 		Duplicates: duplicateWindow,
 	})

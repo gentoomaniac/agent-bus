@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // ErrUnavailable is the error of a call that needs the broker while the connection to it is down
@@ -55,13 +56,20 @@ type Delivery struct {
 	Release func(ctx context.Context) error
 }
 
+// Retention bounds the message log: whichever limit is reached first deletes the oldest records,
+// for every reader. The zero MaxAge and a negative MaxBytes mean no limit.
+type Retention struct {
+	MaxAge   time.Duration
+	MaxBytes int64
+}
+
 // Admin is the administrator's path to the broker (docs/design/architecture.md): channels, accounts and the read
 // cursors an account owns. Its methods are safe to repeat unless they say otherwise.
 type Admin interface {
 	// Setup creates what the bus needs on an empty broker: the message log, the presence stream,
 	// the registry, the catalogue and the membership ledger, and brings every agent's access up to
-	// date. Existing streams keep their data.
-	Setup(ctx context.Context) error
+	// date. Existing streams keep their data and get the retention.
+	Setup(ctx context.Context, retention Retention) error
 	// PutAgentRecord writes the agent's registry entry, replacing an earlier one.
 	PutAgentRecord(ctx context.Context, record AgentRecord) error
 	// CreateAccount lets an agent connect with the password and gives it its access. It fails if

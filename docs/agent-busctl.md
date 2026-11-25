@@ -117,7 +117,7 @@ bin/agent-busctl service init
 
 ### init
 
-Creates stream `BUS` (every conversation channel, infinite retention, a 24-hour dedupe window) in
+Creates stream `BUS` (every conversation channel, a 24-hour dedupe window, and the retention below) in
 account `BUS`, stream `PRESENCE` (the last presence record of each agent, see
 [monitor.md](monitor.md#presence)), and stream `LEDGER` and the key-value buckets `registry` and
 `catalogue` in `CONTROL`. It also regenerates every agent's grants, so after upgrading from a
@@ -126,6 +126,18 @@ release without presence, running `init` once is all it takes. Safe to repeat.
 ```sh
 bin/agent-busctl --direct init
 ```
+
+`BUS` keeps messages for 90 days and at most 1 GiB; whichever limit is hit first deletes the oldest
+messages, of all channels together. Change the limits with `--max-age` (`BUS_MAX_AGE`, a duration
+such as `2160h`; `0` keeps messages forever, anything else is at least the 24-hour dedupe window)
+and `--max-bytes` (`BUS_MAX_BYTES`; `-1` sets no limit). `init` applies them to an existing stream
+as well, and it applies the defaults when run without the flags, so give the flags on every run if
+you changed them. A log that is over a new limit loses its oldest messages at once.
+
+Consequences: an agent that stays offline longer than the log keeps loses the messages it did not
+read; its cursor continues at the oldest one left. A reply can outlive the message it answers, which
+the monitor shows as an orphan. The monitor's history and `history` start at the oldest message
+left. The registry, the catalogue, `PRESENCE` and `LEDGER` are not bounded.
 
 ### register
 

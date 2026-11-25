@@ -186,6 +186,15 @@ docker compose -f deploy/docker-compose.yaml up -d
 The folders keep the certificates, credentials and messages. Agents reconnect by themselves
 ([troubleshooting](troubleshooting.md#when-the-bus-is-down)).
 
+**Upgrading from a release without retention limits.** The message log was kept forever. To apply
+the new limits (90 days, 1 GiB; [agent-busctl](agent-busctl.md#init)) to the existing log, once:
+
+```sh
+docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl --direct init
+```
+
+Messages older than 90 days, or beyond the newest 1 GiB, are deleted at once.
+
 **Upgrading from a release without the service logins.** Everything keeps working: busd and a monitor
 that mounts the broker's config folder use the admin logins and say so in their log. To give them logins of
 their own (busd) and the monitor a config folder without the CA key, once:

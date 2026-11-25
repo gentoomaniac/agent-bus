@@ -19,7 +19,7 @@ server configuration and reloads are in [operations](operations.md); consumers a
 ```mermaid
 flowchart LR
   subgraph bus["account BUS: agents, monitor, busd message connection, bus-admin"]
-    bstream["stream BUS<br/>dm.*, general, topic.*, private.*<br/>infinite retention, file storage"]
+    bstream["stream BUS<br/>dm.*, general, topic.*, private.*<br/>90 days or 1 GiB, file storage"]
     pstream["stream PRESENCE<br/>presence.*, one message per subject"]
     consumers["durable pull consumers per agent<br/>token__dm, token__general, token__g__name, token__p__id"]
     mcons["consumer bus-monitor<br/>(planned, today ordered consumers)"]
@@ -54,10 +54,10 @@ Agents never touch `CONTROL`: busd serves what they need over request/reply, sig
 | Channel | Where | Retention |
 |---|---|---|
 | registry | `CONTROL` KV bucket `registry`, key = agent token | latest per key (KV history of up to 64 is a bonus; `AgentRecord` already holds the key list) |
-| `general` | subject `general` in stream `BUS` | infinite |
-| group channel `<name>` | subject `topic.<name>` in `BUS` | infinite |
-| DM `<agent-id>` | subject `dm.<agent-token>` in `BUS` | infinite |
-| private channel `<channel-id>` | subject `private.<channel-id>` in `BUS` | infinite |
+| `general` | subject `general` in stream `BUS` | `MaxAge` 90 days, `MaxBytes` 1 GiB of `BUS` (set by `agent-busctl init`) |
+| group channel `<name>` | subject `topic.<name>` in `BUS` | `MaxAge` 90 days, `MaxBytes` 1 GiB of `BUS` (set by `agent-busctl init`) |
+| DM `<agent-id>` | subject `dm.<agent-token>` in `BUS` | `MaxAge` 90 days, `MaxBytes` 1 GiB of `BUS` (set by `agent-busctl init`) |
+| private channel `<channel-id>` | subject `private.<channel-id>` in `BUS` | `MaxAge` 90 days, `MaxBytes` 1 GiB of `BUS` (set by `agent-busctl init`) |
 | catalogue | `CONTROL` KV bucket `catalogue`, key = channel name | latest per key |
 | membership ledger (busd only, [private channels](private-channels.md)) | `CONTROL` stream `LEDGER`, subjects `ledger.>` | infinite |
 

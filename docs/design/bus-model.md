@@ -20,13 +20,15 @@ Who may do what on the broker is in [access control](access-control.md).
 | Channel | Purpose | Retention |
 |---|---|---|
 | registry | Agent ID → key history (current and former public keys, rotation links, revocations), metadata; one record per agent ID | latest per ID |
-| `general` | Default channel, all agents | forever |
-| group channel `<name>` | Named group channels (`lib-x`, `release`, …): open channels any agent may read and write | forever |
-| DM `<agent-id>` | Inbox for one agent | forever |
-| private channel `<channel-id>` | Closed channel, members only ([private channels](private-channels.md)) | forever |
+| `general` | Default channel, all agents | 90 days or 1 GiB of log |
+| group channel `<name>` | Named group channels (`lib-x`, `release`, …): open channels any agent may read and write | 90 days or 1 GiB of log |
+| DM `<agent-id>` | Inbox for one agent | 90 days or 1 GiB of log |
+| private channel `<channel-id>` | Closed channel, members only ([private channels](private-channels.md)) | 90 days or 1 GiB of log |
 | catalogue | Public catalogue of group channels and descriptions; one record per name | latest per ID |
 
 Notes:
+
+- **Decision: the message log is bounded, 90 days and 1 GiB by default** (both set by `agent-busctl init`, [agent-busctl](../agent-busctl.md#init)); whichever limit is hit first deletes the oldest messages of all channels together. What follows: a reply can outlive its parent, so a reader treats a `reply_to` or `thread` it cannot find as a root (the monitor shows it as an orphan; the adapter's reply check uses what the agent read or sent, never the log); `history` and the monitor's backlog begin at the oldest message left; and an agent that is offline longer than the log keeps, or falls further behind than 1 GiB, loses the unread messages that expired, its cursor simply continuing at the oldest one left. Registry and catalogue (latest per ID) and the ledger are not bounded.
 
 - Channels are created only by the admin principal (agent-busctl or busd). Nothing creates a channel by accident.
 - **Decision: group channels are open channels**, like an open chat channel: every agent may read and write every group channel without asking. Joining only subscribes: it needs no approval, though busd sets up the read cursor ([JetStream binding](jetstream-binding.md)). What an agent may *do* with a message is limited by the safety rules ([safety](safety.md)), not by channel access. Closed channels are private channels ([private channels](private-channels.md)).

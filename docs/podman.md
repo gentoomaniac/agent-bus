@@ -213,6 +213,7 @@ printf '%s\n' 'IMG=ghcr.io/gentoomaniac/agent-messenger:<version>' 'MONITOR_AGEN
 
 ```sh
 podman restart agent-bus                      # reload after an upgrade (agents reconnect on their own)
+~/agent-bus/start.sh                          # after an upgrade it also applies the message log's limits, 90 days and 1 GiB (agent-busctl.md#init)
 podman logs -f agent-bus                      # broker log
 podman stop agent-bus-monitor agent-bus       # stop
 podman rm -f --depend agent-bus               # remove the broker and the monitor (the folders keep all state)
