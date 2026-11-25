@@ -221,10 +221,82 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "502": { $ref: "#/components/responses/Error" }
+  /api/v1/prefs:
+    get:
+      operationId: getPrefs
+      summary: The shared preferences (read markers, favourites, folded sections).
+      responses:
+        "200":
+          description: The whole prefs object.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Prefs" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/prefs/read:
+    post:
+      operationId: mergeReadMarkers
+      summary: Raise read markers; a lower sequence never moves one back.
+      description: Needs the same origin rules as `send`. At most 2000 channels in total.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReadMarkers" }
+      responses:
+        "200":
+          description: The merged read markers.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReadMarkers" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+  /api/v1/prefs/favourites:
+    put:
+      operationId: putFavourites
+      summary: Replace the favourite channel IDs.
+      description: Needs the same origin rules as `send`. At most 200 names.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Names" }
+      responses:
+        "200":
+          description: The new prefs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Prefs" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+  /api/v1/prefs/collapsed:
+    put:
+      operationId: putCollapsed
+      summary: Replace the folded sidebar sections.
+      description: Needs the same origin rules as `send`. At most 20 names.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Names" }
+      responses:
+        "200":
+          description: The new prefs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Prefs" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
   /api/v1/events:
     get:
       operationId: streamEvents
-      summary: Live messages and presence changes, as server-sent events.
+      summary: Live messages, presence changes and prefs changes, as server-sent events.
       description: |
         A live tail without replay: events carry an `id`, but `Last-Event-ID` is ignored. On every
         (re)connect, read the state through the other endpoints first. Lines starting with `:` are
@@ -232,7 +304,8 @@ paths:
       responses:
         "200":
           description: |
-            `event: message` with a Message as data, and `event: presence` with a Presence.
+            `event: message` with a Message as data, `event: presence` with a Presence, and
+            `event: prefs` with the full Prefs after every change.
           content:
             text/event-stream:
               schema:
@@ -275,6 +348,28 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    ReadMarkers:
+      type: object
+      description: Channel ID to the last read stream sequence.
+      maxProperties: 2000
+      propertyNames: { minLength: 1, maxLength: 200 }
+      additionalProperties: { type: integer, minimum: 0 }
+    Names:
+      type: array
+      items: { type: string, minLength: 1, maxLength: 200 }
+    Prefs:
+      type: object
+      required: [read, favourites, collapsed]
+      properties:
+        read: { $ref: "#/components/schemas/ReadMarkers" }
+        favourites:
+          type: array
+          maxItems: 200
+          items: { type: string, description: A channel ID. }
+        collapsed:
+          type: array
+          maxItems: 20
+          items: { type: string, description: "A section: favourites, channels, dms or agents." }
     Error:
       type: object
       required: [error, code]

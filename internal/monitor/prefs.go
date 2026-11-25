@@ -173,7 +173,7 @@ func (monitor *Monitor) servePrefsRead(w http.ResponseWriter, r *http.Request) {
 	if !decodePrefsBody(w, r, &raw) {
 		return
 	}
-	if len(raw) > maxPrefChannels {
+	if raw == nil || len(raw) > maxPrefChannels { // nil: the body was null
 		writeError(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("at most %d channels", maxPrefChannels))
 		return
 	}

@@ -72,7 +72,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | 404    | `unknown_channel`        | `members` of a channel that is not listed                  |
 | 404    | `not_found`              | no such endpoint (this includes a wrong method)            |
 | 409    | `no_password_set`        | `login` on a monitor without a password                    |
-| 415    | `unsupported_media_type` | `login` or `send` without `Content-Type: application/json` |
+| 415    | `unsupported_media_type` | `login`, `send` or a `prefs` change without `Content-Type: application/json` |
 | 429    | `too_many_attempts`      | see wrong passwords above                                  |
 | 502    | `bus_unavailable`        | the bus did not answer                                     |
 | 500    | `internal`               | the monitor cannot do it (for example, the response cannot stream) |
@@ -175,8 +175,8 @@ hash and answered by `GET /api/v1/prefs`:
 
 Like `send`, these want `Content-Type: application/json` and the same origin rules. Names are
 strings of 1 to 200 bytes; there are at most 2000 read markers, 200 favourites and 20 sections;
-sequences are non-negative integers; a body is at most 256 KiB. Anything else is a `400`
-`bad_request`. Every change is sent to the open event streams as a `prefs` event.
+sequences are non-negative integers; a body is at most 256 KiB. A wrong `Content-Type` gets a
+`415` `unsupported_media_type`; anything else invalid (including `null`) is a `400` `bad_request`. Every change is sent to the open event streams as a `prefs` event.
 
 ## Events
 
