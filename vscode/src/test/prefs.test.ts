@@ -11,6 +11,7 @@ class FakeMonitor implements PrefsApi {
   readPosts: Record<string, number>[] = [];
   replaced: string[][] = [];
   failing: Error | undefined;
+  failFavourites = false;
   private release: (() => void) | undefined;
   private held: Promise<void> | undefined;
 
@@ -37,6 +38,7 @@ class FakeMonitor implements PrefsApi {
   }
   async putFavourites(channels: string[]) {
     await this.request();
+    if (this.failFavourites) throw new Error("favourites failed");
     this.replaced.push(channels);
     this.stored.favourites = channels;
     return this.stored;
@@ -129,28 +131,38 @@ test("the echo of an own change does not undo a newer one that is still to be se
 
 test("the legacy prefs move to an empty monitor once", async () => {
   const { prefs, monitor } = newPrefs();
-  const moved = await prefs.load({ read: { general: 8 }, favourites: ["group:a"], collapsed: ["dms"] });
-  assert.equal(moved, true);
+  const done = await prefs.load({ read: { general: 8 }, favourites: ["group:a"], collapsed: ["dms"] });
+  assert.deepEqual(done, ["read", "favourites", "collapsed"]);
   assert.deepEqual(monitor.stored, { read: { general: 8 }, favourites: ["group:a"], collapsed: ["dms"] });
   assert.equal(prefs.get("general"), 8);
   assert.deepEqual([...prefs.favourites], ["group:a"]);
 });
 
-test("the legacy prefs are dropped without being sent when the monitor has prefs", async () => {
+test("a legacy part is dropped without being sent when the monitor has that part; the others still move", async () => {
   const monitor = new FakeMonitor();
   monitor.stored = { read: { general: 2 }, favourites: [], collapsed: [] };
   const { prefs } = newPrefs(monitor);
-  const moved = await prefs.load({ read: { general: 8 }, favourites: ["group:a"], collapsed: [] });
-  assert.equal(moved, true);
-  assert.deepEqual(monitor.stored, { read: { general: 2 }, favourites: [], collapsed: [] });
+  const done = await prefs.load({ read: { general: 8 }, favourites: ["group:a"], collapsed: [] });
+  assert.deepEqual(done, ["read", "favourites", "collapsed"]);
+  assert.deepEqual(monitor.stored, { read: { general: 2 }, favourites: ["group:a"], collapsed: [] });
   assert.equal(prefs.get("general"), 2);
+});
+
+test("a legacy part that fails to upload stays, and does not stop the others", async () => {
+  const monitor = new FakeMonitor();
+  monitor.failFavourites = true;
+  const { prefs, errors } = newPrefs(monitor);
+  const done = await prefs.load({ read: { general: 8 }, favourites: ["group:a"], collapsed: ["dms"] });
+  assert.deepEqual(done, ["read", "collapsed"]);
+  assert.equal(errors.length, 1);
+  assert.deepEqual(monitor.stored, { read: { general: 8 }, favourites: [], collapsed: ["dms"] });
 });
 
 test("without prefs on the monitor the state stays in memory and nothing is sent", async () => {
   const monitor = new FakeMonitor();
   monitor.failing = new ApiError(404, "not_found", "no such endpoint");
   const { prefs, errors } = newPrefs(monitor);
-  assert.equal(await prefs.load(), false);
+  assert.deepEqual(await prefs.load(), []);
   assert.equal(errors.length, 1);
   prefs.set("general", 3);
   prefs.setFavourite("general", true);

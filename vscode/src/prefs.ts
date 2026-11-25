@@ -6,8 +6,8 @@ import { ServerPrefs } from "./types";
 export interface PrefsApi {
   prefs(): Promise<ServerPrefs>;
   postRead(updates: Record<string, number>): Promise<Record<string, number>>; // answers the merged markers
-  putFavourites(channels: string[]): Promise<unknown>;
-  putCollapsed(sections: string[]): Promise<unknown>;
+  putFavourites(channels: string[]): Promise<ServerPrefs>; // answer the new prefs
+  putCollapsed(sections: string[]): Promise<ServerPrefs>;
 }
 
 // What an older version of the extension kept in the editor's global state for this monitor.
@@ -101,34 +101,38 @@ export class Prefs implements ReadStore {
     this.onChange();
   }
 
-  // Reads the prefs from the monitor, moving the legacy ones there once if it has none. Answers
-  // whether the monitor holds the prefs now, so the legacy copy can go. A login that ended is
+  // Reads the prefs from the monitor and moves each legacy part there once, if the monitor has
+  // none of that part. Answers the legacy parts that can go: uploaded, empty, or superseded by
+  // what the monitor already holds; a part that failed to upload stays. A login that ended is
   // thrown for the caller to handle; any other failure leaves the prefs in memory.
-  async load(legacy?: LegacyPrefs): Promise<boolean> {
+  async load(legacy: LegacyPrefs = { read: {}, favourites: [], collapsed: [] }): Promise<(keyof LegacyPrefs)[]> {
     let server: ServerPrefs;
     try {
       server = await this.api.prefs();
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) throw error;
       this.onError(error);
-      return false;
+      return [];
     }
     this.online = true;
-    if (legacy && isEmpty(server) && !isEmpty(legacy)) {
+    const done: (keyof LegacyPrefs)[] = [];
+    for (const part of ["read", "favourites", "collapsed"] as const) {
+      if (isEmpty(legacy[part]) || !isEmpty(server[part])) {
+        done.push(part);
+        continue;
+      }
       try {
-        if (Object.keys(legacy.read).length > 0) server.read = (await this.api.postRead(legacy.read));
-        if (legacy.favourites.length > 0) await this.api.putFavourites(legacy.favourites);
-        if (legacy.collapsed.length > 0) await this.api.putCollapsed(legacy.collapsed);
-        server = { read: server.read, favourites: legacy.favourites, collapsed: legacy.collapsed };
+        if (part === "read") server.read = await this.api.postRead(legacy.read);
+        else if (part === "favourites") server.favourites = (await this.api.putFavourites(legacy.favourites)).favourites;
+        else server.collapsed = (await this.api.putCollapsed(legacy.collapsed)).collapsed;
+        done.push(part);
       } catch (error) {
         this.onError(error);
-        this.apply(server);
-        return false;
       }
     }
     this.apply(server);
     void this.flush(); // markers made while offline or before the load
-    return true;
+    return done;
   }
 }
 
@@ -137,6 +141,6 @@ function replaceAll(set: Set<string>, members: string[]): void {
   for (const member of members) set.add(member);
 }
 
-function isEmpty(prefs: LegacyPrefs | ServerPrefs): boolean {
-  return Object.keys(prefs.read).length === 0 && prefs.favourites.length === 0 && prefs.collapsed.length === 0;
+function isEmpty(part: Record<string, number> | string[]): boolean {
+  return Array.isArray(part) ? part.length === 0 : Object.keys(part).length === 0;
 }

@@ -5,6 +5,8 @@ import { Model } from "./model";
 import { LegacyPrefs, Prefs } from "./prefs";
 import { Message, ServerPrefs } from "./types";
 
+const legacyKey = (part: keyof LegacyPrefs, url: string) => (part === "read" ? "lastRead:" : part + ":") + url;
+
 // One connection to a monitor: its URL from the settings, the token from the secret storage, the
 // model and the event stream. Everything restarts on login, logout and a changed URL.
 export class Session implements vscode.Disposable {
@@ -48,16 +50,17 @@ export class Session implements vscode.Disposable {
 
   // What an older version kept in the global state for this monitor, before the prefs were shared.
   // Folded categories were then called directMessages where the monitor says dms.
-  private legacyPrefs(url: string): LegacyPrefs | undefined {
+  private legacyPrefs(url: string): LegacyPrefs {
     const state = this.context.globalState;
-    const read = state.get<Record<string, number>>("lastRead:" + url, {});
-    const favourites = state.get<string[]>("favourites:" + url, []);
-    const collapsed = state.get<string[]>("collapsed:" + url, []).map((id) => (id === "directMessages" ? "dms" : id));
-    return Object.keys(read).length + favourites.length + collapsed.length > 0 ? { read, favourites, collapsed } : undefined;
+    return {
+      read: state.get<Record<string, number>>(legacyKey("read", url), {}),
+      favourites: state.get<string[]>(legacyKey("favourites", url), []),
+      collapsed: state.get<string[]>(legacyKey("collapsed", url), []).map((id) => (id === "directMessages" ? "dms" : id)),
+    };
   }
 
-  private async dropLegacyPrefs(url: string): Promise<void> {
-    for (const prefix of ["lastRead:", "favourites:", "collapsed:"]) await this.context.globalState.update(prefix + url, undefined);
+  private async dropLegacyPrefs(url: string, parts: (keyof LegacyPrefs)[]): Promise<void> {
+    for (const part of parts) await this.context.globalState.update(legacyKey(part, url), undefined);
   }
 
   async start(): Promise<void> {
@@ -77,7 +80,7 @@ export class Session implements vscode.Disposable {
       onOpen: async () => {
         model.setLive(true);
         // The prefs come first: the first refresh counts a channel without a read marker as read.
-        if (await prefs.load(this.legacyPrefs(url))) await this.dropLegacyPrefs(url);
+        await this.dropLegacyPrefs(url, await prefs.load(this.legacyPrefs(url)));
         await model.refresh();
         this.refreshEmitter.fire();
       },
