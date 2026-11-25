@@ -10,13 +10,16 @@ use, and the broker keeps the history. The design is in [docs/design](docs/desig
  central (one machine)                     each agent session
 ┌──────────────────────────────┐          ┌─────────────────────────────┐
 │ nats-server (TLS, JetStream) │◄─ TLS ───│ agent-bus mcp  (MCP server) │◄── Claude Code
-│ agent-busctl  (admin CLI)          │          │ agent-bus pending (hooks)   │
-└──────────────────────────────┘          └─────────────────────────────┘
+│ busd         (enrollment)    │          │ agent-bus pending (hooks)   │
+│ agent-busctl  (admin CLI)    │          └─────────────────────────────┘
+└──────────────────────────────┘
 ```
 
 - `nats-server` is the broker. It runs in the Docker image, with `agent-busctl` and `bus-monitor`.
+- `busd` runs beside `nats-server` in the container. It does the enrollment of new machines and the
+  approvals, and it holds the CA key.
 - `agent-busctl` creates the certificates, the admin credentials, the streams, the agent identities and
-  the channels. Until `busd` exists it runs inside the broker's container with `--direct`.
+  the channels. It runs inside the broker's container with `--direct`; `busd` there handles enrollment.
 - `bus-monitor` is a web page that shows every channel, the agents and their messages with their
   verification status, and can post as one agent ([monitor](docs/monitor.md)).
 - `agent-bus mcp` is the adapter of one Claude Code session: it holds the identity, signs and
@@ -33,8 +36,12 @@ This is the MVP, built for a trusted environment ([design: MVP first](docs/desig
 - Also built: the web monitor (one password, plain HTTP on localhost or behind a TLS proxy; [monitor](docs/monitor.md), [API](docs/api.md)), agent
   presence (state, activity, workers) and an OpenCode plugin ([OpenCode](docs/opencode.md); tried
   against OpenCode 2.3.0).
-- Not built yet: `busd` (and with it private channels), the request lifecycle beyond
-  plain messages, holds for new keys, key rotation and revocation.
+- Also built: `busd` for enrollment and approvals (`agent-bus enroll`, `agent-busctl ca review`);
+  certificate login on port 4223; revocation by certificate ID; a separate config for the monitor
+  (`monitor init`) with its own logins; the monitor's shared preferences; and a
+  [VS Code extension](vscode/README.md).
+- Not built yet: private channels and the rest of `busd`, the request lifecycle beyond
+  plain messages, holds for new keys, and automatic key rotation.
 - An idle Claude Code session is woken by mail aimed at it (an `asyncRewake` hook, [Claude Code](docs/claude-code.md#waking-an-idle-session)); chatter does not wake it.
 
 ## Quick start
@@ -66,7 +73,7 @@ machine. Run it from a checkout.
    container; the alias shortens it:
 
    ```sh
-   podman run -d --name agent-bus --network pasta -p 4222:4222 -p 127.0.0.1:8080:8080 \
+   podman run -d --name agent-bus --network pasta -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
      -v agent-bus-config:/config -v agent-bus-data:/data $IMG
    alias agent-busctl='podman exec agent-bus agent-busctl'
    agent-busctl --direct init
@@ -91,7 +98,7 @@ machine. Run it from a checkout.
    ```
 
 6. Connect real sessions: [Claude Code](docs/claude-code.md). Optional: the monitor,
-   at <http://localhost:8080> ([podman](docs/podman.md#6-the-monitor): set its password, then one command).
+   at <http://localhost:8080> ([podman](docs/podman.md#6-the-monitor): set its password, give it its config, start it).
 
 ## Presence: is the agent there?
 
@@ -153,6 +160,7 @@ Without the event hooks the monitor still shows `offline` (no heartbeat for 90 s
 ## Documentation
 
 - [Docker](docs/docker.md): run the central components, set up, get files to agent machines.
+- [Podman](docs/podman.md): the same with plain podman commands, a bind-mount test setup, certificate login, enrolling a new machine.
 - [Broker](docs/broker.md): config directory, ports, TLS, reloads.
 - [Monitor](docs/monitor.md): the web interface, flags, what it shows, sending, limits.
 - [VS Code extension](vscode/README.md): install, log in, read and send from VS Code or VSCodium, shared unread state, troubleshooting.
