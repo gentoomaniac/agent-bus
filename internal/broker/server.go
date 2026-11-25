@@ -48,15 +48,21 @@ func (server Server) WriteAdminAuth(busAdminHash, controlAdminHash string) error
 	}
 	defer unlock()
 
-	body, generation := busAuth{adminHash: busAdminHash}.render(nil), 0
+	var table userTable
+	generation := 0
 	if current, err := os.ReadFile(server.path(authFile)); err == nil {
 		currentBody, currentGeneration := splitGeneration(string(current))
-		body, generation = replaceAdminHash(currentBody, busAdminHash), currentGeneration
+		if table, err = parseUserTable(currentBody); err != nil {
+			return err
+		}
+		generation = currentGeneration
 	}
-	if err := writeAuthFile(server.path(authFile), generation+1, body); err != nil {
+	table.set(authUser{role: roleAdmin, name: BusAdminUser, mode: modePassword, passwordHash: busAdminHash})
+	if err := writeAuthFile(server.path(authFile), generation+1, table.render(nil)); err != nil {
 		return err
 	}
-	return writeAuthFile(server.path(controlAuthFile), 1, renderControlAuth(controlAdminHash))
+	controlTable := userTable{{role: roleAdmin, name: ControlAdminUser, mode: modePassword, passwordHash: controlAdminHash}}
+	return writeAuthFile(server.path(controlAuthFile), 1, controlTable.render(nil))
 }
 
 // NewServer describes this host's nats-server, which deploy/nats.sh configures under
@@ -71,7 +77,12 @@ func (server Server) hasAgent(agentToken string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("reading the authorization file (has `agent-busctl admin init` run?): %w", err)
 	}
-	_, listed := parseBusAuth(string(current)).agentHashes[agentToken]
+	body, _ := splitGeneration(string(current))
+	table, err := parseUserTable(body)
+	if err != nil {
+		return false, err
+	}
+	_, listed := table.find(roleAgent, agentToken)
 	return listed, nil
 }
 

@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -8,22 +9,81 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestBusAuthRoundTripsAndGrantsPerAgent(t *testing.T) {
+func TestUserTableRoundTripsEveryRoleAndMode(t *testing.T) {
 	adminHash, err := HashPassword("admin-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
 	aliceHash, _ := HashPassword("alice-secret")
-	auth := busAuth{adminHash: adminHash, agentHashes: map[string]string{"api-client_alice": aliceHash, "lib-x_bob": "$2a$10$x"}}
-
-	body := auth.render([]string{"lib-x", "release"})
-	parsed := parseBusAuth(body)
-	if parsed.adminHash != adminHash || parsed.agentHashes["api-client_alice"] != aliceHash || len(parsed.agentHashes) != 2 {
-		t.Errorf("parse(render(auth)) = %+v, want the same hashes back", parsed)
+	table := userTable{
+		{role: roleAdmin, name: BusAdminUser, mode: modePassword, passwordHash: adminHash},
+		{role: roleAdmin, name: ControlAdminUser, mode: modeCert},
+		{role: roleAgent, name: "api-client_alice", mode: modePassword, passwordHash: aliceHash},
+		{role: roleAgent, name: "lib-x_bob", mode: modeCert},
+		{role: roleMonitor, name: "monitor", mode: modeCert},
+		{role: roleMonitor, name: "legacy-monitor", mode: modePassword, passwordHash: "$2a$10$m"},
+		{role: roleEnrollment, name: "enroll", mode: modePassword, passwordHash: "$2a$10$e"},
+		{role: roleEnrollment, name: "enroll-cert", mode: modeCert},
 	}
-	if bcrypt.CompareHashAndPassword([]byte(parsed.agentHashes["api-client_alice"]), []byte("alice-secret")) != nil {
+
+	body := table.render([]string{"lib-x", "release"})
+	parsed, err := parseUserTable(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sortedWant := slices.Clone(table)
+	slices.SortFunc(sortedWant, func(a, b authUser) int { return strings.Compare(string(a.role)+a.name, string(b.role)+b.name) })
+	if !slices.Equal(parsed, sortedWant) {
+		t.Errorf("parse(render(table)) = %+v, want %+v", parsed, sortedWant)
+	}
+	if again := parsed.render([]string{"lib-x", "release"}); again != body {
+		t.Errorf("render is not stable:\n%s\nvs\n%s", body, again)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(parsed[2].passwordHash), []byte("alice-secret")) != nil {
 		t.Error("the hash read back no longer matches the password")
 	}
+	for _, want := range []string{`user: "agentbus:agent/lib-x_bob"`, `allowed_connection_types: ["WEBSOCKET"]`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body lacks %s", want)
+		}
+	}
+}
+
+func TestParseUserTableReadsAFileWrittenBeforeRoles(t *testing.T) {
+	old := `users = [
+  {user: "bus-admin", password: "$2a$10$a", permissions: {publish: {allow: [">"]}, subscribe: {allow: [">"]}}},
+  {user: "lib-x_bob", password: "$2a$10$b", permissions: {publish: {allow: ["dm.*"]}, subscribe: {allow: ["_INBOX.lib-x_bob.>"]}}},
+]
+`
+	table, err := parseUserTable(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := userTable{
+		{role: roleAdmin, name: BusAdminUser, mode: modePassword, passwordHash: "$2a$10$a"},
+		{role: roleAgent, name: "lib-x_bob", mode: modePassword, passwordHash: "$2a$10$b"},
+	}
+	if !slices.Equal(table, want) {
+		t.Errorf("parsed %+v, want %+v", table, want)
+	}
+}
+
+func TestParseUserTableRefusesWhatItCannotKeep(t *testing.T) {
+	for name, body := range map[string]string{
+		"unknown role":              `  {user: "a_b", password: "h", permissions: {}}, # superuser`,
+		"hand-written entry":        `  {user: "a_b", token: "t"}`,
+		"certificate role mismatch": `  {user: "agentbus:admin/a_b", permissions: {}}, # agent`,
+		"no login":                  `  {user: "a_b", permissions: {}}, # agent`,
+	} {
+		if _, err := parseUserTable("users = [\n" + body + "\n]\n"); err == nil {
+			t.Errorf("%s: parsed without an error", name)
+		}
+	}
+}
+
+func TestUserTableGrantsPerAgent(t *testing.T) {
+	table := userTable{{role: roleAgent, name: "lib-x_bob", mode: modeCert}}
+	body := table.render([]string{"lib-x", "release"})
 
 	for _, want := range []string{
 		`"$JS.API.CONSUMER.MSG.NEXT.BUS.lib-x_bob__dm"`,
@@ -71,16 +131,57 @@ func TestAgentMayPublishOnlyItsOwnPresenceAndReadAnyones(t *testing.T) {
 	}
 }
 
-func TestReplaceAdminHashKeepsTheAgents(t *testing.T) {
-	auth := busAuth{adminHash: "$2a$10$old", agentHashes: map[string]string{"a_b": "$2a$10$agent"}}
-	body := replaceAdminHash(auth.render([]string{"g"}), "$2a$10$new")
-	parsed := parseBusAuth(body)
-	if parsed.adminHash != "$2a$10$new" || parsed.agentHashes["a_b"] != "$2a$10$agent" {
-		t.Errorf("after replacing the admin hash: %+v", parsed)
+func TestTableSetReplacesAndRemoveDrops(t *testing.T) {
+	table := userTable{{role: roleAgent, name: "a_b", mode: modePassword, passwordHash: "old"}}
+	table.set(authUser{role: roleAgent, name: "a_b", mode: modeCert})
+	table.set(authUser{role: roleAdmin, name: "a_b", mode: modePassword, passwordHash: "x"})
+	if len(table) != 2 || table[0].mode != modeCert {
+		t.Errorf("after set: %+v", table)
 	}
-	if !strings.Contains(body, "MSG.NEXT.BUS.a_b__g__g") {
-		t.Error("the agent lost its group grants")
+	table.remove(roleAgent, "a_b")
+	if len(table) != 1 || table[0].role != roleAdmin {
+		t.Errorf("after remove: %+v", table)
 	}
+}
+
+func TestWriteAdminAuthKeepsCertificateAgents(t *testing.T) {
+	server := Server{Dir: t.TempDir()}
+	if err := server.WriteAdminAuth("$2a$10$one", "$2a$10$two"); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := splitGeneration(readFile(t, server.path(authFile)))
+	table, err := parseUserTable(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table.set(authUser{role: roleAgent, name: "lib-x_bob", mode: modeCert})
+	if err := writeAuthFile(server.path(authFile), 5, table.render(nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := server.WriteAdminAuth("$2a$10$three", "$2a$10$four"); err != nil {
+		t.Fatal(err)
+	}
+	body, generation := splitGeneration(readFile(t, server.path(authFile)))
+	table, err = parseUserTable(body)
+	if err != nil || generation != 6 || len(table) != 2 {
+		t.Fatalf("after the second init: %+v, generation %d, %v", table, generation, err)
+	}
+	if index, _ := table.find(roleAdmin, BusAdminUser); table[index].passwordHash != "$2a$10$three" {
+		t.Errorf("admin hash not replaced: %+v", table)
+	}
+	if _, found := table.find(roleAgent, "lib-x_bob"); !found {
+		t.Error("the certificate agent was lost")
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(content)
 }
 
 func TestSplitGeneration(t *testing.T) {

@@ -104,7 +104,7 @@ func (admin *Admin) Setup(ctx context.Context) error {
 		}
 	}
 	// Agents registered by an older release get the grants of this one (presence).
-	return admin.updateAuth(ctx, func(*busAuth) error { return nil })
+	return admin.updateAuth(ctx, func(*userTable) error { return nil })
 }
 
 func (admin *Admin) PutAgentRecord(ctx context.Context, record bus.AgentRecord) error {
@@ -124,11 +124,11 @@ func (admin *Admin) CreateAccount(ctx context.Context, agentID, password string)
 		return err
 	}
 	token := bus.AgentToken(agentID)
-	return admin.updateAuth(ctx, func(auth *busAuth) error {
-		if _, exists := auth.agentHashes[token]; exists {
+	return admin.updateAuth(ctx, func(table *userTable) error {
+		if _, exists := table.find(roleAgent, token); exists {
 			return fmt.Errorf("%s already has an account", agentID)
 		}
-		auth.agentHashes[token] = hash
+		table.set(authUser{role: roleAgent, name: token, mode: modePassword, passwordHash: hash})
 		return nil
 	})
 }
@@ -138,8 +138,8 @@ func (admin *Admin) AccountExists(_ context.Context, agentID string) (bool, erro
 }
 
 func (admin *Admin) DeleteAccount(ctx context.Context, agentID string) error {
-	return admin.updateAuth(ctx, func(auth *busAuth) error {
-		delete(auth.agentHashes, bus.AgentToken(agentID))
+	return admin.updateAuth(ctx, func(table *userTable) error {
+		table.remove(roleAgent, bus.AgentToken(agentID))
 		return nil
 	})
 }
@@ -155,7 +155,7 @@ func (admin *Admin) CreateGroupChannel(ctx context.Context, name, description st
 	}
 	// The grants are regenerated even for an existing channel, so a run that failed after the
 	// catalogue write finishes the job when it is repeated.
-	return created, admin.updateAuth(ctx, func(*busAuth) error { return nil })
+	return created, admin.updateAuth(ctx, func(*userTable) error { return nil })
 }
 
 func (admin *Admin) CreateReadCursor(ctx context.Context, agentID string, channel bus.Channel, afterSequence uint64) error {
@@ -229,17 +229,20 @@ func (admin *Admin) LastSequence(ctx context.Context) (uint64, error) {
 // updateAuth changes the users of BUS and regenerates every agent's grants from the catalogue, as
 // one confirmed reload. The catalogue is read under the server's lock, so a group channel created
 // meanwhile is never left out.
-func (admin *Admin) updateAuth(ctx context.Context, change func(auth *busAuth) error) error {
+func (admin *Admin) updateAuth(ctx context.Context, change func(table *userTable) error) error {
 	return admin.server.UpdateAuth(ctx, func(body string) (string, error) {
-		auth := parseBusAuth(body)
-		if err := change(&auth); err != nil {
+		table, err := parseUserTable(body)
+		if err != nil {
+			return "", err
+		}
+		if err := change(&table); err != nil {
 			return "", err
 		}
 		groups, err := admin.groupNames(ctx)
 		if err != nil {
 			return "", err
 		}
-		return auth.render(groups), nil
+		return table.render(groups), nil
 	})
 }
 

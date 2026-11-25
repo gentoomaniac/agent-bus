@@ -1,9 +1,10 @@
 package broker
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
@@ -30,67 +31,135 @@ func HashPassword(password string) (string, error) {
 	return string(hash), err
 }
 
-// busAuth is what the BUS account's authorization file says: the admin's password hash and the
-// hash of every registered agent, by agent token.
-type busAuth struct {
-	adminHash   string
-	agentHashes map[string]string
+// authRole says what an entry of an authorization file is for, and so which grants it gets.
+type authRole string
+
+const (
+	roleAgent authRole = "agent"
+	roleAdmin authRole = "admin"
+	// roleMonitor and roleEnrollment are reserved for phase B of the mTLS login (design.md §4c).
+	// A file that has them is read and written back unchanged; they have no access until their
+	// grants are defined.
+	roleMonitor    authRole = "monitor"
+	roleEnrollment authRole = "enrollment"
+)
+
+// authMode is how an entry logs in: with a password, or with a client certificate that
+// nats-server maps to the entry (verify_and_map).
+type authMode string
+
+const (
+	modePassword authMode = "password"
+	modeCert     authMode = "cert"
+)
+
+// certIdentityScheme starts the one URI SAN of every client certificate, which is also the NATS
+// user name of its entry: agentbus:<role>/<name>, with the agent token or the admin user's name
+// as name. nats-server maps the certificate to the user of that name (verify_and_map).
+const certIdentityScheme = "agentbus:"
+
+// certIdentity is the URI SAN, and NATS user name, of a certificate login.
+func certIdentity(role authRole, name string) string {
+	return certIdentityScheme + string(role) + "/" + name
 }
 
-// userLine matches a user in a file written by renderBusAuth: the file is the only place the
-// password hashes live, so it has to be read back.
-var userLine = regexp.MustCompile(`^\s*\{user: "([^"]+)", password: "([^"]+)"`)
+// authUser is one entry of an authorization file. name is the agent token or the admin user's
+// name; the NATS user name follows from it and the mode.
+type authUser struct {
+	role         authRole
+	name         string
+	mode         authMode
+	passwordHash string // modePassword only
+}
 
-// replaceAdminHash sets the admin's password hash and leaves every other user as it is.
-func replaceAdminHash(body, hash string) string {
-	lines := strings.Split(body, "\n")
-	for i, line := range lines {
-		if match := userLine.FindStringSubmatch(line); match != nil && match[1] == BusAdminUser {
-			lines[i] = strings.Replace(line, match[2], hash, 1)
-		}
+func (user authUser) natsName() string {
+	if user.mode == modeCert {
+		return certIdentity(user.role, user.name)
 	}
-	return strings.Join(lines, "\n")
+	return user.name
 }
 
-func parseBusAuth(body string) busAuth {
-	auth := busAuth{agentHashes: map[string]string{}}
-	for _, line := range strings.Split(body, "\n") {
+// userTable is the users of one authorization file. The file is the only place the password
+// hashes and certificate mappings live, so reading it and writing it back must lose nothing.
+type userTable []authUser
+
+func (table userTable) find(role authRole, name string) (index int, found bool) {
+	index = slices.IndexFunc(table, func(user authUser) bool { return user.role == role && user.name == name })
+	return index, index >= 0
+}
+
+// set adds the user or replaces the one with the same role and name.
+func (table *userTable) set(user authUser) {
+	if index, found := table.find(user.role, user.name); found {
+		(*table)[index] = user
+		return
+	}
+	*table = append(*table, user)
+}
+
+func (table *userTable) remove(role authRole, name string) {
+	if index, found := table.find(role, name); found {
+		*table = slices.Delete(*table, index, index+1)
+	}
+}
+
+// userLine matches an entry written by render. The trailing comment names the role; a file written
+// before roles existed has none, and its entries are the two admins and password agents.
+var userLine = regexp.MustCompile(`^\s*\{user: "([^"]+)"(?:, password: "([^"]+)")?.*?(?:# (\w+))?\s*$`)
+
+func parseUserTable(body string) (userTable, error) {
+	var table userTable
+	for number, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "{user:") {
+			continue
+		}
 		match := userLine.FindStringSubmatch(line)
-		switch {
-		case match == nil:
-		case match[1] == BusAdminUser:
-			auth.adminHash = match[2]
-		default:
-			auth.agentHashes[match[1]] = match[2]
+		if match == nil {
+			return nil, fmt.Errorf("line %d of the authorization file is not a user entry this tool wrote: %s", number+1, strings.TrimSpace(line))
 		}
+		user, err := parseUser(match[1], match[2], authRole(match[3]))
+		if err != nil {
+			return nil, fmt.Errorf("line %d of the authorization file: %w", number+1, err)
+		}
+		table = append(table, user)
 	}
-	return auth
+	return table, nil
 }
 
-// render writes the users of BUS: the admin, and every agent with the grants of §4a for the
-// given catalogued group channels.
-func (auth busAuth) render(groups []string) string {
+func parseUser(natsName, passwordHash string, role authRole) (authUser, error) {
+	if role == "" {
+		role = roleAgent
+		if natsName == BusAdminUser || natsName == ControlAdminUser {
+			role = roleAdmin
+		}
+	}
+	if !slices.Contains([]authRole{roleAgent, roleAdmin, roleMonitor, roleEnrollment}, role) {
+		return authUser{}, fmt.Errorf("unknown role %q", role)
+	}
+	if passwordHash != "" {
+		return authUser{role: role, name: natsName, mode: modePassword, passwordHash: passwordHash}, nil
+	}
+	name, found := strings.CutPrefix(natsName, certIdentityScheme+string(role)+"/")
+	if !found {
+		return authUser{}, fmt.Errorf("user %q has no password and is not a certificate identity of role %s", natsName, role)
+	}
+	return authUser{role: role, name: name, mode: modeCert}, nil
+}
+
+// render writes the users of an authorization file, by role and name (admins first). An agent
+// gets the grants of §4a for the given catalogued group channels.
+func (table userTable) render(groups []string) string {
+	sorted := slices.Clone(table)
+	slices.SortFunc(sorted, func(a, b authUser) int {
+		return cmp.Or(strings.Compare(string(a.role), string(b.role)), strings.Compare(a.name, b.name))
+	})
 	var out strings.Builder
 	out.WriteString("users = [\n")
-	fmt.Fprintf(&out, "  %s,\n", userEntry(BusAdminUser, auth.adminHash, []string{">"}, []string{">"}))
-
-	tokens := make([]string, 0, len(auth.agentHashes))
-	for token := range auth.agentHashes {
-		tokens = append(tokens, token)
-	}
-	sort.Strings(tokens)
-	for _, token := range tokens {
-		publish, subscribe := agentPermissions(token, groups)
-		fmt.Fprintf(&out, "  %s,\n", userEntry(token, auth.agentHashes[token], publish, subscribe))
+	for _, user := range sorted {
+		fmt.Fprintf(&out, "  %s, # %s\n", userEntry(user, groups), user.role)
 	}
 	out.WriteString("]\n")
 	return out.String()
-}
-
-// renderControlAuth writes the users of CONTROL: only its admin. busd's own connection joins in
-// milestone 3.
-func renderControlAuth(adminHash string) string {
-	return fmt.Sprintf("users = [\n  %s,\n]\n", userEntry(ControlAdminUser, adminHash, []string{">"}, []string{">"}))
 }
 
 // agentPermissions are the subjects an agent may publish and subscribe to (§4a). It receives only
@@ -118,9 +187,31 @@ func agentPermissions(token string, groups []string) (publish, subscribe []strin
 }
 
 // userEntry is one line of a users list. The line format is what userLine reads back.
-func userEntry(user, passwordHash string, publish, subscribe []string) string {
-	return fmt.Sprintf(`{user: %q, password: %q, permissions: {publish: {allow: %s}, subscribe: {allow: %s}}}`,
-		user, passwordHash, quoteList(publish), quoteList(subscribe))
+func userEntry(user authUser, groups []string) string {
+	login := fmt.Sprintf("password: %q, ", user.passwordHash)
+	connectionTypes := ""
+	if user.mode == modeCert {
+		login = ""
+		// Only the mapped listener may log this user in, see deploy/nats-server.conf.
+		connectionTypes = `, allowed_connection_types: ["WEBSOCKET"]`
+	}
+	return fmt.Sprintf("{user: %q, %spermissions: %s%s}", user.natsName(), login, permissions(user, groups), connectionTypes)
+}
+
+func permissions(user authUser, groups []string) string {
+	switch user.role {
+	case roleAdmin:
+		return allowOnly([]string{">"}, []string{">"})
+	case roleAgent:
+		publish, subscribe := agentPermissions(user.name, groups)
+		return allowOnly(publish, subscribe)
+	default:
+		return `{publish: {deny: [">"]}, subscribe: {deny: [">"]}}`
+	}
+}
+
+func allowOnly(publish, subscribe []string) string {
+	return fmt.Sprintf("{publish: {allow: %s}, subscribe: {allow: %s}}", quoteList(publish), quoteList(subscribe))
 }
 
 func quoteList(items []string) string {
