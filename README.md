@@ -171,6 +171,5 @@ Without the event hooks the monitor still shows `offline` (no heartbeat for 90 s
 - [Agent tools](docs/agent-tools.md): the MCP tools and the `agent-bus` shell commands.
 - [Troubleshooting](docs/troubleshooting.md): common failures and fixes.
 - [Test run](docs/test-run.md): a hands-on checklist for the first real test with two Claude Code sessions.
-- [Upgrading a test run](docs/upgrade-test-run.md): from a bind-mount test run started before busd to the current version.
 - [Development](docs/development.md): tests, code layout, the broker without Docker, cutting a release.
 - [Design](docs/design/README.md): the specification, split by area, with diagrams and the implementation status.

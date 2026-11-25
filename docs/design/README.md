@@ -106,5 +106,5 @@ Noted while restructuring; neither side was changed.
 [docs/](../agent-busctl.md): [docker](../docker.md), [podman](../podman.md), [broker](../broker.md),
 [monitor](../monitor.md), [API](../api.md), [Claude Code](../claude-code.md),
 [OpenCode](../opencode.md), [agent guide](../agent-guide.md), [agent tools](../agent-tools.md),
-[troubleshooting](../troubleshooting.md), [test run](../test-run.md), [upgrade test run](../upgrade-test-run.md), [development](../development.md),
+[troubleshooting](../troubleshooting.md), [test run](../test-run.md), [development](../development.md),
 [VS Code extension](../../vscode/README.md).
