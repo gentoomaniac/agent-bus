@@ -10,7 +10,8 @@
 # Settings, as environment variables:
 #   BUS_CONFIG_DIR     default ~/.config/agent-bus
 #   BUS_NATS_SERVER    default $BUS_CONFIG_DIR/bin/nats-server
-#   BUS_NATS_PORT      default 4222
+#   BUS_NATS_PORT      default 4222, the password listener
+#   BUS_MAPPED_PORT    default 4223, the certificate listener (wss://)
 #   BUS_MONITOR_PORT   default 8222, served on 127.0.0.1 only
 #   BUS_LISTEN_IP      default 0.0.0.0, the LAN; 127.0.0.1 keeps the broker on this machine
 #   BUS_DATA_DIR       default $BUS_CONFIG_DIR/nats/data, the JetStream storage
@@ -18,6 +19,7 @@ set -euo pipefail
 
 export BUS_CONFIG_DIR="${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}"
 export BUS_NATS_PORT="${BUS_NATS_PORT:-4222}"
+export BUS_MAPPED_PORT="${BUS_MAPPED_PORT:-4223}"
 export BUS_MONITOR_PORT="${BUS_MONITOR_PORT:-8222}"
 export BUS_LISTEN_IP="${BUS_LISTEN_IP:-0.0.0.0}"
 export BUS_DATA_DIR="${BUS_DATA_DIR:-$BUS_CONFIG_DIR/nats/data}"
@@ -51,7 +53,7 @@ livePid() {
 }
 
 up() {
-  for file in broker.pem broker.key nats/auth.conf nats/control-auth.conf; do
+  for file in ca.pem broker.pem broker.key nats/auth.conf nats/control-auth.conf; do
     [[ -f "$BUS_CONFIG_DIR/$file" ]] || {
       echo "missing $BUS_CONFIG_DIR/$file: run 'agent-busctl tls init' and 'agent-busctl admin init' first" >&2
       exit 1
@@ -68,14 +70,14 @@ up() {
   fi
 
   mkdir -p "$BUS_DATA_DIR"
-  envsubst '${BUS_LISTEN_IP} ${BUS_NATS_PORT} ${BUS_MONITOR_PORT} ${BUS_CONFIG_DIR} ${BUS_DATA_DIR}' <"$template" >"$conf"
+  envsubst '${BUS_LISTEN_IP} ${BUS_NATS_PORT} ${BUS_MAPPED_PORT} ${BUS_MONITOR_PORT} ${BUS_CONFIG_DIR} ${BUS_DATA_DIR}' <"$template" >"$conf"
   "$natsServer" -t -c "$conf" >/dev/null
   nohup "$natsServer" -c "$conf" -P "$pidFile" >>"$logFile" 2>&1 &
   local server=$!
 
   for ((waited = 0; waited < readyTimeoutSeconds; waited++)); do
     if curl -fs "http://127.0.0.1:$BUS_MONITOR_PORT/healthz" >/dev/null; then
-      echo "broker ready on port $BUS_NATS_PORT"
+      echo "broker ready on port $BUS_NATS_PORT (passwords) and $BUS_MAPPED_PORT (certificates)"
       return
     fi
     sleep 1

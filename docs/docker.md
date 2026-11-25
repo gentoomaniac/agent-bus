@@ -44,7 +44,8 @@ sudo chown 10001 ./config ./data
 
 | Variable           | Default   | Meaning                                                     |
 |--------------------|-----------|-------------------------------------------------------------|
-| `BUS_NATS_PORT`    | `4222`    | client port (TLS only)                                      |
+| `BUS_NATS_PORT`    | `4222`    | client port, password login (TLS only)                      |
+| `BUS_MAPPED_PORT`  | `4223`    | client port, certificate login (TLS, `wss://`)              |
 | `BUS_LISTEN_IP`    | `0.0.0.0` | address the client port binds to                            |
 | `BUS_MONITOR_PORT` | `8222`    | monitoring port, always bound to 127.0.0.1 in the container |
 

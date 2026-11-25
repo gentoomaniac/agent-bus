@@ -29,7 +29,7 @@ podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?se
 
 ```sh
 podman run -d --name agent-bus --network pasta \
-  -p 4222:4222 -p 127.0.0.1:8080:8080 \
+  -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
   -v agent-bus-config:/config -v agent-bus-data:/data \
   "${IMG:?set IMG first, see step 1}"
 podman logs agent-bus             # "Server is ready"

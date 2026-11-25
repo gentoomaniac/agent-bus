@@ -41,16 +41,20 @@ Environment variables of the container (set them in the compose file):
 
 | Variable           | Default      | Meaning                                         |
 |--------------------|--------------|-------------------------------------------------|
-| `BUS_NATS_PORT`    | `4222`       | client port (TLS only)                          |
+| `BUS_NATS_PORT`    | `4222`       | client port, password login (TLS only)          |
+| `BUS_MAPPED_PORT`  | `4223`       | client port, certificate login (TLS, `wss://`)  |
 | `BUS_MONITOR_PORT` | `8222`       | monitoring port, 127.0.0.1 only                 |
-| `BUS_LISTEN_IP`    | `0.0.0.0`    | address of the client port                      |
+| `BUS_LISTEN_IP`    | `0.0.0.0`    | address of the client ports                     |
 
 `BUS_CONFIG_DIR`, `BUS_DATA_DIR` and `BUS_NATS_SERVER` are fixed by the image (`/config`, `/data`,
 the bundled server).
 
 The client port is published on all interfaces by default, so the bus works on the LAN. Publish it
-as `127.0.0.1:4222:4222` in the compose file to keep it on this machine. The only listener is TLS;
-the monitoring endpoint is inside the container.
+as `127.0.0.1:4222:4222` in the compose file to keep it on this machine. Both client listeners are
+TLS; the monitoring endpoint is inside the container. The second port, `4223`, is where agents and
+admin tools log in with a client certificate instead of a password ([podman.md](podman.md)); a
+broker that has no certificate users simply never sees a connection there. Publish it as well to
+use certificates from other machines.
 
 If you change `BUS_NATS_PORT` or `BUS_MONITOR_PORT`, give `agent-busctl` in the container and `agent-bus`
 on the agent machines the matching addresses, or `register` cannot confirm the reload and agents

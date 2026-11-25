@@ -137,7 +137,8 @@ The pid file and `nats-server.log` are in `<config-dir>/nats/`. Environment vari
 |--------------------|----------------------------------|-------------------------------------------------|
 | `BUS_CONFIG_DIR`   | `~/.config/agent-bus`            | config directory                                |
 | `BUS_NATS_SERVER`  | `$BUS_CONFIG_DIR/bin/nats-server`| the server binary (must be named `nats-server`) |
-| `BUS_NATS_PORT`    | `4222`                           | client port (TLS only)                          |
+| `BUS_NATS_PORT`    | `4222`                           | client port, password login (TLS only)          |
+| `BUS_MAPPED_PORT`  | `4223`                           | client port, certificate login (TLS, `wss://`)  |
 | `BUS_MONITOR_PORT` | `8222`                           | monitoring port, 127.0.0.1 only                 |
 | `BUS_LISTEN_IP`    | `0.0.0.0`                        | address of the client port                      |
 | `BUS_DATA_DIR`     | `$BUS_CONFIG_DIR/nats/data`      | JetStream storage                               |

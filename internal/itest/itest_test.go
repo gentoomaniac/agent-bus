@@ -59,7 +59,7 @@ func startBus(t *testing.T) *harness {
 		t.Fatal("BUS_NATS_SERVER names the pinned nats-server binary; run `make itest`, which builds it")
 	}
 	configDir := t.TempDir()
-	port, monitorPort := freePort(t), freePort(t)
+	port, mappedPort, monitorPort := freePort(t), freePort(t), freePort(t)
 	h := &harness{
 		configDir:   configDir,
 		port:        port,
@@ -80,6 +80,7 @@ func startBus(t *testing.T) *harness {
 		"BUS_CONFIG_DIR="+configDir,
 		"BUS_NATS_SERVER="+natsServer,
 		fmt.Sprintf("BUS_NATS_PORT=%d", port),
+		fmt.Sprintf("BUS_MAPPED_PORT=%d", mappedPort),
 		fmt.Sprintf("BUS_MONITOR_PORT=%d", monitorPort),
 		"BUS_LISTEN_IP=127.0.0.1",
 		"BUS_BROKER="+h.address,

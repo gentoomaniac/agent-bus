@@ -21,5 +21,5 @@ ENV BUS_CONFIG_DIR=/config \
 
 USER bus
 VOLUME ["/config", "/data"]
-EXPOSE 4222
+EXPOSE 4222 4223
 ENTRYPOINT ["entrypoint.sh"]
