@@ -210,6 +210,11 @@ export BUS_CONFIG_DIR=~/bus-trial/config
 Only for this machine: other machines still get their files as in step 5, and the folder holds
 every agent's key, so do not share it.
 
+For day-to-day starts, `deploy/podman/start.sh` and `deploy/podman/monitor.sh` do the last two
+`podman run`s (and `monitor init` before the monitor). Copy them into the folder; they use the
+folder they are in, or `AGENT_BUS_HOME`. `IMG` and `MONITOR_AGENT` come from the environment or
+from a file `env` next to them ([upgrade-test-run.md](upgrade-test-run.md#7-replace-startsh-and-monitorsh)).
+
 ## 8. Day to day
 
 ```sh

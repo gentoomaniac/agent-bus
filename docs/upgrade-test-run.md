@@ -71,40 +71,46 @@ If it printed `1`, add the CA. If it printed `2`, skip this.
 cat $CFG/ca.pem >> $CFG/broker.pem
 ```
 
-## 7. Replace start.sh
+## 7. Replace start.sh and monitor.sh
 
-The old one ran `tls init` and `admin init` on every start. Those only failed because the files
-exist, and the `busctl` command no longer exists in the image. One-time setup does not belong
-in a start script. The new one only starts the broker, with the certificate port added:
+The old `start.sh` ran `tls init` and `admin init` on every start. Those only failed because the
+files exist. It also calls `busctl`, which the image no longer has. One-time setup does not belong
+in a start script. If the old `monitor.sh` sets the password, it asks for one on every start. The
+new scripts only start things:
+
+- `start.sh` replaces the broker container and refreshes the streams and grants.
+- `monitor.sh` refreshes the monitor's own config folder (`monitor init`), then starts the monitor.
+
+The scripts are in the repo, in `deploy/podman/`. Copy them into the folder; they use the folder
+they are in. Your monitor identity goes into a small settings file next to them:
 
 ```sh
-cat > $BASE/start.sh <<'EOF'
-IMG=agent-messenger:dev
-BASE_PATH=~/srv/agent-bus
-U="--userns=keep-id:uid=10001,gid=10001"
-
-podman rm -f agent-bus 2>/dev/null
-podman run -d --rm --name agent-bus $U --network pasta \
-  -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
-  -v "${BASE_PATH}/config:/config" -v "${BASE_PATH}/data:/data" $IMG
-
-sleep 2
-podman exec agent-bus agent-busctl --direct init
-EOF
-chmod +x $BASE/start.sh
+cp deploy/podman/start.sh deploy/podman/monitor.sh $BASE/
+echo 'MONITOR_AGENT=monitor@gentoomaniac' > $BASE/env
 ```
 
-`init` is safe to repeat. It also refreshes the agents' rights for the new version.
+- **Location:** by default the scripts use the folder they are in, holding `config/`, `data/` and
+  `monitor-config/`. Set `AGENT_BUS_HOME` to use another folder.
+- **Settings:** `IMG` defaults to `agent-messenger:dev` and `MONITOR_AGENT` to `monitor@$USER`.
+  Set them in the `env` file, or per call in the environment. The environment wins over the file:
+  ```sh
+  AGENT_BUS_HOME=/data/agent-bus IMG=ghcr.io/gentoomaniac/agent-messenger:latest ./start.sh
+  ```
+
+`--depend` matters. The monitor shares the broker's network (`--network container:agent-bus`). A
+leftover monitor container blocks removing the broker, even one that `podman ps -a` does not list.
+The error is `has dependent containers which must be removed before it`, and the broker keeps
+running on the old image. `start.sh` removes both.
 
 ## 8. Start the broker
 
 ```sh
 $BASE/start.sh
-podman logs agent-bus | tail -20
+podman exec agent-bus ps
 ```
 
-Look for `nats-server` starting and lines that begin with `busd:`. There should be no warning
-that busd uses the admin login.
+`ps` must list `busd` next to `nats-server`. If it does not, the container is running an old
+image. Compare `podman inspect agent-bus --format '{{.Image}}'` with `podman images agent-messenger`.
 
 The shorter command for the future:
 
@@ -112,40 +118,33 @@ The shorter command for the future:
 alias agent-busctl='podman exec agent-bus agent-busctl'
 ```
 
-## 9. Give the monitor its own folder
-
-From now on the monitor never sees `ca.key` or the admin passwords.
+## 9. Set the web password, once
 
 ```sh
 mkdir -p $BASE/monitor-config
-podman run --rm $U -v $CFG:/config:ro -v $BASE/monitor-config:/monitor-config \
-  --entrypoint agent-busctl $IMG monitor init /monitor-config --agent monitor@gentoomaniac
+podman exec -it agent-bus agent-busctl monitor password
 ```
 
-This copies your web password as well. Run it again after you register or enroll agents.
+You may skip this if you already set one, in `config/monitor/` or `config/monitor-web/`.
+`monitor init` copies it from either place; images older than `8da82ca` copy it only from
+`monitor-web/`. The monitor never sees `ca.key` or the admin passwords. Its folder,
+`monitor-config`, holds only what it needs.
 
-## 10. Point monitor.sh at the new folder
-
-In `monitor.sh`, change this line:
-
-```sh
-  -v "${CFG}:/config" --entrypoint bus-monitor \
-```
-
-to this:
-
-```sh
-  -v "${BASE_PATH}/monitor-config:/config" --entrypoint bus-monitor \
-```
-
-## 11. Start the monitor
+## 10. Start the monitor
 
 ```sh
 $BASE/monitor.sh
 podman logs agent-bus-monitor
 ```
 
-Open <http://localhost:8080> and log in with the same password as before.
+`monitor.sh` asks for nothing. The log shows `connected to the bus` and no "busd is not running".
+Open <http://localhost:8080> and log in.
+
+## 11. After every image update
+
+```sh
+$BASE/start.sh && $BASE/monitor.sh
+```
 
 ## 12. Restart the agent sessions
 
@@ -171,22 +170,10 @@ code --install-extension vscode/agent-messenger-*.vsix
 
 In VS Code, run "Agent Messenger: Log In" from the command palette, with the same password.
 
-## Later updates
-
-Most updates need only these steps:
-
-```sh
-git pull && make image
-$BASE/start.sh
-$BASE/monitor.sh
-```
-
-Then rebuild `agent-bus` and restart the sessions if the agent side changed.
-
 ## If something breaks
 
 ```sh
-podman rm -f agent-bus-monitor agent-bus
+podman rm -f --depend agent-bus; podman rm -f agent-bus-monitor
 rm -rf $BASE && cp -a $BASE.bak-<date> $BASE
 podman tag agent-messenger:pre-upgrade agent-messenger:dev
 $BASE/start.sh && $BASE/monitor.sh
