@@ -363,6 +363,7 @@ const state = {
   collapsed: new Set(),           // sidebar sections that are folded
   prefsOnline: false,             // false when the server has no prefs (an old one): the state stays in memory
   marker: null,                   // sequence after which the open channel's "New" line is drawn, or null
+  seen: new Set(),                // sequences of the open channel's rows that were on screen while the page was looked at
   picked: new Set(),              // targets chosen as chips in the composer
   shownTypes: new Set(loadSetting(TYPES_KEY, [])), // message types the list is limited to; none means all
   threads: loadSetting(THREADS_KEY, false),        // show replies under their parent instead of a flat list
@@ -984,7 +985,7 @@ async function select(channelId) {
   state.selected = channelId;
   state.unread.delete(channelId);
   history.replaceState(null, "", "#" + encodeURIComponent(channelId));
-  if (!reopened) state.marker = null;
+  if (!reopened) { state.marker = null; state.seen.clear(); }
   if (!state.messages.has(channelId)) await loadMessages(channelId);
   if (state.selected !== channelId) return; // another channel was opened meanwhile
   // Before the next await, so a message arriving meanwhile cannot move the read point past the line.
@@ -1267,13 +1268,29 @@ function selectTypes() {
   renderMessages(true);
 }
 
+function shownMessages(list) {
+  return state.shownTypes.size ? list.filter((m) => state.shownTypes.has(m.type)) : list;
+}
+
+// Rows that are on screen while the page is looked at count as seen; see readOnReturn.
+// A row counts from half of it on, so a tall message is seen once its half is.
+let rowObserver = null;
+function observeRows(box) {
+  if (rowObserver) rowObserver.disconnect();
+  rowObserver = new IntersectionObserver((observed) => {
+    if (!looking()) return;
+    for (const { target, isIntersecting } of observed) if (isIntersecting) state.seen.add(Number(target.dataset.sequence));
+  }, { root: box, threshold: 0.5 });
+  for (const row of box.querySelectorAll(".message")) rowObserver.observe(row);
+}
+
 function renderMessages(scrollToEnd) {
   renderHeader();
   const box = $("messages");
   const atEnd = scrollToEnd || box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   const list = state.messages.get(state.selected) || [];
   renderTypeFilter(list);
-  const shown = state.shownTypes.size ? list.filter((m) => state.shownTypes.has(m.type)) : list;
+  const shown = shownMessages(list);
   const none = list.length ? "No message of these types." : "No messages yet.";
   // A type filter that hides every unseen message hides the line too.
   // In thread mode a reply to a hidden message becomes a root: the tree is built from what is shown.
@@ -1286,6 +1303,7 @@ function renderMessages(scrollToEnd) {
     return i === markerAt ? [el("div", { class: "new-marker", role: "separator" }, "New"), row] : [row];
   });
   box.replaceChildren(...(shown.length ? rows : [el("div", { class: "empty" }, none)]));
+  observeRows(box);
   const marker = box.querySelector(".new-marker");
   // Opening a channel with more new mail than fits starts at the line instead of the end.
   const markerTop = marker ? marker.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop : 0;
@@ -1654,9 +1672,19 @@ function connectEvents() {
   });
 }
 
-// Coming back to the page reads the open channel; its "New" line stays until another channel is opened.
+// Coming back to the page reads the open channel. Its "New" line goes too if every shown message
+// after it (not the monitor's own) was on screen at some point; otherwise it stays until a later
+// return, or until another channel is opened.
 function readOnReturn() {
-  if (state.selected && looking()) { markRead(state.selected); renderSidebar(); }
+  if (!state.selected || !looking()) return;
+  markRead(state.selected);
+  renderSidebar();
+  if (state.marker === null) return;
+  const list = shownMessages(state.messages.get(state.selected) || []);
+  const allSeen = list.every((m) => m.sequence <= state.marker || m.from === state.status.agent || state.seen.has(m.sequence));
+  if (!allSeen) return;
+  state.marker = null;
+  renderMessages(false);
 }
 document.addEventListener("visibilitychange", readOnReturn);
 window.addEventListener("focus", readOnReturn);

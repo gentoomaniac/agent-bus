@@ -174,7 +174,10 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
 - **New messages**: a channel with messages you have not seen is bold; a number counts those that
   arrived while the page was open. Opening it draws a **New** line above the first unseen message
   (starting there when the new part is longer than the screen); the line stays until you open
-  another channel. Your own messages in the open channel never count as new. Mail that arrives
+  another channel, or until the page gets focus again (or becomes visible) after every shown
+  message below the line, not your own, was on screen at least once while you looked at the page;
+  messages the type filter hides do not count, and if something arrived unseen the line waits for
+  a later return. Your own messages in the open channel never count as new. Mail that arrives
   while the tab is hidden or unfocused stays unseen until you come back. What you have seen is kept
   on the server, shared by every browser and the extension: reading on one device clears the bold
   on the others. When the server has no read markers yet, everything counts as seen. A browser
