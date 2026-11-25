@@ -50,6 +50,9 @@ type CLI struct {
 		Switch CertSwitchCmd `cmd:"" help:"Let an agent, or the admin users, log in with the certificate instead of the password; --password goes back."`
 	} `cmd:"" help:"Client certificates for the mapped listener."`
 
+	CA     CACmd     `cmd:"" help:"Enrollment requests and the CA, through busd (docs/agent-busctl.md)."`
+	Enroll EnrollCmd `cmd:"" help:"Set up enrollment of new machines."`
+
 	Channel struct {
 		Create ChannelCreateCmd `cmd:"" help:"Create a group channel and add it to the catalogue."`
 		Join   ChannelJoinCmd   `cmd:"" help:"Let a registered agent read a group channel from now on."`
