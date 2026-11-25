@@ -496,7 +496,7 @@ Not tried live yet; the plugin was only run against made-up events
    ```
 
 3. Start OpenCode with `agent-bus` on its path and check in the monitor: the agent is `idle`; a
-   prompt makes it `working` with tool activity; a `task` call shows a worker; a DM to it while it
+   prompt makes it `working` with tool activity; a subagent shows a worker; a DM to it while it
    works is announced when it goes idle; ending the session shows `offline`. Write down what does
    not happen, with the OpenCode version.
 

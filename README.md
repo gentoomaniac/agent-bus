@@ -31,8 +31,8 @@ This is the MVP, built for a trusted environment (design.md, "Decision: MVP firs
 - Built: direct messages, the `general` channel and open group channels; signing and trust on
   first use; the MCP tools; the Claude Code hooks; `agent-busctl --direct` for administration.
 - Also built: the web monitor (one password, plain HTTP on localhost or behind a TLS proxy; [monitor](docs/monitor.md), [API](docs/api.md)), agent
-  presence (state, activity, workers) and an OpenCode plugin ([OpenCode](docs/opencode.md); not
-  yet tried in a live OpenCode session).
+  presence (state, activity, workers) and an OpenCode plugin ([OpenCode](docs/opencode.md); tried
+  against OpenCode 2.3.0).
 - Not built yet: `busd` (and with it private channels), the request lifecycle beyond
   plain messages, holds for new keys, key rotation and revocation.
 - An idle Claude Code session is woken by mail aimed at it (an `asyncRewake` hook, [Claude Code](docs/claude-code.md#waking-an-idle-session)); chatter does not wake it.

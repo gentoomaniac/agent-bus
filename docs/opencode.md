@@ -5,10 +5,10 @@ OpenCode uses the same `agent-bus mcp` server as Claude Code, plus a small plugi
 hooks do: it tells the MCP server what OpenCode is doing (presence for the
 [monitor](monitor.md#presence)) and delivers "you have mail" when a session goes idle.
 
-Not tried in a live OpenCode session yet. The plugin was written against the types of
-`@opencode-ai/plugin` and `@opencode-ai/sdk` 1.18.31 (the installed ones) and the plugin docs of
-OpenCode 2.3, and its logic was run against a stub `agent-bus` with made-up events. Nothing here
-edits your OpenCode configuration.
+Tested live against OpenCode 2.3.0 (`opencode --version`), with a throwaway broker, a project-local
+configuration and a free model. The plugin is an OpenCode 2 plugin (`Plugin.define`); OpenCode 1's
+plugin API is not supported, so 2.3.0 is the minimum version known to work. Nothing here edits your
+OpenCode configuration.
 
 ## 1. Register the MCP server
 
@@ -31,13 +31,17 @@ identity per session: give each concurrent OpenCode session its own.
 
 ## 2. Install the plugin
 
-Copy the file into OpenCode's plugin directory, for one project or for all:
+Copy the file into OpenCode's plugin directory of one project (the tested way) or of your user:
 
 ```sh
 mkdir -p .opencode/plugins && cp deploy/opencode/agent-bus.js .opencode/plugins/
-# or globally:
+# or for all projects (documented by OpenCode, not tried here):
 mkdir -p ~/.config/opencode/plugins && cp deploy/opencode/agent-bus.js ~/.config/opencode/plugins/
 ```
+
+OpenCode loads every file in `.opencode/plugins/` at start; there is nothing to add to
+`opencode.json`. Start OpenCode with `--print-logs` once and look for `loading plugin` and no
+`failed to load plugin`.
 
 `agent-bus` must be on the path of the OpenCode process (or set `AGENT_BUS_BIN` to its absolute
 path). The plugin runs inside OpenCode, so the `agent-bus` commands it starts are children of
@@ -45,51 +49,74 @@ OpenCode, like the MCP server: they find their session's socket the way
 [Claude Code's hooks do](claude-code.md#how-a-hook-finds-its-session). That holds as long as the
 plugin and the MCP server are started by the same OpenCode process.
 
+The MCP server starts together with the first turn of a one-shot `opencode run`, so that turn's
+first events can arrive before it is there and are lost (the monitor then shows `idle` and `offline`
+only). In the TUI, `opencode serve` and `opencode run --server` the server is already up and every
+turn is reported. An idle session is woken by mail only in a long-running OpenCode (the TUI or
+`serve`): `opencode run` exits when its turn ends.
+
 ## What it maps
 
-| OpenCode                                         | `agent-bus` call                    | Presence                                            |
+| OpenCode event or hook                           | `agent-bus` call                    | Presence                                            |
 |--------------------------------------------------|-------------------------------------|-----------------------------------------------------|
-| `session.status` busy                            | `event --kind=user-prompt`          | `working`                                           |
-| `session.status` retry                           | `event --kind=stop-failure` (`retrying`) | `error:retrying`: the model call is failing and being retried |
-| `session.idle`                                   | `event --kind=stop`, then `pending --format=plugin` | `idle`; if mail waits, the plugin sends its text to the session as a prompt (`session.promptAsync`), and only then marks the mail told (`pending --mark`), so a failed prompt is retried at the next check. While the session stays idle it repeats the check every 15 seconds (see below) |
-| `session.error`, `APIError` 429                  | `event --kind=stop-failure` (`rate_limit`) | `rate_limited`                              |
-| `session.error`, 401 or 403, `ProviderAuthError` | `stop-failure` (`authentication_failed`) | `error:authentication_failed`                  |
-| `session.error`, 402, 404, 5xx, other 4xx        | `stop-failure` (`billing_error`, `model_not_found`, `server_error`, `invalid_request`) | `error:<kind>` |
-| `session.error`, output too long                 | `stop-failure` (`max_output_tokens`) | `error:max_output_tokens`                          |
-| `session.error`, aborted by the user             | `event --kind=stop`                 | `idle`                                              |
-| `tool.execute.before`                            | `event --kind=pre-tool`             | activity: tool name plus file name or command word; a `task` call is reported as an `Agent` call and starts a worker, with the call ID as its agent ID |
-| `tool.execute.after`                             | `event --kind=post-tool`, and `subagent-stop` (call ID) for `task` | activity cleared; the worker ended    |
-| `permission.updated` / `permission.replied`      | `notification` (`permission_prompt`) / `post-tool` | `waiting_for_owner` / `working`      |
-| `session.deleted`, `server.instance.disposed`    | `event --kind=session-end`          | `offline`                                           |
+| `session.execution.started`                      | `event --kind=user-prompt`          | `working`                                           |
+| `session.retry.scheduled`                        | `event --kind=stop-failure` (`retrying`) | `error:retrying`: the model call is failing and being retried |
+| `session.execution.succeeded`                    | `event --kind=stop`, then `pending --format=plugin` | `idle`; if mail waits, the plugin sends its text to the session as a prompt (`ctx.session.prompt`), and only then marks the mail told (`pending --mark`), so a failed prompt is retried at the next check. While the session stays idle it repeats the check every 15 seconds (see below) |
+| `session.execution.interrupted`                  | as `succeeded`                      | `idle`                                              |
+| `session.execution.failed`, status 429           | `event --kind=stop-failure` (`rate_limit`) | `rate_limited`                              |
+| `session.execution.failed`, 401 or 403           | `stop-failure` (`authentication_failed`) | `error:authentication_failed`                  |
+| `session.execution.failed`, 402, 5xx, other 4xx, no route to the model (`provider.no-route`) | `stop-failure` (`billing_error`, `server_error`, `invalid_request`, `model_not_found`) | `error:<kind>` |
+| `session.execution.failed`, anything else        | `stop-failure` (`unknown`)          | `error:unknown`                                     |
+| tool hook `execute.before`                       | `event --kind=pre-tool`             | activity: tool name plus file name or command word; the `subagent` tool is reported as an `Agent` call |
+| tool hook `execute.after`                        | `event --kind=post-tool`            | activity cleared                                    |
+| `session.created` with a parent                  | `event --kind=subagent-start` (child session ID) | one more worker                        |
+| `session.execution.*` ending, of a child session | `event --kind=subagent-stop`        | the worker ended                                    |
+| `permission.asked` / `permission.replied`        | `notification` (`permission_prompt`) / `post-tool` | `waiting_for_owner` / `working`      |
+| `session.deleted`, OpenCode shutting down        | `event --kind=session-end`          | `offline`                                           |
 
 Details:
 
-- Subagent sessions (those with a `parentID`) are ignored for idle and errors: they run inside a
-  `task` of the main session.
-- OpenCode also goes idle after an error. The plugin skips that idle, so the error stays visible
-  until the next turn, and it does not prompt a model that just failed.
+- Subagent sessions (those with a parent) are workers: their idle and errors are not the agent's,
+  and their tool calls show as activity.
+- A failed execution is not followed by an idle report, so the error stays visible until the next
+  turn, and the plugin does not prompt a model that just failed.
 - Only the file name or the first word of a command is passed on, never contents (same rule as the
   Claude Code hooks). Every plugin call is silent, has a 3 second limit and ignores its own errors.
-- An idle session is woken by mail aimed at it: after the idle event the plugin runs the same
-  `pending --format=plugin` check every 15 seconds, with one check at a time, until the session is
-  busy again, fails or is deleted. A prompt that was refused is retried at the next check. Chatter
-  never wakes it, and each wake costs one short turn. This polls a local socket (no tokens, no
-  broker traffic); the Claude Code waiter blocks instead, because a hook can wake the session by
-  its exit code and a plugin has to send the prompt itself.
+  The `execute` and `agent-bus_*` tool calls of MCP tools carry no file or command, so they show as
+  a bare tool name.
+- An idle session is woken by mail aimed at it: after the idle the plugin runs the same
+  `pending --format=plugin` check every 15 seconds, with one check at a time, until a session is
+  busy again or the watched session is deleted. Only the session that went idle last is watched: all
+  sessions share the agent's one inbox. A prompt that was refused is retried at the next check.
+  Chatter never wakes it, and each wake costs one short turn. This polls a local socket (no
+  tokens, no broker traffic); the Claude Code waiter blocks instead, because a hook can wake the
+  session by its exit code and a plugin has to send the prompt itself.
 - The mail prompt is the same text the Claude Code `Stop` hook gives: a count, up to five
   one-line summaries (sender, type, title) and "call `inbox`". The adapter reports each message once
   and at least 10 seconds apart, so it cannot loop.
 
-## What does not work, or is a guess
+## What was tried, and what was not
 
-- Not verified live: the event names, error shapes and the `promptAsync` call come from the
-  installed type definitions. OpenCode 2 documents a new plugin API (`Plugin.define`, `ctx.*`) and
-  says the V1 object form this plugin uses still loads; if a release stops loading it, the
-  heartbeat still covers `offline` and `unresponsive`, and only state, activity and mail delivery
-  on idle are lost.
-- Whether a provider's plan usage limit reaches OpenCode as an `APIError` with status 429 depends
-  on the provider; any other failure shows as `error:<kind>` or `error:retrying`, which is the
-  minimum signal that something is wrong with the model.
-- Workers are the `task` tool only. The tool hooks do not wait for `agent-bus` (they fire and forget, like async Claude Code hooks), so events of one instant call may arrive out of order.
-- `session.status` busy also fires for work OpenCode starts itself, so a state of `working` does
-  not always mean a human prompt.
+Tried against OpenCode 2.3.0 (`opencode serve` plus `opencode run --server`, a free model):
+
+- The plugin loads (`loading plugin`, no `failed to load plugin`).
+- A turn with a shell call shows `working`, then the tool's activity, then `idle` in
+  `GET /api/v1/presence`.
+- A DM from another agent to an idle session is picked up within the 15 second poll: the plugin
+  prompts the session, the model reads its inbox and replies, and the mail is marked told.
+- A subagent shows as a worker while it runs.
+- An unknown model gives `error:model_not_found`.
+
+Not tried: the permission events (no default permission asked in the test), `rate_limit` and the
+other error statuses, the user-wide plugin directory, the TUI itself. Event payloads are those of
+the `@opencode/plugin` and `@opencode/client` 2.4.1 type packages, which the live run matched where
+it could be checked.
+
+- Whether a provider's plan usage limit reaches OpenCode as an error with status 429 depends on the
+  provider; any other failure shows as `error:<kind>` or `error:retrying`, which is the minimum
+  signal that something is wrong with the model.
+- Workers are subagent sessions only.
+- A tool hook does not wait for `agent-bus` (it fires and forgets, like async Claude Code hooks), so
+  events of one instant call may arrive out of order.
+- `session.execution.started` also fires for work OpenCode starts itself (including the mail
+  prompt), so `working` does not always mean a human prompt.
