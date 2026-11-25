@@ -49,7 +49,7 @@ then connects to `--broker` as `bus-admin` and `control-admin` (two connections)
 `--ca-cert`, with their passwords, or with their certificates once `cert issue --admin` has run. It must run on the broker's host, because access changes rewrite `nats/auth.conf`.
 
 ```sh
-bin/agent-busctl --direct --config-dir /srv/bus --timeout 10s init
+bin/agent-busctl --direct --config-dir $AGENT_BUS_HOME/config --timeout 10s init   # AGENT_BUS_HOME: the folder of config/ and data/, see docker.md
 ```
 
 ## Commands
@@ -86,7 +86,7 @@ keep their `ca.pem` and their certificates; the broker uses the new one from its
 
 ```sh
 podman exec agent-bus agent-busctl tls broker --san localhost --san 127.0.0.1 --san 192.0.2.10
-~/srv/agent-bus/start.sh && ~/srv/agent-bus/monitor.sh   # or: podman restart agent-bus
+$AGENT_BUS_HOME/start.sh && $AGENT_BUS_HOME/monitor.sh   # or: podman restart agent-bus (AGENT_BUS_HOME as in podman.md)
 ```
 
 ### admin init

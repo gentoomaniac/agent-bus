@@ -28,9 +28,10 @@ U="--userns=keep-id:uid=10001,gid=10001"
 ## 2. Folders and one-time setup
 
 ```sh
-mkdir -p ~/agent-bus/{config,data,monitor-config}
-podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG tls init --san <broker-host>
-podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG admin init
+export AGENT_BUS_HOME=~/agent-bus            # where the config, data and monitor state live
+mkdir -p $AGENT_BUS_HOME/{config,data,monitor-config}
+podman run --rm $U -v $AGENT_BUS_HOME/config:/config --entrypoint agent-busctl $IMG tls init --san <broker-host>
+podman run --rm $U -v $AGENT_BUS_HOME/config:/config --entrypoint agent-busctl $IMG admin init
 ```
 
 `config` holds the certificates, the logins and every agent's key (never share it), `data` the
@@ -48,13 +49,13 @@ needs a one-off container. The rest of this guide assumes folders.
 ```sh
 podman run -d --name agent-bus --network pasta $U \
   -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
-  -v ~/agent-bus/config:/config -v ~/agent-bus/data:/data $IMG
+  -v $AGENT_BUS_HOME/config:/config -v $AGENT_BUS_HOME/data:/data $IMG
 podman logs agent-bus             # "Server is ready"
 ```
 
 Rootless Podman's default network may fail on some systems (`netavark: create veth pair`);
 `--network pasta` avoids that. Port 8080 is published on the host's loopback only, for the monitor.
-`~/agent-bus/start.sh` does this and the `init` of section 4 (see section 7).
+`$AGENT_BUS_HOME/start.sh` does this and the `init` of section 4 (see section 7).
 
 ## 4. Set up the bus
 
@@ -82,20 +83,20 @@ agent-busctl --direct agent list
 
 ## 5. Give an agent machine its files
 
-Each agent machine needs `ca.pem`, `directory/` and its own agent folder from `~/agent-bus/config`
+Each agent machine needs `ca.pem`, `directory/` and its own agent folder from `$AGENT_BUS_HOME/config`
 (this copies the agent's key. To keep keys on the machine that uses them, enroll the machine instead: [section 9](#9-enrolling-a-new-machine)).
 
 On this machine copy them:
 
 ```sh
 mkdir -p ~/.config/agent-bus
-cp -r ~/agent-bus/config/{ca.pem,directory,lib-x@<owner>} ~/.config/agent-bus/
+cp -r $AGENT_BUS_HOME/config/{ca.pem,directory,lib-x@<owner>} ~/.config/agent-bus/
 ```
 
 To another machine, stream them over SSH:
 
 ```sh
-tar -C ~/agent-bus/config -cf - ca.pem directory lib-x@<owner> \
+tar -C $AGENT_BUS_HOME/config -cf - ca.pem directory lib-x@<owner> \
   | ssh <machine> 'mkdir -p ~/.config/agent-bus && tar -xf - -C ~/.config/agent-bus'
 ```
 
@@ -129,7 +130,7 @@ Then, in this order:
 2. Per agent, issue and switch, then copy the files to the agent's machine (as in section 5):
    ```sh
    agent-busctl --direct cert issue lib-x@<owner> --switch
-   cp ~/agent-bus/config/lib-x@<owner>/client.{pem,key} ~/.config/agent-bus/lib-x@<owner>/
+   cp $AGENT_BUS_HOME/config/lib-x@<owner>/client.{pem,key} ~/.config/agent-bus/lib-x@<owner>/
    ```
    Restart the agent's `agent-bus`. It finds `client.pem` and picks certificate login by itself,
    on port `4223` of the `--broker` host (`BUS_MAPPED_PORT` if you published another one). Until
@@ -172,7 +173,7 @@ that reads the broker's folder read-only; run it again after registering or enro
 after changing the password, to refresh it:
 
 ```sh
-podman run --rm $U -v ~/agent-bus/config:/config:ro -v ~/agent-bus/monitor-config:/monitor-config \
+podman run --rm $U -v $AGENT_BUS_HOME/config:/config:ro -v $AGENT_BUS_HOME/monitor-config:/monitor-config \
   --entrypoint agent-busctl $IMG monitor init /monitor-config --agent monitor@<owner>
 ```
 
@@ -183,7 +184,7 @@ loopback only (section 3), so no proxy is needed here:
 
 ```sh
 podman run -d --name agent-bus-monitor --network container:agent-bus $U \
-  -v ~/agent-bus/monitor-config:/config --entrypoint bus-monitor \
+  -v $AGENT_BUS_HOME/monitor-config:/config --entrypoint bus-monitor \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
   $IMG
 ```
@@ -207,24 +208,24 @@ machines, put a TLS proxy in front instead ([monitor.md](monitor.md#behind-a-rev
 For day-to-day starts, `deploy/podman/start.sh` does the `podman run` of section 3 (and the
 `init` of section 4 once the broker is up) and `deploy/podman/monitor.sh` does `monitor init` and
 the monitor's `podman run` of section 6. Copy them into the folder that holds `config/`, `data/`
-and `monitor-config/` (`~/agent-bus` above); they use the folder they are in, or `AGENT_BUS_HOME`.
+and `monitor-config/` (`$AGENT_BUS_HOME` above); they use the folder they are in, or `AGENT_BUS_HOME`.
 They replace an old container of the same name, so they also restart. `IMG` (default
 `agent-messenger:dev`) and `MONITOR_AGENT` (default `monitor@$USER`, so set it to
 `monitor@<owner>`) come from the environment or from an optional file `env` next to them, in shell
 syntax:
 
 ```sh
-cp deploy/podman/start.sh deploy/podman/monitor.sh ~/agent-bus/
-printf '%s\n' 'IMG=ghcr.io/gentoomaniac/agent-messenger:<version>' 'MONITOR_AGENT=monitor@<owner>' > ~/agent-bus/env
-~/agent-bus/start.sh
-~/agent-bus/monitor.sh
+cp deploy/podman/start.sh deploy/podman/monitor.sh $AGENT_BUS_HOME/
+printf '%s\n' 'IMG=ghcr.io/gentoomaniac/agent-messenger:<version>' 'MONITOR_AGENT=monitor@<owner>' > $AGENT_BUS_HOME/env
+$AGENT_BUS_HOME/start.sh
+$AGENT_BUS_HOME/monitor.sh
 ```
 
 ## 8. Day to day
 
 ```sh
 podman restart agent-bus                      # reload after an upgrade (agents reconnect on their own)
-~/agent-bus/start.sh                          # after an upgrade it also applies the message log's limits, 90 days and 1 GiB (agent-busctl.md#init)
+$AGENT_BUS_HOME/start.sh                          # after an upgrade it also applies the message log's limits, 90 days and 1 GiB (agent-busctl.md#init)
 podman logs -f agent-bus                      # broker log
 podman stop agent-bus-monitor agent-bus       # stop
 podman rm -f --depend agent-bus               # remove the broker and the monitor (the folders keep all state)
@@ -251,7 +252,7 @@ nothing until `enroll init` ran. One step is recommended: busd and the monitor g
 own with narrow rights instead of the admin logins (busd logs a warning until then):
 
 ```sh
-podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG service init
+podman run --rm $U -v $AGENT_BUS_HOME/config:/config --entrypoint agent-busctl $IMG service init
 podman restart agent-bus          # the broker reads the new logins, busd uses its own
 ```
 

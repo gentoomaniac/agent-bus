@@ -152,10 +152,10 @@ register monitor@alice`). Run it again to refresh the snapshot after agents are 
 enrolled, or after a password change, and restart the monitor.
 
 Open <http://127.0.0.1:8080> and log in. To send, set `BUS_AGENT` in the service as well. Without compose, see [podman.md](podman.md#6-the-monitor), or
-start a second container on the same folder and network (`~/agent-bus/monitor-config`, see [docker.md](docker.md#mounted-folders)):
+start a second container on the same folder and network (`$AGENT_BUS_HOME/monitor-config`, defined in [docker.md](docker.md#mounted-folders)):
 
 ```sh
-docker run -d --name bus-monitor --network container:agent-bus -v ~/agent-bus/monitor-config:/config \
+docker run -d --name bus-monitor --network container:agent-bus -v $AGENT_BUS_HOME/monitor-config:/config \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true --entrypoint bus-monitor IMAGE
 ```
 

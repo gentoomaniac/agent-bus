@@ -41,12 +41,13 @@ the folders and give them to that user first (rootless Podman does this with
 `--userns=keep-id:uid=10001,gid=10001` instead, see [podman.md](podman.md#1-build-or-pull-the-image)):
 
 ```sh
-mkdir -p ~/agent-bus/{config,data,monitor-config}
-sudo chown 10001 ~/agent-bus/{config,data,monitor-config}
+export AGENT_BUS_HOME=~/agent-bus        # where the config, data and monitor state live
+mkdir -p $AGENT_BUS_HOME/{config,data,monitor-config}
+sudo chown 10001 $AGENT_BUS_HOME/{config,data,monitor-config}
 ```
 
 The compose file reads the folders from next to itself, or from `AGENT_BUS_HOME`. Leave the file
-in the repository and `export AGENT_BUS_HOME=~/agent-bus`; a copy elsewhere would also need
+in the repository and keep `AGENT_BUS_HOME` exported; a copy elsewhere would also need
 `deploy/proxy/Caddyfile` next to it for the proxy overlay. Named volumes work too if you replace
 the mounts, but their files are hidden inside Docker's storage.
 
@@ -65,7 +66,7 @@ the mounts, but their files are hidden inside Docker's storage.
 
 [deploy/docker-compose.yaml](../deploy/docker-compose.yaml) has the broker service (`agent-bus`),
 the bind mounts of `config/` and `data/`, and the optional `monitor` service. The commands below
-run from the repository root with `AGENT_BUS_HOME=~/agent-bus` exported. The server refuses to start until `/config` holds the certificates and the admin
+run from the repository root with `AGENT_BUS_HOME` exported. The server refuses to start until `/config` holds the certificates and the admin
 credentials.
 
 1. Create the certificates and admin credentials once, as one-off containers on the config folder.
@@ -105,12 +106,12 @@ the public records in `/config/directory/`.
 
 ### Without compose
 
-The same with plain `docker run`, on the folders of `~/agent-bus` (created and chowned as above):
+The same with plain `docker run`, on the folders of `$AGENT_BUS_HOME` (created and chowned as above):
 
 ```sh
-docker run --rm -v ~/agent-bus/config:/config --entrypoint agent-busctl IMAGE tls init --san bus.example.com
-docker run --rm -v ~/agent-bus/config:/config --entrypoint agent-busctl IMAGE admin init
-docker run -d --name agent-bus -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 -v ~/agent-bus/config:/config -v ~/agent-bus/data:/data IMAGE
+docker run --rm -v $AGENT_BUS_HOME/config:/config --entrypoint agent-busctl IMAGE tls init --san bus.example.com
+docker run --rm -v $AGENT_BUS_HOME/config:/config --entrypoint agent-busctl IMAGE admin init
+docker run -d --name agent-bus -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 -v $AGENT_BUS_HOME/config:/config -v $AGENT_BUS_HOME/data:/data IMAGE
 alias agent-busctl='docker exec agent-bus agent-busctl'
 ```
 
@@ -137,7 +138,7 @@ docker compose -f deploy/docker-compose.yaml exec -T agent-bus \
 
 For another machine, run that with `ssh bob@laptop.example.com 'tar -C ~/.config/agent-bus -xf -'` as the second
 tar. `docker compose cp agent-bus:/config/ca.pem .` works for single files, and
-`tar -C ~/agent-bus/config -cf - ca.pem directory` works on the host (the folder is owned by uid
+`tar -C $AGENT_BUS_HOME/config -cf - ca.pem directory` works on the host (the folder is owned by uid
 10001: use `sudo`, or the `exec` form above). Treat the agent folder as a secret: it holds the identity. The agent machine also needs the broker's
 address: pass `--broker <host>:4222` (or `BUS_BROKER`), or put it in `<agent folder>/broker`, the one-line file
 `agent-bus enroll` writes; each identity has its own, so without either it dials `localhost:4222`.
