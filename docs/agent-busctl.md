@@ -268,8 +268,12 @@ It
 - adds the agent's user and grants to `auth.conf` and reloads the server
   ([broker.md](broker.md#reloads)).
 
-Keys are per machine and never copied: registering an ID that exists on this machine or on the bus
-is an error, and so is the ID of a removed agent (see [agent remove](#agent-remove)).
+An identity runs on one machine at a time. Enrollment makes the key on the agent's machine, and it
+never leaves it. Only two procedures copy a key: the older, offline copy of an agent folder
+([docker.md](docker.md#alternative-copy-the-keys)) and `monitor init`, which copies the monitor's
+sending key into its own folder ([monitor init](#monitor-init)). Never run one identity on two
+machines or sessions at once. Registering an ID that exists on this machine or on the bus is an
+error, and so is the ID of a removed agent (see [agent remove](#agent-remove)).
 `human@<owner>` is not supported yet.
 
 The account is created last. A registration that fails before it is requested removes its
