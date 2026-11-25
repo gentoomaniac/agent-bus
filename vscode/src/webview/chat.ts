@@ -12,7 +12,6 @@ const host = acquireVsCodeApi();
 
 const STATUS_LABEL: Record<string, string> = { unknown_sender: "unknown sender", rejected: "rejected" };
 const ID_SUFFIX = 8; // characters of a message ID shown in "reply to": the end of a ULID tells IDs apart
-const COMPOSER_MAX_HEIGHT = 12 * 16; // px; the CSS max-height says the same
 
 let state: ChatState | undefined;
 const messages: Message[] = [];
@@ -31,7 +30,7 @@ const typeSelect = document.getElementById("type") as HTMLSelectElement;
 const targetBox = document.getElementById("targets") as HTMLElement;
 const targetInput = document.getElementById("targetInput") as HTMLInputElement;
 const threadsToggle = document.getElementById("threads") as HTMLButtonElement;
-const completions =document.getElementById("completions") as HTMLElement;
+const completions = document.getElementById("completions") as HTMLElement;
 const titleInput = document.getElementById("title") as HTMLInputElement;
 const titleToggle = document.getElementById("toggleTitle") as HTMLButtonElement;
 const textInput = document.getElementById("text") as HTMLTextAreaElement;
@@ -184,7 +183,7 @@ function isDirect(): boolean {
 
 function renderTargets(): void {
   const chips = targets.map((id) => {
-    const chip = el("span", "chip", id);
+    const chip = el("span", "chip", isDirect() ? "→ " + id : id);
     if (!isDirect()) {
       const remove = el("button", "", "×");
       remove.type = "button";
@@ -200,7 +199,7 @@ function renderTargets(): void {
   });
   targetBox.replaceChildren(...chips, targetInput);
   targetInput.hidden = isDirect();
-  targetInput.placeholder = targets.length ? "" : "to: @name, or @mentions in text";
+  targetInput.placeholder = targets.length ? "" : "@ to target";
 }
 
 // The completion list, shared by the target input and the textarea. `accept` inserts the pick.
@@ -211,7 +210,8 @@ function closeCompletion(): void {
   completions.hidden = true;
 }
 
-function showCompletion(items: string[], accept: (id: string) => void): void {
+// The list opens above the box, at the left edge of the field that asked for it.
+function showCompletion(anchor: HTMLElement, items: string[], accept: (id: string) => void): void {
   if (items.length === 0) return closeCompletion();
   completion = { items, index: 0, accept };
   completions.replaceChildren(...items.map((id, i) => {
@@ -224,6 +224,7 @@ function showCompletion(items: string[], accept: (id: string) => void): void {
     return row;
   }));
   completions.hidden = false;
+  completions.style.left = anchor.getBoundingClientRect().left - composer.getBoundingClientRect().left + "px";
 }
 
 function moveCompletion(step: number): void {
@@ -255,14 +256,14 @@ function addTarget(id: string): void {
 }
 
 function completeTarget(): void {
-  if (targetInput.value) showCompletion(matchTargets(candidates(), targetInput.value, targets), addTarget);
+  if (targetInput.value) showCompletion(targetInput, matchTargets(candidates(), targetInput.value, targets), addTarget);
   else closeCompletion();
 }
 
 function completeMention(): void {
   const mention = mentionBefore(textInput.value, textInput.selectionStart);
   if (!mention) return closeCompletion();
-  showCompletion(matchTargets(candidates(), mention.query), (id) => {
+  showCompletion(textInput, matchTargets(candidates(), mention.query), (id) => {
     textInput.setRangeText(mentionText(id), mention.start, textInput.selectionStart, "end");
     closeCompletion();
     growComposer();
@@ -283,6 +284,7 @@ function showState(next: ChatState): void {
   composer.hidden = !next.canSend;
   note.hidden = next.canSend;
   note.textContent = next.note;
+  textInput.placeholder = isDirect() ? "Message " + next.defaultTarget : `Message ${next.title.replace(/^# /, "#")} (Enter sends, Shift+Enter for a new line)`;
   if (first || isDirect()) targets = [next.defaultTarget];
   renderTargets();
   messages.length = 0;
@@ -290,9 +292,16 @@ function showState(next: ChatState): void {
   render(first);
 }
 
+// The CSS max-height stops the growth at about ten lines; the text scrolls from there.
 function growComposer(): void {
   textInput.style.height = "auto";
-  textInput.style.height = Math.min(textInput.scrollHeight, COMPOSER_MAX_HEIGHT) + "px";
+  textInput.style.height = textInput.scrollHeight + "px";
+}
+
+let sending = false;
+
+function updateSend(): void {
+  sendButton.disabled = sending || !textInput.value.trim();
 }
 
 window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
@@ -312,13 +321,14 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
       render();
     }
   } else {
-    sendButton.disabled = false;
+    sending = false;
     problem.textContent = data.error ?? "";
     if (!data.error) {
       textInput.value = "";
       titleInput.value = "";
       growComposer();
     }
+    updateSend();
   }
 });
 
@@ -328,13 +338,15 @@ document.addEventListener("visibilitychange", activate);
 composer.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!textInput.value.trim()) return;
-  sendButton.disabled = true;
+  sending = true;
+  updateSend();
   problem.textContent = "";
   host.postMessage({ type: "send", draft: { type: typeSelect.value, targets: [...targets], title: titleInput.value, text: textInput.value } });
 });
 
 textInput.addEventListener("input", () => {
   growComposer();
+  updateSend();
   completeMention();
 });
 textInput.addEventListener("click", completeMention);
@@ -370,7 +382,7 @@ threadsToggle.addEventListener("click", () => {
 
 titleToggle.addEventListener("click", () => {
   titleInput.hidden = !titleInput.hidden;
-  titleToggle.textContent = titleInput.hidden ? "+ title" : "− title";
+  titleToggle.setAttribute("aria-pressed", String(!titleInput.hidden));
   if (titleInput.hidden) titleInput.value = "";
   else titleInput.focus();
 });

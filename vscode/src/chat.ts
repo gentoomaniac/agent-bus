@@ -181,7 +181,7 @@ export class ChatPanels implements vscode.Disposable {
   .muted, #description { color: var(--vscode-descriptionForeground); }
   header { display: flex; align-items: baseline; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   h1 { font-size: 1.1em; margin: 0; white-space: nowrap; }
-  header .link, #toolbar .link { color: var(--vscode-textLink-foreground); background: transparent; padding: 0 4px; font-size: 0.9em; }
+  header .link { color: var(--vscode-textLink-foreground); background: transparent; padding: 0 4px; font-size: 0.9em; }
   header .link[aria-pressed="true"] { color: var(--vscode-foreground); border-bottom: 1px solid var(--vscode-focusBorder); }
   .reply-to { font-size: 0.85em; font-family: var(--vscode-font-family); }
   .new { padding: 0 5px; border-radius: 3px; font-size: 0.8em; color: var(--vscode-errorForeground); border: 1px solid var(--vscode-errorForeground); }
@@ -217,22 +217,28 @@ export class ChatPanels implements vscode.Disposable {
   button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
   button:disabled { opacity: 0.5; cursor: default; }
   #note { padding: 8px 12px; border-top: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); }
-  #composer { position: relative; margin: 8px 12px 10px; border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); background: var(--vscode-input-background); border-radius: 4px; }
+  #composer { position: relative; margin: 8px 12px 10px; border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, var(--vscode-panel-border))); background: var(--vscode-input-background); border-radius: 8px; }
   #composer:focus-within { border-color: var(--vscode-focusBorder); }
-  #composer textarea, #composer input { display: block; box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: transparent; border: 0; outline: 0; padding: 6px 8px; }
-  #composer textarea { resize: none; max-height: 12em; }
-  #title { font-weight: bold; border-bottom: 1px solid var(--vscode-panel-border); }
-  #toolbar { display: flex; align-items: center; gap: 6px; padding: 2px 6px 4px; }
-  #completions { position: absolute; bottom: 100%; left: 0; margin: 0 0 2px; padding: 2px 0; list-style: none; max-height: 10em; overflow-y: auto; min-width: 12em; color: var(--vscode-quickInput-foreground, var(--vscode-foreground)); background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background)); border: 1px solid var(--vscode-focusBorder); border-radius: 4px; z-index: 1; }
-  #completions li { padding: 2px 10px; cursor: pointer; }
-  #completions li.active { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); }
-  #targets { flex: 1; min-width: 6em; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-  #targets input { flex: 1; min-width: 5em; width: auto; padding: 1px 4px; font-size: 0.9em; }
-  .chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 6px; border-radius: 8px; font-size: 0.85em; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
-  .chip button { color: inherit; background: transparent; padding: 0 4px; line-height: 1; }
-  #toolbar select { max-width: 14em; color: var(--vscode-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border); font-size: 0.9em; padding: 1px 2px; }
-  #toolbar .spacer { flex: 1; }
-  #hint { font-size: 0.85em; }
+  #composer textarea, #composer input { display: block; box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: transparent; border: 0; outline: 0; padding: 0; }
+  #composer ::placeholder { color: var(--vscode-input-placeholderForeground); }
+  #composer textarea { resize: none; max-height: 10lh; padding: 8px 10px 4px; line-height: 1.4; }
+  #title { font-weight: bold; padding: 8px 10px 0; }
+  #toolbar { display: flex; align-items: center; gap: 6px; padding: 2px 6px 6px 8px; }
+  #toolbar button:focus-visible, #toolbar select:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  #completions { position: absolute; bottom: 100%; left: 0; margin: 0 0 4px; padding: 3px; list-style: none; max-height: 12em; overflow-y: auto; min-width: 10em; color: var(--vscode-editorSuggestWidget-foreground); background: var(--vscode-editorSuggestWidget-background); border: 1px solid var(--vscode-editorSuggestWidget-border, var(--vscode-widget-border, var(--vscode-focusBorder))); border-radius: 6px; box-shadow: 0 2px 8px var(--vscode-widget-shadow); z-index: 1; }
+  #completions li { padding: 2px 8px; border-radius: 4px; cursor: pointer; }
+  #completions li.active { color: var(--vscode-editorSuggestWidget-selectedForeground); background: var(--vscode-editorSuggestWidget-selectedBackground); }
+  #targets { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  #targets input { flex: 1; min-width: 6em; width: auto; font-size: 0.9em; }
+  .chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 10px; font-size: 0.85em; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
+  .chip button { color: inherit; background: transparent; padding: 0 0 0 4px; line-height: 1; }
+  .chip button:hover:not(:disabled) { background: transparent; opacity: 0.7; }
+  #toolbar .pill { color: var(--vscode-descriptionForeground); background: transparent; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 10px; font-size: 0.85em; padding: 1px 8px; }
+  #toolbar select.pill { appearance: none; max-width: 10em; cursor: pointer; }
+  #toolbar select.pill option { color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); }
+  #toolbar .pill:hover:not(:disabled) { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground); }
+  #toolbar .pill[aria-pressed="true"] { color: var(--vscode-foreground); border-color: var(--vscode-focusBorder); }
+  #send { flex: none; width: 28px; height: 28px; padding: 0; border-radius: 50%; font-size: 1.1em; line-height: 1; }
   #problem { color: var(--vscode-errorForeground); font-size: 0.9em; }
 </style>
 </head>
@@ -243,15 +249,13 @@ export class ChatPanels implements vscode.Disposable {
 <form id="composer" hidden>
   <ul id="completions" role="listbox" hidden></ul>
   <input id="title" placeholder="Title" aria-label="Title" hidden>
-  <textarea id="text" rows="1" placeholder="Message" aria-label="Message"></textarea>
+  <textarea id="text" rows="1" aria-label="Message"></textarea>
   <div id="toolbar">
-    <select id="type" aria-label="Type"></select>
-    <div id="targets"><input id="targetInput" placeholder="to: @name" aria-label="To"></div>
-    <button id="toggleTitle" class="link" type="button">+ title</button>
-    <span class="spacer"></span>
+    <select id="type" class="pill" aria-label="Type"></select>
+    <div id="targets"><input id="targetInput" placeholder="@ to target" aria-label="To"></div>
+    <button id="toggleTitle" class="pill" type="button" title="Add a title" aria-label="Title" aria-pressed="false">T</button>
     <span id="problem"></span>
-    <span id="hint" class="muted">Enter sends, Shift+Enter adds a line</span>
-    <button id="send" type="submit">Send</button>
+    <button id="send" type="submit" title="Send" aria-label="Send" disabled>↑</button>
   </div>
 </form>
 <script nonce="${nonce}" src="${script}"></script>

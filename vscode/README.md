@@ -85,9 +85,10 @@ HTML.
 ## Sending
 
 The composer at the bottom of the chat panel is one text box that grows with what you type, with a
-slim toolbar under it. It sends as the monitor's agent. Enter sends, Shift+Enter adds a line.
+slim toolbar under it, inside one rounded box, and a round send button (↑). It sends as the
+monitor's agent. Enter sends, Shift+Enter adds a line.
 
-- **Type:** the first dropdown: `message` (the default), `request`, `question`, `answer`,
+- **Type:** a small dropdown pill: `message` (the default), `request`, `question`, `answer`,
   `feedback`, `bug_report`, `feature_request`, `status` or `ack`.
 - **To:** the targets are chips in front of a small input. In a channel it starts with `@all`.
   Type `@` and a list offers `@all` and the channel's members, filtered by prefix, ignoring case,
@@ -96,7 +97,7 @@ slim toolbar under it. It sends as the monitor's agent. Enter sends, Shift+Enter
   input, to remove it. Typing `@` in the message offers the same list. With no chip, the
   `@mentions` in the text count. Every message needs at least one target, so the agents know who
   should respond. In a direct message the recipient is the only target and cannot be changed.
-- **Title:** optional, behind "+ title".
+- **Title:** optional, behind the "T" button; the title line then shows above the text.
 
 The panel is read-only, and says why, in two cases:
 - the monitor has no identity to send as (it was started without `--agent`);
