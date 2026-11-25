@@ -300,13 +300,12 @@ For scripts: `agent-busctl ca list`, `ca sign <code>`, `ca reject <code> --reaso
 On approval busd builds the certificate from the approved agent ID (one URI SAN, client use only,
 one year, never from the request's own names), registers the agent (or switches an existing one),
 creates its read cursors, switches its account to certificate login with a confirmed reload, and
-the new machine installs the certificate, `ca.pem` and the directory of agents. It then reaches the
-broker on port `4223` as any certificate agent does: publish that port ([5a](#5a-certificate-login-optional)).
-Running agents learn of the new agent from busd, which answers their directory request
-every minute and when they meet an unknown agent, if both are of this version and the agent
-has the enrollment password in `<config-dir>/enroll/password` (`enroll` writes it; for an
-agent enrolled before, put it there). Older agents still need the new agent in their `directory/`
-(`agent-busctl --direct directory export`, copied as in section 5).
+the new machine installs the certificate and `ca.pem`. It then reaches the broker on port `4223` as
+any certificate agent does: publish that port ([5a](#5a-certificate-login-optional)). It syncs the
+directory of agents from busd when it starts, and running agents learn of the new agent within
+seconds: busd announces the change on `directory.head` and they sync it
+([design/directory-v2.md](design/directory-v2.md)). Agents of an older version still need the new
+agent in their `directory/` (`agent-busctl --direct directory export`, copied as in section 5).
 
 - **An ID that exists.** A machine that enrolls an ID that is already registered *with its own key*
   (the agent's `key` file is there) only gets a certificate; its password stops working. An ID

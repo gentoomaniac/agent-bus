@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -123,6 +125,35 @@ func (transport *Transport) History(ctx context.Context, from bus.Channel, after
 		records = append(records, bus.Record{Sequence: metadata.Sequence.Stream, Payload: message.Data()})
 	}
 	return records, transport.session.explain(batch.Error())
+}
+
+// RequestDirectory asks busd for the directory with a sync request (directory.SubjectSync); the
+// answer comes back in the agent's own inbox space.
+func (transport *Transport) RequestDirectory(ctx context.Context, request []byte) ([]byte, error) {
+	if err := transport.Unavailable(); err != nil {
+		return nil, err
+	}
+	reply, err := transport.session.conn.RequestWithContext(ctx, directory.SubjectSync, request)
+	switch {
+	case errors.Is(err, nats.ErrNoResponders):
+		return nil, errors.New("busd is not running on the broker, so the directory cannot be synced (docs/troubleshooting.md)")
+	case err != nil:
+		return nil, fmt.Errorf("asking busd for the directory: %w", transport.session.explain(err))
+	}
+	return reply.Data, nil
+}
+
+// WatchDirectoryHeads hands every message on directory.SubjectHead to handler, on a goroutine of
+// the connection, until stop is called. nats.go subscribes again after a reconnect.
+func (transport *Transport) WatchDirectoryHeads(handler func(head []byte)) (stop func(), err error) {
+	subscription, err := transport.session.conn.Subscribe(directory.SubjectHead, func(message *nats.Msg) { handler(message.Data) })
+	if err != nil {
+		return nil, err
+	}
+	// So the server knows the subscription before the first sync. While the bus is down this
+	// fails, and the subscription goes out with the reconnect.
+	_ = transport.session.conn.Flush()
+	return func() { _ = subscription.Unsubscribe() }, nil
 }
 
 // PublishPresence publishes the agent's own presence record, replacing the last.

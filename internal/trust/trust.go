@@ -37,7 +37,7 @@ type Pin struct {
 }
 
 // Directory looks up an agent's registry record. Agents cannot read the registry on the broker
-// (docs/design/jetstream-binding.md), so until busd serves it the directory is local: see FileDirectory.
+// (docs/design/jetstream-binding.md), so the directory is local: see FileDirectory.
 type Directory interface {
 	Lookup(ctx context.Context, agentID string) (bus.AgentRecord, error)
 }

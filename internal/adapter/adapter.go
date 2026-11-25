@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/identity"
@@ -29,10 +30,7 @@ const (
 	// reply_to (docs/design/safety.md rule 3).
 	recentParentWindow = 5 * time.Minute
 	keepAliveInterval  = 20 * time.Second // well inside the consumers' one-minute AckWait
-	// missFetchInterval is the least time between two directory fetches caused by an unknown agent,
-	// so that a sender busd does not know either costs one fetch, not one per message.
-	missFetchInterval = 5 * time.Second
-	idlePause         = time.Second // between rounds of Run that fetched nothing
+	idlePause          = time.Second      // between rounds of Run that fetched nothing
 
 	// DeliverTargeted keeps untargeted channel messages out of the inbox; DeliverAll delivers every
 	// message (docs/design/delivery.md).
@@ -54,10 +52,14 @@ type Config struct {
 	// BrokerNote warns that the broker was a guess, for whoami to repeat to the agent.
 	BrokerNote string
 	Directory  trust.Directory
-	// FetchDirectory brings the local Directory up to date from busd. Nil: the directory only
-	// changes when someone copies files in. It also runs when an agent is missing from the
-	// directory, so it must not call the adapter.
-	FetchDirectory func(ctx context.Context) error
+	// DirectoryLink syncs a Directory that is a trust.FileDirectory with busd (SyncDirectory,
+	// RunDirectory). Nil: the directory only changes when someone copies files in.
+	DirectoryLink DirectoryLink
+	// CACert is the CA certificate (PEM) busd's directory must be signed by.
+	CACert []byte
+	// Log tells the owner what the adapter does not return as an error, such as a directory of a
+	// new epoch. Default: nothing is logged.
+	Log func(format string, args ...any)
 	// Groups are group channels to read besides the agent's DM channel, general and the groups the
 	// directory's catalogue snapshot lists the agent in (written by `agent-busctl channel join`). Their
 	// read cursors must exist (agent-busctl creates them).
@@ -116,14 +118,20 @@ type Adapter struct {
 	alertsPath string
 	channels   []bus.Channel
 
-	// fetchMu serialises the directory fetches that unknown agents cause. It may be taken while
-	// holding mu, so nothing that holds it may take mu.
-	fetchMu       sync.Mutex
-	lastMissFetch time.Time
-	pollMu        sync.Mutex // one reader at a time; fetching must not hold mu
-	mu            sync.Mutex // guards everything below and the stores above
-	inbox         inbox
-	rate          rateLimiter
+	// syncMu makes directory syncs run one at a time; missMu does the same for the syncs that
+	// unknown recipients cause, with lastMissSync. Neither is ever taken while holding mu.
+	syncMu       sync.Mutex
+	missMu       sync.Mutex
+	lastMissSync time.Time
+	syncWanted   chan struct{} // a sync is due (RequestDirectorySync)
+	pollMu       sync.Mutex    // one reader at a time; fetching must not hold mu
+	mu           sync.Mutex    // guards everything below and the stores above
+	// installed is the directory snapshot this process took in last: what heads are compared with.
+	installed directory.Snapshot
+	// lastSenderSync is when a message of an unknown sender last asked for a sync.
+	lastSenderSync time.Time
+	inbox          inbox
+	rate           rateLimiter
 	// closingRate limits ack, answer and status replies on their own.
 	closingRate rateLimiter
 
@@ -134,9 +142,9 @@ type Adapter struct {
 	// contextDropped counts the context messages dropped for room since TakeContextDropped.
 	contextDropped int
 	acked          map[string]bool // IDs of the messages this agent sent an ack reply to
-	// unknownSenders maps a sender with no directory record to the deliveries (destination and
-	// sequence) of its messages waiting for one.
-	unknownSenders map[string]map[string]bool
+	// unknownSenders maps a sender with no directory record to its messages waiting for one: the
+	// Release of each delivery, by destination and sequence.
+	unknownSenders map[string]map[string]func(context.Context) error
 	// recent is the message the agent last read or acked, the parent of a send that names none.
 	recent struct {
 		id      string
@@ -154,6 +162,9 @@ func Open(config Config) (*Adapter, error) {
 	if config.Now == nil {
 		config.Now = time.Now
 	}
+	if config.Log == nil {
+		config.Log = func(string, ...any) {}
+	}
 	config.Deliver = cmp.Or(config.Deliver, DeliverTargeted)
 	if config.Deliver != DeliverTargeted && config.Deliver != DeliverAll {
 		return nil, fmt.Errorf("unknown delivery mode %q, want %s or %s", config.Deliver, DeliverTargeted, DeliverAll)
@@ -163,7 +174,7 @@ func Open(config Config) (*Adapter, error) {
 	config.ContextMessages = cmp.Or(config.ContextMessages, DefaultContextMessages)
 	config.RateLimit = cmp.Or(config.RateLimit, defaultRateLimit)
 	config.MaxHops = cmp.Or(config.MaxHops, defaultMaxHops)
-	adapter := &Adapter{config: config}
+	adapter := &Adapter{config: config, syncWanted: make(chan struct{}, 1)}
 
 	lock, err := identity.AcquireLock(config.Dir)
 	var held identity.HeldError
@@ -195,6 +206,16 @@ func (adapter *Adapter) load() (err error) {
 		return err
 	}
 	adapter.alertsPath = filepath.Join(config.Dir, alertsFile)
+	if store, syncs := adapter.snapshots(); syncs {
+		if adapter.installed, err = store.Load(); err != nil {
+			return err
+		}
+		for fingerprint, agentID := range adapter.installed.Revoked {
+			if err := adapter.trust.Revoke(agentID, fingerprint); err != nil {
+				return err
+			}
+		}
+	}
 	adapter.inbox = inbox{maxMessages: config.InboxMessages, maxBytes: config.InboxBytes, maxContext: config.ContextMessages}
 	adapter.rate = rateLimiter{limit: config.RateLimit, window: rateWindow}
 	adapter.closingRate = rateLimiter{limit: config.RateLimit, window: rateWindow}
@@ -301,17 +322,6 @@ func (adapter *Adapter) Agents(ctx context.Context) ([]string, error) {
 	return agentIDs, nil
 }
 
-// SyncDirectory fetches the directory from busd, if the adapter can, and then re-reads it as
-// RefreshDirectory does. A failed fetch leaves the local directory as it is and is returned next
-// to the result of the re-read: what is already known keeps working.
-func (adapter *Adapter) SyncDirectory(ctx context.Context) error {
-	var fetchErr error
-	if adapter.config.FetchDirectory != nil {
-		fetchErr = adapter.config.FetchDirectory(ctx)
-	}
-	return errors.Join(fetchErr, adapter.RefreshDirectory(ctx))
-}
-
 // RefreshDirectory re-reads the local directory and remembers the fingerprint of every revoked key
 // in it, in revoked_keys. From then on messages signed by such a key are rejected, pinned or not.
 // Revocations are only ever added: a directory that lost a record does not un-revoke anything. An
@@ -345,46 +355,23 @@ func (adapter *Adapter) Send(ctx context.Context, to string, message Outgoing) (
 	if err := adapter.Ready(); err != nil {
 		return "", err
 	}
-	if err := adapter.checkRecipient(ctx, to); err != nil {
+	// An agent with no record may have been enrolled after this one: busd is asked first.
+	syncErr := adapter.learnUnknown(ctx, []string{to})
+	if err := adapter.checkRecipient(ctx, to, syncErr); err != nil {
 		return "", err
 	}
 	return adapter.post(ctx, bus.DMChannel(to), message)
 }
 
-// fetchDirectoryOnMiss brings the directory up to date because an agent is missing from it, at
-// most once per missFetchInterval; a call inside the interval returns nil and leaves it to the
-// fetch that just ran. It returns the fetch's error. It re-reads nothing: RefreshDirectory takes
-// mu, which the caller of this may hold.
-func (adapter *Adapter) fetchDirectoryOnMiss(ctx context.Context) error {
-	if adapter.config.FetchDirectory == nil {
-		return nil
-	}
-	adapter.fetchMu.Lock()
-	defer adapter.fetchMu.Unlock()
-	now := adapter.config.Now()
-	if now.Sub(adapter.lastMissFetch) < missFetchInterval {
-		return nil
-	}
-	// Stamped after the fetch, so that a busd that hangs leaves mu free for a whole interval.
-	err := adapter.config.FetchDirectory(ctx)
-	adapter.lastMissFetch = adapter.config.Now()
-	return err
-}
-
 // checkRecipient refuses an agent that has no directory record or was removed, as ErrBadTargets:
-// the sender's mistake. An agent with no record is looked for at busd first, since it may have
-// been enrolled after this one; a busd that cannot be asked does not fail the send by itself, the
-// agent only stays unknown. A lookup that fails otherwise is returned as it is.
-func (adapter *Adapter) checkRecipient(ctx context.Context, agentID string) error {
+// the sender's mistake. syncErr is why the sync for agents missing from the directory failed, if
+// it did: a busd that cannot be asked does not fail the send by itself, the agent only stays
+// unknown. A lookup that fails otherwise is returned as it is.
+func (adapter *Adapter) checkRecipient(ctx context.Context, agentID string, syncErr error) error {
 	record, err := adapter.config.Directory.Lookup(ctx, agentID)
-	var fetchErr error
 	if errors.Is(err, fs.ErrNotExist) {
-		fetchErr = adapter.fetchDirectoryOnMiss(ctx)
-		record, err = adapter.config.Directory.Lookup(ctx, agentID)
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		if fetchErr != nil {
-			return fmt.Errorf("%w: unknown agent %s: it has no entry in the directory, and fetching the directory failed: %v", ErrBadTargets, agentID, fetchErr)
+		if syncErr != nil {
+			return fmt.Errorf("%w: unknown agent %s: it has no entry in the directory, and syncing the directory failed: %v", ErrBadTargets, agentID, syncErr)
 		}
 		return fmt.Errorf("%w: unknown agent %s: it has no entry in the directory", ErrBadTargets, agentID)
 	}
@@ -475,8 +462,8 @@ var ErrBadTargets = errors.New("invalid targets")
 // recipient; in a channel they are the ones given, else the mentions in the text, plus the author
 // of the message being answered (always for an explicit reply_to, for an inferred parent only on
 // closing and plain messages); a request or question with none goes to @all. Anything else aimed
-// at nobody is refused.
-func (adapter *Adapter) targetsFor(ctx context.Context, to bus.Channel, message Outgoing, replied *parent, explicitReply bool) ([]string, error) {
+// at nobody is refused. syncErr is passed on to checkRecipient.
+func (adapter *Adapter) targetsFor(ctx context.Context, to bus.Channel, message Outgoing, replied *parent, explicitReply bool, syncErr error) ([]string, error) {
 	if to.Kind == bus.DM {
 		if message.Targets != nil && !slices.Equal(message.Targets, []string{to.Name}) {
 			return nil, fmt.Errorf("%w: a DM targets its recipient %s", ErrBadTargets, to.Name)
@@ -503,7 +490,7 @@ func (adapter *Adapter) targetsFor(ctx context.Context, to bus.Channel, message 
 		if target == envelope.TargetAll {
 			continue
 		}
-		if err := adapter.checkRecipient(ctx, target); err != nil {
+		if err := adapter.checkRecipient(ctx, target, syncErr); err != nil {
 			return nil, err
 		}
 	}
@@ -522,6 +509,16 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 	}
 	if secret := findSecret(message.Body); secret != "" {
 		return "", fmt.Errorf("not sent: the body contains %s", secret)
+	}
+	// Before mu: a sync goes to busd. The author of a replied-to message is known already, its
+	// message verified against its record.
+	var syncErr error
+	if to.Kind != bus.DM {
+		named := message.Targets
+		if named == nil {
+			named = envelope.MentionedTargets(message.Body.Text)
+		}
+		syncErr = adapter.learnUnknown(ctx, named)
 	}
 
 	adapter.mu.Lock()
@@ -542,7 +539,7 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 		}
 	}
 
-	targets, err := adapter.targetsFor(ctx, to, message, inherited, message.ReplyTo != "")
+	targets, err := adapter.targetsFor(ctx, to, message, inherited, message.ReplyTo != "", syncErr)
 	if err != nil {
 		return "", err
 	}
@@ -675,15 +672,17 @@ func (adapter *Adapter) Run(ctx context.Context, report func(error)) error {
 	return nil
 }
 
-// noteUnknownSender remembers a message that waits because its sender has no directory record.
-func (adapter *Adapter) noteUnknownSender(sender, destination string, sequence uint64) {
+// noteUnknownSender remembers a message that waits because its sender has no directory record,
+// and asks for a sync. The caller holds mu.
+func (adapter *Adapter) noteUnknownSender(sender, destination string, delivery bus.Delivery) {
 	if adapter.unknownSenders == nil {
-		adapter.unknownSenders = map[string]map[string]bool{}
+		adapter.unknownSenders = map[string]map[string]func(context.Context) error{}
 	}
 	if adapter.unknownSenders[sender] == nil {
-		adapter.unknownSenders[sender] = map[string]bool{}
+		adapter.unknownSenders[sender] = map[string]func(context.Context) error{}
 	}
-	adapter.unknownSenders[sender][fmt.Sprintf("%s/%d", destination, sequence)] = true
+	adapter.unknownSenders[sender][fmt.Sprintf("%s/%d", destination, delivery.Sequence)] = delivery.Release
+	adapter.wantSyncForSender()
 }
 
 // UnknownSenders returns the senders whose messages wait for a directory record, and how many
@@ -724,19 +723,11 @@ func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delive
 	if err := env.CheckTo(channel); err != nil {
 		return adapter.reject(ctx, channel, delivery, err)
 	}
-	resolve := func() (trust.Resolution, error) {
-		return adapter.trust.Resolve(ctx, adapter.config.Directory, env.From, env.KeyFP, adapter.config.Now())
-	}
-	resolution, err := resolve()
+	// A sender with no record waits, unacked, for the sync it asks for (RunDirectory), which hands
+	// its message back to the broker once its record is in.
+	resolution, err := adapter.trust.Resolve(ctx, adapter.config.Directory, env.From, env.KeyFP, adapter.config.Now())
 	if errors.Is(err, fs.ErrNotExist) {
-		// Under mu, so a fetch that hangs holds the adapter up for its timeout; it runs at most every
-		// missFetchInterval. Its error is not reported: the message waits as before, and the refresh
-		// loop tells of a busd that cannot be reached.
-		_ = adapter.fetchDirectoryOnMiss(ctx)
-		resolution, err = resolve()
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		adapter.noteUnknownSender(env.From, destination, delivery.Sequence)
+		adapter.noteUnknownSender(env.From, destination, delivery)
 	} else {
 		delete(adapter.unknownSenders, env.From)
 	}

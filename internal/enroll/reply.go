@@ -32,21 +32,13 @@ type Reply struct {
 	Message   string    `json:"message,omitempty"` // the reason of a rejection, or why a request was refused
 	ExpiresAt time.Time `json:"expires_at,omitzero"`
 
-	Certificate string     `json:"certificate,omitempty"` // PEM
-	CA          string     `json:"ca,omitempty"`          // PEM; the client compares it with the CA it trusts
-	Directory   *Directory `json:"directory,omitempty"`
+	Certificate string `json:"certificate,omitempty"` // PEM
+	CA          string `json:"ca,omitempty"`          // PEM; the client compares it with the CA it trusts
 }
 
 // StatusQuery asks for the state of one request.
 type StatusQuery struct {
 	RequestID string `json:"request_id"`
-}
-
-// Directory is the public snapshot an enrolled agent starts with: the registry records and the
-// channel catalogue (docs/agent-busctl.md, directory export).
-type Directory struct {
-	Records  []bus.AgentRecord   `json:"records"`
-	Channels map[string][]string `json:"channels"`
 }
 
 // What the registry says about the ID of a pending request.

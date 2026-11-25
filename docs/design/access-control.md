@@ -62,7 +62,7 @@ flowchart LR
 | | its API | subscribe `busd.>`, subscribe `_INBOX.busd.>`, publish `_INBOX.>` (replies) |
 | | acks | none for ordered consumers; a durable consumer of its own needs `$JS.ACK.BUS.<name>.>` |
 | busd, control connection (`CONTROL`) | registry, catalogue, ledger | **as built** (login `busd`): the JetStream read API of `KV_registry` and `KV_catalogue`, publish `$KV.registry.>`, `_INBOX.>` and `busd.enroll.pending`; subscribe `_INBOX.>` and its seven `busd.enroll.*`, `busd.ca.*` and `busd.monitor.*` subjects (`busd.monitor.registry` and `busd.monitor.catalogue` are the monitor's). **Planned**, with the ledger: `ledger.>`, `$JS.ACK.<stream>.<name>.>` for a durable consumer of its own |
-| Enrollment login `enroll` (`CONTROL`, shared, password listener) | ask for a certificate, read the directory | publish `busd.enroll.request`, `busd.enroll.status` and `busd.directory`; subscribe `_INBOX.enroll.>`; never any stream, JetStream API, `BUS` or `busd.ca.*` subject ([phase B](#phase-b-implemented-the-enrollment-flow)) |
+| Enrollment login `enroll` (`CONTROL`, shared, password listener) | ask for a certificate | publish `busd.enroll.request` and `busd.enroll.status`; subscribe `_INBOX.enroll.>`; never any stream, JetStream API, `BUS` or `busd.ca.*` subject ([phase B](#phase-b-implemented-the-enrollment-flow)) |
 | `bus-admin` (`BUS`) and `control-admin` (`CONTROL`), used by `agent-busctl --direct` over two connections | everything in its own account | publish and subscribe `>`; NATS usernames are server-wide, so the two are distinct users with separate passwords, which live only in the owner's config ([admin CLI](admin-cli.md)) |
 
 **Planned:** the monitor gets its own narrow signing identity, `monitor@<owner>`, with its own Ed25519 key registered with the role `monitor`: busd lets it call only the read-only methods above. It never uses the owner's key. busd, not the monitor, creates the monitor's consumer, so the monitor needs no create grant. Today the monitor reads with its two logins and ordered consumers. Read-only still has a limit: any raw JetStream reader, the monitor included, can make the server deliver a payload it can read to any subject of `BUS` it can name. That cannot be closed by grants within one account. The receiver checks ([private channels](private-channels.md), [signing and trust](identity-and-trust.md)) are what make it harmless. The grants for the busd methods and the consumers are generated; the per-channel part is rewritten by reload (below).
@@ -177,45 +177,13 @@ What was built, and where it differs from the plan above it:
   `BUS` access. Its password is made by `agent-busctl enroll init` (`enroll/password`, shown once).
   Each client uses a random inbox prefix under `_INBOX.enroll.`, but the login is shared, so
   **residual risk:** anyone who has it can read the replies meant for other enrollees. Replies
-  therefore hold only public data (certificate, CA certificate, directory); the client believes only an
+  therefore hold only public data (certificate, CA certificate); the client believes only an
   answer that names its own request ID and installs only a certificate for exactly its agent and
   TLS key, signed by the CA it trusts. The login proves no identity: it is a ticket to ask.
-- **The directory over the same login.** An agent's certificate login is in `BUS` and has no
-  route to busd, so a running agent learns of agents enrolled after it with the shared login
-  too. A request on `busd.directory` (the enrollment login may publish it; busd subscribes) is
-  answered with the registry records and the channel catalogue, the same snapshot an approval
-  carries, plus the time busd made it (`issued_at`). The content is public data (agent IDs, public
-  keys, fingerprints) and the asker is anonymous, which this trusted-LAN MVP accepts.
-  - *Signed.* The login is shared, so anyone who has it could answer on an agent's inbox space.
-    busd therefore signs the payload with the CA key (the algorithm of the key; domain-prefixed
-    `agent-bus/directory/v1`), and the agent checks the signature against its `ca.pem` before it
-    validates or writes anything. An unsigned reply, a bad signature and a signature by another
-    CA are refused; the agent logs it and keeps its local copy.
-  - *Replay.* The agent keeps the `issued_at` of the newest directory it took in in
-    `<config-dir>/directory/issued_at` and refuses an older one, so a recorded reply cannot bring
-    back a key that was revoked since. The first directory counts as fresh. A reply dated more
-    than five minutes ahead of the agent's clock is refused too, so one reply cannot set a time
-    that genuine ones are older than. If busd's clock goes back, agents refuse its directories
-    until it catches up.
-  - *Merge.* `agent-bus enroll` keeps the password in `<config-dir>/enroll/password`. The running
-    adapter (`agent-bus mcp`) asks every `--directory-refresh` and merges the answer into its
-    local directory: records are added and replaced, never deleted, and a revoked key stays
-    revoked (`revoked_keys` only grows). The adapter also fetches when a recipient or a sender
-    has no record, at most once per five seconds, and then looks again, so a message from an
-    agent enrolled later is delivered at once instead of held as "unknown sender" (a delivery it
-    still cannot resolve is redelivered by the broker after the ack wait, and meets the same
-    fetch). A busd that cannot be reached, or an agent without the password, leaves the local
-    directory as it is.
-  - *Residual risk:* denial of service. Whoever has the password can answer with an error, or
-    use up busd's limit for directory requests (5 a second, burst 20); the agent keeps its copy.
-  - *Versions.* An agent enrolled before this needs the password file written by hand. An older
-    agent or busd still needs `directory export` and a copy; a new agent refuses the unsigned
-    reply of an old busd. The approval reply's directory is not signed: it is only accepted
-    together with a certificate that checks against the agent's own TLS key and the CA it
-    trusts. That certificate is public, though: someone who sees the genuine reply (it needs the
-    request ID or the inbox subject) could resend it with a forged directory. The next signed
-    fetch replaces such records, and pinned agents are protected by their pins. Signing the
-    approval reply's directory too would close this.
+- **The directory.** The approval reply carries no directory: the reply is unsigned, and whoever
+  has the shared login could overhear it and answer in its place with a forged one. The enrolled
+  agent syncs the signed directory from busd with its own login instead, as every running agent
+  does ([directory v2](directory-v2.md)), and keeps no copy of the enrollment password.
 - **Request.** `agent-bus enroll --broker <host> --agent <id> [--waitforcert[=<max>]] [--secret <s>]
   [--ca-fingerprint <sha256>]`. An existing identity keeps its signing key (and so its pins, ID and
   consumers); only the TLS key and CSR are new. The request has the agent ID, CSR, public signing

@@ -14,7 +14,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -51,7 +50,7 @@ type CLI struct {
 	ReconnectInitial time.Duration `help:"mcp only: the first wait before reconnecting to the broker; it doubles for each failed attempt." default:"1s" env:"BUS_RECONNECT_INITIAL"`
 	ReconnectMax     time.Duration `help:"mcp only: the longest wait between reconnect attempts." default:"30s" env:"BUS_RECONNECT_MAX"`
 
-	DirectoryRefresh time.Duration `help:"mcp only: how often the directory is fetched from busd and re-read for revoked keys (also on SIGHUP)." default:"1m" env:"BUS_DIRECTORY_REFRESH"`
+	DirectoryRefresh time.Duration `help:"mcp only: the backup interval of the directory sync with busd, which otherwise follows busd's announcements (also on SIGHUP)." default:"1m" env:"BUS_DIRECTORY_REFRESH"`
 
 	PresenceHeartbeat time.Duration `help:"mcp only: how often an unchanged presence record is published; readers call an agent offline after three times this." default:"30s" env:"BUS_PRESENCE_HEARTBEAT"`
 
@@ -110,7 +109,7 @@ type InboxCmd struct {
 }
 
 func (cmd *InboxCmd) Run(ctx context.Context, session *adapter.Adapter) error {
-	pollErr := session.Poll(ctx)
+	pollErr := poll(ctx, session)
 	messages, err := session.Inbox(adapter.InboxQuery{Limit: cmd.Limit, Types: cmd.Types})
 	if err != nil {
 		return err
@@ -135,8 +134,22 @@ type MarkReadCmd struct {
 }
 
 func (cmd *MarkReadCmd) Run(ctx context.Context, session *adapter.Adapter) error {
-	pollErr := session.Poll(ctx)
+	pollErr := poll(ctx, session)
 	return errors.Join(pollErr, session.Ack(ctx, cmd.IDs))
+}
+
+// poll fetches new mail once. A command has no directory loop, so when a message waits for a
+// sender this machine does not know, it syncs the directory itself and fetches again: the sync
+// hands such messages back to the broker.
+func poll(ctx context.Context, session *adapter.Adapter) error {
+	err := session.Poll(ctx)
+	if senders, _ := session.UnknownSenders(); len(senders) > 0 {
+		if syncErr := session.SyncDirectory(ctx); syncErr != nil {
+			return errors.Join(err, syncErr)
+		}
+		return session.Poll(ctx)
+	}
+	return err
 }
 
 type MCPCmd struct{}
@@ -151,7 +164,7 @@ func (cmd *MCPCmd) Run(ctx context.Context, cli *CLI, session *adapter.Adapter) 
 	if cli.DirectoryRefresh <= 0 {
 		return errors.New("--directory-refresh must be positive")
 	}
-	go refreshDirectory(ctx, session, cli.DirectoryRefresh)
+	go runDirectory(ctx, session, cli.DirectoryRefresh)
 	publisher := presence.NewPublisher(session, cli.PresenceHeartbeat, time.Now)
 	publisher.Log = func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) }
 	publishing := make(chan struct{})
@@ -167,26 +180,31 @@ func (cmd *MCPCmd) Run(ctx context.Context, cli *CLI, session *adapter.Adapter) 
 	return mcpserver.Serve(ctx, session, &mcp.StdioTransport{})
 }
 
-// refreshDirectory fetches the directory from busd and re-reads it at once, on a timer and on
-// SIGHUP, until ctx ends. A failure is only logged, once per round: the local directory stays
-// as it is and keeps working.
-func refreshDirectory(ctx context.Context, session *adapter.Adapter, interval time.Duration) {
+// runDirectory keeps the directory in sync with busd until ctx ends, and syncs at once on SIGHUP.
+// A failure is only logged, and one that repeats once: the local directory stays as it is and
+// keeps working. An unreachable bus is not logged at all; the connection tells of that itself.
+func runDirectory(ctx context.Context, session *adapter.Adapter, fallback time.Duration) {
 	hangups := make(chan os.Signal, 1)
 	signal.Notify(hangups, syscall.SIGHUP)
 	defer signal.Stop(hangups)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		if err := session.SyncDirectory(ctx); err != nil {
-			log.Printf("agent-bus: refreshing the directory: %v", err)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-hangups:
+				session.RequestDirectorySync()
+			}
 		}
-		select {
-		case <-ctx.Done():
+	}()
+	var last string
+	session.RunDirectory(ctx, fallback, func(err error) {
+		if errors.Is(err, bus.ErrUnavailable) || err.Error() == last {
 			return
-		case <-ticker.C:
-		case <-hangups:
 		}
-	}
+		last = err.Error()
+		log.Printf("agent-bus: syncing the directory: %v", err)
+	})
 }
 
 type PendingCmd struct {
@@ -287,29 +305,6 @@ func main() {
 	kongCtx.FatalIfErrorf(kongCtx.Run())
 }
 
-// directoryFetcher asks busd for the directory over the shared enrollment login, whose password
-// `agent-bus enroll` kept. An agent enrolled before that has none: its directory then only changes
-// when it is copied in, which a long-running session says once instead of failing every round.
-func (cli *CLI) directoryFetcher(caCert string, longRunning bool) func(context.Context) error {
-	var saidNoPassword sync.Once
-	var fetching sync.Mutex // the refresh loop and a fetch on a miss would otherwise write the directory together
-	return func(ctx context.Context) error {
-		fetching.Lock()
-		defer fetching.Unlock()
-		err := enrollclient.FetchDirectory(ctx, enrollclient.DirectoryOptions{ConfigDir: cli.ConfigDir, Broker: cli.Broker, CACertPath: caCert})
-		if errors.Is(err, enrollclient.ErrNoEnrollPassword) {
-			if longRunning {
-				saidNoPassword.Do(func() {
-					log.Printf("agent-bus: no enrollment password in %s: the directory is not fetched from busd and only changes when it is copied in",
-						filepath.Join(cli.ConfigDir, "enroll", "password"))
-				})
-			}
-			return nil
-		}
-		return err
-	}
-}
-
 // unknownIdentityError says that agentID was never enrolled or registered in configDir, and which
 // identities were. The usual cause is an --agent copied from an example (the documentation's
 // api-client@alice) instead of this machine's own.
@@ -385,6 +380,10 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 	if err != nil {
 		return nil, nil, err
 	}
+	caPEM, err := os.ReadFile(caCert)
+	if err != nil {
+		return nil, nil, err
+	}
 	if longRunning {
 		log.Printf("agent-bus: connecting to %s as %s (broker from %s)", connection.Address, cli.Agent, brokerSource)
 		connection.Reconnect = &broker.Backoff{Initial: cli.ReconnectInitial, Max: cli.ReconnectMax}
@@ -395,7 +394,8 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 		return nil, nil, err
 	}
 	session, err = adapter.Open(adapter.Config{
-		AgentID: cli.Agent, Dir: dir, Transport: transport, BrokerAddress: connection.Address, BrokerNote: brokerNote, Directory: trust.DirectoryPath(cli.ConfigDir), FetchDirectory: cli.directoryFetcher(caCert, longRunning),
+		AgentID: cli.Agent, Dir: dir, Transport: transport, BrokerAddress: connection.Address, BrokerNote: brokerNote, Directory: trust.DirectoryPath(cli.ConfigDir),
+		DirectoryLink: transport, CACert: caPEM, Log: func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) },
 		Groups: cli.Groups, Deliver: cli.Deliver, AutoAccept: cli.AutoAccept,
 	})
 	if err != nil {

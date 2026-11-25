@@ -28,7 +28,6 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/identity"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
-	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
 const (
@@ -308,33 +307,13 @@ func (e *enrolment) finish(request enroll.Request, tlsKeyPEM string, reply enrol
 	if err := creds.WriteClientCert(e.dir, []byte(reply.Certificate), []byte(tlsKeyPEM)); err != nil {
 		return err
 	}
-	records := 0
-	if reply.Directory != nil {
-		records = len(reply.Directory.Records)
-		if err := writeDirectory(trust.DirectoryPath(e.opts.ConfigDir), *reply.Directory); err != nil {
-			return err
-		}
-	}
-	// Kept so that the running agent can ask busd for the directory later (FetchDirectory).
-	if err := creds.WritePassword(filepath.Join(e.opts.ConfigDir, passwordDir), e.opts.EnrollPassword, true); err != nil {
-		return err
-	}
 	if err := writeBroker(e.opts.ConfigDir, e.opts.AgentID, e.opts.Broker); err != nil {
 		return err
 	}
 	_ = os.Remove(e.pendingPath())
 	certPath, keyPath := creds.ClientCertPaths(e.dir)
-	fmt.Fprintf(e.opts.Out, "enrolled %s: certificate %s, key %s, directory of %d agents\n", e.opts.AgentID, certPath, keyPath, records)
+	fmt.Fprintf(e.opts.Out, "enrolled %s: certificate %s, key %s; the agent syncs the directory from busd when it starts\n", e.opts.AgentID, certPath, keyPath)
 	return nil
-}
-
-func writeDirectory(dir trust.FileDirectory, directory enroll.Directory) error {
-	for _, record := range directory.Records {
-		if err := dir.Write(record); err != nil {
-			return err
-		}
-	}
-	return dir.WriteCatalogue(directory.Channels)
 }
 
 func fingerprintOfRequestKey(request enroll.Request) string {

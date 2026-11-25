@@ -10,17 +10,17 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
 )
 
-// FileDirectory is the MVP registry read path: a directory of `<agent-token>.json` files, one
-// AgentRecord each. `agent-busctl register` writes the record of every new agent there, next to the
-// config directory's other files, and `agent-busctl directory export` writes all records of the registry. Agents have no read access to the registry on the broker
-// (docs/design/jetstream-binding.md) and busd, which will serve it, does not exist yet. A machine that did not run
-// the registration gets the files by copying an export; the owner owns every machine.
+// FileDirectory is the registry read path: a directory of `<agent-token>.json` files, one
+// AgentRecord each. Agents have no read access to the registry on the broker
+// (docs/design/jetstream-binding.md): the adapter syncs a snapshot of it from busd and exports the
+// records here (internal/directory). `agent-busctl register` writes the record of every new agent
+// there too, and `agent-busctl directory export` writes all records of the registry, for a machine
+// whose agents are of a release without the sync.
 type FileDirectory string
 
 // DirectoryPath is where a config directory keeps its FileDirectory.
@@ -138,32 +138,6 @@ func (dir FileDirectory) WriteCatalogue(catalogue Catalogue) error {
 		return err
 	}
 	return files.Write(filepath.Join(string(dir), catalogueFile), data, files.PublicMode, true)
-}
-
-// issuedAtFile holds when busd made the newest directory this machine took in (no `.json` suffix,
-// so Records does not take it for an agent).
-const issuedAtFile = "issued_at"
-
-// IssuedAt is when busd made the newest directory fetched into this one; the zero time if none
-// was.
-func (dir FileDirectory) IssuedAt() (time.Time, error) {
-	data, err := os.ReadFile(filepath.Join(string(dir), issuedAtFile))
-	if errors.Is(err, fs.ErrNotExist) {
-		return time.Time{}, nil
-	}
-	if err != nil {
-		return time.Time{}, err
-	}
-	issuedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(data)))
-	if err != nil {
-		return time.Time{}, fmt.Errorf("reading %s: %w", issuedAtFile, err)
-	}
-	return issuedAt, nil
-}
-
-// WriteIssuedAt records when busd made the directory that was just taken in.
-func (dir FileDirectory) WriteIssuedAt(issuedAt time.Time) error {
-	return files.Write(filepath.Join(string(dir), issuedAtFile), []byte(issuedAt.UTC().Format(time.RFC3339Nano)+"\n"), files.PublicMode, true)
 }
 
 // Write stores a record, replacing an earlier one.

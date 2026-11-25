@@ -60,7 +60,6 @@ func (fake *fakeBusd) Request(_ context.Context, subject string, body []byte) ([
 			fake.t.Fatal(err)
 		}
 		reply.Certificate, reply.CA = string(cert), string(fake.caPEM)
-		reply.Directory = &enroll.Directory{Channels: map[string][]string{"lib-x": {agentID}}}
 	}
 	if fake.forceID != "" {
 		reply.RequestID = fake.forceID
@@ -136,7 +135,7 @@ func TestAPendingRequestIsKeptAndTheNextRunAsksAboutIt(t *testing.T) {
 	}
 }
 
-func TestApprovalInstallsTheCertificateAndTheDirectory(t *testing.T) {
+func TestApprovalInstallsTheCertificateAndNothingElse(t *testing.T) {
 	f := newFixture(t)
 	f.busd.status = enroll.StatusApproved
 	if err := f.run(0); err != nil {
@@ -149,14 +148,14 @@ func TestApprovalInstallsTheCertificateAndTheDirectory(t *testing.T) {
 	if err := creds.ValidateClientCert(certPath, keyPath, broker.AgentCertIdentity(agentID)); err != nil {
 		t.Error(err)
 	}
-	if _, err := os.Stat(filepath.Join(f.configDir, "directory", "channels")); err != nil {
-		t.Errorf("the directory snapshot was not written: %v", err)
-	}
 	if _, err := os.Stat(filepath.Join(f.agentDir(), pendingFile)); err == nil {
 		t.Error("the pending file is still there")
 	}
-	if password, err := creds.ReadPassword(filepath.Join(f.configDir, passwordDir)); err != nil || password != "shared-secret" {
-		t.Errorf("the enrollment password kept for the directory fetch: %q, %v", password, err)
+	// The directory comes signed from busd's sync; the shared login is not needed after enrolling.
+	for _, unwanted := range []string{"directory", "enroll"} {
+		if _, err := os.Stat(filepath.Join(f.configDir, unwanted)); err == nil {
+			t.Errorf("enroll wrote %s", unwanted)
+		}
 	}
 	if broker, err := EnrolledBroker(f.configDir, agentID); err != nil || broker != "bus.example.org:4222" {
 		t.Errorf("the broker kept as the default: %q, %v", broker, err)

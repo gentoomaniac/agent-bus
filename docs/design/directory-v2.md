@@ -255,3 +255,34 @@ Where the build refined or departed from the text above.
 - Hints are agent IDs with `joined`, `removed` or `rekeyed`, and `channels` with the channel's
   name only (never its readers), at most 20 per head with `truncated` set beyond.
 - Agents may only subscribe to `directory.head`; publishing it needs busd's `bus-admin` login.
+
+**Agents (commit 4).**
+
+- The local snapshot is `<config-dir>/directory/snapshot` (records, catalogue, checkpoint and the
+  remembered revocations, below), committed under an flock on `directory/snapshot.lock` with the
+  base rechecked under it; a commit whose base moved starts the sync over (three attempts). The
+  per-agent `.json` files and `channels` are exported from it after each commit and stay the
+  read path: lookups are unchanged, and records copied in by hand (`directory export`) keep
+  working. An export is never deleted.
+- The snapshot also keeps every key fingerprint any directory ever named revoked (`revoked`), and
+  the exports mark those keys revoked. That is how "keep every revocation" holds across identities
+  of a machine and across a new epoch: an identity that never ran when a key was revoked still
+  refuses it, though its own `revoked_keys` file never heard of it, and a restored busd that
+  offers the key unrevoked cannot bring it back. The projection itself stays busd's, so its hash
+  still checks.
+- Revocations go into the trust store (`revoked_keys`) after verification and before the commit,
+  under the adapter's lock and with no network call.
+- No reconnect hook: busd's head comes every 5 s, so after a reconnect the next head says whether
+  anything changed; an agent that missed nothing does not sync.
+- A message from an unknown sender is no longer fetched for under the adapter's lock. It is left
+  unacked, asks the directory loop for a sync (at most every 5 s), and the sync hands it back to the
+  broker (a nak) as soon as the sender's record is in, so it is delivered at once. `send` and
+  `publish` sync before taking the lock, for recipients missing from the directory.
+- One-shot commands (`agent-bus send`, `inbox`, `mark-read`) have no loop: they sync on a miss, and
+  `inbox` and `mark-read` sync and fetch again when a message waits for an unknown sender.
+- The approval reply carries no directory any more (it is unsigned, and anyone with the shared
+  login could overhear it and race a forged one in); `enroll` writes neither a directory nor the
+  enrollment password, and the agent syncs at its first start.
+- A head with the same epoch and revision but another state hash is logged, and the sync that
+  follows, asking from a version busd does not have, gets the full directory. A full reply of the
+  same epoch at the agent's revision with another hash is accepted (it is signed and fresh).

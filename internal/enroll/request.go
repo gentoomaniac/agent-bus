@@ -31,18 +31,16 @@ import (
 )
 
 // The subjects of busd's API, all in the CONTROL account. The enrollment login may publish
-// SubjectRequest, SubjectStatus and SubjectDirectory; the rest need an admin login. busd publishes
+// SubjectRequest and SubjectStatus; the rest need an admin login. busd publishes
 // the number of pending requests on SubjectPending, for the monitor, which reads the registry and
 // the catalogue with requests on the last two: its login has no JetStream access in CONTROL.
 const (
 	SubjectRequest = "busd.enroll.request"
 	SubjectStatus  = "busd.enroll.status"
-	// SubjectDirectory answers an enrolled agent that keeps its local directory up to date.
-	SubjectDirectory = "busd.directory"
-	SubjectPending   = "busd.enroll.pending"
-	SubjectList      = "busd.ca.list"
-	SubjectSign      = "busd.ca.sign"
-	SubjectReject    = "busd.ca.reject"
+	SubjectPending = "busd.enroll.pending"
+	SubjectList    = "busd.ca.list"
+	SubjectSign    = "busd.ca.sign"
+	SubjectReject  = "busd.ca.reject"
 
 	SubjectMonitorRegistry  = "busd.monitor.registry"
 	SubjectMonitorCatalogue = "busd.monitor.catalogue"

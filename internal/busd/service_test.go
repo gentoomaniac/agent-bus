@@ -175,7 +175,7 @@ func TestRequestWaitsForTheOwnerAndSigningIssuesTheCertificate(t *testing.T) {
 		t.Fatal(reply.Error)
 	}
 	approved := f.status(pending.RequestID)
-	if approved.Status != enroll.StatusApproved || approved.Certificate == "" || approved.CA == "" || approved.Directory == nil {
+	if approved.Status != enroll.StatusApproved || approved.Certificate == "" || approved.CA == "" {
 		t.Fatalf("status after signing %+v", approved)
 	}
 	cert := parseCert(t, approved.Certificate)
@@ -187,7 +187,7 @@ func TestRequestWaitsForTheOwnerAndSigningIssuesTheCertificate(t *testing.T) {
 		t.Errorf("accounts %v, cursors %v, want both after the log's end", f.registry.accounts, f.registry.cursors)
 	}
 	record := f.registry.records["lib-x@bob"]
-	if len(record.Keys) != 1 || record.PublicKey == "" || len(approved.Directory.Records) != 1 {
+	if len(record.Keys) != 1 || record.PublicKey == "" {
 		t.Errorf("registry record %+v", record)
 	}
 	if _, err := os.Stat(filepath.Join(f.dir, "directory", "lib-x_bob.json")); err != nil {

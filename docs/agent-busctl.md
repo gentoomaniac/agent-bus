@@ -247,19 +247,19 @@ docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -c
   | ssh other 'tar -C ~/.config/agent-bus -xf -'
 ```
 
-A running `agent-bus mcp` fetches the directory from busd at start, every minute
-(`--directory-refresh`), on `SIGHUP` and, at most every five seconds, when it meets an agent that is
-not in it (a recipient to send to, or the sender of a message); `send` does the same on a miss. It
-merges it into its local `directory/` (it adds and replaces records and never deletes one), and
-re-reads it. It then keeps the fingerprints of all revoked keys in `<agent-dir>/revoked_keys` and
-rejects messages signed by them, even from a pinned key ("revoked key" in `alerts.log`). Sending to
-a removed agent fails with "agent removed", and `list_agents` leaves it out. The fetch uses the
-shared enrollment login, whose password `agent-bus enroll` keeps in `<config-dir>/enroll/password`;
-an agent enrolled by an older version has none, and `agent-bus mcp` says so once: write the password
-there (mode 0600) and restart it. Without the file, or when busd cannot be reached, the local
-directory stays as it is, and running the export and copying it over is still how such an agent is
-kept current. The version of busd must be the new one too
-([design/access-control.md](design/access-control.md)).
+A running `agent-bus mcp` syncs the directory from busd with its own login
+([design/directory-v2.md](design/directory-v2.md)): at start, whenever busd's signed announcement on
+`directory.head` names a newer version (busd announces after every change and every five seconds),
+every minute as a backup (`--directory-refresh`), on `SIGHUP` and, at most every five seconds, when
+it meets an agent that is not in it (a recipient to send to, or the sender of a message); `send`
+does the same on a miss. A sync brings only what changed since the machine's last one, signed by the
+CA and bound to the request. The machine keeps it in `directory/snapshot` and writes the per-agent
+files and `channels` from it; it adds and replaces records and never deletes one, and identities of
+the same machine share it. It then keeps the fingerprints of all revoked keys in
+`<agent-dir>/revoked_keys` and rejects messages signed by them, even from a pinned key ("revoked
+key" in `alerts.log`). Sending to a removed agent fails with "agent removed", and `list_agents`
+leaves it out. When busd cannot be reached the local directory stays as it is, and running the
+export and copying it over is still how an agent of an older version is kept current.
 
 ### cert issue
 
@@ -346,8 +346,8 @@ as, or under the name of, a later agent.
 Turns on the enrollment of new machines ([podman.md](podman.md#9-enrolling-a-new-machine)). It makes
 the shared enrollment login (user `enroll`, in `nats/control-auth.conf`, a confirmed reload), stores
 its password in `enroll/password` of the config directory (0600) and prints it once, with the CA
-fingerprint, for copying to each new machine. The login may only publish `busd.enroll.request`,
-`busd.enroll.status` and `busd.directory` and subscribe `_INBOX.enroll.>`. `--force` makes a new
+fingerprint, for copying to each new machine. The login may only publish `busd.enroll.request` and
+`busd.enroll.status` and subscribe `_INBOX.enroll.>`. `--force` makes a new
 password. It runs in the broker's container, like `cert switch`, and needs the broker running; busd
 needs no restart.
 

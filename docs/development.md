@@ -66,8 +66,10 @@ a key in it that is not revoked, and the key is pinned (`tofu`) after the signat
 changed key is refused. `revoked_keys` (the fingerprints of removed agents' keys) is done; not done yet:
 holds and rotation chains. Agents cannot read the registry on the broker ([design/jetstream-binding.md](design/jetstream-binding.md)),
 so the registry read path is
-`<config-dir>/directory/<agent-token>.json`, one record per agent, which `agent-busctl register` writes.
-To use an agent from another machine, copy that directory there, or let enrollment deliver it once.
+`<config-dir>/directory/<agent-token>.json`, one record per agent, which `agent-busctl register` writes
+and the adapter exports from the directory it syncs from busd (`internal/directory`,
+[design/directory-v2.md](design/directory-v2.md)). An agent of an older version needs that directory
+copied to its machine.
 `cmd/busd` and `internal/busd` are busd, the minimal control service that runs beside `nats-server` in
 the broker's container, holds the CA key and handles enrollment and approvals ([design/busd.md](design/busd.md)).
 `internal/enroll` is the wire protocol of enrollment, `internal/enrollclient` is `agent-bus enroll`

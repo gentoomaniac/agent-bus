@@ -38,10 +38,6 @@ const (
 	maxEntries         = 500 // pending and decided; the oldest decided ones go first
 	requestInterval    = 6 * time.Second
 	requestBurst       = 10
-	// directoryInterval and directoryBurst bound the directory reads (each reads the registry and the
-	// catalogue); agents ask about once a minute, and at once for an agent they do not know.
-	directoryInterval = 200 * time.Millisecond
-	directoryBurst    = 20
 
 	enrollDir    = "enroll"
 	autosignFile = "autosign"
@@ -78,9 +74,8 @@ type Config struct {
 // Service is the enrollment and approval logic. One mutex serialises everything, a certificate
 // approval included: an owner approves one request at a time.
 type Service struct {
-	config           Config
-	limiter          *rate.Limiter
-	directoryLimiter *rate.Limiter
+	config  Config
+	limiter *rate.Limiter
 
 	mu      sync.Mutex
 	entries map[string]*entry // by request ID
@@ -105,10 +100,9 @@ func New(config Config) (*Service, error) {
 		config.Now = time.Now
 	}
 	service := &Service{
-		config:           config,
-		limiter:          rate.NewLimiter(rate.Every(requestInterval), requestBurst),
-		directoryLimiter: rate.NewLimiter(rate.Every(directoryInterval), directoryBurst),
-		entries:          map[string]*entry{},
+		config:  config,
+		limiter: rate.NewLimiter(rate.Every(requestInterval), requestBurst),
+		entries: map[string]*entry{},
 	}
 	return service, service.load()
 }
@@ -135,7 +129,7 @@ func (service *Service) HandleRequest(ctx context.Context, data []byte) enroll.R
 
 	id := verified.ID()
 	if known, found := service.entries[id]; found {
-		return service.reply(ctx, known) // the same request again: a client that lost the answer
+		return service.reply(known) // the same request again: a client that lost the answer
 	}
 	identity, err := service.classify(ctx, verified)
 	if err != nil {
@@ -159,7 +153,7 @@ func (service *Service) HandleRequest(ctx context.Context, data []byte) enroll.R
 		}
 	}
 	service.save()
-	return service.reply(ctx, added)
+	return service.reply(added)
 }
 
 // HandleStatus answers an agent that asks how its request is doing.
@@ -175,7 +169,7 @@ func (service *Service) HandleStatus(ctx context.Context, data []byte) enroll.Re
 	if !found {
 		return enroll.Reply{Status: enroll.StatusUnknown, RequestID: query.RequestID}
 	}
-	return service.reply(ctx, known)
+	return service.reply(known)
 }
 
 // PendingCount is the number of requests waiting for the owner.
@@ -222,36 +216,6 @@ func (service *Service) Groups(ctx context.Context) enroll.CatalogueReply {
 		return enroll.CatalogueReply{Error: err.Error()}
 	}
 	return enroll.CatalogueReply{Groups: groups}
-}
-
-// Directory is the public snapshot enrolled agents keep their local directory up to date with,
-// signed with the CA key, so that nobody else who has the shared login can make one. It proves
-// nothing about the asker and holds public data only, like the snapshot of an approval.
-func (service *Service) Directory(ctx context.Context) enroll.DirectoryReply {
-	if !service.directoryLimiter.Allow() {
-		return enroll.DirectoryReply{Error: "too many directory requests, try again in a moment"}
-	}
-	directory, err := service.directory(ctx)
-	if err != nil {
-		return enroll.DirectoryReply{Error: err.Error()}
-	}
-	reply, err := enroll.SignDirectory(service.config.CA, directory, service.config.Now())
-	if err != nil {
-		return enroll.DirectoryReply{Error: err.Error()}
-	}
-	return reply
-}
-
-func (service *Service) directory(ctx context.Context) (enroll.Directory, error) {
-	records, err := service.config.Registry.Agents(ctx)
-	if err != nil {
-		return enroll.Directory{}, err
-	}
-	catalogue, err := trust.BuildCatalogue(ctx, service.config.Registry)
-	if err != nil {
-		return enroll.Directory{}, err
-	}
-	return enroll.Directory{Records: records, Channels: catalogue}, nil
 }
 
 // Sign approves one pending request, named by ID, code or agent ID. A request that would replace
@@ -535,20 +499,16 @@ func (service *Service) recordFor(records []bus.AgentRecord, request *entry) bus
 	return record
 }
 
-// reply is a request's state as the agent hears it. An approval carries the certificate, the CA
-// certificate and a fresh directory snapshot.
-func (service *Service) reply(ctx context.Context, request *entry) enroll.Reply {
+// reply is a request's state as the agent hears it. An approval carries the certificate and the
+// CA certificate. It carries no directory: the reply is unsigned, and whoever has the shared login
+// can overhear it and answer in its place; the agent syncs the signed directory from busd instead.
+func (service *Service) reply(request *entry) enroll.Reply {
 	reply := enroll.Reply{Status: request.Status, RequestID: request.verified.ID(), Code: request.code(), Message: request.Message, ExpiresAt: request.ExpiresAt}
 	if request.Status != enroll.StatusApproved {
 		return reply
 	}
-	directory, err := service.directory(ctx)
-	if err != nil {
-		return refusal(fmt.Errorf("%w: %v", errRegistry, err))
-	}
 	reply.Certificate = request.Certificate
 	reply.CA = string(service.config.CACertPEM)
-	reply.Directory = &directory
 	return reply
 }
 

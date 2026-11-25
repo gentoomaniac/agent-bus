@@ -142,9 +142,8 @@ address: pass `--broker <host>:4222` (or `BUS_BROKER`), or put it in `<agent fol
 
 ### Keep the directory fresh
 
-Agents of this version that have the enrollment password in `<config-dir>/enroll/password` fetch the
-directory from busd every minute and need no copying; skip this section for them. For the others
-(older versions, no password), after every `register`, `channel join` and `agent remove` the agents'
+Agents of this version sync the directory from busd as soon as it changes and need no copying;
+skip this section for them. For the others (older versions, or a broker without busd), after every `register`, `channel join` and `agent remove` the agents'
 `directory/` must be copied again; a running `agent-bus mcp` re-reads it every minute. `register`
 and `channel join` update `/config/directory` themselves; after `agent remove` write the tombstone
 out first:

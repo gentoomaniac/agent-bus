@@ -188,7 +188,7 @@ func TestWriteAdminAuthKeepsCertificateAgents(t *testing.T) {
 
 func TestEnrollmentLoginMayOnlyRequestAndHearItsInbox(t *testing.T) {
 	entry := userEntry(authUser{role: roleEnrollment, name: "enroll", mode: modePassword, passwordHash: "$2a$10$e"}, nil)
-	want := `{publish: {allow: ["busd.enroll.request", "busd.enroll.status", "busd.directory"]}, subscribe: {allow: ["_INBOX.enroll.>"]}}`
+	want := `{publish: {allow: ["busd.enroll.request", "busd.enroll.status"]}, subscribe: {allow: ["_INBOX.enroll.>"]}}`
 	if !strings.Contains(entry, want) {
 		t.Errorf("enrollment entry %s lacks %s", entry, want)
 	}

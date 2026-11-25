@@ -285,10 +285,9 @@ func permissions(user authUser, groups []string) string {
 		publish, subscribe := agentPermissions(user.name, groups)
 		return allowOnly(publish, subscribe)
 	case roleEnrollment:
-		// It may ask busd for approval and for the directory and hear the answers on its own inbox
-		// space, nothing else: no stream, no JetStream API. The login is shared, so its replies hold
-		// public data only.
-		return allowOnly([]string{enroll.SubjectRequest, enroll.SubjectStatus, enroll.SubjectDirectory}, []string{enroll.InboxPrefix + ".>"})
+		// It may ask busd for approval and hear the answers on its own inbox space, nothing else: no
+		// stream, no JetStream API. The login is shared, so its replies hold public data only.
+		return allowOnly([]string{enroll.SubjectRequest, enroll.SubjectStatus}, []string{enroll.InboxPrefix + ".>"})
 	case roleBusd:
 		return busdPermissions()
 	case roleMonitor:
@@ -310,7 +309,7 @@ func busdPermissions() string {
 	publish := slices.Concat(
 		kvReadSubjects(registryKV), kvReadSubjects(catalogueKV),
 		[]string{"$KV." + registryKV + ".>", "_INBOX.>", enroll.SubjectPending})
-	subscribe := []string{"_INBOX.>", enroll.SubjectRequest, enroll.SubjectStatus, enroll.SubjectDirectory, enroll.SubjectList, enroll.SubjectSign, enroll.SubjectReject,
+	subscribe := []string{"_INBOX.>", enroll.SubjectRequest, enroll.SubjectStatus, enroll.SubjectList, enroll.SubjectSign, enroll.SubjectReject,
 		enroll.SubjectMonitorRegistry, enroll.SubjectMonitorCatalogue}
 	return allowOnly(publish, subscribe)
 }

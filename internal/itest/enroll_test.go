@@ -4,6 +4,7 @@ package itest
 
 import (
 	"bytes"
+	"context"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -154,10 +155,16 @@ func (h *harness) caFingerprint(t *testing.T) string {
 	return strings.TrimSpace(h.run(t, h.agentBusctl, "ca", "fingerprint"))
 }
 
-// agentAt runs the adapter of an enrolled agent on its own machine's config directory.
+// agentAt runs the adapter of an enrolled agent on its own machine's config directory, as
+// `agent-bus mcp` does: with its directory loop, which syncs with busd and follows the heads.
 func (h *harness) agentAt(t *testing.T, configDir, agentID string) *adapter.Adapter {
 	t.Helper()
-	connection, err := broker.UserConnection(creds.AgentDir(configDir, agentID), bus.AgentToken(agentID), h.address, h.mappedPort, filepath.Join(configDir, "ca.pem"))
+	caPath := filepath.Join(configDir, "ca.pem")
+	connection, err := broker.UserConnection(creds.AgentDir(configDir, agentID), bus.AgentToken(agentID), h.address, h.mappedPort, caPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caPEM, err := os.ReadFile(caPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,12 +172,22 @@ func (h *harness) agentAt(t *testing.T, configDir, agentID string) *adapter.Adap
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := adapter.Open(adapter.Config{AgentID: agentID, Dir: creds.AgentDir(configDir, agentID), Transport: transport, Directory: trust.DirectoryPath(configDir)})
+	session, err := adapter.Open(adapter.Config{
+		AgentID: agentID, Dir: creds.AgentDir(configDir, agentID), Transport: transport, Directory: trust.DirectoryPath(configDir),
+		DirectoryLink: transport, CACert: caPEM,
+	})
 	if err != nil {
 		transport.Close()
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { session.Close(); transport.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		session.RunDirectory(ctx, time.Hour, func(err error) { t.Logf("%s syncing the directory: %v", agentID, err) })
+	}()
+	t.Cleanup(func() { cancel(); <-done }) // before the session closes: cleanups run last first
 	return session
 }
 

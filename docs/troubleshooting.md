@@ -114,16 +114,22 @@ Symptom: `inbox` or `whoami` shows `unknown_senders` ("N messages from unknown s
 or `send` fails with "unknown agent `<id>`: it has no entry in the directory".
 
 The agent (the recipient, or the sender of the waiting mail) has no file
-`<config-dir>/directory/<token>.json` on this machine. A running agent asks busd for the directory
-every minute and, at most every five seconds, when it meets an unknown agent, so a newly enrolled
-agent is known at once; the message then says if the fetch failed ("fetching the directory failed:
-..."). If it keeps failing, the machine has no enrollment password in `<config-dir>/enroll/password`
-(`agent-bus mcp` logs it once; `enroll` writes the file, an agent enrolled before has to get it by
-hand), busd or the agent is of an older version, busd is down, or the log says "not signed by the
-CA" (this machine's `ca.pem` is not busd's CA) or "before the one taken in" (busd's clock went
-back; the directory is signed and dated, so an old copy is refused). Then `register` writes the file on
-the machine it runs on; copy that `directory/` to this one, for example `rsync -a
-other:~/.config/agent-bus/directory/ ~/.config/agent-bus/directory/`
+`<config-dir>/directory/<token>.json` on this machine. A running agent syncs the directory from busd
+when busd announces a change (within seconds), every minute as a backup and, at most every five
+seconds, when it meets an unknown agent; `send` does the same. The message then says if the sync
+failed ("syncing the directory failed: ..."), and `agent-bus mcp` logs it. If it keeps failing:
+
+- "busd is not running": busd is down, or the broker's container runs without it.
+- "not signed by the CA": this machine's `ca.pem` is not busd's CA.
+- "a rollback": busd was restored from a backup and offers an older revision of the same epoch.
+  Delete `enroll/directory.json` in busd's config directory and restart busd: it starts a new
+  epoch, which agents take in, keeping every pin and revoked key.
+- A permissions violation on `busd.directory.sync` or `directory.head`: the broker's auth files
+  predate directory v2; regenerate them (`agent-busctl --direct init`, or any `register`).
+- busd or the agent is of an older version.
+
+Until it works, `register` writes the file on the machine it runs on; copy that `directory/` to
+this one, for example `rsync -a other:~/.config/agent-bus/directory/ ~/.config/agent-bus/directory/`
 ([claude-code.md](claude-code.md#other-machines)). The waiting mail is read within a minute of the
 copy.
 
@@ -144,9 +150,9 @@ read the channel.
 
 The directory's catalogue snapshot `<config-dir>/directory/channels` does not list the group, or
 does not list the target as a reader. It is written by `agent-busctl channel create` and `channel
-join` on the machine they run on, and a running agent fetches it from busd every minute (an agent
-without the enrollment password in `<config-dir>/enroll/password`, or of an older version, needs
-`directory/` copied over, or `agent-busctl directory export` and a copy of the result). Restart the
+join` on the machine they run on, and a running agent syncs it from busd when busd announces a
+change (an agent of an older version, or without busd, needs `directory/` copied over, or
+`agent-busctl directory export` and a copy of the result). Restart the
 adapter to read a newly joined group. Meanwhile DM the agent: a DM always arrives.
 
 ## Removed agent
@@ -157,9 +163,9 @@ key ...".
 The agent was removed with `agent-busctl agent remove` and its key is revoked. Its ID is never
 registered again; register a new one. If `agent remove` printed "NOT completely removed", it names
 the steps that are left: run the same command again. A running agent learns of a removal from busd
-within a minute, or at once with `kill -HUP <agent-bus pid>`. One without the enrollment password in
-`<config-dir>/enroll/password`, or of an older version, needs `agent-busctl directory export` on the
-broker's host and the result copied over `<config-dir>/directory/`
+within seconds (busd's next round, at most five seconds), or at once with `kill -HUP <agent-bus pid>`.
+One of an older version, or without busd, needs `agent-busctl directory export` on the broker's
+host and the result copied over `<config-dir>/directory/`
 ([agent-busctl.md](agent-busctl.md#directory-export)).
 
 ## Hook is silent
