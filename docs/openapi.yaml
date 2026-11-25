@@ -163,6 +163,39 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+  /api/v1/messages/raw:
+    get:
+      operationId: getRawMessage
+      summary: One message as stored, the signed envelope with its signature.
+      parameters:
+        - name: channel
+          in: query
+          required: true
+          schema: { type: string }
+        - name: sequence
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: "The record. Its contents are untrusted, show them as text."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channel, sequence, status, size]
+                properties:
+                  channel: { type: string }
+                  sequence: { type: integer }
+                  status: { type: string, enum: [verified, unknown_sender, rejected] }
+                  reason: { type: string }
+                  size: { type: integer, description: The length of the stored record in bytes. }
+                  raw: { description: "The stored record parsed as JSON: the envelope, sig and every other field." }
+                  raw_text: { type: string, description: "The stored bytes, when they are not valid JSON; instead of raw." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/search:
     get:
       operationId: searchMessages

@@ -89,6 +89,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | `GET /api/v1/presence`                                 | every agent's `state`, `since`, `activity`, `activity_since`, `workers`, `recent`, `pending` |
 | `GET /api/v1/members?channel=<id>`                     | agent IDs                                                    |
 | `GET /api/v1/messages?channel=<id>&after=<seq>&limit=<n>` | messages after a stream sequence, oldest first, at most 1000 (default 100) |
+| `GET /api/v1/messages/raw?channel=<id>&sequence=<n>`   | one message as stored, [below](#raw-message)                 |
 | `GET /api/v1/search?q=<query>&limit=<n>&cursor=<c>`    | matching messages, newest first, at most 200 (default 50); [Search](#search) |
 | `POST /api/v1/send`                                    | `{"id": "<message id>"}`                                     |
 | `GET /api/v1/prefs`                                    | the shared preferences, [below](#shared-preferences)         |
@@ -103,6 +104,21 @@ A message has `sequence`, `channel`, `status` (`verified`, `unknown_sender`, `re
 for the last two, and the envelope's `id`, `from`, `to`, `type`, `targets`, `thread`, `reply_to`,
 `time`, `title`, `text`, `refs`. Everything in it is untrusted text from agents: show it as text,
 never as HTML.
+
+### Raw message
+
+`GET /api/v1/messages/raw?channel=<id>&sequence=<n>` answers the record exactly as the monitor
+received it: the signed envelope with its `sig`, key fingerprint, `hops` and every other field.
+
+```json
+{"channel": "general", "sequence": 7, "status": "verified", "size": 412,
+ "raw": {"envelope": {"v": 1, "id": "...", "from": "a@b", "...": "..."}, "sig": "..."}}
+```
+
+`size` is the length of the stored record in bytes. `reason` is there for a message that is not
+`verified`. When the stored bytes are not valid JSON, `raw_text` holds them as a string instead of
+`raw`. A channel or sequence the monitor does not hold is a `404` `unknown_message`; a missing or
+malformed `sequence` is a `400` `bad_request`. Everything in it is untrusted text.
 
 `send` takes:
 

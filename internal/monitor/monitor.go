@@ -58,6 +58,8 @@ type Message struct {
 	Title    string       `json:"title,omitempty"`
 	Text     string       `json:"text,omitempty"`
 	Refs     []string     `json:"refs,omitempty"`
+
+	raw []byte // the record as stored, for RawMessage
 }
 
 // Channel is a conversation of the bus as the monitor lists it. A DM channel is the conversation of
@@ -226,7 +228,7 @@ func sleep(ctx context.Context, duration time.Duration) {
 // interpret verifies a record as the adapter of the reader of the source would (docs/design/identity-and-trust.md), except for
 // timestamps and duplicates, and trusting the registry alone.
 func (monitor *Monitor) interpret(ctx context.Context, source bus.Channel, record bus.Record) Message {
-	message := Message{Sequence: record.Sequence, Channel: channelID(source, unknownAgent), Status: Rejected}
+	message := Message{Sequence: record.Sequence, Channel: channelID(source, unknownAgent), Status: Rejected, raw: record.Payload}
 	signed, err := envelope.Parse(record.Payload)
 	if err != nil {
 		message.Reason = err.Error()
@@ -405,6 +407,23 @@ func (monitor *Monitor) Messages(id string, after uint64, limit int) []Message {
 		start++
 	}
 	return slices.Clone(list[start:min(len(list), start+limit)])
+}
+
+// ErrUnknownMessage is returned for a channel and sequence that name no stored message.
+var ErrUnknownMessage = errors.New("unknown message")
+
+// RawMessage returns the message as Messages shows it, and the record as stored. The monitor keeps
+// the stored bytes with each message, as a DM channel merges two streams and has no single source
+// to read a sequence from.
+func (monitor *Monitor) RawMessage(id string, sequence uint64) (Message, []byte, error) {
+	monitor.mu.Lock()
+	defer monitor.mu.Unlock()
+	list := monitor.messages[id]
+	index, found := slices.BinarySearchFunc(list, sequence, compareSequence)
+	if !found {
+		return Message{}, nil, ErrUnknownMessage
+	}
+	return list[index], list[index].raw, nil
 }
 
 // registry is the registry of agents, read through the admin and cached. It is the trust.Directory

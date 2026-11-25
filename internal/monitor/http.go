@@ -72,6 +72,7 @@ func (monitor *Monitor) handler(access Access, now func() time.Time) (http.Handl
 	mux.HandleFunc("GET /api/v1/presence", read(func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Presences()) }))
 	mux.HandleFunc("GET /api/v1/members", read(monitor.serveMembers))
 	mux.HandleFunc("GET /api/v1/messages", read(monitor.serveMessages))
+	mux.HandleFunc("GET /api/v1/messages/raw", read(monitor.serveRawMessage))
 	mux.HandleFunc("GET /api/v1/search", read(monitor.serveSearch))
 	mux.HandleFunc("GET /api/v1/events", read(func(w http.ResponseWriter, r *http.Request) {
 		who := principalOf(r)
@@ -135,6 +136,37 @@ func (monitor *Monitor) serveMessages(w http.ResponseWriter, r *http.Request) {
 		messages = []Message{}
 	}
 	writeJSON(w, messages)
+}
+
+// serveRawMessage answers ?channel=<id>&sequence=<n> with the record as stored, parsed as JSON,
+// or as text when the bytes are not JSON.
+func (monitor *Monitor) serveRawMessage(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	sequence, err := strconv.ParseUint(query.Get("sequence"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "sequence: "+err.Error())
+		return
+	}
+	message, stored, err := monitor.RawMessage(query.Get("channel"), sequence)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "unknown_message", err.Error())
+		return
+	}
+	answer := struct {
+		Channel  string          `json:"channel"`
+		Sequence uint64          `json:"sequence"`
+		Status   Verification    `json:"status"`
+		Reason   string          `json:"reason,omitempty"`
+		Size     int             `json:"size"`
+		Raw      json.RawMessage `json:"raw,omitempty"`
+		RawText  string          `json:"raw_text,omitempty"`
+	}{Channel: message.Channel, Sequence: message.Sequence, Status: message.Status, Reason: message.Reason, Size: len(stored)}
+	if json.Valid(stored) {
+		answer.Raw = stored
+	} else {
+		answer.RawText = string(stored)
+	}
+	writeJSON(w, answer)
 }
 
 // serveSearch answers ?q=<query>&limit=<n>&cursor=<cursor>, newest first. The query syntax is in
