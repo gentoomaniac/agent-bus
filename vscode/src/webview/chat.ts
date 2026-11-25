@@ -260,21 +260,22 @@ function render(first = false): void {
   const rows: ThreadRow[] = threaded ? threadRows(visible) : visible.map((message) => ({ message, depth: 0 }));
   const summaries = threaded ? summarizeThreads(rows, isUnseen) : undefined;
   let marked: HTMLElement | undefined;
-  let previous: Message | undefined;
+  let previous: ThreadRow | undefined;
   for (const row of rows) {
     const isNew = row.message === firstUnseen;
     if (isNew && !threaded) {
       marked = el("div", "divider", "New");
       list.append(marked);
-      previous = undefined;
     }
     const summary = summaries?.get(row.message);
-    const item = renderMessage(row, !threaded && continuesGroup(previous, row.message), isNew && threaded, summary?.unseen === true);
+    // A divider, or a thread with unseen mail (its "new" badge sits in the header), is not grouped.
+    const grouped = state.groupMessages && !isNew && !summary?.unseen && continuesGroup(previous, row);
+    const item = renderMessage(row, grouped, isNew && threaded, summary?.unseen === true);
     if (isNew && threaded) marked = item;
     list.append(item);
     seenObserver.observe(item);
     if (summary?.replies) list.append(renderReplies(summary));
-    previous = row.message;
+    previous = row;
   }
   if (first) (marked ?? list.lastElementChild)?.scrollIntoView({ block: marked ? "start" : "end" });
   else list.scrollTop = list.scrollHeight - fromBottom;

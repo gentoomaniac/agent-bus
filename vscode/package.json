@@ -36,6 +36,11 @@
           "default": "targetedAndSubscribed",
           "description": "Which new messages show a notification. A channel whose panel you are looking at never does."
         },
+        "agentMessenger.groupMessages": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show consecutive messages of the same sender, within five minutes, under one header."
+        },
         "agentMessenger.checkForUpdates": {
           "type": "boolean",
           "default": true,

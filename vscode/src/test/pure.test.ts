@@ -7,6 +7,7 @@ import { parseFromWebview, parsePresenceMarks } from "../protocol";
 import { nextBackoff } from "../events";
 import { continuesGroup, insertMessage, isTargeted, unreadMessages } from "../messages";
 import { SseParser } from "../sse";
+import { ThreadRow } from "../threads";
 import { Channel, Message } from "../types";
 
 const message = (sequence: number, extra: Partial<Message> = {}): Message => ({ sequence, channel: "general", status: "verified", ...extra });
@@ -93,17 +94,23 @@ test("categorize moves favourites out of their category and ignores unknown ones
   assert.deepEqual([ids(starred.favourites), ids(starred.channels), ids(starred.directMessages)], [["group:ops", "dm:a:b"], ["general"], []]);
 });
 
-test("continuesGroup joins the same sender within five minutes only", () => {
-  const first = message(1, { from: "a@x", time: "2026-11-24T12:00:00Z", targets: ["@all"] });
-  const at = (time: string, extra: Partial<Message> = {}) => message(2, { from: "a@x", targets: ["@all"], time, ...extra });
+test("continuesGroup joins as the web page does", () => {
+  const row = (extra: Partial<Message>, parent?: Message): ThreadRow => ({ message: message(2, { from: "a@x", to: "general", time: "2026-11-24T12:01:00Z", ...extra }), depth: 0, parent });
+  const first = row({ time: "2026-11-24T12:00:00Z" });
   assert.equal(continuesGroup(undefined, first), false);
-  assert.equal(continuesGroup(first, at("2026-11-24T12:05:00Z")), true);
-  assert.equal(continuesGroup(first, at("2026-11-24T12:05:01Z")), false);
-  assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { from: "b@y" })), false);
-  assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { type: "question" })), false);
-  assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { targets: ["b@y"] })), false);
-  assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { title: "New topic" })), false);
-  assert.equal(continuesGroup(first, at("not a time")), false);
+  assert.equal(continuesGroup(first, row({})), true);
+  assert.equal(continuesGroup(first, row({ time: "2026-11-24T12:04:59Z" })), true);
+  assert.equal(continuesGroup(first, row({ time: "2026-11-24T12:05:00Z" })), false);
+  assert.equal(continuesGroup(first, row({ from: "b@y" })), false);
+  assert.equal(continuesGroup(first, row({ from: undefined })), false);
+  assert.equal(continuesGroup(first, row({ to: "ops" })), false);
+  assert.equal(continuesGroup(first, row({ type: "question" })), false);
+  assert.equal(continuesGroup(first, row({ status: "unknown_sender" })), false);
+  assert.equal(continuesGroup(first, row({ time: "not a time" })), false);
+  assert.equal(continuesGroup(first, row({ title: "A title", targets: ["b@y"] })), true); // neither counts, as on the web page
+  const parent = message(1);
+  assert.equal(continuesGroup(first, row({}, parent)), false);
+  assert.equal(continuesGroup(row({}, parent), row({}, parent)), true);
 });
 
 test("describePresence says state, activity and how long; ago counts s, m and h", () => {

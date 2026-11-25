@@ -48,6 +48,9 @@ export class ChatPanels implements vscode.Disposable {
         this.chats.forEach((chat) => void chat.panel.webview.postMessage({ type: "presence", presence } satisfies ToWebview));
       }),
       session.onDidRefresh(() => this.chats.forEach((chat, channelId) => void this.show(channelId, chat, chat.panel.visible))),
+      vscode.workspace.onDidChangeConfiguration((change) => {
+        if (change.affectsConfiguration("agentMessenger.groupMessages")) this.chats.forEach((chat, channelId) => this.post(channelId, chat));
+      }),
     ];
   }
 
@@ -271,6 +274,7 @@ export class ChatPanels implements vscode.Disposable {
       hasOlder: model.hasOlder(channelId),
       members: chat.members,
       subscribed: chat.subscribed,
+      groupMessages: vscode.workspace.getConfiguration("agentMessenger").get<boolean>("groupMessages", true),
       threaded: this.context.globalState.get<boolean>(THREADED_KEY, false),
       shownTypes: this.shownTypes,
       presence: this.presenceMarks(),

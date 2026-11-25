@@ -6,6 +6,7 @@ export interface ThreadRow {
   message: Message;
   depth: number; // 0 for a root, at most MAX_DEPTH
   replyTo?: string; // a root that answers a message which is not loaded: that message's ID
+  parent?: Message; // the message it answers, for a reply
 }
 
 export interface ThreadSummary {
@@ -55,7 +56,7 @@ export function threadRows(messages: Message[]): ThreadRow[] {
   const rows: ThreadRow[] = [];
   const walk = (row: ThreadRow): void => {
     rows.push(row);
-    for (const child of children.get(row.message) ?? []) walk({ message: child, depth: Math.min(row.depth + 1, MAX_DEPTH) });
+    for (const child of children.get(row.message) ?? []) walk({ message: child, depth: Math.min(row.depth + 1, MAX_DEPTH), parent: row.message });
   };
   roots.forEach(walk);
   return rows;

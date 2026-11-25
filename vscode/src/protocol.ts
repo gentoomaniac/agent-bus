@@ -20,6 +20,7 @@ export interface ChatState {
   members: string[]; // agents the target picker offers, besides @all
   defaultTarget: string; // @all in a channel, the recipient in a direct message
   subscribed: boolean; // every message of the channel notifies (shared through the monitor)
+  groupMessages: boolean; // follow-ups of the same sender share one header (the setting agentMessenger.groupMessages)
   threaded: boolean; // the thread view is on (a UI choice, kept per editor)
   shownTypes: string[]; // the list is limited to these message types; none means all (kept per editor, for every panel)
   presence: Record<string, PresenceMark>; // by agent; a plain object, as a Map does not survive postMessage

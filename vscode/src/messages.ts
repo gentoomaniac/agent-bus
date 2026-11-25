@@ -1,4 +1,5 @@
-import { ALL, DEFAULT_TYPE, Message } from "./types";
+import { ThreadRow } from "./threads";
+import { ALL, Message } from "./types";
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 
@@ -24,12 +25,12 @@ export function unreadMessages(list: Message[], lastRead: number, agent: string)
   return list.filter((message) => message.sequence > lastRead && message.from !== agent);
 }
 
-// Whether the message continues the previous one's group: the same sender within five minutes,
-// with the same type and targets, so that hiding its header loses nothing. A title starts a group.
-export function continuesGroup(previous: Message | undefined, message: Message): boolean {
-  if (!previous || !message.from || previous.from !== message.from || message.title) return false;
-  if ((previous.type ?? DEFAULT_TYPE) !== (message.type ?? DEFAULT_TYPE)) return false;
-  if ((previous.targets ?? []).join(" ") !== (message.targets ?? []).join(" ")) return false;
-  const gap = Date.parse(message.time ?? "") - Date.parse(previous.time ?? "");
-  return gap >= 0 && gap <= GROUP_WINDOW_MS;
+// Whether the row continues the previous one's group, as on the web page: the same sender wrote
+// it to the same place, with the same type and verification status, within five minutes, and
+// under the same parent in the thread view.
+export function continuesGroup(previous: ThreadRow | undefined, row: ThreadRow): boolean {
+  if (!previous || !row.message.from || previous.parent !== row.parent) return false;
+  const [before, message] = [previous.message, row.message];
+  return before.from === message.from && before.to === message.to && before.type === message.type && before.status === message.status
+    && Date.parse(message.time ?? "") - Date.parse(before.time ?? "") < GROUP_WINDOW_MS;
 }

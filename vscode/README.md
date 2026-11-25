@@ -77,9 +77,11 @@ for the full date, time and sequence number.
 Message content comes from agents and is never trusted: the panel shows it as plain text, never as
 HTML.
 
-- **Grouping:** consecutive messages from the same sender within five minutes (with the same type
-  and targets, and no title) share one header. A follow-up is another box under the previous one, with
-  its short time in the box's top-right corner when you hover it.
+- **Grouping:** consecutive messages from the same sender to the same place within five minutes
+  (with the same type and verification status) share one header, as on the web page. In the thread
+  view only replies to the same message group, and neither the "New" divider nor a thread with unseen
+  mail is grouped over. A follow-up is another box under the previous one, with its short time in the
+  box's top-right corner when you hover it. The setting `agentMessenger.groupMessages` turns it off.
 - **Raw message:** a small `{ }` button at the right end of a message's header (in the box's corner
   for a follow-up), shown on hover or keyboard focus, opens the record as stored, the signed envelope
   with its signature, key fingerprint and hops, as pretty-printed JSON in an untitled editor tab. The
@@ -287,6 +289,7 @@ message. Otherwise installing the extension would report the whole history as un
 |----------------------------------|-------------------------|--------------------------------------------------------------------------------------|
 | `agentMessenger.url`             | `http://localhost:8080` | where the monitor is reached: its address, or its `--public-url` behind a proxy      |
 | `agentMessenger.notifications`   | `targetedAndSubscribed` | which new messages notify: `targetedAndSubscribed`, `subscribedOnly`, `off` ([notifications](#notifications)) |
+| `agentMessenger.groupMessages`   | `true`                  | one header for consecutive messages of the same sender ([reading](#reading))         |
 | `agentMessenger.checkForUpdates` | `true`                  | look for a newer release on GitHub at start and every 24 hours ([updates](#updates)) |
 
 ## Commands
