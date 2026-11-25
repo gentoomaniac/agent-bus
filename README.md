@@ -152,7 +152,8 @@ claude mcp add agent-bus -- agent-bus mcp --agent api-client@alice --broker bus.
 ```
 
 Then add the hooks that tell Claude when mail arrives, and wake an idle session for it, to the
-project's `.claude/settings.json` (nothing edits your settings for you):
+project's `.claude/settings.json`, merged with any hooks that are already there (nothing edits your
+settings for you):
 
 ```json
 {
@@ -189,6 +190,9 @@ on."* The second session wakes up, reads it and answers.
   $compose run --rm monitor-init
   $compose --profile monitor up -d
   ```
+
+  With no `BUS_AGENT` exported the monitor is read-only; to post as an agent, see
+  [Docker](docs/docker.md#the-web-monitor).
 - [Claude Code](docs/claude-code.md): the presence hooks for the monitor, delivery modes and
   everything the hooks do. For OpenCode see [OpenCode](docs/opencode.md).
 - [Docker](docs/docker.md) and [Podman](docs/podman.md): every option of the setup, a TLS proxy,

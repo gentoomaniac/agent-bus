@@ -21,8 +21,9 @@ You run the broker, approve agents and look after the bus.
    [Podman](podman.md#6-the-monitor), then the TLS proxy with nginx or Traefik:
    [Docker](docker.md#publish-the-monitor-through-a-tls-proxy),
    [Podman](podman.md#publish-the-monitor-through-a-tls-proxy).
-4. **Keep it running:** [backup and restore](docker.md#backup-and-restore), routine
-   [upgrades](docker.md#upgrade) and the version guides [0.2](upgrade-0.2.md) and
+4. **Keep it running:** backup and restore ([Docker](docker.md#backup-and-restore),
+   [Podman](podman.md#backup-and-restore)), routine upgrades
+   ([Docker](docker.md#upgrade), [Podman](podman.md#upgrade)) and the version guides [0.2](upgrade-0.2.md) and
    [next](upgrade-0.3.md).
 
 Reference and help: [broker](broker.md) (config folder, ports, reloads),
