@@ -21,18 +21,18 @@ import (
 )
 
 const (
-	defaultRateLimit = 30 // messages per rateWindow (§8 rule 4)
+	defaultRateLimit = 30 // messages per rateWindow (docs/design/safety.md rule 4)
 	rateWindow       = 10 * time.Minute
-	defaultMaxHops   = 6 // §8 rule 3
+	defaultMaxHops   = 6 // docs/design/safety.md rule 3
 
 	// recentParentWindow is how long a delivered or acked message binds a send that names no
-	// reply_to (§8 rule 3).
+	// reply_to (docs/design/safety.md rule 3).
 	recentParentWindow = 5 * time.Minute
 	keepAliveInterval  = 20 * time.Second // well inside the consumers' one-minute AckWait
 	idlePause          = time.Second      // between rounds of Run that fetched nothing
 
 	// DeliverTargeted keeps untargeted channel messages out of the inbox; DeliverAll delivers every
-	// message (design.md §7).
+	// message (docs/design/delivery.md).
 	DeliverTargeted = "targeted"
 	DeliverAll      = "all"
 
@@ -53,7 +53,7 @@ type Config struct {
 	Groups []string
 
 	// AutoAccept says the agent may act on a request aimed at it without asking its owner
-	// (design.md §8 rule 2). It only changes what the MCP server tells the agent.
+	// (docs/design/safety.md rule 2). It only changes what the MCP server tells the agent.
 	AutoAccept bool
 
 	Deliver       string // DeliverTargeted (default) or DeliverAll
@@ -73,7 +73,7 @@ type Outgoing struct {
 	Body    envelope.Body
 	Targets []string // agent IDs or "@all"; default: see targetsFor
 	Thread  string   // default: the parent's thread, or a new one; naming one disables inferring a parent
-	ReplyTo string   // default: the message most recently read or acked in the same channel (§8 rule 3)
+	ReplyTo string   // default: the message most recently read or acked in the same channel (docs/design/safety.md rule 3)
 }
 
 // InboxQuery narrows what Inbox returns; zero values select everything.
@@ -93,7 +93,7 @@ type InboxQuery struct {
 type Adapter struct {
 	config Config
 	// lockErr is set when another process holds the identity: the adapter still starts, but every
-	// operation returns it (§3).
+	// operation returns it (docs/design/identity-and-trust.md).
 	lockErr error
 	lock    *identity.Lock
 
@@ -233,7 +233,7 @@ func (adapter *Adapter) Close() error {
 }
 
 // Ready returns the error every operation fails with when another process holds the identity
-// (§3), and nil otherwise.
+// (docs/design/identity-and-trust.md), and nil otherwise.
 func (adapter *Adapter) Ready() error { return adapter.lockErr }
 
 func (adapter *Adapter) AgentID() string { return adapter.config.AgentID }
@@ -378,7 +378,7 @@ type parent struct {
 	hops               int
 }
 
-// findParent looks for a message the agent has read or sent. The history lookup of §8 rule 3 for
+// findParent looks for a message the agent has read or sent. The history lookup of docs/design/safety.md rule 3 for
 // an unknown one comes with busd, so an unknown reply_to is refused.
 func (adapter *Adapter) findParent(id string) (parent, bool) {
 	if buffered := adapter.inbox.findByID(id); buffered != nil {
@@ -400,13 +400,13 @@ func (adapter *Adapter) recentInScope(to bus.Channel, recent parent) bool {
 	return adapter.recent.channel == to
 }
 
-// closingTypes end a loop of replies (design.md §5), so the hop limit lets them through once more.
+// closingTypes end a loop of replies (docs/design/protocol.md), so the hop limit lets them through once more.
 var closingTypes = []string{"ack", "answer", "status"}
 
 // ErrBadTargets is the error of a message that is aimed at nobody or at an invalid target.
 var ErrBadTargets = errors.New("invalid targets")
 
-// targetsFor fills in the targets of an outgoing message (design.md §5): a DM targets its
+// targetsFor fills in the targets of an outgoing message (docs/design/protocol.md): a DM targets its
 // recipient; in a channel they are the ones given, else the mentions in the text, plus the author
 // of the message being answered (always for an explicit reply_to, for an inferred parent only on
 // closing and plain messages); a request or question with none goes to @all. Anything else aimed
@@ -640,7 +640,7 @@ func (adapter *Adapter) buffered() int {
 	return len(adapter.inbox.messages)
 }
 
-// receive runs the state machine of design.md §4a for one delivery. The caller holds mu. A
+// receive runs the state machine of docs/design/jetstream-binding.md for one delivery. The caller holds mu. A
 // delivery it cannot decide about is left unacknowledged: the broker redelivers it after AckWait.
 func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delivery bus.Delivery) error {
 	destination := channel.String()
@@ -750,7 +750,7 @@ func (adapter *Adapter) TakeContextDropped() int {
 	return dropped
 }
 
-// targetsMe is the rule of §5: this agent's ID or "@all" in the targets. The sender put the
+// targetsMe is the rule of docs/design/protocol.md: this agent's ID or "@all" in the targets. The sender put the
 // recipient of a DM and the author of a replied-to message there.
 func (adapter *Adapter) targetsMe(env envelope.Envelope) bool {
 	return slices.Contains(env.Targets, adapter.config.AgentID) || slices.Contains(env.Targets, envelope.TargetAll)
@@ -765,7 +765,7 @@ func (adapter *Adapter) handledEntry(message *Message) handledEntry {
 }
 
 // reject records a delivery as handled by its sequence, alerts and acks it: it will never be
-// shown to the agent (§6 terminal rejection).
+// shown to the agent (docs/design/identity-and-trust.md terminal rejection).
 func (adapter *Adapter) reject(ctx context.Context, channel bus.Channel, delivery bus.Delivery, reason error) error {
 	entry := handledEntry{Kind: entryRejected, Destination: channel.String(), Sequence: delivery.Sequence, At: adapter.config.Now().UTC()}
 	if err := adapter.handled.add(entry); err != nil {
@@ -788,7 +788,7 @@ func (adapter *Adapter) alert(format string, args ...any) error {
 
 // Inbox lists the verified messages the agent has not acked: threads with mail for it first, each
 // message in stream order. Reading them makes the newest targeted one (or else the newest) the parent
-// of the agent's next reply (§8 rule 3).
+// of the agent's next reply (docs/design/safety.md rule 3).
 func (adapter *Adapter) Inbox(query InboxQuery) ([]Message, error) {
 	if err := adapter.Ready(); err != nil {
 		return nil, err

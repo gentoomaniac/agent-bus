@@ -11,7 +11,7 @@ import (
 )
 
 // requestExpiry is how long a fetch or history read waits for records before it returns what it
-// has: short, so a quiet channel does not hold the caller up (design.md §4a).
+// has: short, so a quiet channel does not hold the caller up (docs/design/jetstream-binding.md).
 const requestExpiry = time.Second
 
 // Transport is one agent's message path to stream BUS. It implements bus.Transport.

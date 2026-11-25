@@ -1,4 +1,4 @@
-// Package monitor is the backend of the bus monitor (design.md §10a): it reads every channel with
+// Package monitor is the backend of the bus monitor (docs/design/monitor-and-api.md): it reads every channel with
 // the admin's credentials, verifies each message and keeps what it saw in memory for the web
 // interface. It reads history only; it never touches an agent's read cursor.
 package monitor
@@ -212,7 +212,7 @@ func sleep(ctx context.Context, duration time.Duration) {
 	}
 }
 
-// interpret verifies a record as the adapter of the reader of the source would (§6), except for
+// interpret verifies a record as the adapter of the reader of the source would (docs/design/identity-and-trust.md), except for
 // timestamps and duplicates, and trusting the registry alone.
 func (monitor *Monitor) interpret(ctx context.Context, source bus.Channel, record bus.Record) Message {
 	message := Message{Sequence: record.Sequence, Channel: channelID(source, unknownAgent), Status: Rejected}

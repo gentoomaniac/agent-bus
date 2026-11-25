@@ -1,4 +1,4 @@
-// Package trust decides which public key may speak for an agent ID (design.md §6): the pinned
+// Package trust decides which public key may speak for an agent ID (docs/design/identity-and-trust.md): the pinned
 // keys of the `known_agents` file, trust on first use against the registry's record, and the
 // refusal of a changed key.
 package trust
@@ -37,13 +37,13 @@ type Pin struct {
 }
 
 // Directory looks up an agent's registry record. Agents cannot read the registry on the broker
-// (design.md §4a), so until busd serves it the directory is local: see FileDirectory.
+// (docs/design/jetstream-binding.md), so until busd serves it the directory is local: see FileDirectory.
 type Directory interface {
 	Lookup(ctx context.Context, agentID string) (bus.AgentRecord, error)
 }
 
 // ErrUnavailable marks a failure that says nothing about the sender: the registry record could
-// not be read. The message is neither accepted nor rejected for it (§6, a failed lookup is never
+// not be read. The message is neither accepted nor rejected for it (docs/design/identity-and-trust.md, a failed lookup is never
 // an authoritative rejection).
 var ErrUnavailable = errors.New("registry record unavailable")
 
@@ -61,7 +61,7 @@ const revokedKeysFile = "revoked_keys"
 
 // Store is the `known_agents` and `revoked_keys` files of one identity. The adapter is their only
 // writer. A revoked fingerprint is refused even when it is pinned, and dropping a pin does not
-// forget it (design.md §6).
+// forget it (docs/design/identity-and-trust.md).
 type Store struct {
 	path        string
 	pins        map[string][]Pin
@@ -147,7 +147,7 @@ func (store *Store) remember(pin Pin) {
 }
 
 // Unpinned is a store that holds no pins and must not be added to. Resolving against it trusts the
-// registry alone, for a reader that only displays messages, like the monitor (design.md §10a).
+// registry alone, for a reader that only displays messages, like the monitor (docs/design/monitor-and-api.md).
 func Unpinned() *Store { return &Store{pins: map[string][]Pin{}, revoked: map[string]bool{}} }
 
 // Pins returns the keys pinned for the agent.
@@ -179,7 +179,7 @@ type Resolution struct {
 	NewPin *Pin
 }
 
-// Resolve finds the key an agent's message claims to be signed with (§6 step 3, with
+// Resolve finds the key an agent's message claims to be signed with (docs/design/identity-and-trust.md step 3, with
 // --auto-accept-new-keys on). A pinned key is used as it is. An unknown agent is looked up in the
 // registry, and the key named by keyFingerprint must be in its record and not revoked. A known
 // agent whose message names another key is a ChangedKeyError; a key in revoked_keys is refused
@@ -223,7 +223,7 @@ func (store *Store) Resolve(ctx context.Context, directory Directory, agentID, k
 	return Resolution{}, fmt.Errorf("key %s is not in the registry record of %s", keyFingerprint, agentID)
 }
 
-// keyHistory reads a record without a keys list as a history of one key (§4).
+// keyHistory reads a record without a keys list as a history of one key (docs/design/bus-model.md).
 func keyHistory(record bus.AgentRecord) []bus.KeyEntry {
 	if len(record.Keys) > 0 {
 		return record.Keys

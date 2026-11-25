@@ -18,7 +18,7 @@ import (
 // FileDirectory is the MVP registry read path: a directory of `<agent-token>.json` files, one
 // AgentRecord each. `agent-busctl register` writes the record of every new agent there, next to the
 // config directory's other files, and `agent-busctl directory export` writes all records of the registry. Agents have no read access to the registry on the broker
-// (design.md §4a) and busd, which will serve it, does not exist yet. A machine that did not run
+// (docs/design/jetstream-binding.md) and busd, which will serve it, does not exist yet. A machine that did not run
 // the registration gets the files by copying an export; the owner owns every machine.
 type FileDirectory string
 

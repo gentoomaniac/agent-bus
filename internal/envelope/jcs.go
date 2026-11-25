@@ -60,7 +60,7 @@ func unicodeEscape(raw []byte, i int) (rune, bool) {
 const maxExactInteger = 1 << 53
 
 // canonicalize writes JSON in the canonical form of RFC 8785 (JCS), which is what an envelope's
-// signature covers (design.md §6). It is an in-repo implementation of the subset our envelopes
+// signature covers (docs/design/identity-and-trust.md). It is an in-repo implementation of the subset our envelopes
 // use: objects, arrays, strings, booleans, null and integers up to 2^53. Any other number is
 // refused rather than formatted, because ES6 float formatting is not worth carrying for fields
 // the bus never produces; a foreign message that uses one simply cannot be verified.

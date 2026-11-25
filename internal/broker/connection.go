@@ -43,7 +43,7 @@ type Connection struct {
 
 // session is an authenticated connection with the JetStream API on top. NATS answers a call the
 // server refused only with silence and reports the reason as an asynchronous error on the
-// connection, so the session remembers the last one to explain a timeout (design.md §4a).
+// connection, so the session remembers the last one to explain a timeout (docs/design/jetstream-binding.md).
 type session struct {
 	conn   *nats.Conn
 	stream jetstream.JetStream

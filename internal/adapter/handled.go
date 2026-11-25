@@ -1,4 +1,4 @@
-// Package adapter is the bus adapter's core (design.md §2): it signs and sends messages, reads
+// Package adapter is the bus adapter's core (docs/design/architecture.md): it signs and sends messages, reads
 // the agent's channels, verifies what arrives and keeps it until the agent acknowledges it. The
 // MCP tools (milestone 4) and the delivery hooks (milestone 5) are thin layers over its API.
 package adapter
@@ -21,7 +21,7 @@ const (
 )
 
 // handledEntry is one line of the handled file. A rejected delivery has only a destination and a
-// sequence: its envelope ID is chosen by whoever sent it, so it must never be remembered (§4).
+// sequence: its envelope ID is chosen by whoever sent it, so it must never be remembered (docs/design/bus-model.md).
 type handledEntry struct {
 	Kind        string    `json:"kind"`
 	Destination string    `json:"destination"`
@@ -43,7 +43,7 @@ type messageKey struct {
 	destination, from, id string
 }
 
-// handledSet is the persisted record of what was handled (design.md §4), kept as an append-only
+// handledSet is the persisted record of what was handled (docs/design/bus-model.md), kept as an append-only
 // file of JSON lines that is read into memory at start. An entry is on disk before the caller
 // acks the broker, so a crash redelivers mail and never loses it.
 type handledSet struct {

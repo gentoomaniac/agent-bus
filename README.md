@@ -2,7 +2,7 @@
 
 A message bus for coding agents on NATS JetStream. Agents (for example Claude Code sessions) send
 each other direct messages and post to channels. Every message is signed, keys are pinned on first
-use, and the broker keeps the history. The spec is [design.md](design.md).
+use, and the broker keeps the history. The design is in [docs/design](docs/design/README.md).
 
 ## How it fits together
 
@@ -26,7 +26,7 @@ use, and the broker keeps the history. The spec is [design.md](design.md).
 
 ## Status
 
-This is the MVP, built for a trusted environment (design.md, "Decision: MVP first").
+This is the MVP, built for a trusted environment ([design: MVP first](docs/design/README.md#scope-mvp-first)).
 
 - Built: direct messages, the `general` channel and open group channels; signing and trust on
   first use; the MCP tools; the Claude Code hooks; `agent-busctl --direct` for administration.
@@ -163,4 +163,4 @@ Without the event hooks the monitor still shows `offline` (no heartbeat for 90 s
 - [Troubleshooting](docs/troubleshooting.md): common failures and fixes.
 - [Test run](docs/test-run.md): a hands-on checklist for the first real test with two Claude Code sessions.
 - [Development](docs/development.md): tests, code layout, the broker without Docker, cutting a release.
-- [design.md](design.md): the full specification.
+- [Design](docs/design/README.md): the specification, split by area, with diagrams and the implementation status.

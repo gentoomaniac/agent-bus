@@ -102,7 +102,7 @@ It
 - generates an Ed25519 key pair and a password in `<config-dir>/<agent-id>/` (`key`, `password`;
   directory 0700, files 0600),
 - creates the agent's read cursors `<token>__dm` and `<token>__general` (durable pull consumers
-  with the fixed configuration of design.md §4a),
+  with the fixed configuration of [design/jetstream-binding.md](design/jetstream-binding.md)),
 - writes the `AgentRecord` (with its `keys` list) to the `registry` under the agent token, and a
   copy to `<config-dir>/directory/<token>.json` ([claude-code.md](claude-code.md#other-machines)),
 - adds the agent's user and grants to `auth.conf` and reloads the server
@@ -199,11 +199,11 @@ A running `agent-bus mcp` re-reads its directory every minute (`--directory-refr
 rejects messages signed by them, even from a pinned key ("revoked key" in `alerts.log`). Sending to
 a removed agent fails with "agent removed", and `list_agents` leaves it out. Run the export again
 after every `agent remove` and `register`. An automatic refresh over the bus comes with `busd`
-and enrollment (design.md §4c).
+and enrollment ([design/access-control.md](design/access-control.md)).
 
 ### cert issue
 
-Client certificates replace passwords as an agent's or admin's login (design.md §4c, phase A).
+Client certificates replace passwords as an agent's or admin's login ([design/access-control.md](design/access-control.md), phase A).
 They are used on the broker's second port, `4223` ([broker.md](broker.md#settings-and-ports)), and
 are signed by the bus CA (`ca.key` in the config directory, which never leaves it).
 

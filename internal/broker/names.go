@@ -1,4 +1,4 @@
-// Package broker is the NATS JetStream binding of the bus (design.md §4a). It implements the
+// Package broker is the NATS JetStream binding of the bus (docs/design/jetstream-binding.md). It implements the
 // interfaces of package bus, and it is the only package that imports the NATS client library
 // (the integration test aside).
 package broker
@@ -9,7 +9,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 )
 
-// The accounts and streams of design.md §4a.
+// The accounts and streams of docs/design/jetstream-binding.md.
 const (
 	busStream      = "BUS"
 	presenceStream = "PRESENCE"
@@ -39,7 +39,7 @@ func presenceReadSubject(agentToken string) string {
 	return "$JS.API.DIRECT.GET." + presenceStream + "." + presenceSubject(agentToken)
 }
 
-// consumerName is the durable consumer that holds an agent's read cursor on a channel (§4a).
+// consumerName is the durable consumer that holds an agent's read cursor on a channel (docs/design/jetstream-binding.md).
 // The parts split at "__" because no token or channel name contains it. A DM channel is always
 // the agent's own.
 func consumerName(agentToken string, channel bus.Channel) string {

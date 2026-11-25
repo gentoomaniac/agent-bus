@@ -14,7 +14,7 @@ import (
 // Sender is the adapter session the monitor posts through, as one agent. It signs like any agent.
 type Sender interface {
 	AgentID() string
-	// Ready fails when another process holds the identity (design.md §3).
+	// Ready fails when another process holds the identity (docs/design/identity-and-trust.md).
 	Ready() error
 	Send(ctx context.Context, to string, message adapter.Outgoing) (string, error)
 	Publish(ctx context.Context, channelName string, message adapter.Outgoing) (string, error)

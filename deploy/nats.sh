@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installs, starts and stops nats-server as a plain process. This script and nats-server.conf are
-# the only runtime-specific files of the project (design.md §2).
+# the only runtime-specific files of the project (docs/design/architecture.md).
 #
 #   deploy/nats.sh install         build the pinned nats-server into $BUS_NATS_SERVER
 #   deploy/nats.sh up              start the server and wait until it is ready

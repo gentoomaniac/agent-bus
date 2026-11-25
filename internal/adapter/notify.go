@@ -6,11 +6,11 @@ import (
 )
 
 // notifyCooldown is the least time between two notifications, so two agents cannot keep waking
-// each other (design.md §8 rule 3).
+// each other (docs/design/safety.md rule 3).
 const notifyCooldown = 10 * time.Second
 
 // notifications remembers which buffered messages the delivery hooks already told the agent about.
-// Only mail that targets the agent is ever told: the rest sits in the inbox silently (design.md §7).
+// Only mail that targets the agent is ever told: the rest sits in the inbox silently (docs/design/delivery.md).
 type notifications struct {
 	notified map[string]bool // by message ID
 	lastAt   time.Time

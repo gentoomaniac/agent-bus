@@ -65,7 +65,7 @@ agent-busctl --direct agent list
 ## 5. Give an agent machine its files
 
 Each agent machine needs `ca.pem`, `directory/` and its own agent folder from the config volume
-(this copies the agent's key: the current MVP way until enrollment exists, see design.md §4c).
+(this copies the agent's key: the current MVP way until enrollment exists, see [design/access-control.md](design/access-control.md)).
 
 ```sh
 mkdir -p ~/.config/agent-bus

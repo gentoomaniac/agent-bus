@@ -9,7 +9,7 @@ import (
 // and being re-established.
 var ErrUnavailable = errors.New("bus unavailable, reconnecting")
 
-// Transport is one agent's message path to the broker (design.md §2): publish to a channel,
+// Transport is one agent's message path to the broker (docs/design/architecture.md): publish to a channel,
 // consume channels with explicit acknowledgement, and read history without touching a read cursor.
 // It speaks in channels and agents, never in broker subjects or access rules.
 type Transport interface {
@@ -25,7 +25,7 @@ type Transport interface {
 	// It does not move any read cursor. Until busd exists, only the admin's connection may use it.
 	History(ctx context.Context, from Channel, afterSequence uint64, limit int) ([]Record, error)
 	// PublishPresence replaces the agent's own presence record, which the broker keeps for
-	// readers (design.md §7). An agent can write no one else's.
+	// readers (docs/design/delivery.md). An agent can write no one else's.
 	PublishPresence(record []byte) error
 	// Presence returns the last presence record of an agent, or nil if it never published one.
 	Presence(ctx context.Context, agentID string) ([]byte, error)
@@ -36,7 +36,7 @@ type Transport interface {
 	Close()
 }
 
-// Record is a stored message with its place in the channel's canonical order (§4).
+// Record is a stored message with its place in the channel's canonical order (docs/design/bus-model.md).
 type Record struct {
 	Sequence uint64
 	Payload  []byte
@@ -55,7 +55,7 @@ type Delivery struct {
 	Release func(ctx context.Context) error
 }
 
-// Admin is the administrator's path to the broker (design.md §2): channels, accounts and the read
+// Admin is the administrator's path to the broker (docs/design/architecture.md): channels, accounts and the read
 // cursors an account owns. Its methods are safe to repeat unless they say otherwise.
 type Admin interface {
 	// Setup creates what the bus needs on an empty broker: the message log, the presence stream,

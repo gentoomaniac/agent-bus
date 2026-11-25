@@ -1,4 +1,4 @@
-// agent-bus is the adapter's command line (design.md §2). `mcp` is the adapter as an MCP server
+// agent-bus is the adapter's command line (docs/design/architecture.md). `mcp` is the adapter as an MCP server
 // for an agent session; the other commands drive the adapter from a shell, for tests and for
 // trying the bus. Each of those is its own process, so the inbox is only what one fetch brings.
 package main

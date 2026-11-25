@@ -19,14 +19,14 @@ go build -o bin/ ./cmd/agent-busctl ./cmd/agent-bus
 `internal/bus` holds the broker-neutral model and the two interfaces (`Transport`, `Admin`).
 `internal/broker` implements them on NATS JetStream and is the only package that imports the NATS
 client library (`internal/itest` also does, to test against a real server).
-`internal/monitor` is the backend of `bus-monitor` (design.md §10a): it follows every channel with
+`internal/monitor` is the backend of `bus-monitor` ([design/monitor-and-api.md](design/monitor-and-api.md)): it follows every channel with
 the admin's transport, verifies each message against the registry, keeps them in memory and serves
 the JSON API, the event stream and the embedded page (`web/index.html`, plain HTML, CSS and
 JavaScript without a build step). It sends through an adapter session.
-`internal/identity` also reads the private key back and takes the identity lock (design.md §3): an
+`internal/identity` also reads the private key back and takes the identity lock ([design/identity-and-trust.md](design/identity-and-trust.md)): an
 exclusive `flock` on `<agent-dir>/lock` holding the owner's PID, released by the OS when the process
 ends.
-`internal/adapter` is the adapter core. Its handled set (design.md §4) is the append-only file
+`internal/adapter` is the adapter core. Its handled set ([design/bus-model.md](design/bus-model.md)) is the append-only file
 `<agent-dir>/handled.jsonl`, synced to disk (after the broker confirmed an agent's ack, before acking a
 rejection): verified messages by
 (destination, sender, ID) with a digest of the signed record, rejected deliveries by stream sequence
@@ -39,7 +39,7 @@ most 500 and 8 MB; the reader fetches only as many records as would still fit (c
 consumers' one-minute `AckWait`.
 
 The adapter API (`adapter.Open`, then `Send`, `Publish`, `Poll` or `Run`, `Inbox`, `Ack`) follows
-design.md §4a and §6. Per delivery: a sequence already handled or rejected is acked at once; a
+[design/jetstream-binding.md](design/jetstream-binding.md) and [design/identity-and-trust.md](design/identity-and-trust.md). Per delivery: a sequence already handled or rejected is acked at once; a
 record that fails size, version, `to`, sender, signature or timestamp checks, or whose key changed,
 is recorded by sequence, written to `<agent-dir>/alerts.log` and acked; a sender whose registry
 record cannot be read is left unacked, so the broker redelivers it after `AckWait`; a verified
@@ -51,21 +51,21 @@ identity lock, `Open` still returns an adapter, but every method fails with an e
 holder's PID. Alerts go to `alerts.log` only; `agent-busctl alerts` does not exist yet.
 The adapter also remembers, in memory, which buffered messages the delivery hooks already told the
 agent about (`NewMail`, `UnreadSummary`): new mail is reported once, and not again within 10 seconds
-of the last report (design.md §8 rule 3; held-back mail is reported by the next call).
+of the last report ([design/safety.md](design/safety.md) rule 3; held-back mail is reported by the next call).
 `internal/hook` is the socket between the MCP server and the hooks, the hook output formats, and the reduction of a hook's JSON to a presence event (`agent-bus event`).
 `internal/presence` is the presence record, the tracker that turns events into it and the publisher that
-throttles and heartbeats it (design.md §7); `deploy/opencode/agent-bus.js` is the OpenCode plugin
+throttles and heartbeats it ([design/delivery.md](design/delivery.md)); `deploy/opencode/agent-bus.js` is the OpenCode plugin
 that feeds the same events (no automated test: check it by hand, docs/opencode.md).
 
 `internal/mcpserver` is the MCP server of one adapter session (official Go SDK, pinned in `go.mod`).
-`internal/trust` is the `known_agents` file of an identity (pinned public keys, design.md §6) and
+`internal/trust` is the `known_agents` file of an identity (pinned public keys, [design/identity-and-trust.md](design/identity-and-trust.md)) and
 trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name
 a key in it that is not revoked, and the key is pinned (`tofu`) after the signature verified. A
 changed key is refused. Not done yet: holds, rotation chains and `revoked_keys`. Agents cannot read
-the registry on the broker (§4a) and busd does not exist yet, so the MVP registry read path is
+the registry on the broker ([design/jetstream-binding.md](design/jetstream-binding.md)) and busd does not exist yet, so the MVP registry read path is
 `<config-dir>/directory/<agent-token>.json`, one record per agent, which `agent-busctl register` writes.
 To use an agent from another machine, copy that directory there.
-`internal/envelope` is the signed message (design.md §5, §6): its fields, the canonical JSON that is
+`internal/envelope` is the signed message ([design/protocol.md](design/protocol.md), [design/identity-and-trust.md](design/identity-and-trust.md)): its fields, the canonical JSON that is
 signed, signing and the stateless checks (size, version, `to`, timestamp). The canonical form is
 RFC 8785 (JCS), implemented in the package for the JSON subset the bus produces (integers up to
 2^53, no floats); a message with other numbers cannot be verified.

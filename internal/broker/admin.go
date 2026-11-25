@@ -13,10 +13,10 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// The fixed configuration of every agent consumer (design.md §4a). The agent cannot change it.
+// The fixed configuration of every agent consumer (docs/design/jetstream-binding.md). The agent cannot change it.
 const (
 	consumerAckWait       = time.Minute
-	consumerMaxAckPending = 500 // the adapter's inbox buffer limit (§7)
+	consumerMaxAckPending = 500 // the adapter's inbox buffer limit (docs/design/delivery.md)
 	consumerMaxWaiting    = 8
 	registryHistory       = 64 // revisions KV keeps per key; AgentRecord holds the key list itself
 	duplicateWindow       = 24 * time.Hour

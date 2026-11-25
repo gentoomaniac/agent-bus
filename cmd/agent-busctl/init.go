@@ -7,7 +7,7 @@ import (
 
 type InitCmd struct{}
 
-// Run creates the streams and buckets of design.md §4a. Existing ones keep their data.
+// Run creates the streams and buckets of docs/design/jetstream-binding.md. Existing ones keep their data.
 func (cmd *InitCmd) Run(ctx context.Context, cli *CLI) error {
 	admin, err := cli.adminClient()
 	if err != nil {

@@ -1,5 +1,4 @@
-// Package hook connects the harness's delivery hooks to the adapter of their own session (design.md
-// §7). The MCP server and the hook are both started by the harness, so the adapter listens on a
+// Package hook connects the harness's delivery hooks to the adapter of their own session (docs/design/delivery.md). The MCP server and the hook are both started by the harness, so the adapter listens on a
 // unix socket named after its parent process and the hook finds it by walking up its own ancestors.
 package hook
 

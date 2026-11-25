@@ -29,8 +29,7 @@ const (
 
 var generationLine = regexp.MustCompile(`^# generation (\d+)\n`)
 
-// Server is the nats-server process on this host and the files it is configured from (design.md
-// §4a): nats-server.conf (rendered by deploy/nats.sh), auth.conf and control-auth.conf (generated
+// Server is the nats-server process on this host and the files it is configured from (docs/design/jetstream-binding.md): nats-server.conf (rendered by deploy/nats.sh), auth.conf and control-auth.conf (generated
 // here), and the pid file the server writes. Only an admin on the server's host can change access.
 type Server struct {
 	Dir        string // holds the files above

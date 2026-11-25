@@ -1,7 +1,7 @@
 //go:build integration
 
 // Package itest starts a real nats-server with deploy/nats.sh and checks milestone 1a end to end
-// (design.md §4a, §11): the two accounts, the per-role grants, reply-subject redirection, the
+// (docs/design/jetstream-binding.md, docs/design/milestones.md): the two accounts, the per-role grants, reply-subject redirection, the
 // consumers agent-busctl creates, confirmed reloads and the ledger's compare-and-set. Run it with
 // `make itest`, which builds the pinned nats-server first.
 package itest

@@ -9,7 +9,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 )
 
-// rateLimiter allows a number of sends per window (design.md §8 rule 4). It lives in memory: a
+// rateLimiter allows a number of sends per window (docs/design/safety.md rule 4). It lives in memory: a
 // restart gives a fresh allowance, which is enough to stop a runaway loop.
 type rateLimiter struct {
 	limit  int
@@ -43,7 +43,7 @@ func (err *RateLimitError) Error() string {
 		err.Limit, err.Window, int(err.RetryAfter.Seconds())+1)
 }
 
-// secretPatterns are the obvious secrets of §8 rule 5: private keys and well-known token formats.
+// secretPatterns are the obvious secrets of docs/design/safety.md rule 5: private keys and well-known token formats.
 var secretPatterns = map[string]*regexp.Regexp{
 	"a private key":         regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),
 	"an AWS access key":     regexp.MustCompile(`\b(AKIA|ASIA)[0-9A-Z]{16}\b`),

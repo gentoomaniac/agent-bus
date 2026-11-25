@@ -1,7 +1,7 @@
 # Open questions for the owner
 
 Decisions taken with a default while the owner was away. Confirm or change them; answered entries
-move into design.md §13.
+move into [docs/design/decisions.md](docs/design/decisions.md).
 
 ## 2026-11-25: new name for `busctl` (done with the default, still changeable)
 

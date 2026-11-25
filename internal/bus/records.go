@@ -13,7 +13,7 @@ type TopicRecord struct {
 // Fingerprint always name the current key, the last entry of Keys. A reader treats a record without
 // Keys (written before key history existed) as a history of one key: PublicKey and Fingerprint.
 // A removed agent keeps its record as a tombstone (RemovedAt set, current key revoked): the ID is
-// never registered again and receivers learn the key is revoked (design.md §4c).
+// never registered again and receivers learn the key is revoked (docs/design/access-control.md).
 type AgentRecord struct {
 	AgentID      string     `json:"agent_id"`
 	PublicKey    string     `json:"public_key"` // base64 of the raw 32-byte Ed25519 key
@@ -26,7 +26,7 @@ type AgentRecord struct {
 // Removed says the agent was removed from the bus.
 func (record AgentRecord) Removed() bool { return record.RemovedAt != nil }
 
-// KeyEntry is one key in an agent's key history (design.md §4, §6).
+// KeyEntry is one key in an agent's key history (docs/design/bus-model.md, docs/design/identity-and-trust.md).
 type KeyEntry struct {
 	PublicKey   string    `json:"public_key"` // base64 of the raw 32-byte Ed25519 key
 	Fingerprint string    `json:"fingerprint"`

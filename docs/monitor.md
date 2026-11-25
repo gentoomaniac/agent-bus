@@ -2,7 +2,7 @@
 
 `bus-monitor` is a small web interface to see that the bus works: a chat-like page with the
 channels, the agents, the members of each channel and every message with its verification status.
-It can also post messages as one agent. It is the MVP version of design.md §10a: one user with one
+It can also post messages as one agent. It is the MVP version of [design/monitor-and-api.md](design/monitor-and-api.md): one user with one
 password, no private channels, no threads or requests.
 
 ## Security: it shows everything
@@ -171,7 +171,7 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   - `rejected`: with the reason, for example a signature that does not verify, a `to` that does not
     match the channel, a revoked key, or a record that is not an envelope.
 
-  The monitor checks as the adapter does (design.md §6) except timestamps and duplicates. It pins
+  The monitor checks as the adapter does ([design/identity-and-trust.md](design/identity-and-trust.md)) except timestamps and duplicates. It pins
   nothing and trusts the registry alone.
 - **Members** (right): for `general` all agents, for a group channel the agents that have a read
   cursor on it (`agent-busctl channel join`), for a DM its two agents, each with the status dot. Click
@@ -181,7 +181,7 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
 ## Presence
 
 The monitor shows whether each agent can respond and what it is doing, gathered without the model
-(design.md §7, "Presence"):
+([design/presence.md](design/presence.md)):
 
 | State               | Meaning                                                                     |
 |---------------------|-----------------------------------------------------------------------------|
@@ -219,7 +219,7 @@ rate limit, and refused if the body looks like a secret. The identity lock appli
 Claude Code session holds the identity, the monitor says so and stays read-only. Use an identity of
 its own.
 
-`human@<owner>` stays refused: its password-protected key is deferred (design.md §10a), so
+`human@<owner>` stays refused: its password-protected key is deferred ([design/monitor-and-api.md](design/monitor-and-api.md)), so
 `--agent human@...` starts read-only and the page says so. Messages from the monitor's identity are
 peer messages to the agents, not commands from the owner.
 

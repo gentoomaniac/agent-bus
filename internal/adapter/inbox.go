@@ -8,7 +8,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 )
 
-// Default bounds of the inbox buffer (design.md §7): the message limit equals the consumers'
+// Default bounds of the inbox buffer (docs/design/delivery.md): the message limit equals the consumers'
 // MaxAckPending, so the broker never has more unacknowledged mail for us than we can hold.
 const (
 	DefaultInboxMessages = 500
@@ -24,7 +24,7 @@ type Message struct {
 	Channel      bus.Channel
 	Sequence     uint64
 	FirstContact bool // the sender's key was pinned because of this message
-	TargetsMe    bool // the message needs this agent's response (design.md §5)
+	TargetsMe    bool // the message needs this agent's response (docs/design/protocol.md)
 	Acked        bool // the agent sent an ack reply to it; it stays unread until answered
 	Digest       string
 	ArrivedAt    time.Time

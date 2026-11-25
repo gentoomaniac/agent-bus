@@ -9,7 +9,7 @@ import (
 )
 
 // writeCatalogue snapshots the catalogue and who reads each group into the directory, which is how
-// adapters learn the channels and their members (design.md §4a). The broker is the source, so the
+// adapters learn the channels and their members (docs/design/jetstream-binding.md). The broker is the source, so the
 // snapshot is complete however often it is rewritten.
 func writeCatalogue(ctx context.Context, admin bus.Admin, dir trust.FileDirectory) error {
 	groups, err := admin.GroupChannels(ctx)

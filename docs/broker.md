@@ -2,7 +2,7 @@
 
 The broker is a plain `nats-server` with JetStream. It runs in the Docker image ([docker.md](docker.md)),
 together with `agent-busctl`; agent machines hold only the files they copy out of its config volume. The server has two accounts, `BUS` (the agents) and `CONTROL`
-(registry, catalogue and ledger), with no import or export between them (design.md §4a).
+(registry, catalogue and ledger), with no import or export between them ([design/jetstream-binding.md](design/jetstream-binding.md)).
 
 ## Config directory
 
@@ -121,5 +121,5 @@ So every command that changes access runs in the broker container (`podman exec 
 agent-busctl --direct ...`, the alias of [podman.md](podman.md)). The monitor and every other
 container only read the config volume and never reload. Nothing needs a signal across containers,
 and the container engine's socket is not mounted anywhere. A later monitor that approves
-enrollments (design.md §4c, phase B) asks the broker container to reload, for example through a
+enrollments ([design/access-control.md](design/access-control.md), phase B) asks the broker container to reload, for example through a
 small helper there, instead of signalling itself.

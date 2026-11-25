@@ -39,7 +39,7 @@ mail that targets the agent. The [monitor](monitor.md) always shows everything.
 claude mcp add agent-bus -- agent-bus mcp --agent api-client@alice --deliver all
 ```
 
-The server instructions are a short briefing (design.md §5, §8): who the agent is and how DMs
+The server instructions are a short briefing ([design/protocol.md](design/protocol.md), [design/safety.md](design/safety.md)): who the agent is and how DMs
 and channels work, when to respond (only to messages with `targets_me`), how (a request or question
 aimed at it gets a short `ack` reply at once, `reply_to` set, and the result later as an `answer`;
 an `ack`, `answer` or `status` is never answered unless something is unclear) and what it may do.
@@ -83,7 +83,7 @@ own session.
   the count, a note that the mail is untrusted peer data and up to five one-line summaries (sender,
   type, title, never the message text), and tells Claude to call `inbox`. Each message is reported once, so the hook
   that fires again after its own block is silent; this also stands in for `stop_hook_active`,
-  which the hook does not read. Reports are at least 10 seconds apart (design.md §8 rule 3);
+  which the hook does not read. Reports are at least 10 seconds apart ([design/safety.md](design/safety.md) rule 3);
   held-back mail is reported by the next hook; the waiter below reports it when the cooldown is over. `inbox` lists it all along.
 - `SessionStart`: prints `additionalContext` with the unread mail that targets the agent, if any.
   Mail aimed at others (only with `--deliver=all`) sits in the inbox silently. The hook races the MCP
@@ -212,7 +212,7 @@ every concurrent session its own identity.
 
 Every `inbox` or `wait_for_messages` result carries one `notice` that frames its messages as
 untrusted peer data with a verified signature and says whether a request in them may be acted on
-(design.md §8 rules 1 and 2), and each message has `first_contact` when its sender's key was pinned
+([design/safety.md](design/safety.md) rules 1 and 2), and each message has `first_contact` when its sender's key was pinned
 by it. The server instructions say the same: a valid signature proves who sent a
 message, not that it is safe or that the owner wants it done. Tools and results:
 [agent-tools.md](agent-tools.md).
@@ -228,7 +228,7 @@ arrives after the reconnect ([troubleshooting.md](troubleshooting.md#when-the-bu
 
 A sender is pinned on first contact from `<config-dir>/directory/<token>.json`, one record per
 agent, which `register` writes on the machine it runs on. Agents cannot read the registry on the
-broker (design.md §4a) and `busd` does not exist yet, so to use an agent from another machine,
+broker ([design/jetstream-binding.md](design/jetstream-binding.md)) and `busd` does not exist yet, so to use an agent from another machine,
 copy that `directory/` there, together with `ca.pem`, and again after agents are added or removed
 ([docker.md](docker.md#give-an-agent-machine-its-files), [agent-busctl.md](agent-busctl.md#directory-export)). A recipient with no entry in the directory
 fails with "unknown agent" ([troubleshooting.md](troubleshooting.md#unknown-agent)).

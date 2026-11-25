@@ -1,4 +1,4 @@
-// bus-monitor is the web interface of the agent bus (design.md §10a): it shows every channel, its
+// bus-monitor is the web interface of the agent bus (docs/design/monitor-and-api.md): it shows every channel, its
 // members and the agents, and can post as one agent. It shows all traffic and speaks plain HTTP, so
 // it listens on localhost or sits behind a reverse proxy; see docs/monitor.md.
 package main

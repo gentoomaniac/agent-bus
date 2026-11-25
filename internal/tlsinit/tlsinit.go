@@ -1,4 +1,4 @@
-// Package tlsinit creates the bus's private CA and the broker's certificate (design.md §4).
+// Package tlsinit creates the bus's private CA and the broker's certificate (docs/design/bus-model.md).
 package tlsinit
 
 import (

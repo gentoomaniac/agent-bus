@@ -3,7 +3,7 @@
 The web monitor ([monitor.md](monitor.md)) serves a small JSON API under `/api/v1`. The page uses
 it, and so can scripts and other front ends. [openapi.yaml](openapi.yaml) describes it in
 OpenAPI 3.1. It is a minimal API for one user with one password; more users and approvals come
-later (design.md §10a).
+later ([design/monitor-and-api.md](design/monitor-and-api.md)).
 
 Base URL: wherever the monitor is reached, for example `http://127.0.0.1:8080` or the
 `--public-url` behind a proxy. The unversioned `/api/...` paths no longer exist. A change that

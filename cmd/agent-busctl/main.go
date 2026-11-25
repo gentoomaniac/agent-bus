@@ -1,4 +1,4 @@
-// agent-busctl is the admin CLI of the agent bus (design.md §10).
+// agent-busctl is the admin CLI of the agent bus (docs/design/admin-cli.md).
 package main
 
 import (

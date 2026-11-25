@@ -1,4 +1,4 @@
-// Package envelope is the signed message of the agent bus (design.md §5, §6): its fields, the
+// Package envelope is the signed message of the agent bus (docs/design/protocol.md, docs/design/identity-and-trust.md): its fields, the
 // canonical form that is signed, and the checks that need no state (size, version, signature,
 // `to` binding, timestamp). Trust in the signing key is the caller's business.
 package envelope
@@ -23,17 +23,17 @@ import (
 const (
 	// Version is the only envelope version this code reads and writes.
 	Version = 1
-	// MaxBodyBytes and MaxRecordBytes are the limits of §5: 64 KB of body, 96 KB for the record.
+	// MaxBodyBytes and MaxRecordBytes are the limits of docs/design/protocol.md: 64 KB of body, 96 KB for the record.
 	MaxBodyBytes   = 64 * 1024
 	MaxRecordBytes = 96 * 1024
-	// MaxClockSkew is how far in the future a timestamp may lie (§6 step 5). Old ones are fine.
+	// MaxClockSkew is how far in the future a timestamp may lie (docs/design/identity-and-trust.md step 5). Old ones are fine.
 	MaxClockSkew = 5 * time.Minute
 )
 
-// Types are the message types of §5.
+// Types are the message types of docs/design/protocol.md.
 var Types = []string{"message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack", "key_rotation", "invite"}
 
-// ResponseBearingTypes expect an answer; the other types close a loop or only inform (§5).
+// ResponseBearingTypes expect an answer; the other types close a loop or only inform (docs/design/protocol.md).
 var ResponseBearingTypes = []string{"request", "question", "feature_request", "bug_report"}
 
 // Destination kinds. `general` is the group named "general".
@@ -85,7 +85,7 @@ type Signed struct {
 }
 
 // ToFor is the destination field that belongs to a channel: what a record consumed from that
-// channel must carry (§6 step 2).
+// channel must carry (docs/design/identity-and-trust.md step 2).
 func ToFor(channel bus.Channel) To {
 	switch channel.Kind {
 	case bus.DM:
@@ -143,7 +143,7 @@ func Sign(env Envelope, key ed25519.PrivateKey) ([]byte, error) {
 }
 
 // Parse checks size, version and schema and prepares the signature check. It runs before anything else
-// is done with a record (§6 steps 0 and 1).
+// is done with a record (docs/design/identity-and-trust.md steps 0 and 1).
 func Parse(payload []byte) (*Signed, error) {
 	if len(payload) > MaxRecordBytes {
 		return nil, fmt.Errorf("record is %d bytes, over the limit of %d", len(payload), MaxRecordBytes)
@@ -194,7 +194,7 @@ const maxThreadBytes = 128
 
 // Validate checks the schema of a v1 envelope that was read from the wire: every required field
 // is present and well formed. A field this version does not know is ignored (it is still signed),
-// so a field that receivers must understand needs a new version (design.md §5).
+// so a field that receivers must understand needs a new version (docs/design/protocol.md).
 func (env Envelope) Validate() error {
 	if !idShape.MatchString(env.ID) {
 		return fmt.Errorf("id %q is not a ULID", env.ID)
@@ -255,7 +255,7 @@ func checkExactFieldNames(payload []byte) error {
 }
 
 // CheckTargets accepts agent IDs without duplicates, or the single value "@all". Every message
-// is aimed at someone (§5), so none is not accepted.
+// is aimed at someone (docs/design/protocol.md), so none is not accepted.
 func (env Envelope) CheckTargets() error {
 	if len(env.Targets) == 0 {
 		return errors.New("no targets: name a target or @all")
@@ -316,7 +316,7 @@ func (signed *Signed) Verify(key ed25519.PublicKey) bool {
 }
 
 // CheckTo rejects a record that was consumed from a channel it was not addressed to, so a signed
-// message cannot be replayed into another inbox (§6 step 2). A DM targets exactly its recipient.
+// message cannot be replayed into another inbox (docs/design/identity-and-trust.md step 2). A DM targets exactly its recipient.
 func (env Envelope) CheckTo(channel bus.Channel) error {
 	if want := ToFor(channel); env.To != want {
 		return fmt.Errorf("addressed to %s %q, but consumed from %s", env.To.Kind, env.To.Name, channel)
@@ -327,7 +327,7 @@ func (env Envelope) CheckTo(channel bus.Channel) error {
 	return nil
 }
 
-// CheckNotFuture rejects a timestamp too far ahead of now (§6 step 5).
+// CheckNotFuture rejects a timestamp too far ahead of now (docs/design/identity-and-trust.md step 5).
 func (env Envelope) CheckNotFuture(now time.Time) error {
 	if env.TS.After(now.Add(MaxClockSkew)) {
 		return fmt.Errorf("timestamp %s is more than %s in the future", env.TS.Format(time.RFC3339), MaxClockSkew)

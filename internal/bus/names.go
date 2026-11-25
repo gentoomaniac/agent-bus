@@ -1,5 +1,5 @@
-// Package bus holds the broker-neutral model of the agent bus (design.md §3, §4): agent IDs,
-// channels, the records the bus stores, and the two interfaces to the broker (§2). The binding
+// Package bus holds the broker-neutral model of the agent bus (docs/design/identity-and-trust.md, docs/design/bus-model.md): agent IDs,
+// channels, the records the bus stores, and the two interfaces to the broker (docs/design/architecture.md). The binding
 // that implements them is internal/broker; nothing else knows how channels map to broker names.
 package bus
 
@@ -18,7 +18,7 @@ var (
 	groupNamePattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 )
 
-// ValidateAgentID checks the `<name>@<owner>` format of §3.
+// ValidateAgentID checks the `<name>@<owner>` format of docs/design/identity-and-trust.md.
 func ValidateAgentID(agentID string) error {
 	if len(agentID) > maxNameLength || !agentIDPattern.MatchString(agentID) {
 		return fmt.Errorf("invalid agent ID %q: want <name>@<owner>, lowercase [a-z0-9-], at most %d characters", agentID, maxNameLength)
@@ -41,7 +41,7 @@ func ValidateGroupName(name string) error {
 
 // AgentToken is the one place that maps an agent ID to the form the broker's names can carry:
 // `lib-x@bob` becomes `lib-x_bob`. A token has exactly one '_' because agent IDs contain none,
-// so names built from tokens and a "__" separator split unambiguously (§4a).
+// so names built from tokens and a "__" separator split unambiguously (docs/design/jetstream-binding.md).
 func AgentToken(agentID string) string {
 	return strings.Replace(agentID, "@", "_", 1)
 }
@@ -51,7 +51,7 @@ func AgentIDFromToken(token string) string {
 	return strings.Replace(token, "_", "@", 1)
 }
 
-// ChannelKind says which of the bus's channels a Channel names (§4).
+// ChannelKind says which of the bus's channels a Channel names (docs/design/bus-model.md).
 type ChannelKind int
 
 const (

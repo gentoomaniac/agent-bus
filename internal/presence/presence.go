@@ -1,5 +1,5 @@
 // Package presence is what the bus knows about whether an agent can respond and what it is doing
-// (design.md §7, Presence). The harness's hooks report events; a Tracker turns them into a Record;
+// (docs/design/presence.md). The harness's hooks report events; a Tracker turns them into a Record;
 // a Publisher puts the Record on the bus for the owner's monitor and for list_agents. Nothing
 // here costs the model a token.
 package presence

@@ -17,7 +17,7 @@ const (
 	ControlAdminUser = "control-admin"
 )
 
-// agentBusdMethods are the busd calls an agent may make (§4a). Nothing answers them before
+// agentBusdMethods are the busd calls an agent may make (docs/design/jetstream-binding.md). Nothing answers them before
 // milestone 3; the grants are in place so the per-role matrix is complete.
 var agentBusdMethods = []string{
 	"nonce", "channel.create", "channel.list", "channel.members", "channel.membership",
@@ -37,7 +37,7 @@ type authRole string
 const (
 	roleAgent authRole = "agent"
 	roleAdmin authRole = "admin"
-	// roleMonitor and roleEnrollment are reserved for phase B of the mTLS login (design.md §4c).
+	// roleMonitor and roleEnrollment are reserved for phase B of the mTLS login (docs/design/access-control.md).
 	// A file that has them is read and written back unchanged; they have no access until their
 	// grants are defined.
 	roleMonitor    authRole = "monitor"
@@ -147,7 +147,7 @@ func parseUser(natsName, passwordHash string, role authRole) (authUser, error) {
 }
 
 // render writes the users of an authorization file, by role and name (admins first). An agent
-// gets the grants of §4a for the given catalogued group channels.
+// gets the grants of docs/design/jetstream-binding.md for the given catalogued group channels.
 func (table userTable) render(groups []string) string {
 	sorted := slices.Clone(table)
 	slices.SortFunc(sorted, func(a, b authUser) int {
@@ -187,7 +187,7 @@ func replaceUserEntry(body string, user authUser) (string, error) {
 	return strings.Replace(body, "users = [\n", "users = [\n"+entry+"\n", 1), nil
 }
 
-// agentPermissions are the subjects an agent may publish and subscribe to (§4a). It receives only
+// agentPermissions are the subjects an agent may publish and subscribe to (docs/design/jetstream-binding.md). It receives only
 // through its own consumers and replies only on its own inbox prefix, and it creates, updates and
 // deletes no consumer: nothing below grants a $JS.API.CONSUMER.CREATE, DELETE or DURABLE subject.
 func agentPermissions(token string, groups []string) (publish, subscribe []string) {
@@ -202,7 +202,7 @@ func agentPermissions(token string, groups []string) (publish, subscribe []strin
 			"$JS.API.CONSUMER.INFO."+busStream+"."+consumer,
 			"$JS.ACK."+busStream+"."+consumer+".>")
 	}
-	// Presence: write its own record, read anyone's (design.md §7). A core publish needs no
+	// Presence: write its own record, read anyone's (docs/design/presence.md). A core publish needs no
 	// JetStream API grant; the stream stores whatever arrives on its subjects.
 	publish = append(publish, presenceSubject(token), presenceReadSubject("*"))
 	for _, method := range agentBusdMethods {

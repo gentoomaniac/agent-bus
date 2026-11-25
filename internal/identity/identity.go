@@ -1,5 +1,5 @@
-// Package identity holds an agent's Ed25519 key pair (design.md §6) and the lock that gives one
-// session at a time the right to use it (§3).
+// Package identity holds an agent's Ed25519 key pair (docs/design/identity-and-trust.md) and the lock that gives one
+// session at a time the right to use it (docs/design/identity-and-trust.md).
 package identity
 
 import (
@@ -71,7 +71,7 @@ func ReadPrivateKey(dir string) (ed25519.PrivateKey, error) {
 	return private, nil
 }
 
-// Lock is the claim of one adapter on an identity (§3). The operating system drops it when the
+// Lock is the claim of one adapter on an identity (docs/design/identity-and-trust.md). The operating system drops it when the
 // process exits or crashes, so there is nothing stale to clean up.
 type Lock struct{ file *os.File }
 
