@@ -62,7 +62,9 @@ func TestCertificateLogin(t *testing.T) {
 	t.Run("an agent with a certificate exchanges DMs with a password agent", func(t *testing.T) {
 		aliceSession, _ := h.startAdapter(t, alice)
 		bobSession, _ := h.startAdapter(t, bob)
-		if !creds.HasClientCert(creds.AgentDir(h.configDir, alice)) || creds.HasClientCert(creds.AgentDir(h.configDir, bob)) {
+		aliceHas, _ := creds.HasClientCert(creds.AgentDir(h.configDir, alice))
+		bobHas, _ := creds.HasClientCert(creds.AgentDir(h.configDir, bob))
+		if !aliceHas || bobHas {
 			t.Fatal("alice should have a certificate and bob none")
 		}
 		if _, err := aliceSession.Send(ctx, bob, say("hello bob, by certificate")); err != nil {
@@ -167,7 +169,7 @@ func TestSwitchBackToPassword(t *testing.T) {
 	transport.Close()
 
 	h.run(t, h.agentBusctl, "--direct", "cert", "switch", bob, "--password")
-	if creds.HasClientCert(dir) {
+	if has, _ := creds.HasClientCert(dir); has {
 		t.Error("the certificate files are still in the agent's directory")
 	}
 	transport, err = broker.NewTransport(h.agentConnection(bob), bob)
@@ -209,7 +211,7 @@ func TestAdminCertificateLogin(t *testing.T) {
 
 	h.run(t, h.agentBusctl, "--direct", "cert", "switch", "--admin", "--password")
 	h.run(t, h.agentBusctl, "--direct", "agent", "list")
-	if creds.HasClientCert(creds.AdminDir(h.configDir, broker.BusAdminUser)) {
+	if has, _ := creds.HasClientCert(creds.AdminDir(h.configDir, broker.BusAdminUser)); has {
 		t.Error("the admin certificate files were not removed by the rollback")
 	}
 }

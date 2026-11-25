@@ -213,7 +213,11 @@ built from the agent ID alone: client authentication only, not a CA, valid for o
 (`--validity`), with exactly one URI SAN, `agentbus:agent/<agent-token>` (admin users:
 `agentbus:admin/bus-admin` and `agentbus:admin/control-admin`). nats-server maps that URI to the
 user of the same name. It does not log in until `cert switch` (or `--switch`) tells the broker to
-accept it. Run it again to renew. A removed ID gets none.
+accept it. Run it again to renew. A removed ID gets none. Renewing does not revoke the old
+certificate: it stays valid until it expires, until `agent remove`, or until the agent is switched
+back to password (the mapping is per agent, not per certificate). The pair is written atomically
+(both files, or the old pair stays); a directory with only one of the two files is an error, not a
+silent fall back to the password.
 
 | Flag         | Meaning                                                                       |
 |--------------|-------------------------------------------------------------------------------|

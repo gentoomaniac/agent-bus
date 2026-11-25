@@ -22,6 +22,7 @@ const (
 	passwordFile        = "password"
 	clientCertFile      = "client.pem"
 	clientKeyFile       = "client.key"
+	stagedSuffix        = ".new"
 	passwordBytes       = 32
 	monitorPasswordFile = "monitor-web/password.bcrypt"
 	// oldMonitorPasswordFile was easily confused with the monitor@<owner> agent folder.
@@ -55,27 +56,83 @@ func ClientCertPaths(dir string) (certPath, keyPath string) {
 }
 
 // HasClientCert says whether dir holds a certificate login, which clients prefer to a password.
-func HasClientCert(dir string) bool {
+// Half a pair is an error: falling back to the password would hide a broken login.
+func HasClientCert(dir string) (bool, error) {
 	certPath, keyPath := ClientCertPaths(dir)
 	_, certErr := os.Stat(certPath)
 	_, keyErr := os.Stat(keyPath)
-	return certErr == nil && keyErr == nil
+	switch {
+	case certErr == nil && keyErr == nil:
+		return true, nil
+	case certErr == nil:
+		return false, fmt.Errorf("%s without %s in %s", clientCertFile, clientKeyFile, dir)
+	case keyErr == nil:
+		return false, fmt.Errorf("%s without %s in %s", clientKeyFile, clientCertFile, dir)
+	}
+	return false, nil
 }
 
-// WriteClientCert stores a certificate and its key, replacing earlier ones (renewal).
-func WriteClientCert(dir string, certPEM, keyPEM []byte) error {
-	certPath, keyPath := ClientCertPaths(dir)
+func stagedClientCertPaths(dir string) (certPath, keyPath string) {
+	certPath, keyPath = ClientCertPaths(dir)
+	return certPath + stagedSuffix, keyPath + stagedSuffix
+}
+
+// StageClientCert stores a certificate and its key under temporary names, which no client uses,
+// until ActivateStagedClientCert makes them the login. It replaces earlier staged files.
+func StageClientCert(dir string, certPEM, keyPEM []byte) error {
+	certPath, keyPath := stagedClientCertPaths(dir)
 	if err := files.Write(keyPath, keyPEM, files.SecretMode, true); err != nil {
 		return err
 	}
 	return files.Write(certPath, certPEM, files.PublicMode, true)
 }
 
-// RemoveClientCert deletes the certificate login of dir, so clients use the password again.
+// HasStagedClientCert says whether a complete staged pair waits in dir.
+func HasStagedClientCert(dir string) bool {
+	certPath, keyPath := stagedClientCertPaths(dir)
+	_, certErr := os.Stat(certPath)
+	_, keyErr := os.Stat(keyPath)
+	return certErr == nil && keyErr == nil
+}
+
+// ActivateStagedClientCert renames the staged pair over the certificate login, key first.
+func ActivateStagedClientCert(dir string) error {
+	stagedCert, stagedKey := stagedClientCertPaths(dir)
+	certPath, keyPath := ClientCertPaths(dir)
+	if err := os.Rename(stagedKey, keyPath); err != nil {
+		return err
+	}
+	return os.Rename(stagedCert, certPath)
+}
+
+// WriteClientCert stores a certificate and its key, replacing earlier ones (renewal). Both files
+// are written under temporary names first, so a failure leaves the old pair intact.
+func WriteClientCert(dir string, certPEM, keyPEM []byte) error {
+	if err := StageClientCert(dir, certPEM, keyPEM); err != nil {
+		return err
+	}
+	return ActivateStagedClientCert(dir)
+}
+
+// RemoveClientCert deletes the certificate login of dir, staged files included, so clients use
+// the password again.
 func RemoveClientCert(dir string) error {
 	certPath, keyPath := ClientCertPaths(dir)
-	for _, path := range []string{certPath, keyPath} {
+	stagedCert, stagedKey := stagedClientCertPaths(dir)
+	for _, path := range []string{certPath, keyPath, stagedCert, stagedKey} {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+// RetireClientCert renames the certificate login of dir out of the way (to *.retired) so clients
+// use the password again, but the files stay for the owner to inspect or delete.
+func RetireClientCert(dir string) error {
+	certPath, keyPath := ClientCertPaths(dir)
+	for _, path := range []string{certPath, keyPath} {
+		if err := os.Rename(path, path+".retired"); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}

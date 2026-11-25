@@ -25,7 +25,11 @@ func MappedAddress(brokerAddress string, mappedPort int) (string, error) {
 // UserConnection is how to connect as the user whose credentials are in dir: with the client
 // certificate if dir has one, else with its password. user is the password login's name.
 func UserConnection(dir, user, brokerAddress string, mappedPort int, caCertPath string) (Connection, error) {
-	if creds.HasClientCert(dir) {
+	hasCert, err := creds.HasClientCert(dir)
+	if err != nil {
+		return Connection{}, err
+	}
+	if hasCert {
 		address, err := MappedAddress(brokerAddress, mappedPort)
 		if err != nil {
 			return Connection{}, err

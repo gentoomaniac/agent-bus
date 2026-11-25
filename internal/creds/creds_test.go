@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/bcrypt"
@@ -21,8 +22,8 @@ func TestNewPasswordIsRandomAndShellSafe(t *testing.T) {
 
 func TestClientCertFilesAreWrittenReplacedAndRemoved(t *testing.T) {
 	dir := t.TempDir()
-	if HasClientCert(dir) {
-		t.Fatal("an empty directory has a certificate")
+	if has, err := HasClientCert(dir); has || err != nil {
+		t.Fatalf("an empty directory has a certificate: %v, %v", has, err)
 	}
 	if err := WriteClientCert(dir, []byte("cert1"), []byte("key1")); err != nil {
 		t.Fatal(err)
@@ -37,14 +38,56 @@ func TestClientCertFilesAreWrittenReplacedAndRemoved(t *testing.T) {
 	if info, _ := os.Stat(keyPath); info.Mode().Perm() != 0o600 {
 		t.Errorf("key mode %v, want 0600", info.Mode().Perm())
 	}
-	if !HasClientCert(dir) {
-		t.Error("the certificate is not found")
+	if has, err := HasClientCert(dir); !has || err != nil {
+		t.Errorf("the certificate is not found: %v, %v", has, err)
 	}
-	if err := RemoveClientCert(dir); err != nil || HasClientCert(dir) {
-		t.Errorf("after removal: %v, has %v", err, HasClientCert(dir))
+	if err := RemoveClientCert(dir); err != nil {
+		t.Fatal(err)
+	}
+	if has, _ := HasClientCert(dir); has {
+		t.Error("the certificate is still there after removal")
 	}
 	if err := RemoveClientCert(dir); err != nil {
 		t.Errorf("removing twice: %v", err)
+	}
+}
+
+func TestHalfAClientCertPairIsAnError(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath := ClientCertPaths(dir)
+	for path, want := range map[string]string{certPath: "client.pem without client.key", keyPath: "client.key without client.pem"} {
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := HasClientCert(dir); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("HasClientCert = %v, want %q", err, want)
+		}
+		os.Remove(path)
+	}
+}
+
+func TestStagedClientCertDoesNotCountUntilActivated(t *testing.T) {
+	dir := t.TempDir()
+	if err := StageClientCert(dir, []byte("cert"), []byte("key")); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := HasClientCert(dir); has || err != nil || !HasStagedClientCert(dir) {
+		t.Fatalf("staged: has %v, err %v, staged %v", has, err, HasStagedClientCert(dir))
+	}
+	if err := ActivateStagedClientCert(dir); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := HasClientCert(dir); !has || err != nil || HasStagedClientCert(dir) {
+		t.Fatalf("activated: has %v, err %v, staged %v", has, err, HasStagedClientCert(dir))
+	}
+	if err := RetireClientCert(dir); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := HasClientCert(dir); has || err != nil {
+		t.Errorf("retired: has %v, err %v", has, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "client.key.retired")); err != nil {
+		t.Error(err)
 	}
 }
 
