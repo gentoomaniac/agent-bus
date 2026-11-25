@@ -11,9 +11,17 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 )
 
-// channelRequestTimeout bounds one channel request: busd may take up to a minute for a new
-// channel, whose grants need a confirmed reload of the broker.
-const channelRequestTimeout = 75 * time.Second
+const (
+	// channelChangeTimeout bounds a channel request that changes something: busd may take up to a
+	// minute for a new channel, whose grants need a confirmed reload of the broker.
+	channelChangeTimeout = 75 * time.Second
+	// channelReadTimeout bounds list and members: busd answers them at once, and a caller that
+	// gets no answer (busd down, a broker without the grant) falls back to the local catalogue.
+	channelReadTimeout = 5 * time.Second
+	// channelReadRest is how long a read that got no answer makes the next reads fail at once, so
+	// that a session does not wait channelReadTimeout on every list while busd cannot be asked.
+	channelReadRest = 30 * time.Second
+)
 
 // ChannelLink is the way to busd's channel requests (docs/design/agent-channels.md).
 // broker.Transport implements it on the agent's own login.
@@ -24,7 +32,8 @@ type ChannelLink interface {
 // RequestChannel asks busd, as this agent and signed with its key, and returns busd's verified
 // answer; a refusal is the error. Every answer but a list's describes the channel. After a change
 // the directory is synced, so a channel the agent joined is read from the next poll on, not only
-// after busd's next head.
+// after busd's next head. A read (list, members) that gets no answer makes the reads of the next
+// channelReadRest fail at once with its error; changes are always tried.
 func (adapter *Adapter) RequestChannel(ctx context.Context, request channelapi.Request) (channelapi.Reply, error) {
 	if err := adapter.Ready(); err != nil {
 		return channelapi.Reply{}, err
@@ -32,15 +41,26 @@ func (adapter *Adapter) RequestChannel(ctx context.Context, request channelapi.R
 	if adapter.config.ChannelLink == nil {
 		return channelapi.Reply{}, errors.New("this session has no way to busd's channel requests")
 	}
+	isRead := request.Action == channelapi.List || request.Action == channelapi.Members
+	timeout := channelChangeTimeout
+	if isRead {
+		if err := adapter.channelReadsResting(); err != nil {
+			return channelapi.Reply{}, err
+		}
+		timeout = channelReadTimeout
+	}
 	request.AgentID = adapter.config.AgentID
 	message, err := channelapi.Sign(request, adapter.key)
 	if err != nil {
 		return channelapi.Reply{}, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, channelRequestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	answer, err := adapter.config.ChannelLink.RequestChannel(ctx, message)
 	if err != nil {
+		if isRead {
+			adapter.restChannelReads(err)
+		}
 		return channelapi.Reply{}, err
 	}
 	reply, err := channelapi.VerifyReply(adapter.config.CACert, answer, message)
@@ -53,6 +73,24 @@ func (adapter *Adapter) RequestChannel(ctx context.Context, request channelapi.R
 	adapter.RequestDirectorySync()
 	return reply, nil
 }
+
+// channelReadsResting is the error of the last channel read that got no answer, while its rest lasts.
+func (adapter *Adapter) channelReadsResting() error {
+	adapter.channelReadMu.Lock()
+	defer adapter.channelReadMu.Unlock()
+	if adapter.config.Now().Before(adapter.channelReadsResume) {
+		return fmt.Errorf("%w (not asking busd again until %s)", adapter.channelReadErr, clock(adapter.channelReadsResume))
+	}
+	return nil
+}
+
+func (adapter *Adapter) restChannelReads(err error) {
+	adapter.channelReadMu.Lock()
+	defer adapter.channelReadMu.Unlock()
+	adapter.channelReadErr, adapter.channelReadsResume = err, adapter.config.Now().Add(channelReadRest)
+}
+
+func clock(at time.Time) string { return at.UTC().Format("15:04:05Z") }
 
 // Invite asks busd to let the agent read the channel and then tells it so in a signed DM: a
 // status, which asks for no answer. The invitation stands when the DM fails; warning says why.

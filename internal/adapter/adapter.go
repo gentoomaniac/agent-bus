@@ -120,6 +120,13 @@ type Adapter struct {
 	// alertsPath is a plain log until agent-busctl alerts exists.
 	alertsPath string
 
+	// channelReadMu guards channelReadErr and channelReadsResume: a channel read that got no
+	// answer, and until when the next ones fail at once with it (RequestChannel). Never taken
+	// while holding mu.
+	channelReadMu      sync.Mutex
+	channelReadErr     error
+	channelReadsResume time.Time
+
 	// syncMu makes directory syncs run one at a time; missMu does the same for the syncs that
 	// unknown recipients cause, with lastMissSync. Neither is ever taken while holding mu.
 	syncMu       sync.Mutex

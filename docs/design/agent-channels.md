@@ -219,7 +219,9 @@ idle settings and `false` for `kept`, as there is no cleanup yet.
 the token budget of the tool descriptions (`TestTokenFootprint`: 700 bytes, 0 left before this
 change); one costs 21 bytes ("List/manage channels.", 699 in all), and its parameters' descriptions
 list the actions. `list` shows each channel's name, description, owner (`bus owner` when no agent
-owns it) and `joined`; while busd cannot be asked, the local catalogue with a `note`. An invite also
+owns it) and `joined`; while busd cannot be asked, the local catalogue with a `note`:
+`list` and `members` wait at most 5 s for busd, and after one got no answer the next 30 s of them
+fail at once (changes wait up to 75 s and are always tried). An invite also
 sends the invitee a signed DM of type `status`, which asks for no answer, from the inviter's
 adapter. The instructions are unchanged.
 
