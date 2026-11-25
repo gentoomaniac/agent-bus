@@ -50,7 +50,8 @@ func Write(path string, data []byte, mode os.FileMode, overwrite bool) error {
 
 // replace writes a temporary file next to path and renames it over path, so a reader (the
 // directory of agents is read while two fetches may write it) sees the old content or the new,
-// never a truncated file.
+// never a truncated file. It is synced before the rename, so a crash cannot leave the new name
+// on empty content.
 func replace(path string, data []byte, mode os.FileMode) error {
 	temporary, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
@@ -62,6 +63,9 @@ func replace(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	if _, err := temporary.Write(data); err != nil {
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
 		return err
 	}
 	if err := temporary.Close(); err != nil {

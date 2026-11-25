@@ -70,6 +70,9 @@ type Config struct {
 	LockMutations func() (unlock func(), err error)
 	CertValidity  time.Duration
 	Now           func() time.Time // default time.Now
+	// DirectoryChanged is told when an approval has finished, so the published directory is
+	// rebuilt at once rather than at its next round. Nil: nobody is told.
+	DirectoryChanged func()
 }
 
 // Service is the enrollment and approval logic. One mutex serialises everything, a certificate
@@ -151,6 +154,8 @@ func (service *Service) HandleRequest(ctx context.Context, data []byte) enroll.R
 	if identity != enroll.IdentityReplaces && service.autosignMatches(verified.Secret) {
 		if _, err := service.approve(ctx, added, false, "autosigned"); err != nil {
 			log.Printf("busd: autosign of %s failed, it stays pending: %v", added.code(), err)
+		} else {
+			service.directoryChanged()
 		}
 	}
 	service.save()
@@ -264,7 +269,14 @@ func (service *Service) Sign(ctx context.Context, command enroll.SignCommand) en
 	if err != nil {
 		return enroll.CommandReply{Error: err.Error()}
 	}
+	service.directoryChanged()
 	return enroll.CommandReply{Message: message}
+}
+
+func (service *Service) directoryChanged() {
+	if service.config.DirectoryChanged != nil {
+		service.config.DirectoryChanged()
+	}
 }
 
 // Reject refuses one pending request; the agent learns the reason.

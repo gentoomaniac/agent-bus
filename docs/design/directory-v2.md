@@ -1,6 +1,7 @@
 # Directory v2: versioned, announced, diff-only
 
-Status: proposed (2026-11-25). Replaces the once-a-minute full fetch over the enrollment login
+Status: approved by the owner and being built (2026-11-25); what the build settled is in
+[As built](#as-built). Replaces the once-a-minute full fetch over the enrollment login
 (commits 80c500a..8be64cd). Based on a design review by GPT 6.1 sol, with the owner's decisions
 below.
 
@@ -210,3 +211,23 @@ A restore can never un-revoke a key or replace a pinned key.
 6. Directory notices in `inbox`, `wait_for_messages` and hooks.
 7. Monitor: refresh on heads; sync status shown.
 8. Docs: access-control, agent-busctl, claude-code, troubleshooting, upgrade notes.
+
+## As built
+
+Where the build refined or departed from the text above.
+
+**busd's projection (commit 1).**
+
+- busd keeps the projection and its version in `<config-dir>/enroll/directory.json`, next to the
+  enrollment state, written atomically (temporary file, fsync, rename) before a revision is
+  announced. A state file that cannot be read, or whose content does not match its state hash,
+  counts as lost: the next projection starts a new epoch.
+- Reconcile runs after every approval busd makes and every 5 s, under the mutation lock (waiting
+  at most 2 s; a round that finds an approval running skips). There are no registry or catalogue
+  watches: the 5 s round already catches agent-busctl's changes and the readership, which lives in
+  consumers no watch sees, so a watch would only be a second path to the same result.
+- The state hash is SHA-256 of the normalised projection's JSON: records sorted by agent ID,
+  readers sorted, empty lists and maps written as `[]` and `{}`. Go's encoding/json is
+  deterministic for that shape, so busd and agents of the same release hash the same bytes.
+- A busd restored from a backup keeps its old epoch with a lower revision, which agents refuse as
+  a rollback. The owner deletes `enroll/directory.json` after a restore so that a new epoch starts.

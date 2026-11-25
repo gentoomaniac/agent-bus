@@ -31,6 +31,11 @@ var version = "dev"
 const (
 	handlerTimeout       = time.Minute // a certificate approval includes a confirmed reload
 	pendingAnnounceEvery = 5 * time.Second
+	// reconcileEvery is the backup round of the published directory: agent-busctl changes the
+	// registry and the cursors without telling busd.
+	reconcileEvery = 5 * time.Second
+	// reconcileLockWait is short: a round that finds an approval running skips, the next one comes.
+	reconcileLockWait = 2 * time.Second
 )
 
 type CLI struct {
@@ -98,9 +103,20 @@ func (cli *CLI) Run() error {
 	}
 	defer admin.Close()
 
+	published := busd.NewDirectory(busd.DirectoryConfig{
+		Source: admin, ConfigDir: cli.ConfigDir,
+		LockMutations: func() (func(), error) { return server.LockMutations(reconcileLockWait) },
+	})
+	directoryChanged := make(chan struct{}, 1)
 	service, err := busd.New(busd.Config{
 		Registry: admin, CA: ca, CACertPEM: caPEM, ConfigDir: cli.ConfigDir, CertValidity: cli.CertValidity,
 		LockMutations: func() (func(), error) { return server.LockMutations(handlerTimeout) },
+		DirectoryChanged: func() {
+			select {
+			case directoryChanged <- struct{}{}:
+			default: // a rebuild is due already
+			}
+		},
 	})
 	if err != nil {
 		return err
@@ -147,17 +163,44 @@ func (cli *CLI) Run() error {
 	}
 	log.Printf("busd %s: serving enrollment and approval on the bus", version)
 
+	reconcile := directoryReconciler(ctx, published)
+	reconcile()
 	// The count is all the monitor learns; announcing it often means it also hears a restart of
 	// busd or of its own connection.
 	announce := time.NewTicker(pendingAnnounceEvery)
 	defer announce.Stop()
+	rebuild := time.NewTicker(reconcileEvery)
+	defer rebuild.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-announce.C:
 			_ = admin.PublishPendingEnrollments(service.PendingCount())
+		case <-rebuild.C:
+			reconcile()
+		case <-directoryChanged:
+			reconcile()
 		}
+	}
+}
+
+// directoryReconciler rebuilds the published directory once per call. A failure is logged when it
+// differs from the last one: a broker that is down would otherwise fill the log every few seconds.
+func directoryReconciler(ctx context.Context, published *busd.Directory) func() {
+	var lastErr string
+	return func() {
+		reconcileCtx, cancel := context.WithTimeout(ctx, handlerTimeout)
+		defer cancel()
+		_, err := published.Reconcile(reconcileCtx)
+		message := ""
+		if err != nil {
+			message = err.Error()
+		}
+		if message != "" && message != lastErr && ctx.Err() == nil {
+			log.Printf("busd: rebuilding the directory: %v", err)
+		}
+		lastErr = message
 	}
 }
 
