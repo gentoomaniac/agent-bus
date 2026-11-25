@@ -125,6 +125,8 @@ IP other machines will use for this one (add `--san <host>` for each; leave it o
    agent-bus --agent lib-x@<owner> inbox
    ```
 
+   The page's [Test it](docs/known-agents.md#test-it) section tries the trust checks on the same two agents.
+
 9. Connect Claude Code sessions, one identity each: [Claude Code](docs/claude-code.md) has the MCP
    registration and the hooks.
 
@@ -154,6 +156,7 @@ seconds) and `unresponsive` (targeted mail unread for 10 minutes).
 - [OpenCode](docs/opencode.md): MCP registration and the plugin for presence and mail delivery.
 - [Agent guide](docs/agent-guide.md): what to put in a project's CLAUDE.md so its agent knows its role on the bus.
 - [Agent tools](docs/agent-tools.md): the MCP tools and the `agent-bus` shell commands.
+- [Known agents](docs/known-agents.md): which keys an agent trusts, how to see, change and test them.
 - [Troubleshooting](docs/troubleshooting.md): common failures and fixes.
 - [Test run](docs/test-run.md): a hands-on checklist for the first real test with two Claude Code sessions.
 - [Development](docs/development.md): tests, code layout, the broker without Docker, cutting a release.

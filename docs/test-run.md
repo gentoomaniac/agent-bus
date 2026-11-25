@@ -36,10 +36,12 @@ Nothing here touches your Claude Code settings by itself: you paste the config i
 
 ## 2. One-machine setup
 
-The broker, its state and `agent-busctl` live in the Podman volumes `agent-bus-config` and
-`agent-bus-data`; the agents run on the host and keep their files in `~/.config/agent-bus/`. To
-keep a trial apart from a later real setup, set `export BUS_CONFIG_DIR=~/bus-trial` in every shell
-that runs `agent-bus` or Claude Code, and use other volume names. Default ports are `4222` (broker)
+The broker's state lives in the folders `config/`, `data/` and `monitor-config/` of
+`~/bus-trial-broker`, mounted into the containers; delete the trial with `rm -rf` on it. The agents
+run on the host and keep their files in `~/.config/agent-bus/`. To keep a trial apart from a later
+real setup, set `export BUS_CONFIG_DIR=~/bus-trial` in every shell that runs `agent-bus` or Claude
+Code. The image runs as uid 10001, and `--userns=keep-id` (the variable `$U` in step 2, on every
+`podman run`) lets it write your folders. Default ports are `4222` (broker)
 and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14222:4222`) and set
 `BUS_BROKER=localhost:14222` in every shell ([broker.md](broker.md#settings-and-ports)).
 
@@ -58,17 +60,17 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
    With the released image, skip `make image` and set `IMG=ghcr.io/gentoomaniac/agent-messenger:latest`.
    `make image` uses podman unless a docker daemon is running.
 
-2. Create the certificates and admin credentials, once, as one-off containers on the config volume.
+2. Create the certificates and admin credentials, once, as one-off containers on the config folder.
    If clients will ever connect by another name or IP than `localhost` (a second machine, section
    6), list it now with `--san`, repeatable; the certificate is otherwise valid only for
    `localhost`, `127.0.0.1`, `::1` and the container's host name:
 
    ```sh
-   podman volume create agent-bus-config
-   podman volume create agent-bus-data
-   podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
+   mkdir -p ~/bus-trial-broker/{config,data,monitor-config}
+   U="--userns=keep-id:uid=10001,gid=10001"
+   podman run --rm $U -v ~/bus-trial-broker/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
    # for section 6 instead: ... tls init --san localhost --san bus.example.org --san 192.168.1.10
-   podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
+   podman run --rm $U -v ~/bus-trial-broker/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
    ```
 
 3. Start the broker. It listens on all interfaces; to keep it on this machine publish
@@ -76,8 +78,8 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
    systems:
 
    ```sh
-   podman run -d --name agent-bus --network pasta -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
-     -v agent-bus-config:/config -v agent-bus-data:/data "${IMG:?set IMG first, see step 1}"
+   podman run -d --name agent-bus --network pasta $U -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
+     -v ~/bus-trial-broker/config:/config -v ~/bus-trial-broker/data:/data "${IMG:?set IMG first, see step 1}"
    podman logs agent-bus | tail -3
    ```
 
@@ -134,44 +136,6 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
    podman exec agent-bus tar -C /config -cf - ca.pem directory lib-x@<owner> api-client@<owner> \
      | tar -C "${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}" -xf -
    ```
-
-### Variant: a bind mount instead of volumes
-
-For a trial that you want to look into and delete with `rm -rf`, keep the state in two folders.
-Replace the volumes in steps 2 and 3, and add the same `--userns` option to every `podman run`
-(the image runs as uid 10001; this maps your user to it so the container can write your folders),
-the one-off containers included:
-
-```sh
-mkdir -p ~/bus-trial/config ~/bus-trial/data ~/bus-trial/monitor-config
-U="--userns=keep-id:uid=10001,gid=10001"
-podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
-podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
-podman run -d --name agent-bus --network pasta $U -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
-  -v ~/bus-trial/config:/config -v ~/bus-trial/data:/data "${IMG:?set IMG first, see step 1}"
-```
-
-The monitor of section 4 gets `$U` too, and its own folder:
-
-```sh
-podman run --rm $U -v ~/bus-trial/config:/config:ro -v ~/bus-trial/monitor-config:/monitor-config \
-  --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" monitor init /monitor-config --agent monitor@<owner>
-podman run -d --name agent-bus-monitor --network container:agent-bus $U \
-  -v ~/bus-trial/monitor-config:/config --entrypoint bus-monitor \
-  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
-  "${IMG:?set IMG first, see step 1}"
-```
-
-Then skip step 7: on
-this one machine let the agents use the folder directly, in every shell that runs `agent-bus` or
-Claude Code:
-
-```sh
-export BUS_CONFIG_DIR=~/bus-trial/config
-```
-
-That is only for this machine; another machine still gets its copy ([section 6](#6-add-a-second-machine-optional)).
-The folder holds every agent's key.
 
 ## 3. Connect two Claude Code sessions
 
@@ -292,8 +256,8 @@ Do this once per project folder. The two sessions must be two different identiti
 
 ## 4. Start the monitor
 
-The monitor runs from the same image in the broker's network namespace, with a config volume of
-its own. `monitor init` fills it from the broker's volume with only what the monitor needs: the
+The monitor runs from the same image in the broker's network namespace, with a config folder of
+its own. `monitor init` fills it from the broker's folder with only what the monitor needs: the
 CA certificate, its read-only logins, the web password and the key of `monitor@<owner>` (never
 `ca.key` or the admin logins). It is protected by a password you set first; the broker
 container publishes its port on `127.0.0.1` only. In the container the monitor listens on
@@ -302,11 +266,10 @@ page post as `monitor@<owner>` (leave it out for read-only):
 
 ```sh
 podman exec -it agent-bus agent-busctl monitor password
-podman volume create agent-bus-monitor-config
-podman run --rm -v agent-bus-config:/config:ro -v agent-bus-monitor-config:/monitor-config \
+podman run --rm $U -v ~/bus-trial-broker/config:/config:ro -v ~/bus-trial-broker/monitor-config:/monitor-config \
   --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" monitor init /monitor-config --agent monitor@<owner>
-podman run -d --name agent-bus-monitor --network container:agent-bus \
-  -v agent-bus-monitor-config:/config --entrypoint bus-monitor \
+podman run -d --name agent-bus-monitor --network container:agent-bus $U \
+  -v ~/bus-trial-broker/monitor-config:/config --entrypoint bus-monitor \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
   "${IMG:?set IMG first, see step 1}"
 ```
@@ -453,7 +416,7 @@ reached by, and `other` for the second machine.
 
    ```sh
    podman stop agent-bus
-   podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --force --san localhost --san bus.example.org --san 192.168.1.10
+   podman run --rm $U -v ~/bus-trial-broker/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --force --san localhost --san bus.example.org --san 192.168.1.10
    podman start agent-bus
    ```
 
@@ -542,5 +505,5 @@ Where to look:
 | Presence as stored           | `curl -s -u me:'<password>' http://127.0.0.1:8080/api/v1/presence`                           |
 
 Stop everything when you are done: close the sessions and run
-`podman rm -f --depend agent-bus` (add `podman volume rm agent-bus-config agent-bus-data agent-bus-monitor-config`
-to delete the trial's state: certificates, credentials and messages).
+`podman rm -f --depend agent-bus` (add `rm -rf ~/bus-trial-broker` to delete the trial's state:
+certificates, credentials and messages).

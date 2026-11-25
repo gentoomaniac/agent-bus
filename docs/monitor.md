@@ -127,7 +127,7 @@ from the last sequence it stored, so nothing is missed or shown twice
 
 ## Docker
 
-The image contains `bus-monitor`. It needs its own `/config` volume (made from the broker's by
+The image contains `bus-monitor`. It needs its own config folder, mounted as `/config` (made from the broker's by
 `monitor init`, below) and a route to the broker.
 Inside a container the monitor must listen on `0.0.0.0`, which is not loopback, so a containerized
 monitor runs with `--behind-proxy` (`BUS_WEB_BEHIND_PROXY=true`) and therefore needs a password,
@@ -145,17 +145,17 @@ BUS_AGENT=monitor@alice docker compose -f deploy/docker-compose.yaml run --rm mo
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 ```
 
-`monitor-init` copies into the monitor's volume the CA certificate, the monitor's logins, the web
+`monitor-init` copies into the monitor's folder the CA certificate, the monitor's logins, the web
 password, the directory snapshot and the key of `BUS_AGENT`, which must be registered in the
 container (`docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl --direct
 register monitor@alice`). Run it again to refresh the snapshot after agents are registered or
 enrolled, or after a password change, and restart the monitor.
 
 Open <http://127.0.0.1:8080> and log in. To send, set `BUS_AGENT` in the service as well. Without compose, see [podman.md](podman.md#6-the-monitor), or
-start a second container on the same volume and network:
+start a second container on the same folder and network (`~/agent-bus/monitor-config`, see [docker.md](docker.md#mounted-folders)):
 
 ```sh
-docker run -d --name bus-monitor --network container:agent-bus -v agent-bus-monitor-config:/config \
+docker run -d --name bus-monitor --network container:agent-bus -v ~/agent-bus/monitor-config:/config \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true --entrypoint bus-monitor IMAGE
 ```
 

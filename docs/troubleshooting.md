@@ -184,7 +184,7 @@ Symptoms of `agent-bus enroll` and `agent-busctl ca`, and what they mean
   the one you meant; do not go on until the fingerprints agree.
 - `Authorization Violation` when asking: the enrollment password is wrong, or `agent-busctl enroll
   init` never ran (or ran with `--force` since).
-- `busd is not running on the broker`: busd did not start (it needs `ca.key` in the config volume,
+- `busd is not running on the broker`: busd did not start (it needs `ca.key` in the config folder,
   `BUS_BUSD` not `off`) or has stopped. `podman logs agent-bus` shows `busd:` lines; the entrypoint
   starts it again within seconds. After `cert issue --admin` run `podman exec agent-bus pkill busd`
   once so it reads the admin certificates.
@@ -203,7 +203,7 @@ Symptoms of `agent-bus enroll` and `agent-busctl ca`, and what they mean
 ## Monitor
 
 - `monitor init` stops with "the monitor has no login monitor-bus here: run `agent-busctl service
-  init`": the broker's volume is from before busd. Run `agent-busctl --direct service init`,
+  init`": the broker's config folder is from before busd. Run `agent-busctl --direct service init`,
   restart the broker, then `monitor init` again.
 - `podman rm -f agent-bus` says "has dependent containers which must be removed before it": the
   monitor shares the broker's network. Use `podman rm -f --depend agent-bus`; it also removes the

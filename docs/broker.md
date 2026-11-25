@@ -1,12 +1,12 @@
 # The broker
 
 The broker is a plain `nats-server` with JetStream. It runs in the Docker image ([docker.md](docker.md)),
-together with `busd` (enrollment) and `agent-busctl`; agent machines hold only the files they copy out of its config volume. The server has two accounts, `BUS` (the agents) and `CONTROL`
+together with `busd` (enrollment) and `agent-busctl`; agent machines hold only the files they copy out of its config folder. The server has two accounts, `BUS` (the agents) and `CONTROL`
 (registry, catalogue and ledger), with no import or export between them ([design/jetstream-binding.md](design/jetstream-binding.md)).
 
 ## Config directory
 
-On the broker all state lives in the container's `/config` volume. On an agent machine only a part
+On the broker all state lives in the container's `/config` folder. On an agent machine only a part
 of it is in `~/.config/agent-bus/` ([docker.md](docker.md#give-an-agent-machine-its-files)). Change
 it with `--config-dir` (or `BUS_CONFIG_DIR`) for `agent-bus`. The layout, the same in both places:
 
@@ -34,10 +34,10 @@ it with `--config-dir` (or `BUS_CONFIG_DIR`) for `agent-bus`. The layout, the sa
 ## Running it
 
 The broker runs in the Docker image, set up as in [docker.md](docker.md#set-it-up): one-off
-containers create the certificates and the admin credentials on the `/config` volume, then
+containers create the certificates and the admin credentials in the `config/` folder, then
 `docker compose -f deploy/docker-compose.yaml up -d` starts it and
 `agent-busctl --direct init` creates the streams and buckets (safe to repeat). `docker compose ... stop`
-keeps the data, `docker compose ... down -v` deletes the volumes too. The server log is
+keeps the data; to start over, remove the `config/` and `data/` folders. The server log is
 `docker compose ... logs agent-bus`. Running it as a plain process, which the integration tests do,
 is for development only ([development.md](development.md#running-the-broker-without-docker)).
 
@@ -130,7 +130,7 @@ is a pid of the broker container's process namespace (normally `1`). In another 
 example the monitor, which shares the network but not the processes, that pid is something else.
 So every command that changes access runs in the broker container (`podman exec agent-bus
 agent-busctl --direct ...`, the alias of [podman.md](podman.md)). The monitor and every other
-container only read the config volume and never reload. Nothing needs a signal across containers,
+container only read the config folder and never reload. Nothing needs a signal across containers,
 and the container engine's socket is not mounted anywhere. Enrollment follows the
 same rule ([design/access-control.md](design/access-control.md), phase B): `busd` runs in the broker container,
 holds the CA key and makes its auth-file changes and reloads there; the monitor only shows the number

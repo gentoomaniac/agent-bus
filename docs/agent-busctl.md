@@ -220,7 +220,7 @@ Writes the registry's record of every agent, removed ones included, to a directo
 `<token>.json`. It is the source of the agents' local `directory/`.
 
 ```sh
-agent-busctl --direct directory export /config/directory   # inside the container (the alias); the files land on the config volume
+agent-busctl --direct directory export /config/directory   # inside the container (the alias); the files land in the config folder
 ```
 
 To sync it to another machine, export it into the container's own `/config/directory` and stream
@@ -369,7 +369,7 @@ agent-bus agent-busctl ca review`.
 ### monitor init
 
 `monitor init <dir> [--agent <agent-id>]` creates or refreshes the monitor's own config directory (a
-separate folder or volume, never the broker's one). It copies `ca.pem` (not `ca.key`), the passwords
+separate folder, never the broker's one). It copies `ca.pem` (not `ca.key`), the passwords
 of `monitor-bus` and `monitor-control` (not the admins' or busd's), the web password hash
 (`monitor-web/password.bcrypt`, or the old `monitor/password.bcrypt`), the `directory/` snapshot and,
 with `--agent` (env `BUS_AGENT`), that registered agent's `key`, `password`, `client.pem` and
