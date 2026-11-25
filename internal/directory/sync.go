@@ -172,36 +172,34 @@ func VerifySyncReply(caPEM, answer, request []byte) (SyncReply, error) {
 // Answer is busd's reply to an agent at since, when the current projection is current and base
 // is the projection the agent has, if busd still has it.
 func Answer(since Version, current Version, projection Projection, base *Projection) SyncReply {
+	projection = projection.Normalised()
 	reply := SyncReply{Epoch: current.Epoch, To: current.Revision, StateHash: current.StateHash}
 	switch {
 	case since == current:
 		reply.Kind = Unchanged
 	case base != nil && since.Epoch == current.Epoch && since.Revision < current.Revision:
 		reply.Kind, reply.From, reply.BaseHash = Diff, since.Revision, since.StateHash
-		reply.Records, reply.Catalogue = changed(*base, projection)
+		reply.Records, reply.Catalogue = changed(base.Normalised(), projection)
 	default:
-		reply.Kind, reply.Records = Full, projection.Normalised().Records
-		catalogue := projection.Normalised().Catalogue
-		reply.Catalogue = &catalogue
+		reply.Kind, reply.Records, reply.Catalogue = Full, projection.Records, &projection.Catalogue
 	}
 	return reply
 }
 
-// changed is the coalesced change from base to current: the records that differ and the
-// catalogue if it differs. Removals are tombstone records, so nothing is ever only absent.
+// changed is the coalesced change from base to current, both normalised: the records that differ
+// and the catalogue if it differs. Removals are tombstone records, so nothing is ever only absent.
 func changed(base, current Projection) ([]bus.AgentRecord, *trust.Catalogue) {
 	known := base.byID()
 	var records []bus.AgentRecord
-	for _, record := range current.Normalised().Records {
+	for _, record := range current.Records {
 		if earlier, found := known[record.AgentID]; !found || !sameRecord(earlier, record) {
 			records = append(records, record)
 		}
 	}
-	old, now := base.Normalised().Catalogue, current.Normalised().Catalogue
-	if maps.EqualFunc(old, now, slices.Equal) {
+	if maps.EqualFunc(base.Catalogue, current.Catalogue, slices.Equal) {
 		return records, nil
 	}
-	return records, &now
+	return records, &current.Catalogue
 }
 
 // sameRecord compares records as they travel: by their JSON.

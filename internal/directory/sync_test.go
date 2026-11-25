@@ -200,3 +200,19 @@ func TestParseSyncRequestTakesOnlyARequest(t *testing.T) {
 		}
 	}
 }
+
+func TestAnswerNormalisesWhatItIsGiven(t *testing.T) {
+	first, second := twoRevisions()
+	unsorted := Projection{Records: []bus.AgentRecord{second.Records[2], second.Records[0], second.Records[1]}, Catalogue: trust.Catalogue{"team": {"carol@x", "alice@x"}, "empty": nil}}
+	base := Projection{Records: []bus.AgentRecord{first.Records[1], first.Records[0]}, Catalogue: first.Catalogue}
+	have, current := versionOf("e1", 1, first), versionOf("e1", 2, unsorted)
+
+	for _, reply := range []SyncReply{Answer(have, current, unsorted, &base), Answer(Version{}, current, unsorted, nil)} {
+		if _, err := Apply(have, first, reply); err != nil {
+			t.Errorf("%s of an unsorted projection: %v", reply.Kind, err)
+		}
+		if reply.Records[0].AgentID > reply.Records[len(reply.Records)-1].AgentID {
+			t.Errorf("%s records are not sorted", reply.Kind)
+		}
+	}
+}
