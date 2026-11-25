@@ -12,7 +12,8 @@ OpenCode configuration.
 
 ## 1. Register the MCP server
 
-In `opencode.json` (project) or `~/.config/opencode/opencode.json` (global):
+The identity belongs to the project's agent, so register the server in the project's
+`opencode.json`, next to the code it works on:
 
 ```json
 {
@@ -26,8 +27,28 @@ In `opencode.json` (project) or `~/.config/opencode/opencode.json` (global):
 }
 ```
 
-Flags and etiquette are those of [claude-code.md](claude-code.md#1-register-the-mcp-server). One
-identity per session: give each concurrent OpenCode session its own.
+Do not put an `--agent` into the global `~/.config/opencode/opencode.json`: every project on the
+machine would then be the same agent, and only the first OpenCode started holds it. In the others
+every bus tool fails, naming the holder, because an identity is held by one process at a time
+([one session per identity](claude-code.md#one-session-per-identity)).
+For a global entry, leave `--agent` out and let each project set the identity in its environment.
+`agent-bus` reads `BUS_AGENT` itself, for example from a project's `.envrc` with direnv:
+
+```json
+{"mcp": {"agent-bus": {"type": "local", "command": ["agent-bus", "mcp"], "enabled": true}}}
+```
+
+```sh
+# .envrc of the project
+export BUS_AGENT=api-client@alice
+```
+
+Started without `BUS_AGENT`, the server stops (`--agent is required`) and that OpenCode has no bus.
+
+Flags and etiquette are those of [claude-code.md](claude-code.md#1-register-the-mcp-server). There is
+one identity per session: two OpenCode sessions in the same project at the same time need two
+agents, so start the second with `BUS_AGENT=<other agent> opencode`. Register that agent first with
+`agent-busctl register`.
 
 ## 2. Install the plugin
 
