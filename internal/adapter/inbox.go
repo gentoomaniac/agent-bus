@@ -114,6 +114,16 @@ func (buffer *inbox) remove(target *Message) {
 	}
 }
 
+// release hands every buffered record back to the broker unhandled, so the next session gets it at
+// once instead of after the ack wait.
+func (buffer *inbox) release(ctx context.Context) {
+	for _, message := range buffer.messages {
+		if message.delivery.Release != nil {
+			_ = message.delivery.Release(ctx)
+		}
+	}
+}
+
 // keepAlive tells the broker that every buffered message is still being worked on, so it does not
 // redeliver one just because the agent reads slowly. It returns the first error and goes on.
 func (buffer *inbox) keepAlive(ctx context.Context) error {

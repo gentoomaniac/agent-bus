@@ -77,6 +77,7 @@ func (transport *Transport) Fetch(ctx context.Context, from bus.Channel, max int
 			Record:     bus.Record{Sequence: metadata.Sequence.Stream, Payload: message.Data()},
 			Ack:        message.DoubleAck,
 			InProgress: func(context.Context) error { return message.InProgress() },
+			Release:    func(context.Context) error { return message.Nak() },
 		})
 	}
 	return deliveries, errors.Join(append(skipped, transport.session.explain(batch.Error()))...)

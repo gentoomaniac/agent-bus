@@ -50,6 +50,9 @@ type Delivery struct {
 	// InProgress tells the broker the record is still being worked on, so it does not redeliver
 	// it while the reader holds it.
 	InProgress func(ctx context.Context) error
+	// Release hands the record back unhandled, so the broker delivers it again at once instead of
+	// after the ack wait (when the reader shuts down with records it never handled). May be nil.
+	Release func(ctx context.Context) error
 }
 
 // Admin is the administrator's path to the broker (design.md §2): channels, accounts and the read

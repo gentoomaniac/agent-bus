@@ -216,10 +216,18 @@ func (adapter *Adapter) catalogue() (trust.Catalogue, error) {
 	return snapshotter.Catalogue()
 }
 
-// Close gives the identity up. The transport belongs to the caller.
+// Close gives the identity up. Mail it buffered but the agent never handled goes back to the broker,
+// so a new session gets it at once rather than after the ack wait. The transport belongs to the
+// caller.
 func (adapter *Adapter) Close() error {
 	if adapter.lock == nil {
 		return nil
+	}
+	if adapter.config.Transport.Unavailable() == nil {
+		// A release is a fire-and-forget publish; closing the connection afterwards flushes it.
+		adapter.mu.Lock()
+		adapter.inbox.release(context.Background())
+		adapter.mu.Unlock()
 	}
 	return errors.Join(adapter.handled.close(), adapter.lock.Release())
 }

@@ -37,11 +37,12 @@ type fakeRecord struct {
 }
 
 type fakeTransport struct {
-	broker *fakeBroker
-	agent  string
-	acks   int
-	down   error // what Unavailable returns
-	ackErr error // what a delivery's Ack returns, after Unavailable passed
+	broker   *fakeBroker
+	agent    string
+	acks     int
+	down     error // what Unavailable returns
+	ackErr   error // what a delivery's Ack returns, after Unavailable passed
+	released int   // deliveries handed back with Release
 }
 
 func (broker *fakeBroker) transport(agent string) *fakeTransport {
@@ -78,6 +79,7 @@ func (transport *fakeTransport) Fetch(_ context.Context, from bus.Channel, max i
 				return nil
 			},
 			InProgress: func(context.Context) error { return nil },
+			Release:    func(context.Context) error { transport.released++; return nil },
 		})
 	}
 	return deliveries, nil
@@ -628,5 +630,23 @@ func TestAckTheBrokerDoesNotConfirmLeavesTheMessageUnread(t *testing.T) {
 	bobTransport.ackErr = nil
 	if err := bobAdapter.Ack(ctx, []string{id}); err != nil || len(inboxOf(t, bobAdapter)) != 0 {
 		t.Errorf("ack after recovery: %v", err)
+	}
+}
+
+func TestCloseHandsUnhandledMailBack(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, bobTransport := b.open(bob)
+	if _, err := a.Send(context.Background(), bob, text("one")); err != nil {
+		t.Fatal(err)
+	}
+	poll(t, bobAdapter)
+	if err := bobAdapter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if bobTransport.released != 1 {
+		t.Errorf("released %d deliveries on close, want 1", bobTransport.released)
 	}
 }
