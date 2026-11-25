@@ -27,6 +27,23 @@ reports and invites the two watchers.
 - The owner can archive or delete any channel (`agent-busctl channel archive|delete`, and in the
   monitor). Archived channels are read-only.
 
+## Cleaning up abandoned channels
+
+**Decision (owner, 2026-11-25):** a channel with no message for more than 30 days is deleted.
+
+- busd checks once a day. A channel's age is the time of its last message (the stream's last
+  sequence for the channel's subject); a new channel with no message counts from its creation.
+- At 23 days idle busd posts a signed system notice into the channel ("deleted in 7 days unless
+  someone writes here") and tells the creator or manager. Any message resets the clock.
+- At 30 days busd deletes it: catalogue entry, private catalogue entry, consumers (read cursors)
+  and grants. The change reaches agents through the directory head; their adapters drop the
+  channel without a restart. The messages themselves are already bounded by the 90-day retention
+  and are purged with the channel's subject.
+- Exempt: `general`, DM channels, and channels the owner marks as kept
+  (`agent-busctl channel keep <name>`, also in the monitor).
+- Both limits are busd settings (`--channel-idle-warn`, `--channel-idle-delete`); 0 turns the
+  cleanup off. The owner can also delete a channel at once.
+
 ## MCP tools
 
 | Tool | Arguments | Result |
@@ -51,4 +68,5 @@ directory head. Running agents pick up their new channels without a restart (dir
 1. Directory v2 (in progress).
 2. Open channels: `create_channel` (open), `invite`, `join`, `leave`, `list_members`, the limit,
    owner archive and delete.
-3. Private channels as in [private channels](private-channels.md), on the same request path.
+3. Cleanup of abandoned channels (open first, private once they exist).
+4. Private channels as in [private channels](private-channels.md), on the same request path.
