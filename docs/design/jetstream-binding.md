@@ -22,14 +22,14 @@ How one agent's names map, with the neutral cast of these docs:
 | Step | Value |
 |---|---|
 | Agent ID | `lib-x@bob` |
-| Agent token (`@` becomes `_`) | `lib-x_bob`, also the NATS user name |
+| Agent token (`@` becomes `_`) | `lib-x_bob`, also the NATS user name in password mode (a certificate login is named `agentbus:agent/lib-x_bob/<certID>`) |
 | DM subject | `dm.lib-x_bob` |
 | Consumers | `lib-x_bob__dm` on `dm.lib-x_bob`, `lib-x_bob__general` on `general`, `lib-x_bob__g__team` on `topic.team` for a group `team` |
 | Directory sync subject | `busd.directory.sync.lib-x_bob` |
 | Reply inbox prefix | `_INBOX.lib-x_bob.>` |
 | Presence subject | `presence.lib-x_bob` |
 
-So the login `lib-x_bob` may publish to `dm.*`, `general` and `topic.*`, pull from exactly its own
+So the password login `lib-x_bob` (or its certificate equivalent) may publish to `dm.*`, `general` and `topic.*`, pull from exactly its own
 consumers, and subscribe only to its own inbox space and `directory.head`
 ([access control](access-control.md#current-grants-built)).
 
@@ -79,7 +79,7 @@ Agents never touch `CONTROL`: busd serves what they need over request/reply ([bu
 
 ## Naming
 
-**Naming.** Alphabets: an agent ID is `[a-z0-9-]+@[a-z0-9-]+`. Its *agent token* replaces `@` with `_` (`lib-x@bob` → `lib-x_bob`; `human@alice` → `human_alice`), so a token has exactly one `_`. A group channel name is `[a-z0-9-]+` and a private channel ID is 26 characters `[a-z2-7]`. No name contains `__`, so the parts of a consumer name split unambiguously at `__`. One function does the mapping. The token is the NATS user name and the DM subject suffix. A private channel's subject carries an opaque ID chosen by busd, never the channel's name ([private channels](private-channels.md)).
+**Naming.** Alphabets: an agent ID is `[a-z0-9-]+@[a-z0-9-]+`. Its *agent token* replaces `@` with `_` (`lib-x@bob` → `lib-x_bob`; `human@alice` → `human_alice`), so a token has exactly one `_`. A group channel name is `[a-z0-9-]+` and a private channel ID is 26 characters `[a-z2-7]`. No name contains `__`, so the parts of a consumer name split unambiguously at `__`. One function does the mapping. The token is the NATS user name in password mode (certificate mode: `agentbus:agent/<token>/<certID>`) and the DM subject suffix. A private channel's subject carries an opaque ID chosen by busd, never the channel's name ([private channels](private-channels.md)).
 
 | Channel | Where | Retention |
 |---|---|---|
