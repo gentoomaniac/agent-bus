@@ -11,7 +11,7 @@ are deployed and released. The step-by-step guides are the user documentation:
 |---|---|
 | `nats-server` as its own process, `deploy/nats-server.conf`, `deploy/nats.sh`, generated `auth.conf` and `control-auth.conf` | implemented |
 | Confirmed reload (lock, candidate, validate, replace, signal, confirm) | implemented in `agent-busctl --direct` and in busd (enrollment approvals); the **generation numbers recorded in the ledger and crash recovery by busd** are **planned** |
-| One image with `nats-server`, `busd`, `agent-busctl`, `agent-bus`, `bus-monitor`; compose files, Podman scripts (`deploy/podman/start.sh`, `monitor.sh`); reverse-proxy samples in `deploy/proxy/`; release by tag (archives and image) | implemented (this replaced the Pod manifest of the original plan, decisions 15 and 31) |
+| One image with `nats-server`, `busd`, `agent-busctl`, `agent-bus`, `bus-monitor`; compose files, Podman scripts (`deploy/podman/start.sh`, `monitor.sh`); nginx, Traefik and Caddy proxy samples in `deploy/proxy/`; release by tag (archives and image) | implemented (this replaced the Pod manifest of the original plan, decisions 15 and 31) |
 | busd as a supervised service | minimal busd runs in the broker container, restarted by an entrypoint loop; systemd-style supervision **planned** |
 
 ## Deployment

@@ -35,7 +35,8 @@ by the broker container on the host's loopback:
 
 ```sh
 docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
-BUS_AGENT=monitor@alice docker compose -f deploy/docker-compose.yaml run --rm monitor-init
+export BUS_AGENT=monitor@alice     # the compose file passes it to monitor-init and to the monitor
+docker compose -f deploy/docker-compose.yaml run --rm monitor-init
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 ```
 
@@ -296,11 +297,11 @@ proxy does the TLS. Whatever proxy you use must:
 | The proxy must ...                         | Because                                                          |
 |--------------------------------------------|------------------------------------------------------------------|
 | terminate TLS and forward to the monitor   | the monitor has no TLS of its own                                |
-| pass the client's `Host` through           | the monitor answers only `Host` values it accepts ([Security](#security-it-shows-everything)) |
+| pass the client's `Host` through, port included (nginx: `$http_host`, not `$host`) | the monitor answers only `Host` values it accepts ([Security](#security-it-shows-everything)); `$host` drops the port of a public URL like `https://bus.example.com:8443` |
 | forward the `Authorization` header         | scripts and the VS Code extension log in with a bearer token     |
 | not buffer `/api/v1/events`                | the event stream is live; buffering delays or loses it           |
 | allow a long read timeout (HTTP/1.1)       | the stream stays open for hours; a short timeout drops it        |
-| send `X-Forwarded-For`, `-Proto`, `-Host`  | the login limit and the `Secure` cookie need them                |
+| set `X-Forwarded-For`, `-Proto`, `-Host` itself | the login limit and the `Secure` cookie need them; the monitor believes them from its trusted proxy, so the proxy must overwrite what a client sent |
 
 The monitor side is set with three variables and the flags behind them:
 
@@ -315,10 +316,19 @@ bus-monitor --listen 0.0.0.0:8080 --behind-proxy --trusted-proxy 192.0.2.0/24 \
   --public-url https://bus.example.com
 ```
 
-Complete proxy configurations, checked with their own tools, are in
-[deploy/proxy/](../deploy/proxy/); [deploy/docker-compose.proxy.yaml](../deploy/docker-compose.proxy.yaml)
-runs one in front of the monitor service with Docker Compose. How to run the monitor next to the
-broker is in [Docker](#docker) above and [podman.md](podman.md#6-the-monitor).
+Complete configurations for nginx, Traefik and Caddy, checked with their own tools, are in
+[deploy/proxy/](../deploy/proxy/). [deploy/docker-compose.proxy.yaml](../deploy/docker-compose.proxy.yaml)
+runs one in front of the monitor service, selected by the profile `proxy-nginx`, `proxy-traefik` or
+`proxy-caddy` next to `--profile monitor`; Caddy needed only `--profile monitor` before 0.3.
+
+| Runtime | Guide |
+|---|---|
+| Docker Compose | [Publish the monitor through a TLS proxy](docker.md#publish-the-monitor-through-a-tls-proxy) |
+| Podman | [Publish the monitor through a TLS proxy](podman.md#publish-the-monitor-through-a-tls-proxy) |
+
+The NATS ports 4222 and 4223 are TLS with the bus's own CA and go straight to the broker, not
+through the HTTP proxy. How to run the monitor next to the broker is in [Docker](#docker) above and
+[podman.md](podman.md#6-the-monitor).
 
 ## Notifications
 
