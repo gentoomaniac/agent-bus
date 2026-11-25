@@ -121,7 +121,6 @@ alias agent-busctl='podman exec agent-bus agent-busctl'
 ## 9. Set the web password, once
 
 ```sh
-mkdir -p $BASE/monitor-config
 podman exec -it agent-bus agent-busctl monitor password
 ```
 

@@ -13,6 +13,8 @@ Symptom: a client fails with a certificate error (`x509: certificate is valid fo
   docker compose -f deploy/docker-compose.yaml restart agent-bus
   ```
 
+  With Podman, see [podman.md](podman.md#2-volumes-and-one-time-setup) and restart the container.
+
 - A client trusts only `ca.pem` (`--ca-cert`). Copy the current one from the broker's config
   directory.
 
@@ -120,8 +122,8 @@ The agent has no read cursor for it. Create the channel and join the agent, then
 with `--groups <group>`:
 
 ```sh
-bin/agent-busctl --direct channel create lib-x --description "..."
-bin/agent-busctl --direct channel join api-client@alice lib-x
+agent-busctl --direct channel create lib-x --description "..."
+agent-busctl --direct channel join api-client@alice lib-x
 ```
 
 Also, a post to a group nobody created is stored and never read.
@@ -184,6 +186,20 @@ Symptoms of `agent-bus enroll` and `agent-busctl ca`, and what they mean
 - `was removed and its ID is never used again`: pick another ID.
 - A machine that was approved but cannot log in: publish port `4223`, and check
   [Certificate login fails](#certificate-login-fails).
+
+## Monitor
+
+- `monitor init` stops with "the monitor has no login monitor-bus here: run `agent-busctl service
+  init`": the broker's volume is from before busd. Run `agent-busctl --direct service init`,
+  restart the broker, then `monitor init` again.
+- `podman rm -f agent-bus` says "has dependent containers which must be removed before it": the
+  monitor shares the broker's network. Use `podman rm -f --depend agent-bus`; it also removes the
+  monitor, which you then start again ([podman.md](podman.md#6-the-monitor)).
+- The monitor does not start and the log says it needs the web login password: set it with
+  `agent-busctl monitor password` on the broker, run `monitor init` again and restart the monitor
+  ([monitor.md](monitor.md#login)).
+- The monitor does not trust the broker after `tls init --force`, or does not know a new agent:
+  its config folder is a copy. Run `monitor init` again and restart `bus-monitor`.
 
 ## Reload failed
 

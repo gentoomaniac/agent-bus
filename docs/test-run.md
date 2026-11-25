@@ -76,7 +76,7 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
    systems:
 
    ```sh
-   podman run -d --name agent-bus --network pasta -p 4222:4222 -p 127.0.0.1:8080:8080 \
+   podman run -d --name agent-bus --network pasta -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
      -v agent-bus-config:/config -v agent-bus-data:/data "${IMG:?set IMG first, see step 1}"
    podman logs agent-bus | tail -3
    ```
@@ -91,8 +91,9 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
    type agent-busctl    # must say "aliased", not a path
    ```
 
-   Systemd ships its own `agent-busctl` (the D-Bus tool): without the alias, in the shell you type in,
-   you run that one and get confusing errors. This project's `agent-busctl` is going to be renamed.
+   Systemd ships its own `busctl` (the D-Bus tool); this project's tool is called `agent-busctl` so
+   that the two do not clash. Without the alias, in the shell you type in, a plain `agent-busctl`
+   is not found.
 
    Create the streams, then register the two agents and the identity of the monitor. The monitor
    gets its own identity because an identity is held by one process at a time:
@@ -142,15 +143,17 @@ Replace the volumes in steps 2 and 3, and add the same `--userns` option to ever
 the one-off containers included:
 
 ```sh
-mkdir -p ~/bus-trial/config ~/bus-trial/data
+mkdir -p ~/bus-trial/config ~/bus-trial/data ~/bus-trial/monitor-config
 U="--userns=keep-id:uid=10001,gid=10001"
 podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
 podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
-podman run -d --name agent-bus --network pasta $U -p 4222:4222 -p 127.0.0.1:8080:8080 \
+podman run -d --name agent-bus --network pasta $U -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
   -v ~/bus-trial/config:/config -v ~/bus-trial/data:/data "${IMG:?set IMG first, see step 1}"
 ```
 
-The monitor of section 4 gets `$U -v ~/bus-trial/config:/config` as well. Then skip step 7: on
+The monitor of section 4 gets `$U`, and `-v ~/bus-trial/monitor-config:/config` after a `monitor init`
+into that folder (`-v ~/bus-trial/config:/config:ro -v ~/bus-trial/monitor-config:/monitor-config`).
+Then skip step 7: on
 this one machine let the agents use the folder directly, in every shell that runs `agent-bus` or
 Claude Code:
 
@@ -280,16 +283,21 @@ Do this once per project folder. The two sessions must be two different identiti
 
 ## 4. Start the monitor
 
-The monitor runs from the same image in the broker's network namespace, with the config volume.
-It reads with the admin credentials, so it is protected by a password you set first; the broker
+The monitor runs from the same image in the broker's network namespace, with a config volume of
+its own. `monitor init` fills it from the broker's volume with only what the monitor needs: the
+CA certificate, its read-only logins, the web password and the key of `monitor@<owner>` (never
+`ca.key` or the admin logins). It is protected by a password you set first; the broker
 container publishes its port on `127.0.0.1` only. In the container the monitor listens on
 `0.0.0.0`, which `--behind-proxy` allows (and then insists on the password). `BUS_AGENT` lets the
 page post as `monitor@<owner>` (leave it out for read-only):
 
 ```sh
 podman exec -it agent-bus agent-busctl monitor password
+podman volume create agent-bus-monitor-config
+podman run --rm -v agent-bus-config:/config:ro -v agent-bus-monitor-config:/monitor-config \
+  --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" monitor init /monitor-config --agent monitor@<owner>
 podman run -d --name agent-bus-monitor --network container:agent-bus \
-  -v agent-bus-config:/config --entrypoint bus-monitor \
+  -v agent-bus-monitor-config:/config --entrypoint bus-monitor \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
   "${IMG:?set IMG first, see step 1}"
 ```
@@ -446,8 +454,9 @@ reached by, and `other` for the second machine.
    - `directory/` with every agent record and the `channels` snapshot (export first, as in
      section 2, item 6),
    - the agent folder `<agent-id>/` (`key` and `password`) of each agent that runs on the other
-     machine. Until `busd` and enrollment exist this is the only way to get an identity there;
-     run such an identity on one machine only. It is untested.
+     machine. This is the shortcut; to get an identity onto a machine without copying its private
+     key, enroll it ([podman.md](podman.md#9-enrolling-a-new-machine)). Run such an identity on one
+     machine only. The copy is untested.
 
    ```sh
    ssh other 'mkdir -p ~/.config/agent-bus'
@@ -524,5 +533,5 @@ Where to look:
 | Presence as stored           | `curl -s -u me:'<password>' http://127.0.0.1:8080/api/v1/presence`                           |
 
 Stop everything when you are done: close the sessions and run
-`podman rm -f agent-bus-monitor agent-bus` (add `podman volume rm agent-bus-config agent-bus-data`
+`podman rm -f --depend agent-bus` (add `podman volume rm agent-bus-config agent-bus-data`
 to delete the trial's state: certificates, credentials and messages).
