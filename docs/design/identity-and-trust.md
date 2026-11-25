@@ -107,7 +107,7 @@ Step 4 in detail: a key enters the handled set only when the message is handled
 ([bus model](bus-model.md)), not when first seen. The entry keeps a digest of the signed envelope
 (SHA-256 of its canonical form, never of the transport bytes, so reformatted JSON or an unsigned
 addition to the record is not a collision). The same key with a different payload is alerted as an ID
-collision and not delivered (planned: the alert is not built). This stops replay of an old signed
+collision and not delivered (built: the alert goes to `alerts.log`). This stops replay of an old signed
 message into the same channel. Deliveries that did not verify never reach this step; they are
 tracked by stream sequence only ([JetStream binding](jetstream-binding.md)).
 
@@ -220,7 +220,7 @@ stop the agent's busd requests (they are checked against the current non-revoked
 
 ## Weak spot
 
-**Weak spot:** TOFU trusts whoever speaks first. Mitigations: the registry is admin-written only; humans can pre-pin keys with `agent-busctl pin`; agent-busctl can print fingerprints for out-of-band checking; `--no-auto-accept-new-keys` turns TOFU off entirely.
+**Weak spot:** TOFU trusts whoever speaks first. Mitigations: the registry is admin-written only; fingerprints can be compared out of band (`agent-busctl ca fingerprint` prints the CA's). **Planned mitigations**, not usable today: pre-pinning keys with `agent-busctl pin`, and `--no-auto-accept-new-keys`, which turns TOFU off entirely.
 
 ## See also
 
