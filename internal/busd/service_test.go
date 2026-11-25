@@ -45,6 +45,7 @@ type fakeRegistry struct {
 	// accountErr fails the next EnsureCertAccount, once: a reload that did not take.
 	accountErr error
 	groups     []bus.TopicRecord // the catalogue
+	createErr  error             // what CreateGroupChannel fails with after writing the entry
 }
 
 func (fake *fakeRegistry) Agents(context.Context) ([]bus.AgentRecord, error) {

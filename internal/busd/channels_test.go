@@ -18,12 +18,14 @@ import (
 )
 
 // What the channel requests change on the broker, beyond what approval needs.
+// CreateGroupChannel writes the entry and then regenerates the grants, which createErr fails, as
+// the broker's does: the entry stays.
 func (fake *fakeRegistry) CreateGroupChannel(_ context.Context, record bus.TopicRecord) (bool, error) {
-	if slices.ContainsFunc(fake.groups, func(group bus.TopicRecord) bool { return group.Name == record.Name }) {
-		return false, nil
+	created := !slices.ContainsFunc(fake.groups, func(group bus.TopicRecord) bool { return group.Name == record.Name })
+	if created {
+		fake.groups = append(fake.groups, record)
 	}
-	fake.groups = append(fake.groups, record)
-	return true, nil
+	return created, fake.createErr
 }
 func (fake *fakeRegistry) DescribeGroupChannel(_ context.Context, name, description string) error {
 	for i := range fake.groups {
@@ -279,6 +281,37 @@ func TestARequestSignedWithAReplacedKeyIsRefused(t *testing.T) {
 	f.register(visitor, f.newKey()) // rekeyed in the registry; the published directory has the old key
 	if _, err := f.ask(channelapi.Request{AgentID: visitor, Action: channelapi.Join, Channel: "agent-bus"}); err == nil || !strings.Contains(err.Error(), "key of "+visitor+" changed") {
 		t.Errorf("a join signed with the old key: %v", err)
+	}
+}
+
+// A create that failed after its first steps is finished by the next create of the same owner,
+// which keeps the channel's entry and the cursor's start and counts once against the limit.
+func TestARepeatedCreateFinishesAHalfMadeChannel(t *testing.T) {
+	f := newChannelFixture(t)
+	f.registry.last = 7
+	f.registry.createErr = errors.New("the reload was not confirmed")
+	if _, err := f.create(owner, "agent-bus"); err == nil {
+		t.Fatal("the create succeeded although the grants failed")
+	}
+	f.registry.createErr = nil
+	f.registry.last = 9
+	created := f.now
+	f.now = f.now.Add(time.Minute)
+	reply, err := f.create(owner, "agent-bus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(reply.Channel.Members, []string{owner}) || !slices.Contains(f.registry.cursors, owner+" channel agent-bus after 7") {
+		t.Errorf("members %v, cursors %v: want the owner's cursor of the first attempt", reply.Channel.Members, f.registry.cursors)
+	}
+	if *reply.Limits.ChannelsLeftToday != 1 {
+		t.Errorf("channels left = %d, want 1: the channel counts once", *reply.Limits.ChannelsLeftToday)
+	}
+	if entry := f.registry.groups[0]; entry.Owner != owner || !entry.CreatedAt.Equal(created.UTC()) {
+		t.Errorf("the entry is %+v, want the first attempt's", entry)
+	}
+	if _, err := f.create(member, "agent-bus"); err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Errorf("another agent's create of the channel: %v", err)
 	}
 }
 

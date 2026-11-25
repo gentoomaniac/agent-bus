@@ -197,6 +197,11 @@ creation limit. Without one, only channel owners manage the channels agents crea
   read cursor at the end of the log, as `agent-busctl channel join` does; leaving and removal delete
   it. After every change busd rebuilds its directory at once, so agents learn of it from the next
   head and read the channel without a restart.
+- `create` makes the owner's cursor first and then the catalogue entry with the grants; it reads
+  the retention before it changes anything. Each step can be repeated, so a `create` that failed
+  half way is finished by the owner's next `create` of the channel: the entry (owner,
+  `created_at`) and the cursor's start stay those of the first attempt, and it counts once
+  against the limit. Another agent's `create` of the name is refused.
 
 **The creation limit.** `--channel-create-limit` / `BUSD_CHANNEL_CREATE_LIMIT`, 5 by default, 0
 off. A day is a rolling 24 hours, counted from the catalogue: the channels the agent owns with a

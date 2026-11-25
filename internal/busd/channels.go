@@ -223,32 +223,46 @@ func checkDescription(description string) error {
 
 // create makes the channel with the caller as its owner and first member, within the caller's
 // creation limit, and returns the limits the channel lives under.
+//
+// Every step can be repeated, so a create that failed half way is finished by the next one of the
+// same owner: the owner's read cursor comes first (an existing one keeps its position, the start
+// of the first attempt), then the catalogue entry with the grants (an existing entry is kept, the
+// grants are regenerated). Until the entry is written, nothing lists the channel. A create of a
+// channel the caller owns already counts no second time against the limit.
 func (channels *Channels) create(ctx context.Context, request channelapi.Request) (*channelapi.Limits, error) {
 	if err := checkDescription(request.Description); err != nil {
+		return nil, err
+	}
+	retention, err := channels.config.Admin.Retention(ctx)
+	if err != nil {
 		return nil, err
 	}
 	groups, err := channels.config.Admin.GroupChannels(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if slices.ContainsFunc(groups, func(group bus.TopicRecord) bool { return group.Name == request.Channel }) {
-		return nil, fmt.Errorf("channel %s exists: join it, or pick another name", request.Channel)
-	}
 	now := channels.config.Now().UTC()
 	left, exempt := channels.creationsLeft(groups, request.AgentID, now)
-	if !exempt && left <= 0 {
+	record := bus.TopicRecord{Name: request.Channel, Description: request.Description, Owner: request.AgentID, CreatedAt: now, UpdatedAt: now}
+	if index := slices.IndexFunc(groups, func(group bus.TopicRecord) bool { return group.Name == request.Channel }); index >= 0 {
+		if groups[index].Owner != request.AgentID {
+			return nil, fmt.Errorf("channel %s exists: join it, or pick another name", request.Channel)
+		}
+		record = groups[index]
+	} else if !exempt && left <= 0 {
 		return nil, fmt.Errorf("limit of %d new channels per day reached; next at %s",
 			channels.config.CreateLimit, channels.nextCreation(groups, request.AgentID, now).Format("2006-01-02T15:04Z"))
+	} else {
+		left--
 	}
-	record := bus.TopicRecord{Name: request.Channel, Description: request.Description, Owner: request.AgentID, CreatedAt: now, UpdatedAt: now}
-	if _, err := channels.config.Admin.CreateGroupChannel(ctx, record); err != nil {
-		return nil, err
-	}
-	if err := channels.addMember(ctx, request.Channel, request.AgentID); err != nil {
-		return nil, err
-	}
-	retention, err := channels.config.Admin.Retention(ctx)
+	last, err := channels.config.Admin.LastSequence(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := channels.config.Admin.CreateReadCursor(ctx, request.AgentID, bus.GroupChannel(request.Channel), last); err != nil {
+		return nil, err
+	}
+	if _, err := channels.config.Admin.CreateGroupChannel(ctx, record); err != nil {
 		return nil, err
 	}
 	limits := &channelapi.Limits{}
@@ -259,7 +273,7 @@ func (channels *Channels) create(ctx context.Context, request channelapi.Request
 		limits.StreamMaxBytes = ptr(retention.MaxBytes)
 	}
 	if !exempt {
-		limits.ChannelsLeftToday, limits.CreationLimitPerDay = ptr(left-1), ptr(channels.config.CreateLimit)
+		limits.ChannelsLeftToday, limits.CreationLimitPerDay = ptr(left), ptr(channels.config.CreateLimit)
 	}
 	return limits, nil
 }
