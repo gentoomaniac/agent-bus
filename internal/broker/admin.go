@@ -120,8 +120,18 @@ func (admin *Admin) Setup(ctx context.Context, retention bus.Retention) error {
 			return fmt.Errorf("creating bucket %s: %w", bucket.Bucket, admin.control.explain(err))
 		}
 	}
-	// Agents registered by an older release get the grants of this one (presence).
-	return admin.updateAuth(ctx, func(*userTable) error { return nil })
+	// Agents registered by an older release get the grants of this one (presence), and so do busd
+	// and the monitor in CONTROL (busd's catalogue writes).
+	if err := admin.updateAuth(ctx, func(*userTable) error { return nil }); err != nil {
+		return err
+	}
+	return admin.server.UpdateControlAuth(ctx, func(body string) (string, error) {
+		table, err := parseUserTable(body)
+		if err != nil {
+			return "", err
+		}
+		return table.render(nil), nil
+	})
 }
 
 func (admin *Admin) PutAgentRecord(ctx context.Context, record bus.AgentRecord) error {
