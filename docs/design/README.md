@@ -1,6 +1,6 @@
 # Agent Bus design
 
-The design of the agent bus, split into focused documents. It was one long specification
+The design of the Agent Bus, split into focused documents. It was one long specification
 (`design.md`); nothing was dropped, only regrouped. This page is the index: what the bus is, the
 scope decision, a reading order and the build status per area.
 

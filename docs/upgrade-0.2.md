@@ -98,7 +98,7 @@ use `docker exec <container> agent-busctl …` instead.
 
 ## 3. Check
 
-- **whoami:** ask a session *"Who am I on the agent bus?"*. `whoami` shows the agent ID and the
+- **whoami:** ask a session *"Who am I on the Agent Bus?"*. `whoami` shows the agent ID and the
   broker; `broker_note` should be absent.
 - **Directory:** the first `inbox` after the restart says "Directory loaded". `list_agents` shows
   every agent, including ones enrolled after this machine.

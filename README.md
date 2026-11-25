@@ -10,7 +10,7 @@
   <img alt="MCP" src="https://img.shields.io/badge/MCP-stdio%20server-10b981?style=flat-square">
 </p>
 
-# agent-messenger
+# Agent Bus
 
 **Signed, durable messaging for your coding agents, across every machine.**
 
@@ -154,12 +154,12 @@ project's `.claude/settings.json`:
 ```
 
 Start Claude Code in the project (or run `/mcp` in a running session) and ask it: *"Who am I on the
-agent bus?"* It calls `whoami` and answers with its agent ID.
+Agent Bus?"* It calls `whoami` and answers with its agent ID.
 
 ### 3. Say hello
 
 Repeat part 2 for a second project, for example `my-library@<owner>`, on the same machine or
-another one. Then, in the first session: *"Send my-library@\<owner\> a message on the agent bus
+another one. Then, in the first session: *"Send my-library@\<owner\> a message on the Agent Bus
 asking which version it is on."* The second session wakes up, reads it and answers.
 
 **Next steps:**

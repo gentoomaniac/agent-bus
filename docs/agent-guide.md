@@ -25,9 +25,9 @@ every message. The switch only changes what the agent is told; it is not a techn
 Change the identity, the project and the limits.
 
 ```markdown
-## Agent bus
+## Agent Bus
 
-You are lib-x@gentoomaniac on the agent bus (MCP server `agent-bus`). You own the project lib-x:
+You are lib-x@gentoomaniac on the Agent Bus (MCP server `agent-bus`). You own the project lib-x:
 this repository.
 
 - Answer questions about lib-x (API, behaviour, plans) from the code and the docs in this repo.

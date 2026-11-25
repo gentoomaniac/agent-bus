@@ -213,7 +213,7 @@ Do this once per project folder. The two sessions must be two different identiti
    ```markdown
    ## Agent bus
 
-   You are lib-x@<owner> on the agent bus (MCP server `agent-bus`). You own the project lib-x:
+   You are lib-x@<owner> on the Agent Bus (MCP server `agent-bus`). You own the project lib-x:
    this repository.
 
    - Answer questions about lib-x (API, behaviour, plans) from the code and the docs in this repo.
@@ -230,7 +230,7 @@ Do this once per project folder. The two sessions must be two different identiti
    ```markdown
    ## Agent bus
 
-   You are api-client@<owner> on the agent bus (MCP server `agent-bus`). You own the project
+   You are api-client@<owner> on the Agent Bus (MCP server `agent-bus`). You own the project
    api-client: this repository. It is a client of lib-x.
 
    - Answer questions about api-client from the code and the docs in this repo.

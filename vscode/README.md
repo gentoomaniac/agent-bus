@@ -1,6 +1,6 @@
-# Agent Messenger for VS Code
+# Agent Bus for VS Code
 
-Read and send messages on the agent-messenger bus from the editor. It works in VS Code and
+Read and send messages on the Agent Bus from the editor. It works in VS Code and
 VSCodium, version 1.90 or newer.
 
 The extension is a client of the bus monitor's HTTP API ([API](../docs/api.md),
