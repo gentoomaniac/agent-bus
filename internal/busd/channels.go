@@ -37,6 +37,8 @@ const (
 // implements it.
 type ChannelAdmin interface {
 	trust.CatalogueSource
+	Agents(ctx context.Context) ([]bus.AgentRecord, error)
+	AgentAccounts(ctx context.Context) ([]string, error)
 	CreateGroupChannel(ctx context.Context, record bus.TopicRecord) (created bool, err error)
 	DescribeGroupChannel(ctx context.Context, name, description string) error
 	CreateReadCursor(ctx context.Context, agentID string, channel bus.Channel, afterSequence uint64) error
@@ -49,8 +51,9 @@ type ChannelAdmin interface {
 type ChannelsConfig struct {
 	Admin ChannelAdmin
 	CA    *tlsinit.CA // signs the replies
-	// Lookup is the record of an agent in the published directory (Directory.Record): callers and
-	// invitees are checked against it, so only agents whose enrollment is complete take part.
+	// Lookup is the record of an agent in the published directory (Directory.Record): a request's
+	// signature is checked against it, so only agents whose enrollment is complete take part. A
+	// change checks the registry again under the lock (eligible).
 	Lookup func(agentID string) (bus.AgentRecord, bool)
 	// BusOwners are the agent IDs that act as the bus owner: they manage every channel, own the
 	// channels agent-busctl made, and are exempt from the creation limit.
@@ -93,7 +96,7 @@ func (channels *Channels) HandleRequest(caller string, message []byte) []byte {
 		var request channelapi.Request
 		if request, err = channelapi.Open(message, record); err == nil {
 			ctx, cancel := context.WithTimeout(context.Background(), channelRequestTimeout)
-			err = channels.answer(ctx, request, &reply)
+			err = channels.answer(ctx, request, record, &reply)
 			cancel()
 		}
 	}
@@ -108,7 +111,9 @@ func (channels *Channels) HandleRequest(caller string, message []byte) []byte {
 	return signed
 }
 
-func (channels *Channels) answer(ctx context.Context, request channelapi.Request, reply *channelapi.Reply) error {
+// answer carries out the request, which was signed with the key of signer, the caller's record in
+// the published directory.
+func (channels *Channels) answer(ctx context.Context, request channelapi.Request, signer bus.AgentRecord, reply *channelapi.Reply) error {
 	if request.Action == channelapi.List {
 		list, err := channels.list(ctx)
 		reply.Channels = list
@@ -123,6 +128,9 @@ func (channels *Channels) answer(ctx context.Context, request channelapi.Request
 			return err
 		}
 		defer unlock()
+	}
+	if err := channels.eligible(ctx, request.AgentID, signer.PublicKey); err != nil {
+		return err
 	}
 	var err error
 	switch request.Action {
@@ -156,9 +164,8 @@ func (channels *Channels) manage(ctx context.Context, request channelapi.Request
 	}
 	switch request.Action {
 	case channelapi.Invite:
-		invitee, known := channels.config.Lookup(request.Agent)
-		if !known || invitee.Removed() {
-			return fmt.Errorf("%q is not an agent of the bus", request.Agent)
+		if err := channels.eligible(ctx, request.Agent, ""); err != nil {
+			return err
 		}
 		return channels.addMember(ctx, request.Channel, request.Agent)
 	case channelapi.RemoveMember:
@@ -169,6 +176,33 @@ func (channels *Channels) manage(ctx context.Context, request channelapi.Request
 		}
 		return channels.config.Admin.DescribeGroupChannel(ctx, request.Channel, request.Description)
 	}
+}
+
+// eligible checks, under the mutation lock, that the agent is still on the bus: a registry record
+// that is not removed, an account, and, with a key given, that key still its current one. The
+// published directory a request was checked against may be seconds old, and a removal by
+// agent-busctl may have run while the request waited for the lock: a cursor made now would outlive
+// the agent.
+func (channels *Channels) eligible(ctx context.Context, agentID, publicKey string) error {
+	records, err := channels.config.Admin.Agents(ctx)
+	if err != nil {
+		return err
+	}
+	index := slices.IndexFunc(records, func(record bus.AgentRecord) bool { return record.AgentID == agentID })
+	if index < 0 || records[index].Removed() {
+		return fmt.Errorf("%q is not an agent of the bus", agentID)
+	}
+	if publicKey != "" && records[index].PublicKey != publicKey {
+		return fmt.Errorf("the key of %s changed since the request was signed: ask again", agentID)
+	}
+	accounts, err := channels.config.Admin.AgentAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(accounts, agentID) {
+		return fmt.Errorf("%q has no account on the broker", agentID)
+	}
+	return nil
 }
 
 func ownerName(owner string) string { return cmp.Or(owner, "the bus owner") }

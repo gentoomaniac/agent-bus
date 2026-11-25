@@ -184,7 +184,9 @@ creation limit. Without one, only channel owners manage the channels agents crea
 - The request is `{payload, signature}`: the agent's key signs the payload (`agent_id`, a
   `challenge`, `action`, `channel`, `description`, `agent`) after the domain
   `agent-bus/channel-request/v1\n`. busd checks it against the caller's record in its published
-  directory: only agents whose enrollment is complete, not removed, with their current key.
+  directory: only agents whose enrollment is complete, not removed, with their current key. A
+  change checks again under the mutation lock, against the registry and the accounts, for the
+  caller and an invitee: a removal that ran while the request waited for the lock wins.
 - The reply is signed by the CA (`agent-bus/channel-reply/v1\n`) and bound to the request's hash.
   It carries `channel` (name, description, owner, members) after a change, `channels` for `list`,
   `limits` after `create`, or `error`. The spec's flat JSON is nested under `channel`.

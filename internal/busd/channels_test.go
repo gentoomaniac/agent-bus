@@ -244,6 +244,44 @@ func TestARequestMustBeSignedByTheCallerAsTheDirectoryKnowsIt(t *testing.T) {
 	}
 }
 
+// agent-busctl removes an agent while its join waits for the lock: the join must not give the
+// removed agent a cursor, though the published directory still lists it.
+func TestARequestThatWaitedBehindARemovalIsRefused(t *testing.T) {
+	f := newChannelFixture(t)
+	if _, err := f.create(owner, "agent-bus"); err != nil {
+		t.Fatal(err)
+	}
+	f.channels.config.LockMutations = func() (func(), error) {
+		record := f.registry.records[visitor]
+		removedAt := f.now
+		record.RemovedAt = &removedAt
+		f.registry.records[visitor] = record
+		f.registry.accounts = slices.DeleteFunc(f.registry.accounts, func(account string) bool { return account == visitor })
+		return func() {}, nil
+	}
+	_, err := f.ask(channelapi.Request{AgentID: visitor, Action: channelapi.Join, Channel: "agent-bus"})
+	if err == nil || !strings.Contains(err.Error(), "not an agent of the bus") {
+		t.Errorf("a join after the removal: %v", err)
+	}
+	if _, err := f.ask(channelapi.Request{AgentID: owner, Action: channelapi.Invite, Channel: "agent-bus", Agent: visitor}); err == nil || !strings.Contains(err.Error(), "not an agent of the bus") {
+		t.Errorf("an invite of the removed agent: %v", err)
+	}
+	if slices.ContainsFunc(f.registry.cursors, func(cursor string) bool { return strings.HasPrefix(cursor, visitor+" channel") }) {
+		t.Errorf("the removed agent got a cursor: %v", f.registry.cursors)
+	}
+}
+
+func TestARequestSignedWithAReplacedKeyIsRefused(t *testing.T) {
+	f := newChannelFixture(t)
+	if _, err := f.create(owner, "agent-bus"); err != nil {
+		t.Fatal(err)
+	}
+	f.register(visitor, f.newKey()) // rekeyed in the registry; the published directory has the old key
+	if _, err := f.ask(channelapi.Request{AgentID: visitor, Action: channelapi.Join, Channel: "agent-bus"}); err == nil || !strings.Contains(err.Error(), "key of "+visitor+" changed") {
+		t.Errorf("a join signed with the old key: %v", err)
+	}
+}
+
 func TestChannelRequestsPastTheLimitAreAnsweredWithoutASignature(t *testing.T) {
 	f := newChannelFixture(t)
 	f.channels.limits = newCallerLimits(time.Nanosecond, 100, time.Hour, 1)
