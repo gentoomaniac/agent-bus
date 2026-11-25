@@ -14,20 +14,40 @@ working meanwhile, without the new channel tool.
 ## 0. Before you start
 
 Take a backup ([docker](docker.md#backup-and-restore), [podman](podman.md#backup-and-restore)). The
-`init` of step 2 also applies the message log's limits, so give your `--max-age` and `--max-bytes`
-again if you changed them ([agent-busctl](agent-busctl.md#init)): messages beyond the defaults
-(90 days, 1 GiB) are deleted at once otherwise.
+`init` of step 2 also applies the message log's limits: messages beyond the defaults (90 days,
+1 GiB) are deleted at once unless you give yours ([agent-busctl](agent-busctl.md#init)).
+
+- **Docker:** pass your `--max-age` and `--max-bytes` to `init` in step 2.
+- **Podman:** `start.sh` runs `init` in step 1, before you could. Put `BUS_MAX_AGE` and
+  `BUS_MAX_BYTES` in `$AGENT_BUS_HOME/env` first ([podman.md](podman.md#the-start-scripts)).
+
+Set the bus owner before you recreate the broker: it is an environment variable of the container
+and cannot change afterwards. Docker needs `BUS_AGENT=monitor@alice` exported (the compose file
+passes it to the broker and to the monitor, which is also its sending identity), Podman needs
+`MONITOR_AGENT=monitor@alice` in `env` or the environment.
+
+**Caddy users:** the proxy overlay's Caddy service now has the profile `proxy-caddy`. Start it with
+`--profile monitor --profile proxy-caddy` (or `COMPOSE_PROFILES=monitor,proxy-caddy`); the old
+`--profile monitor` alone no longer starts it. nginx and Traefik are new options in the same
+overlay ([docker.md](docker.md#publish-the-monitor-through-a-tls-proxy)).
 
 ## 1. The bus machine
 
-In the commands, `compose` is `docker compose -f deploy/docker-compose.yaml` and `agent-busctl` is
-the alias of [agent-busctl.md](agent-busctl.md#running-it).
+Set `compose` and the alias once, from the checkout (`agent-busctl` is the alias of
+[agent-busctl.md](agent-busctl.md#running-it); Podman users use `podman exec agent-bus
+agent-busctl` instead, with `IMG` and `AGENT_BUS_HOME` exported):
+
+```sh
+export BUS_AGENT=monitor@alice
+compose="docker compose -f $PWD/deploy/docker-compose.yaml"
+alias agent-busctl="$compose exec agent-bus agent-busctl"
+```
 
 | Step | Docker | Podman |
 |---|---|---|
 | 1. New image, restart ([routine upgrade](docker.md#upgrade)) | `$compose pull`, then `$compose up -d agent-bus` | `podman pull $IMG`, then `$AGENT_BUS_HOME/start.sh` |
 | 2. Regenerate the grants | `agent-busctl --direct init` | `podman exec agent-bus agent-busctl --direct init` |
-| 3. Name the bus owner | `BUS_AGENT=monitor@alice` in the environment of the `compose up` | `MONITOR_AGENT=monitor@alice` for `start.sh` (it passes `-e BUSD_BUS_OWNER`), or that `-e` on the broker's `podman run` |
+| 3. Name the bus owner (before step 1) | `BUS_AGENT` exported as above | `MONITOR_AGENT` for `start.sh` (it passes `-e BUSD_BUS_OWNER`), or that `-e` on the broker's `podman run` |
 | 4. The monitor | `$compose --profile monitor up -d` | `$AGENT_BUS_HOME/monitor.sh` |
 
 **Step 2** lets agents ask `busd.channel.<own token>` and busd write the catalogue. Without it busd
