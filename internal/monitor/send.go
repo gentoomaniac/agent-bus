@@ -8,6 +8,7 @@ import (
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/channelapi"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 )
 
@@ -18,6 +19,10 @@ type Sender interface {
 	Ready() error
 	Send(ctx context.Context, to string, message adapter.Outgoing) (string, error)
 	Publish(ctx context.Context, channelName string, message adapter.Outgoing) (string, error)
+	// RequestChannel and Invite ask busd to change a channel, signed as this agent
+	// (docs/design/agent-channels.md).
+	RequestChannel(ctx context.Context, request channelapi.Request) (channelapi.Reply, error)
+	Invite(ctx context.Context, channelName, agentID string) (reply channelapi.Reply, warning string, err error)
 }
 
 // sendTypes are the types a person may send: the ones `agent-bus send` offers.

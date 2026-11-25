@@ -165,8 +165,14 @@ func SignReply(ca *tlsinit.CA, reply Reply) ([]byte, error) {
 	return directory.SignAsBusd(ca, replyDomain, reply)
 }
 
+// Refusal is busd's signed no: it understood the request and refused it, for a limit or a missing
+// ownership, say. Reason is busd's own words.
+type Refusal struct{ Reason string }
+
+func (refusal Refusal) Error() string { return refusal.Reason }
+
 // VerifyReply reads busd's answer to request: signed by the CA in caPEM and bound to exactly this
-// request. A refusal is returned as an error.
+// request. A refusal is returned as a Refusal.
 func VerifyReply(caPEM, answer, request []byte) (Reply, error) {
 	var reply Reply
 	if err := directory.OpenFromBusd(caPEM, replyDomain, answer, &reply); err != nil {
@@ -176,7 +182,7 @@ func VerifyReply(caPEM, answer, request []byte) (Reply, error) {
 		return Reply{}, errors.New("busd's signed answer is for another request: a replay")
 	}
 	if reply.Error != "" {
-		return Reply{}, errors.New(reply.Error)
+		return Reply{}, Refusal{reply.Error}
 	}
 	return reply, nil
 }

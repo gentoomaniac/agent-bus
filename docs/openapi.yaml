@@ -254,6 +254,36 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "502": { $ref: "#/components/responses/Error" }
+  /api/v1/channels/{action}:
+    post:
+      operationId: changeChannel
+      summary: Create, invite to, remove from or describe a group channel as the bus owner.
+      description: |
+        Signed as the monitor's identity, which busd takes for the bus owner when its --bus-owner
+        names it. Needs the same origin rules as `send`. An invite also sends the agent a signed
+        status DM.
+      parameters:
+        - name: action
+          in: path
+          required: true
+          schema: { type: string, enum: [create, invite, remove_member, update] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChannelChange" }
+      responses:
+        "200":
+          description: The channel after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChangedChannel" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
   /api/v1/prefs:
     get:
       operationId: getPrefs
@@ -474,6 +504,7 @@ components:
         kind: { type: string, enum: [general, group, dm] }
         name: { type: string }
         description: { type: string }
+        owner: { type: string, description: "The agent that owns a group channel; absent: the bus owner." }
         agents: { type: array, items: { type: string }, description: The two agents of a DM channel. }
         messages: { type: integer }
         last_sequence: { type: integer }
@@ -563,6 +594,23 @@ components:
                     description: "[start, end) offsets in Unicode code points of `text`."
                     items: { type: array, items: { type: integer }, minItems: 2, maxItems: 2 }
         next_cursor: { type: string, description: Present when more results follow. }
+    ChannelChange:
+      type: object
+      required: [channel]
+      additionalProperties: false
+      properties:
+        channel: { type: string, description: "A group channel name, lowercase [a-z0-9-]." }
+        description: { type: string, description: For create and update. }
+        agent: { type: string, description: For invite and remove_member. }
+    ChangedChannel:
+      type: object
+      required: [name, description, members]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        owner: { type: string, description: "The channel owner; absent: the bus owner." }
+        members: { type: array, items: { type: string } }
+        warning: { type: string, description: Why an invited agent was not told. }
     SendRequest:
       type: object
       required: [to, type]

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/channelapi"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 )
 
@@ -16,6 +17,8 @@ const (
 	defaultMessageLimit = 100
 	maxMessageLimit     = 1000
 	maxSendBytes        = 2 * envelope.MaxRecordBytes // the body limit is enforced when the message is signed
+	// maxChannelChangeBytes bounds a channel change's body: busd reads at most this much of a request.
+	maxChannelChangeBytes = channelapi.MaxRequestBytes
 )
 
 // eventKeepAlive keeps proxies and the browser from closing a quiet event stream. It is also when
@@ -82,6 +85,7 @@ func (monitor *Monitor) handler(access Access, now func() time.Time) (http.Handl
 		monitor.serveEvents(w, r, func() bool { return who.token == "" || login.auth.isLive(who.token) })
 	}))
 	mux.HandleFunc("POST /api/v1/send", change(monitor.serveSend))
+	mux.HandleFunc("POST /api/v1/channels/{action}", change(monitor.serveChannelChange))
 	mux.HandleFunc("GET /api/v1/prefs", read(monitor.servePrefs))
 	mux.HandleFunc("POST /api/v1/prefs/read", change(monitor.servePrefsRead))
 	mux.HandleFunc("PUT /api/v1/prefs/favourites", change(monitor.servePrefsFavourites))
@@ -222,6 +226,35 @@ func (monitor *Monitor) serveSend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "bus_unavailable", err.Error())
 	default:
 		writeJSON(w, map[string]string{"id": id})
+	}
+}
+
+// serveChannelChange carries out POST /api/v1/channels/<action> with a ChannelChange as its body
+// and answers with the channel as it is now. Like send, it insists on a JSON content type.
+func (monitor *Monitor) serveChannelChange(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-Type") != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "channel changes want Content-Type: application/json")
+		return
+	}
+	var change ChannelChange
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxChannelChangeBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&change); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	changed, err := monitor.ChangeChannel(r.Context(), r.PathValue("action"), change)
+	switch {
+	case errors.Is(err, ErrReadOnly):
+		writeError(w, http.StatusForbidden, "read_only", err.Error())
+	case errors.Is(err, ErrInvalidRequest):
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	case errors.Is(err, ErrRefused):
+		writeError(w, http.StatusConflict, "refused", err.Error())
+	case err != nil:
+		writeError(w, http.StatusBadGateway, "bus_unavailable", err.Error())
+	default:
+		writeJSON(w, changed)
 	}
 }
 

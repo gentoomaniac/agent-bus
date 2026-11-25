@@ -72,6 +72,7 @@ type Channel struct {
 	Kind         string   `json:"kind"`
 	Name         string   `json:"name"`
 	Description  string   `json:"description,omitempty"`
+	Owner        string   `json:"owner,omitempty"`  // of a group channel an agent owns; else the bus owner's
 	Agents       []string `json:"agents,omitempty"` // of a DM channel
 	Messages     int      `json:"messages"`
 	LastSequence uint64   `json:"last_sequence"`
@@ -386,7 +387,7 @@ func (monitor *Monitor) Channels() []Channel {
 	channels := []Channel{describe(Channel{ID: "general", Kind: "general", Name: "general"})}
 	groups := slices.SortedFunc(slices.Values(monitor.groups), func(a, b bus.TopicRecord) int { return cmp.Compare(a.Name, b.Name) })
 	for _, group := range groups {
-		channels = append(channels, describe(Channel{ID: "group:" + group.Name, Kind: "group", Name: group.Name, Description: group.Description}))
+		channels = append(channels, describe(Channel{ID: "group:" + group.Name, Kind: "group", Name: group.Name, Description: group.Description, Owner: group.Owner}))
 	}
 	for _, id := range slices.Sorted(maps.Keys(monitor.messages)) {
 		if agents, isDM := dmAgents(id); isDM {

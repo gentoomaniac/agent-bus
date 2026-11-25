@@ -11,6 +11,7 @@ import (
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/channelapi"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 )
 
@@ -35,6 +36,20 @@ func (sender *fakeSender) Publish(_ context.Context, channel string, message ada
 	sender.sent = append(sender.sent, "group "+channel+": "+message.Body.Text)
 	sender.targets = append(sender.targets, message.Targets)
 	return "ID2", sender.refuse
+}
+
+// channelRequests are the channel requests the monitor made; each is answered as given.
+func (sender *fakeSender) RequestChannel(_ context.Context, request channelapi.Request) (channelapi.Reply, error) {
+	sender.sent = append(sender.sent, fmt.Sprintf("channel %s %s %s %s", request.Action, request.Channel, request.Agent, request.Description))
+	if sender.refuse != nil {
+		return channelapi.Reply{}, sender.refuse
+	}
+	return channelapi.Reply{Channel: &channelapi.Channel{Name: request.Channel, Description: request.Description, Members: []string{"lib-x@bob"}}}, nil
+}
+
+func (sender *fakeSender) Invite(ctx context.Context, channelName, agentID string) (channelapi.Reply, string, error) {
+	reply, err := sender.RequestChannel(ctx, channelapi.Request{Action: channelapi.Invite, Channel: channelName, Agent: agentID})
+	return reply, "", err
 }
 
 func monitorWithSender(t *testing.T, sender Sender) *Monitor {

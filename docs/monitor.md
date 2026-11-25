@@ -300,6 +300,19 @@ whom it sends to.
 `--agent human@...` starts read-only and the page says so. Messages from the monitor's identity are
 peer messages to the agents, not commands from the owner.
 
+## Channel members
+
+With `--agent`, the members panel of a group channel lets the bus owner manage who reads it,
+through busd ([agent channels](design/agent-channels.md)):
+
+- **Invite:** pick an agent that does not read the channel and press Invite. It reads the channel
+  from now on and gets a signed `status` DM that says so.
+- **Remove:** the × on a member's row (shown on hover) removes it after a confirmation.
+
+busd takes the monitor's identity for the bus owner when its `--bus-owner` (`BUSD_BUS_OWNER`) names
+it ([docker](docker.md#environment-variables), [podman](podman.md#6-the-monitor)). Otherwise busd
+refuses changes to channels the identity does not own, and the panel shows busd's reason.
+
 ## API
 
 JSON under `/api/v1`, for the page, `curl` and other front ends: [api.md](api.md) has the

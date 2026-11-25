@@ -133,16 +133,15 @@ func (cli *CLI) Run() error {
 	}
 	defer history.Close()
 
-	sender, readOnlyNote, closeSender, err := cli.openSender(caCert)
-	if err != nil {
-		return err
-	}
-	defer closeSender()
-
 	caPEM, err := os.ReadFile(caCert)
 	if err != nil {
 		return err
 	}
+	sender, readOnlyNote, closeSender, err := cli.openSender(caCert, caPEM)
+	if err != nil {
+		return err
+	}
+	defer closeSender()
 	web := monitor.New(monitor.Config{
 		Admin: registry, History: history, Sender: sender, ReadOnlyNote: readOnlyNote, Report: func(err error) { log.Print(err) },
 		PrefsPath: creds.MonitorPrefsPath(cli.ConfigDir), DirectoryHeads: admin.WatchDirectoryHeads, CACert: caPEM,
@@ -176,8 +175,9 @@ func (cli *CLI) Run() error {
 }
 
 // openSender takes the identity of --agent, like `agent-bus --agent` does, and reads nothing with
-// it. Without an identity there is no sender, and the note says why the interface is read-only.
-func (cli *CLI) openSender(caCert string) (sender monitor.Sender, readOnlyNote string, closeSender func(), err error) {
+// it. busd's channel requests go through it too: it is the bus owner (busd --bus-owner). Without an
+// identity there is no sender, and the note says why the interface is read-only.
+func (cli *CLI) openSender(caCert string, caPEM []byte) (sender monitor.Sender, readOnlyNote string, closeSender func(), err error) {
 	closeSender = func() {}
 	if cli.Agent == "" {
 		return nil, "", closeSender, nil
@@ -197,7 +197,9 @@ func (cli *CLI) openSender(caCert string) (sender monitor.Sender, readOnlyNote s
 	if err != nil {
 		return nil, "", closeSender, err
 	}
-	session, err := adapter.Open(adapter.Config{AgentID: cli.Agent, Dir: dir, Transport: transport, Directory: trust.DirectoryPath(cli.ConfigDir)})
+	session, err := adapter.Open(adapter.Config{
+		AgentID: cli.Agent, Dir: dir, Transport: transport, Directory: trust.DirectoryPath(cli.ConfigDir), ChannelLink: transport, CACert: caPEM,
+	})
 	if err != nil {
 		transport.Close()
 		return nil, "", closeSender, err

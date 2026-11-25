@@ -75,8 +75,17 @@
   .new-marker { display: flex; align-items: center; gap: 8px; margin: 6px 0; color: var(--mention); font-size: var(--font-xs); font-weight: 700; }
   .new-marker::before { content: ""; flex: 1; border-top: 1px solid var(--mention); }
   li.item .label.pair { display: flex; flex-direction: column; }
-  li.member { padding: var(--row-pad) 12px; cursor: pointer; }
+  li.member { display: flex; align-items: center; padding: var(--row-pad) 12px; cursor: pointer; }
   li.member:hover { background: var(--hover); }
+  li.member .agent-line { flex: 1; }
+  /* The bus owner's "remove from channel", shown on the row under the pointer. */
+  li.member button.remove { border: none; background: none; color: var(--muted); cursor: pointer; opacity: 0; padding: 0 4px; }
+  li.member:hover button.remove, li.member button.remove:focus-visible { opacity: 1; }
+  @media (hover: none) { li.member button.remove { opacity: .6; } }
+  #member-invite { display: flex; gap: 6px; padding: 0 12px 6px; }
+  #member-invite select { flex: 1; min-width: 0; }
+  #member-note { margin: 0 12px 6px; font-size: var(--font-xs); }
+  #member-note.error { color: var(--bad); }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; flex: none; background: var(--muted); }
   .removed { opacity: .5; }
   .dot.working { background: var(--ok); }
@@ -361,7 +370,10 @@
   </main>
   <div class="handle" id="members-handle" role="separator" aria-orientation="vertical" aria-label="Resize the members panel" tabindex="0" title="Drag to resize, double-click to reset"></div>
   <aside id="members-panel" tabindex="-1">
-    <div class="panel-head"><button class="phone-only toggle" id="close-members" type="button">Back</button><h2>Members</h2></div><ul id="members"></ul>
+    <div class="panel-head"><button class="phone-only toggle" id="close-members" type="button">Back</button><h2>Members</h2></div>
+    <form id="member-invite" hidden><select name="agent" aria-label="Agent to invite"></select><button type="submit">Invite</button></form>
+    <p id="member-note" class="muted" hidden></p>
+    <ul id="members"></ul>
     <div id="agent-detail"></div>
   </aside>
 </div>
@@ -1176,7 +1188,7 @@ async function select(channelId) {
   state.selected = channelId;
   state.unread.delete(channelId);
   history.replaceState(null, "", "#" + encodeURIComponent(channelId));
-  if (!reopened) { state.marker = null; state.seen.clear(); }
+  if (!reopened) { state.marker = null; state.seen.clear(); $("member-note").hidden = true; }
   if (state.emptyDirects.has(channelId)) state.messages.set(channelId, []);
   else if (!state.messages.has(channelId)) await loadMessages(channelId);
   if (state.selected !== channelId) return; // another channel was opened meanwhile
@@ -1367,11 +1379,60 @@ function renderSidebar() {
   renderDetail();
 }
 
+// The bus owner (the monitor's identity) invites agents to a group channel and removes them; busd
+// decides whether the identity may (docs/api.md, channel changes).
+function canManageMembers() {
+  return state.status.can_send && Boolean(state.selected) && state.selected.startsWith("group:");
+}
+
 function renderMembers() {
   const members = state.members.filter((id) => id !== state.status.agent);
-  $("members").replaceChildren(...(members.length ? members.map((id) =>
-    el("li", { class: "member", onclick: () => showDetail(id) }, agentLine(id, presenceOf(id)))) : [el("li", { class: "empty" }, "none")]));
+  const manage = canManageMembers();
+  $("members").replaceChildren(...(members.length ? members.map((id) => {
+    const row = el("li", { class: "member", onclick: () => showDetail(id) }, agentLine(id, presenceOf(id)));
+    if (manage) row.append(el("button", { class: "remove", type: "button", title: "Remove from channel", "aria-label": "Remove " + id + " from the channel",
+      onclick: (event) => { event.stopPropagation(); removeMember(id); } }, "\u00d7"));
+    return row;
+  }) : [el("li", { class: "empty" }, "none")]));
+  const invitable = state.agents.filter((agent) => !agent.removed && !state.members.includes(agent.id)).map((agent) => agent.id);
+  const form = document.forms["member-invite"];
+  form.hidden = !manage || invitable.length === 0;
+  const picked = form.agent.value;
+  form.agent.replaceChildren(...invitable.map((id) => el("option", { value: id }, id)));
+  if (invitable.includes(picked)) form.agent.value = picked;
 }
+
+// changeMembers posts a channel change for the open group channel and shows the members busd
+// answers with, or its refusal.
+async function changeMembers(action, agent, done) {
+  const note = $("member-note");
+  const channel = state.selected.slice("group:".length);
+  try {
+    const changed = await api("/api/v1/channels/" + action, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel, agent }),
+    });
+    if (state.selected === "group:" + channel) state.members = changed.members;
+    note.textContent = changed.warning || done;
+    note.classList.remove("error");
+  } catch (error) {
+    note.textContent = error.message;
+    note.classList.add("error");
+  }
+  note.hidden = false;
+  renderMembers();
+}
+
+function removeMember(id) {
+  if (confirm(`Remove ${id} from ${describeChannel(channelById(state.selected))}? It no longer reads the channel.`)) {
+    changeMembers("remove_member", id, id + " removed.");
+  }
+}
+
+document.forms["member-invite"].addEventListener("submit", (event) => {
+  event.preventDefault();
+  const agent = event.target.agent.value;
+  if (agent) changeMembers("invite", agent, agent + " invited and told so.");
+});
 
 function renderHeader() {
   const channel = channelById(state.selected);
