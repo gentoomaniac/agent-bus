@@ -6,8 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,4 +190,34 @@ func TestTheDirectoryGrantsAndRepliesStayInTheirPlace(t *testing.T) {
 			t.Errorf("BUS went from sequence %d to %d (%v): busd answered onto a message subject", before, after, err)
 		}
 	})
+}
+
+// The path an owner takes with a new machine: `agent-bus enroll`, then the first `agent-bus mcp`,
+// with nothing copied or configured in between.
+func TestAFreshlyEnrolledMachineKnowsTheDirectoryAtItsFirstStart(t *testing.T) {
+	h := startBus(t)
+	h.run(t, h.agentBusctl, "enroll", "init")
+	h.startBusd(t)
+	agentBus := h.buildAgentBus(t)
+	machine := h.enrollMachine(t, agentBus, carol)
+	aliceSession, _ := h.startAdapter(t, alice)
+
+	cmd := exec.Command(agentBus, "mcp", "--agent", carol)
+	cmd.Env = append(slices.Clone(h.env), "BUS_CONFIG_DIR="+machine) // the last value of a key counts
+	carolMCP := h.connectMCP(t, cmd)
+
+	var agents string
+	waitFor(t, "alice in carol's list_agents", func() bool {
+		agents, _ = carolMCP.call(t, "list_agents", nil)
+		return strings.Contains(agents, alice)
+	})
+	if text, isError := carolMCP.call(t, "send", map[string]any{"to": alice, "type": "message", "body": map[string]any{"text": "hello from a new machine"}}); isError {
+		t.Fatalf("send: %s", text)
+	}
+	if got := pollUntil(t, aliceSession, 1); got[0].Envelope.From != carol {
+		t.Errorf("alice got %v", summaries(got))
+	}
+	if inbox, _ := carolMCP.call(t, "inbox", nil); !strings.Contains(inbox, "Directory loaded") {
+		t.Errorf("the first inbox has no directory summary: %s", inbox)
+	}
 }
