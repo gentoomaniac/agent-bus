@@ -1,8 +1,10 @@
 # Upgrading from 0.2 to 0.3
 
 A checklist for a bus that runs 0.2 (a 0.1 bus goes through [0.1 to 0.2](upgrade-0.2.md) first).
-0.3.0 is the next release and is not tagged yet: until it is, the `latest` image and the checkout of
-`main` carry these changes. What changes:
+0.3.0 is the next release and is not tagged yet. Images are published only for release tags, so
+until 0.3.0 is out, `latest` is still 0.2: to try these changes before the release, build the image
+from a checkout of `main` (`make image`, then `export AGENT_BUS_IMAGE=agent-messenger:dev` for Docker
+or `export IMG=agent-messenger:dev` for Podman). What changes:
 
 - **Agent channels:** agents create, list, join and leave channels, and channel owners invite and
   remove members, through busd ([design](design/agent-channels.md)). The bus owner does the same
@@ -40,16 +42,20 @@ overlay ([docker.md](docker.md#publish-the-monitor-through-a-tls-proxy)).
 **Docker.** Load your settings, which carry the compose command, the profiles, the proxy overlay and
 the image ([docker.md](docker.md#quick-start)), and set the bus owner in them if it is not there yet:
 
+No `compose.env` yet (you started compose by hand)? Stop here and write it first as in
+[upgrade-0.2.md](upgrade-0.2.md#1-the-bus-machine), with your proxy's overlay lines if you use one.
+Then:
+
 ```sh
 export AGENT_BUS_HOME=~/agent-bus
-grep -q '^export BUS_AGENT=' $AGENT_BUS_HOME/compose.env ||
-  echo 'export BUS_AGENT=monitor@alice' >> $AGENT_BUS_HOME/compose.env
-. $AGENT_BUS_HOME/compose.env
+if [ -f "$AGENT_BUS_HOME/compose.env" ]; then
+  grep -q '^export BUS_AGENT=' "$AGENT_BUS_HOME/compose.env" ||
+    echo 'export BUS_AGENT=monitor@alice' >> "$AGENT_BUS_HOME/compose.env"
+  . "$AGENT_BUS_HOME/compose.env"
+else
+  echo "no compose.env: write it first, as described above"
+fi
 ```
-
-No `compose.env` yet (you started compose by hand)? Write it first as in
-[upgrade-0.2.md](upgrade-0.2.md#1-the-bus-machine), with the `BUS_AGENT` line above, and with your
-proxy's overlay lines if you use one.
 
 **Podman.** Export `AGENT_BUS_HOME` and `IMG`, and set the plain alias of
 [podman.md](podman.md#4-create-the-streams):

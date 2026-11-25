@@ -46,7 +46,8 @@ services:
 
   # Fills and refreshes the monitor's config folder from the broker's, which it reads only:
   #   docker compose -f deploy/docker-compose.yaml run --rm monitor-init
-  # Run it again after registering or enrolling agents, or after changing the web password.
+  # Run it again after changing the web password, the monitor's sending key or the CA; new agents
+  # reach the monitor through busd without it.
   monitor-init:
     image: ${AGENT_BUS_IMAGE:-ghcr.io/gentoomaniac/agent-messenger:latest}
     entrypoint: ["agent-busctl", "monitor", "init", "/monitor-config"]

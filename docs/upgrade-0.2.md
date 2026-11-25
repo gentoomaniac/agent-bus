@@ -106,9 +106,11 @@ alias agent-busctl='podman exec agent-bus agent-busctl'
 | 2. Retention and grants | `agent-busctl --direct init`, with your `--max-age` and `--max-bytes` | done by `start.sh`. Do not run `init` again by hand: it does not see `env` and applies the defaults |
 | 3. The monitor | `$compose up -d` | `$AGENT_BUS_HOME/monitor.sh` |
 
-This guide moves a 0.1 bus to 0.2 with the current image. To stop at 0.2 for now, pin it: add
-`export AGENT_BUS_IMAGE=ghcr.io/gentoomaniac/agent-messenger:0.2.0` to `compose.env` (Docker) or set
-`IMG=ghcr.io/gentoomaniac/agent-messenger:0.2.0` in `env` (Podman). The next step after this one is
+This guide moves a 0.1 bus to 0.2 with the current image. To stop at 0.2 for now, pin it before
+step 1: add `export AGENT_BUS_IMAGE=ghcr.io/gentoomaniac/agent-messenger:0.2.0` to `compose.env` and
+source it again (`. $AGENT_BUS_HOME/compose.env`) for Docker; for Podman, export
+`IMG=ghcr.io/gentoomaniac/agent-messenger:0.2.0` instead of `:latest` above (an exported `IMG` wins
+over the `env` file, so put the pin there too for later starts). The next step after this one is
 [0.2 to 0.3](upgrade-0.3.md).
 
 ### Step 2 in detail
