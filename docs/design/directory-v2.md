@@ -348,3 +348,7 @@ Where the build refined or departed from the text above.
   adapter's start and after an `unchanged` sync it compares that, under the commit lock, with the
   snapshot's version and exports again if they differ, so a crash or a failed write between the
   commit and the end of its export never leaves lookups on an older directory.
+- A message held for an unknown sender is remembered only by the way to hand it back (its ack
+  subject), not its payload, which stays at the broker. At most 1000 are remembered, each for at
+  most 10 minutes; one past the bound, or forgotten, simply comes back with the broker's next
+  delivery after AckWait. None of it counts against the inbox's 8 MB.

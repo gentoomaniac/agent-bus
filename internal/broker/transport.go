@@ -12,6 +12,9 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+// nakBody is what a nak publishes on the message's ack subject, as jetstream.Msg.Nak sends it.
+var nakBody = []byte("-NAK")
+
 // requestExpiry is how long a fetch or history read waits for records before it returns what it
 // has: short, so a quiet channel does not hold the caller up (docs/design/jetstream-binding.md).
 const requestExpiry = time.Second
@@ -75,11 +78,14 @@ func (transport *Transport) Fetch(ctx context.Context, from bus.Channel, max int
 			skipped = append(skipped, fmt.Errorf("skipping a message of %s with unreadable metadata: %w", from, err))
 			continue
 		}
+		ackSubject := message.Reply()
 		deliveries = append(deliveries, bus.Delivery{
 			Record:     bus.Record{Sequence: metadata.Sequence.Stream, Payload: message.Data()},
 			Ack:        message.DoubleAck,
 			InProgress: func(context.Context) error { return message.InProgress() },
-			Release:    func(context.Context) error { return message.Nak() },
+			// Only the ack subject, not the message: the adapter keeps the Release of a message whose
+			// sender it does not know yet, and must not keep its payload with it.
+			Release: func(context.Context) error { return transport.session.conn.Publish(ackSubject, nakBody) },
 		})
 	}
 	return deliveries, errors.Join(append(skipped, transport.session.explain(batch.Error()))...)

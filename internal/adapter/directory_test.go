@@ -531,3 +531,23 @@ func TestAnUnchangedSyncRepairsAnExportCutShort(t *testing.T) {
 		t.Errorf("alice's lookup after an unchanged sync: %v", err)
 	}
 }
+
+func TestTheMessagesHeldForUnknownSendersAreBoundedAndExpire(t *testing.T) {
+	b := newTestBus(t)
+	b.register(bob)
+	bobAdapter, _ := b.open(bob)
+	release := func(context.Context) error { return nil }
+	bobAdapter.mu.Lock()
+	for sequence := range uint64(maxHeldMessages + 5) {
+		bobAdapter.noteUnknownSender("stranger@x", "DM "+bob, bus.Delivery{Record: bus.Record{Sequence: sequence, Payload: []byte("not kept")}, Release: release})
+	}
+	bobAdapter.mu.Unlock()
+
+	if _, messages := bobAdapter.UnknownSenders(); messages != maxHeldMessages {
+		t.Errorf("%d messages remembered, want at most %d", messages, maxHeldMessages)
+	}
+	b.now = b.now.Add(heldExpiry)
+	if senders, messages := bobAdapter.UnknownSenders(); len(senders) != 0 || messages != 0 {
+		t.Errorf("after the expiry: %v, %d messages", senders, messages)
+	}
+}

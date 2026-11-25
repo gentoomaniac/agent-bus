@@ -143,8 +143,8 @@ func (adapter *Adapter) took(snapshot directory.Snapshot) {
 	var handBacks []func(context.Context) error
 	for sender, held := range adapter.unknownSenders {
 		if slices.ContainsFunc(snapshot.Records, func(record bus.AgentRecord) bool { return record.AgentID == sender }) {
-			for _, release := range held {
-				handBacks = append(handBacks, release)
+			for _, message := range held {
+				handBacks = append(handBacks, message.release)
 			}
 			delete(adapter.unknownSenders, sender)
 		}

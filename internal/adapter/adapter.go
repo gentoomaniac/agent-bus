@@ -146,9 +146,9 @@ type Adapter struct {
 	// contextDropped counts the context messages dropped for room since TakeContextDropped.
 	contextDropped int
 	acked          map[string]bool // IDs of the messages this agent sent an ack reply to
-	// unknownSenders maps a sender with no directory record to its messages waiting for one: the
-	// Release of each delivery, by destination and sequence.
-	unknownSenders map[string]map[string]func(context.Context) error
+	// unknownSenders maps a sender with no directory record to its messages waiting for one, by
+	// destination and sequence: at most maxHeldMessages, each for at most heldExpiry.
+	unknownSenders map[string]map[string]heldMessage
 	// recent is the message the agent last read or acked, the parent of a send that names none.
 	recent struct {
 		id      string
@@ -693,17 +693,58 @@ func (adapter *Adapter) Run(ctx context.Context, report func(error)) error {
 	return nil
 }
 
+// heldMessage is a message that waits for its sender's record. It keeps only the way to hand the
+// message back to the broker, never its payload: the message stays at the broker, which delivers
+// it again (after AckWait, or at once when handed back), so the bookkeeping costs no inbox room.
+type heldMessage struct {
+	release func(context.Context) error
+	since   time.Time
+}
+
+const (
+	// maxHeldMessages bounds the messages remembered for unknown senders; past it a message is not
+	// remembered, and simply waits for the broker's next delivery.
+	maxHeldMessages = 1000
+	// heldExpiry forgets a remembered message: by then the broker has delivered it again, which
+	// remembers it anew if its sender is still unknown.
+	heldExpiry = 10 * time.Minute
+)
+
 // noteUnknownSender remembers a message that waits because its sender has no directory record,
 // and asks for a sync. The caller holds mu.
 func (adapter *Adapter) noteUnknownSender(sender, destination string, delivery bus.Delivery) {
+	key := fmt.Sprintf("%s/%d", destination, delivery.Sequence)
+	if _, known := adapter.unknownSenders[sender][key]; !known && adapter.heldMessages() >= maxHeldMessages {
+		adapter.wantSyncForSender()
+		return
+	}
 	if adapter.unknownSenders == nil {
-		adapter.unknownSenders = map[string]map[string]func(context.Context) error{}
+		adapter.unknownSenders = map[string]map[string]heldMessage{}
 	}
 	if adapter.unknownSenders[sender] == nil {
-		adapter.unknownSenders[sender] = map[string]func(context.Context) error{}
+		adapter.unknownSenders[sender] = map[string]heldMessage{}
 	}
-	adapter.unknownSenders[sender][fmt.Sprintf("%s/%d", destination, delivery.Sequence)] = delivery.Release
+	adapter.unknownSenders[sender][key] = heldMessage{release: delivery.Release, since: adapter.config.Now()}
 	adapter.wantSyncForSender()
+}
+
+// heldMessages forgets the remembered messages older than heldExpiry and counts the rest. The
+// caller holds mu.
+func (adapter *Adapter) heldMessages() int {
+	count := 0
+	now := adapter.config.Now()
+	for sender, held := range adapter.unknownSenders {
+		for key, message := range held {
+			if now.Sub(message.since) >= heldExpiry {
+				delete(held, key)
+			}
+		}
+		if len(held) == 0 {
+			delete(adapter.unknownSenders, sender)
+		}
+		count += len(held)
+	}
+	return count
 }
 
 // UnknownSenders returns the senders whose messages wait for a directory record, and how many
@@ -711,6 +752,7 @@ func (adapter *Adapter) noteUnknownSender(sender, destination string, delivery b
 func (adapter *Adapter) UnknownSenders() (senders []string, messages int) {
 	adapter.mu.Lock()
 	defer adapter.mu.Unlock()
+	adapter.heldMessages()
 	for sender, waiting := range adapter.unknownSenders {
 		senders = append(senders, sender)
 		messages += len(waiting)
