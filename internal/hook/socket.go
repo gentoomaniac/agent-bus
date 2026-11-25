@@ -5,6 +5,7 @@ package hook
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -95,16 +96,30 @@ func Listen(dir string, session Session) (stop func(), err error) {
 		return nil, err
 	}
 	var waiter currentWaiter
-	go func() {
-		for {
-			connection, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go serve(connection, session, &waiter)
-		}
-	}()
+	go acceptLoop(listener, func(connection net.Conn) { serve(connection, session, &waiter) })
 	return func() { listener.Close() }, nil // closing removes the socket file
+}
+
+// acceptRetryDelay is the pause after a failed accept, such as "too many open files", so that a
+// persistent failure is logged once a second instead of spinning.
+const acceptRetryDelay = time.Second
+
+// acceptLoop serves each connection on its own goroutine until the listener is closed. Any other
+// accept error is transient: giving up on it would leave the process alive with a dead socket, and
+// every hook of the session silent.
+func acceptLoop(listener net.Listener, serveConnection func(net.Conn)) {
+	for {
+		connection, err := listener.Accept()
+		if errors.Is(err, net.ErrClosed) {
+			return
+		}
+		if err != nil {
+			log.Printf("agent-bus: accepting on the hook socket: %v", err)
+			time.Sleep(acceptRetryDelay)
+			continue
+		}
+		go serveConnection(connection)
+	}
 }
 
 // currentWaiter holds the one idle waiter a session has: a new one replaces the old, which then
