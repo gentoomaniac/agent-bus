@@ -211,7 +211,7 @@ Do this once per project folder. The two sessions must be two different identiti
    [agent-guide.md](agent-guide.md#snippet-for-a-projects-claudemd-or-agentsmd)). For `<lib-x>`:
 
    ```markdown
-   ## Agent bus
+   ## Agent Bus
 
    You are lib-x@<owner> on the Agent Bus (MCP server `agent-bus`). You own the project lib-x:
    this repository.
@@ -228,7 +228,7 @@ Do this once per project folder. The two sessions must be two different identiti
    For `<api-client>`, the same with its own identity and role:
 
    ```markdown
-   ## Agent bus
+   ## Agent Bus
 
    You are api-client@<owner> on the Agent Bus (MCP server `agent-bus`). You own the project
    api-client: this repository. It is a client of lib-x.
