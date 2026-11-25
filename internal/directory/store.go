@@ -14,11 +14,12 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
-// The snapshot and its lock live in the local directory. Neither name ends in .json, so
-// FileDirectory.Records does not take them for agents.
+// The snapshot, its lock and the version its exports were last written for live in the local
+// directory. No name ends in .json, so FileDirectory.Records does not take them for agents.
 const (
 	snapshotFile = "snapshot"
 	lockFile     = "snapshot.lock"
+	exportedFile = "snapshot.exported"
 	// lockWait bounds the wait for another identity of the machine that is committing.
 	lockWait = 10 * time.Second
 )
@@ -103,16 +104,45 @@ func (store Store) Commit(base, version Version, projection Projection) (Snapsho
 	return next, store.export(next)
 }
 
+// EnsureExported writes the exports again if they were not finished for the snapshot's version: a
+// crash or a failed write between a commit and the end of its export would otherwise leave lookups
+// on the records of an older directory. It runs under the commit lock, so it sees a snapshot no
+// other identity is replacing.
+func (store Store) EnsureExported() error {
+	unlock, err := files.Lock(store.path(lockFile), lockWait)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	snapshot, err := store.Load()
+	if err != nil || snapshot.Version.IsZero() {
+		return err
+	}
+	var exported Version
+	data, err := os.ReadFile(store.path(exportedFile))
+	if err == nil && json.Unmarshal(data, &exported) == nil && exported == snapshot.Version {
+		return nil
+	}
+	return store.export(snapshot)
+}
+
 // export writes every record, with every key the machine knows to be revoked marked so, and the
-// catalogue. A record that is no longer in the snapshot keeps its file: absence never means
-// removal, and a record copied in by hand stays usable.
+// catalogue, and then notes the version it did so for. A record that is no longer in the snapshot
+// keeps its file: absence never means removal, and a record copied in by hand stays usable.
 func (store Store) export(snapshot Snapshot) error {
 	for _, record := range snapshot.Records {
 		if err := store.Dir.Write(withRevocations(record, snapshot.Revoked)); err != nil {
 			return err
 		}
 	}
-	return store.Dir.WriteCatalogue(snapshot.Catalogue)
+	if err := store.Dir.WriteCatalogue(snapshot.Catalogue); err != nil {
+		return err
+	}
+	data, err := json.Marshal(snapshot.Version)
+	if err != nil {
+		return err
+	}
+	return files.Write(store.path(exportedFile), data, files.PublicMode, true)
 }
 
 func withRevocations(record bus.AgentRecord, revoked map[string]string) bus.AgentRecord {

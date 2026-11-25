@@ -3,6 +3,8 @@ package directory
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
@@ -86,5 +88,65 @@ func TestNextAddsTheRevocationsOfTheNewProjection(t *testing.T) {
 	}
 	if len(known.Revoked) != 1 {
 		t.Error("Next changed the snapshot it was called on")
+	}
+}
+
+func TestAnExportCutShortIsWrittenAgain(t *testing.T) {
+	store := Store{Dir: trust.DirectoryPath(t.TempDir())}
+	first, second := twoRevisions()
+	if _, err := store.Commit(Version{}, versionOf("e1", 1, first), first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Commit(versionOf("e1", 1, first), versionOf("e1", 2, second), second); err != nil {
+		t.Fatal(err)
+	}
+	// A crash after the snapshot was written: the exports are those of revision 1, and the note of
+	// what was exported is gone with the rest of the export.
+	if err := store.Dir.Write(first.Records[1]); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(string(store.Dir), exportedFile)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.EnsureExported(); err != nil {
+		t.Fatal(err)
+	}
+
+	if bobRecord, err := store.Dir.Lookup(context.Background(), "bob@x"); err != nil || !bobRecord.Removed() {
+		t.Errorf("bob's lookup after the repair: %+v, %v; want his removal", bobRecord, err)
+	}
+	if carol, err := store.Dir.Lookup(context.Background(), "carol@x"); err != nil || carol.AgentID != "carol@x" {
+		t.Errorf("carol's lookup after the repair: %v", err)
+	}
+}
+
+func TestEnsureExportedLeavesACompleteExportAlone(t *testing.T) {
+	store := Store{Dir: trust.DirectoryPath(t.TempDir())}
+	first, _ := twoRevisions()
+	if err := store.EnsureExported(); err != nil {
+		t.Errorf("an empty directory: %v", err)
+	}
+	if _, err := store.Commit(Version{}, versionOf("e1", 1, first), first); err != nil {
+		t.Fatal(err)
+	}
+	copied := record("copied@x", "fc") // copied in by hand, not in the snapshot
+	if err := store.Dir.Write(copied); err != nil {
+		t.Fatal(err)
+	}
+	bobPath := filepath.Join(string(store.Dir), "bob_x.json")
+	if err := os.Remove(bobPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.EnsureExported(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(bobPath); err == nil {
+		t.Error("an export that was finished was written again")
+	}
+	if _, err := store.Dir.Lookup(context.Background(), "copied@x"); err != nil {
+		t.Errorf("a record copied in by hand: %v", err)
 	}
 }

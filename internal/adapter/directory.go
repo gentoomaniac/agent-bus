@@ -93,14 +93,16 @@ func (adapter *Adapter) SyncDirectory(ctx context.Context) error {
 		if err := adapter.revoke(next.Revoked); err != nil {
 			return err
 		}
-		if reply.Kind != directory.Unchanged {
+		if reply.Kind == directory.Unchanged {
+			err = store.EnsureExported() // the commit that brought this version may not have finished its export
+		} else {
 			next, err = store.Commit(local.Version, reply.Version(), projection)
 			if errors.Is(err, directory.ErrMoved) {
 				continue
 			}
-			if err != nil {
-				return err
-			}
+		}
+		if err != nil {
+			return err
 		}
 		if !local.Version.IsZero() && reply.Epoch != local.Version.Epoch {
 			adapter.config.Log("busd's directory has a new epoch (busd lost or was restored from its state): took in %s over %s; every pin and revoked key is kept", next.Version, local.Version)

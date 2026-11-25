@@ -344,3 +344,7 @@ Where the build refined or departed from the text above.
 - A replaced file (busd's state, an agent's snapshot and its exports) is synced, renamed, and
   then its directory is synced too, so the rename is on disk before busd announces the revision
   or an agent acts on its snapshot. A failure to sync is the write's failure.
+- The export notes the version it was finished for in `directory/snapshot.exported`. At the
+  adapter's start and after an `unchanged` sync it compares that, under the commit lock, with the
+  snapshot's version and exports again if they differ, so a crash or a failed write between the
+  commit and the end of its export never leaves lookups on an older directory.

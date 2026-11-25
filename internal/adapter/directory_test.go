@@ -501,3 +501,33 @@ func TestADiffThatDoesNotApplyIsReplacedByTheWholeDirectory(t *testing.T) {
 		t.Errorf("the full directory did not bring alice: %v", err)
 	}
 }
+
+func TestAnUnchangedSyncRepairsAnExportCutShort(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	busd := newFakeBusd(t, trust.DirectoryPath(b.configDir))
+	own := trust.DirectoryPath(t.TempDir())
+	bobAdapter := b.syncing(bob, busd, own)
+	ctx := context.Background()
+	if err := bobAdapter.SyncDirectory(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// A crash in the export: alice's lookup file and the note of the finished export are missing.
+	for _, name := range []string{bus.AgentToken(alice) + ".json", "snapshot.exported"} {
+		if err := os.Remove(filepath.Join(string(own), name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := bobAdapter.SyncDirectory(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if busd.kinds[len(busd.kinds)-1] != directory.Unchanged {
+		t.Fatalf("busd answered %v", busd.kinds)
+	}
+	if _, err := own.Lookup(ctx, alice); err != nil {
+		t.Errorf("alice's lookup after an unchanged sync: %v", err)
+	}
+}

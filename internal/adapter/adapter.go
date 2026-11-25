@@ -211,6 +211,9 @@ func (adapter *Adapter) load() (err error) {
 	}
 	adapter.alertsPath = filepath.Join(config.Dir, alertsFile)
 	if store, syncs := adapter.snapshots(); syncs {
+		if err := store.EnsureExported(); err != nil {
+			return err
+		}
 		if adapter.installed, err = store.Load(); err != nil {
 			return err
 		}
