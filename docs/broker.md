@@ -113,3 +113,13 @@ restarted (`docker compose -f deploy/docker-compose.yaml restart agent-bus`).
 An invalid configuration is refused before it replaces the file. `agent-busctl` needs the server binary
 for the test (`--nats-server`, set by the image) and the pid file in `nats/`; in the container both
 are there. For a failed reload see [troubleshooting](troubleshooting.md#reload-failed).
+
+**Only the broker's container reloads.** The signal goes to the pid in `nats/nats-server.pid`, which
+is a pid of the broker container's process namespace (normally `1`). In another container, for
+example the monitor, which shares the network but not the processes, that pid is something else.
+So every command that changes access runs in the broker container (`podman exec agent-bus
+agent-busctl --direct ...`, the alias of [podman.md](podman.md)). The monitor and every other
+container only read the config volume and never reload. Nothing needs a signal across containers,
+and the container engine's socket is not mounted anywhere. A later monitor that approves
+enrollments (design.md §4c, phase B) asks the broker container to reload, for example through a
+small helper there, instead of signalling itself.
