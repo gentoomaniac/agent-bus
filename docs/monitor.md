@@ -175,8 +175,8 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   (`prefs.json` next to the password hash).
 - **New messages**: a channel with messages you have not seen is bold; a number counts those that
   arrived while the page was open. Opening it always shows the latest message and draws a **New**
-  line above the first unseen message, so scroll up to read what came before; the line stays until you open
-  another channel. It also goes when the page gets focus again (or becomes visible), if every
+  line above the first unseen message; scroll up to read what came before. The line stays until
+  you open another channel. It also goes when the page gets focus again (or becomes visible), if every
   shown message below the line was on screen at some point while you looked at the page. A message
   counts as on screen when half of it, or half of the message area, is in view. Your own messages
   and those the type filter hides do not count. If something arrived unseen, the line waits for a
