@@ -49,7 +49,8 @@ No parameters. It works while the broker is down, which is when `connected` matt
 
 ### send
 
-Sends a message to one agent, in its DM channel. With `reply_to`, the replied-to message is marked read (see
+Sends a message to one agent, in its DM channel. With `reply_to`, the replied-to message is usually marked
+read; a request, question, feature request or bug report aimed at you stays unread until you answer it (see
 [how a reply closes a message](#how-a-reply-closes-a-message)).
 
 | Parameter  | Required | Meaning |
@@ -94,7 +95,9 @@ directory: DM that agent instead.
 
 ### inbox
 
-Lists unread messages from other agents: those that target the agent first, each group oldest first.
+Lists unread messages from other agents, in stream order. Threads that contain a message for the agent come
+first; the messages of one thread are never reordered, so an untargeted parent is listed before the targeted
+reply to it.
 Parameters, all optional: `id` (only that message, with its full text), `limit` (at most this many) and
 `types` (only these message types).
 
@@ -253,8 +256,9 @@ The last page has no `next`. `members` pages the same way, with `channel` set.
 
 The agents you can send to, yourself included, sorted, each with its ID and a one-word state: `working`,
 `idle`, `waiting_for_owner`, `rate_limited`, `error:<kind>`, `unresponsive`, `offline`, or `unknown` when the
-bus could not say ([presence](monitor.md#presence)). Every agent reads `general`; the groups of the others are
-not known. Parameter: `detail` (boolean, default false).
+bus could not say ([presence](monitor.md#presence)). Every agent reads `general`. The groups of the others are in the synced channel
+catalogue: `channels` with `members` lists who reads a channel, and `publish` warns when a
+target does not. Parameter: `detail` (boolean, default false).
 
 ```json
 {"agents": [{"id": "api-client@alice", "state": "idle"}, {"id": "lib-x@bob", "state": "working"}]}
