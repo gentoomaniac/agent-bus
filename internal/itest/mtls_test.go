@@ -132,6 +132,59 @@ func TestCertificateLogin(t *testing.T) {
 		}
 	})
 
+	t.Run("alice's certificate with bob's password is never bob", func(t *testing.T) {
+		certPath, keyPath := creds.ClientCertPaths(creds.AgentDir(h.configDir, alice))
+		pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pool := x509.NewCertPool()
+		caPEM, _ := os.ReadFile(h.caCert)
+		pool.AppendCertsFromPEM(caPEM)
+		bobPassword, _ := creds.ReadPassword(creds.AgentDir(h.configDir, bob))
+		conn, err := nats.Connect(h.mappedAddress(), nats.UserInfo(bus.AgentToken(bob), bobPassword),
+			nats.Secure(&tls.Config{RootCAs: pool, Certificates: []tls.Certificate{pair}}),
+			nats.NoReconnect(), nats.Timeout(5*time.Second))
+		if err != nil {
+			return // refused
+		}
+		defer conn.Close()
+		// Connected: it must be alice, who may not listen on bob's inbox.
+		violation := make(chan error, 1)
+		conn.SetErrorHandler(func(_ *nats.Conn, _ *nats.Subscription, err error) { violation <- err })
+		if _, err := conn.SubscribeSync("_INBOX." + bus.AgentToken(bob) + ".x"); err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.Flush()
+		select {
+		case <-violation:
+		case <-time.After(5 * time.Second):
+			t.Error("a client with alice's certificate and bob's password became bob")
+		}
+	})
+
+	t.Run("a certificate agent cannot log in on the password port", func(t *testing.T) {
+		certPath, keyPath := creds.ClientCertPaths(creds.AgentDir(h.configDir, alice))
+		pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pool := x509.NewCertPool()
+		caPEM, _ := os.ReadFile(h.caCert)
+		pool.AppendCertsFromPEM(caPEM)
+		secure := nats.Secure(&tls.Config{RootCAs: pool, Certificates: []tls.Certificate{pair}})
+		for name, option := range map[string]nats.Option{
+			"by certificate alone":      nats.Name("no password"),
+			"by its mapped name":        nats.UserInfo(broker.AgentCertIdentity(alice), "anything"),
+			"by its token and password": nats.UserInfo(bus.AgentToken(alice), "anything"),
+		} {
+			if conn, err := nats.Connect(h.address, secure, option, nats.NoReconnect(), nats.Timeout(5*time.Second)); err == nil {
+				conn.Close()
+				t.Errorf("logged in on the password port %s", name)
+			}
+		}
+	})
+
 	t.Run("a certificate stops working when the agent is removed", func(t *testing.T) {
 		certPath, keyPath := creds.ClientCertPaths(creds.AgentDir(h.configDir, alice))
 		live, err := h.connectMapped(t, certPath, keyPath)
