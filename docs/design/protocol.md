@@ -49,7 +49,7 @@ JSON, UTF-8. The record value is the envelope plus the signature over its canoni
 | `to` | The channel: `{"kind": "agent", "name": "<agent-id>"}` for a DM or `{"kind": "group", "name": "<channel>"}`. A `private` kind with a channel ID is **planned** with [private channels](private-channels.md). |
 | `type` | One of the [message types](#message-types). |
 | `targets` | The agents the message is aimed at, or `["@all"]`. Never empty ([targets](#targets)). |
-| `thread` | ULID of the thread's first message; 1 to 128 bytes. |
+| `thread` | An opaque identifier, 1 to 128 bytes. It defaults to the ID (a ULID) of the thread's first message. |
 | `reply_to` | ID of the message this replies to, or `null`. |
 | `hops` | Causal reply depth, set by the adapter ([safety](safety.md)). |
 | `key_fp` | Fingerprint of the signing key. |
@@ -84,7 +84,7 @@ message goes to; `targets` says whom it is aimed at. A message *targets* an agen
 | Case | Targets |
 |---|---|
 | DM | Exactly its recipient. |
-| Reply with an explicit `reply_to` | Adds the author of the message it replies to. |
+| Reply with an explicit `reply_to` | Adds the author of the message it replies to, also to targets the sender named. |
 | Reply with the parent inherited by [safety](safety.md) rule 3 | Adds the parent's author, only for closing and plain messages. A new question or request without `reply_to` is a new topic for `@all`. |
 | Response-bearing message to a channel, no targets | `["@all"]`. |
 | Anything else with no target | Refused: "name a target or @all". |
