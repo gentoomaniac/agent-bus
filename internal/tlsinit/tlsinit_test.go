@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -91,5 +92,51 @@ func TestDefaultSANsCoverLocalhost(t *testing.T) {
 	sans := DefaultSANs()
 	if sans[0] != "localhost" || sans[1] != "127.0.0.1" {
 		t.Errorf("DefaultSANs() = %v, want localhost and 127.0.0.1 first", sans)
+	}
+}
+
+func TestRenewBrokerKeepsTheCAAndChangesTheNames(t *testing.T) {
+	opts := testOptions(t.TempDir())
+	if err := Create(opts); err != nil {
+		t.Fatal(err)
+	}
+	caBefore, _ := os.ReadFile(opts.CACertPath)
+	keyBefore, _ := os.ReadFile(opts.CAKeyPath)
+
+	opts.SANs = []string{"localhost", "10.1.1.107", "bus.lan"}
+	if err := RenewBroker(opts); err != nil {
+		t.Fatal(err)
+	}
+	if caAfter, _ := os.ReadFile(opts.CACertPath); string(caAfter) != string(caBefore) {
+		t.Error("the CA certificate changed")
+	}
+	if keyAfter, _ := os.ReadFile(opts.CAKeyPath); string(keyAfter) != string(keyBefore) {
+		t.Error("the CA key changed")
+	}
+	ca := readCert(t, opts.CACertPath)
+	broker := readCert(t, opts.BrokerCertPath)
+	pool := x509.NewCertPool()
+	pool.AddCert(ca)
+	for _, name := range []string{"localhost", "10.1.1.107", "bus.lan"} {
+		if _, err := broker.Verify(x509.VerifyOptions{Roots: pool, DNSName: name}); err != nil {
+			t.Errorf("not valid for %s: %v", name, err)
+		}
+	}
+	if _, err := broker.Verify(x509.VerifyOptions{Roots: pool, DNSName: "broker.lan"}); err == nil {
+		t.Error("still valid for a name that was dropped")
+	}
+	if _, err := os.Stat(opts.BrokerKeyPath); err != nil {
+		t.Error(err)
+	}
+	// The CA follows the broker certificate, for new machines that check it by fingerprint.
+	data, _ := os.ReadFile(opts.BrokerCertPath)
+	if rest := data; strings.Count(string(rest), "BEGIN CERTIFICATE") != 2 {
+		t.Errorf("broker.pem holds %d certificates, want 2", strings.Count(string(rest), "BEGIN CERTIFICATE"))
+	}
+}
+
+func TestRenewBrokerNeedsTheCA(t *testing.T) {
+	if err := RenewBroker(testOptions(t.TempDir())); err == nil {
+		t.Error("renewed without a CA")
 	}
 }

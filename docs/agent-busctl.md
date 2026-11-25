@@ -44,7 +44,7 @@ Every command takes these.
 | `--nats-server`         | `BUS_NATS_SERVER`  | `bin/nats-server` in the config dir | the binary that tests configurations        |
 | `--version`             |                    |                            | print the version                                    |
 
-`--direct` is needed by every command that requires admin rights, except `ca`, `enroll init`, `enroll autosign` and the commands that only write files (`tls init`, `admin init`, `service init`, `monitor ...`). The `ca` commands talk to busd, which the broker container starts by itself. `agent-busctl`
+`--direct` is needed by every command that requires admin rights, except `ca`, `enroll init`, `enroll autosign` and the commands that only write files (`tls init`, `tls broker`, `admin init`, `service init`, `monitor ...`). The `ca` commands talk to busd, which the broker container starts by itself. `agent-busctl`
 then connects to `--broker` as `bus-admin` and `control-admin` (two connections), trusting
 `--ca-cert`, with their passwords, or with their certificates once `cert issue --admin` has run. It must run on the broker's host, because access changes rewrite `nats/auth.conf`.
 
@@ -67,6 +67,26 @@ Creates the private CA and the broker certificate. No `--direct`, no broker need
 
 ```sh
 bin/agent-busctl tls init --san bus.example.org
+```
+
+The container's hostname is not the host's: in a container, name every host name and IP that
+clients use with `--san`.
+
+### tls broker
+
+Reissues only the broker certificate, for other names or IPs, signed by the existing CA. Clients
+keep their `ca.pem` and their certificates; the broker uses the new one from its next start. No
+`--direct`, no broker needed.
+
+| Flag            | Meaning                                                                    |
+|-----------------|----------------------------------------------------------------------------|
+| `--san`         | DNS name or IP the certificate is valid for, repeatable and required. The list replaces the old one, so name all of them |
+| `--validity`    | validity of the broker certificate, default `17520h`                       |
+| `--ca-key`, `--broker-cert`, `--broker-key` | file locations, as for `tls init`                  |
+
+```sh
+podman exec agent-bus agent-busctl tls broker --san localhost --san 127.0.0.1 --san 10.1.1.107
+~/srv/agent-bus/start.sh && ~/srv/agent-bus/monitor.sh   # or: podman restart agent-bus
 ```
 
 ### admin init

@@ -64,7 +64,8 @@ type CLI struct {
 	} `cmd:"" help:"The web monitor."`
 
 	TLS struct {
-		Init TLSInitCmd `cmd:"" help:"Create the private CA and the broker certificate."`
+		Init   TLSInitCmd   `cmd:"" help:"Create the private CA and the broker certificate."`
+		Broker TLSBrokerCmd `cmd:"" help:"Reissue the broker certificate for other names or IPs, with the same CA."`
 	} `cmd:"" help:"TLS setup."`
 
 	Admin struct {

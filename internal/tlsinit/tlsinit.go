@@ -2,6 +2,7 @@
 package tlsinit
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -60,36 +61,11 @@ func Create(opts Options) error {
 	if err != nil {
 		return err
 	}
-
-	brokerKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return err
-	}
-	brokerTemplate := &x509.Certificate{
-		SerialNumber: newSerial(),
-		Subject:      pkix.Name{CommonName: opts.SANs[0]},
-		NotBefore:    time.Now().Add(-time.Minute),
-		NotAfter:     time.Now().Add(opts.BrokerValidity),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-	}
-	for _, san := range opts.SANs {
-		if ip := net.ParseIP(san); ip != nil {
-			brokerTemplate.IPAddresses = append(brokerTemplate.IPAddresses, ip)
-		} else {
-			brokerTemplate.DNSNames = append(brokerTemplate.DNSNames, san)
-		}
-	}
-	brokerDER, err := x509.CreateCertificate(rand.Reader, brokerTemplate, caCert, &brokerKey.PublicKey, caKey)
-	if err != nil {
-		return err
-	}
-
 	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
-	// The broker sends its certificate followed by the CA's, so that a new machine that was given
-	// the CA's fingerprint can fetch the CA and check it (broker.FetchCA). Clients still trust
-	// only the CA certificate they hold.
-	brokerPEM := append(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: brokerDER}), caPEM...)
+	brokerPEM, brokerKeyPEM, err := issueBroker(caCert, caKey, caPEM, opts.SANs, opts.BrokerValidity)
+	if err != nil {
+		return err
+	}
 
 	outputs := []struct {
 		path string
@@ -99,7 +75,7 @@ func Create(opts Options) error {
 		{opts.CACertPath, caPEM, files.PublicMode},
 		{opts.CAKeyPath, encodeKey(caKey), files.SecretMode},
 		{opts.BrokerCertPath, brokerPEM, files.PublicMode},
-		{opts.BrokerKeyPath, encodeKey(brokerKey), files.SecretMode},
+		{opts.BrokerKeyPath, brokerKeyPEM, files.SecretMode},
 	}
 	for _, output := range outputs {
 		if err := files.Write(output.path, output.pem, output.mode, opts.Overwrite); err != nil {
@@ -107,6 +83,58 @@ func Create(opts Options) error {
 		}
 	}
 	return nil
+}
+
+// RenewBroker replaces the broker's certificate and key with new ones for sans, signed by the
+// existing CA. Clients keep trusting the broker: they hold the CA, which does not change.
+func RenewBroker(opts Options) error {
+	ca, err := LoadCA(opts.CACertPath, opts.CAKeyPath)
+	if err != nil {
+		return err
+	}
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.cert.Raw})
+	brokerPEM, brokerKeyPEM, err := issueBroker(ca.cert, ca.key, caPEM, opts.SANs, opts.BrokerValidity)
+	if err != nil {
+		return err
+	}
+	// nats-server reads both at its next start; until then it keeps serving the old pair.
+	if err := files.Write(opts.BrokerKeyPath, brokerKeyPEM, files.SecretMode, true); err != nil {
+		return err
+	}
+	return files.Write(opts.BrokerCertPath, brokerPEM, files.PublicMode, true)
+}
+
+// issueBroker makes the broker's key and its certificate for sans, signed by the CA. The
+// certificate PEM is followed by the CA's (see below).
+func issueBroker(caCert *x509.Certificate, caKey crypto.Signer, caPEM []byte, sans []string, validity time.Duration) (certPEM, keyPEM []byte, err error) {
+	brokerKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	brokerTemplate := &x509.Certificate{
+		SerialNumber: newSerial(),
+		Subject:      pkix.Name{CommonName: sans[0]},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(validity),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	for _, san := range sans {
+		if ip := net.ParseIP(san); ip != nil {
+			brokerTemplate.IPAddresses = append(brokerTemplate.IPAddresses, ip)
+		} else {
+			brokerTemplate.DNSNames = append(brokerTemplate.DNSNames, san)
+		}
+	}
+	brokerDER, err := x509.CreateCertificate(rand.Reader, brokerTemplate, caCert, &brokerKey.PublicKey, caKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The broker sends its certificate followed by the CA's, so that a new machine that was given
+	// the CA's fingerprint can fetch the CA and check it (broker.FetchCA). Clients still trust
+	// only the CA certificate they hold.
+	certPEM = append(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: brokerDER}), caPEM...)
+	return certPEM, encodeKey(brokerKey), nil
 }
 
 func encodeKey(key *ecdsa.PrivateKey) []byte {

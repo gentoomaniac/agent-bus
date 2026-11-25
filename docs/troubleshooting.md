@@ -5,15 +5,18 @@
 Symptom: a client fails with a certificate error (`x509: certificate is valid for …, not …`,
 `unknown authority`).
 
-- The host in `--broker` must be in the broker certificate. Recreate it with every name or IP
-  clients use, restart the broker and give clients the new `ca.pem`:
+- The host in `--broker` must be in the broker certificate (`cannot validate certificate for
+  10.1.1.107 because it doesn't contain any IP SANs` means that IP is missing). See what it holds
+  with `openssl x509 -in broker.pem -noout -ext subjectAltName`, then reissue it with every name
+  or IP clients use, keeping the CA, and restart the broker. Clients need nothing new:
 
   ```sh
-  docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus tls init --force --san bus.example.org --san 192.168.1.10
-  docker compose -f deploy/docker-compose.yaml restart agent-bus
+  podman exec agent-bus agent-busctl tls broker --san localhost --san 127.0.0.1 --san bus.example.org --san 192.168.1.10
+  podman restart agent-bus     # bind-mount setup: start.sh, then monitor.sh
   ```
 
-  With Podman, see [podman.md](podman.md#2-volumes-and-one-time-setup) and restart the container.
+  With compose: `docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl tls broker
+  --san ...`, then `docker compose -f deploy/docker-compose.yaml restart agent-bus`.
 
 - A client trusts only `ca.pem` (`--ca-cert`). Copy the current one from the broker's config
   directory.
