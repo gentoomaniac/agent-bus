@@ -46,6 +46,9 @@ type Mail struct {
 type Reply struct {
 	Mail   []Mail
 	Unread int // all unread messages, told or not
+	// Problem is a sentence about the session's link to the bus (the MCP server is gone, the broker
+	// is out of reach), for the agent to pass on to its owner. It is empty when all is well.
+	Problem string
 }
 
 type request struct {
@@ -94,6 +97,9 @@ func Listen(dir string, session Session) (stop func(), err error) {
 	listener, err := net.Listen("unix", path)
 	if err != nil {
 		return nil, err
+	}
+	if err := markSession(dir, harness); err != nil {
+		log.Printf("agent-bus: no session marker, a lost server will go unreported: %v", err)
 	}
 	var waiter currentWaiter
 	go acceptLoop(listener, func(connection net.Conn) { serve(connection, session, &waiter) })
@@ -222,7 +228,7 @@ func Ask(dir, op string) (Reply, bool) {
 
 // Wait blocks until the adapter of this process's session has new mail for it, and returns that.
 // The reply has no mail when the wait ended otherwise: max went by, the waiter was replaced by a
-// newer one, ctx ended, or there is no adapter.
+// newer one, ctx ended, or there is no adapter. A session whose adapter went away gets a Problem.
 func Wait(ctx context.Context, dir string, max time.Duration) Reply {
 	ctx, cancel := context.WithTimeout(ctx, max)
 	defer cancel()
@@ -231,7 +237,13 @@ func Wait(ctx context.Context, dir string, max time.Duration) Reply {
 	lookUntil := time.Now().Add(socketStartupWait)
 	for {
 		reply, ok := askUntil(ctx, dir, request{Op: WaitMail})
-		if ok || ctx.Err() != nil || time.Now().After(lookUntil) {
+		if ok || ctx.Err() != nil {
+			return reply
+		}
+		if problem := LostServer(dir); problem != "" {
+			return Reply{Problem: problem}
+		}
+		if time.Now().After(lookUntil) {
 			return reply
 		}
 		select {

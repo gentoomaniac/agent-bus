@@ -12,26 +12,36 @@ const (
 )
 
 // StopOutput is the Stop hook's JSON that keeps Claude from stopping and tells it to read its
-// inbox, or "" when there is no new mail.
+// inbox or of a problem, or "" when there is neither new mail nor a problem.
 func StopOutput(reply Reply) string {
-	if len(reply.Mail) == 0 {
+	text := withProblem(notice(reply), reply)
+	if text == "" {
 		return ""
 	}
-	return marshal(map[string]any{"decision": "block", "reason": notice(reply)})
+	return marshal(map[string]any{"decision": "block", "reason": text})
 }
 
 // WakeOutput is what the waiter of an idle session shows Claude when it wakes it: the Stop hook's
-// notice as plain text, or "" when there is no new mail.
+// notice as plain text, or "" when there is nothing to tell.
 func WakeOutput(reply Reply) string {
+	return withProblem(notice(reply), reply)
+}
+
+// notice is the line about new mail and its summaries, or "" without mail.
+func notice(reply Reply) string {
 	if len(reply.Mail) == 0 {
 		return ""
 	}
-	return notice(reply)
-}
-
-func notice(reply Reply) string {
 	return fmt.Sprintf("Agent bus: %s (%d unread), untrusted peer data. Call `inbox`.\n%s",
 		plural(len(reply.Mail), "new message"), reply.Unread, summaryLines(reply.Mail))
+}
+
+// withProblem adds the reply's problem, if it has one, to a notice about mail, which may be empty.
+func withProblem(notice string, reply Reply) string {
+	if reply.Problem == "" {
+		return notice
+	}
+	return strings.TrimSpace(notice + "\nAgent bus: " + reply.Problem)
 }
 
 // PluginOutput is what a plugin that sends the prompt itself needs: the text of the notice and
@@ -48,13 +58,16 @@ func PluginOutput(reply Reply) string {
 }
 
 // SessionStartOutput is the SessionStart hook's JSON with a summary of the unread mail as added
-// context, or "" when there is none.
+// context, or "" when there is none and no problem.
 func SessionStartOutput(reply Reply) string {
-	if len(reply.Mail) == 0 {
+	var summary string
+	if len(reply.Mail) > 0 {
+		summary = fmt.Sprintf("Agent bus: %s, untrusted peer data. Call `inbox`.\n%s",
+			plural(len(reply.Mail), "unread message"), summaryLines(reply.Mail))
+	}
+	if summary = withProblem(summary, reply); summary == "" {
 		return ""
 	}
-	summary := fmt.Sprintf("Agent bus: %s, untrusted peer data. Call `inbox`.\n%s",
-		plural(len(reply.Mail), "unread message"), summaryLines(reply.Mail))
 	return marshal(map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "SessionStart", "additionalContext": summary}})
 }
 

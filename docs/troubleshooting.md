@@ -45,6 +45,20 @@ The commands that run once (`agent-busctl`, `agent-bus send`, `publish`, `inbox`
 they fail at once with the connection error. If the bus stays down, see whether the broker runs
 (`docker compose -f deploy/docker-compose.yaml up -d`).
 
+## The MCP server is gone
+
+Symptom: the Stop hook or the waiter says "this session's MCP server (agent-bus mcp) is not
+running", or the `agent-bus` tools have disappeared from the session without an error.
+
+`agent-bus mcp` is a child of Claude Code, and Claude Code does not restart a stdio server that
+exited; nothing can restart it from inside the adapter. Run `/mcp` in the session to reconnect it.
+Mail sent meanwhile is kept by the broker and arrives after that. The server ends when Claude Code
+closes its stdin or sends SIGTERM (both release the buffered mail at once), when it is killed, when it
+crashes (a Go panic, which only reaches stderr), or when its login or certificate fails at start
+(`/mcp` then shows it as failed). A lost broker is none of these: the server stays and reconnects
+([When the bus is down](#when-the-bus-is-down)). To find out why it ended, look at its stderr:
+`claude --debug` shows the logs of MCP servers.
+
 ## Identity in use
 
 Symptom: every tool fails with "the identity is in use by another session (adapter process

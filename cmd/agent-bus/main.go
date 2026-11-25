@@ -194,7 +194,7 @@ func refreshDirectory(ctx context.Context, session *adapter.Adapter, interval ti
 type PendingCmd struct {
 	Format string        `help:"hook: the Stop hook's decision. session-start: the SessionStart hook's context. plugin: {reason, ids} for a plugin that sends the prompt itself; nothing is marked told until --mark." default:"hook" enum:"hook,session-start,plugin"`
 	Mark   []string      `help:"Mark these message IDs told, after a plugin delivered the notice, and print nothing."`
-	Wait   bool          `help:"Instead of reporting at once, block until this session has new mail for it (not chatter), print the notice on stderr and exit 2: the Claude Code asyncRewake hook, which wakes an idle session. Exits 0 silently after --max, or when the session's MCP server goes away or a newer waiter replaces this one."`
+	Wait   bool          `help:"Instead of reporting at once, block until this session has new mail for it (not chatter), print the notice on stderr and exit 2: the Claude Code asyncRewake hook, which wakes an idle session. Exits 0 silently after --max or when a newer waiter replaces this one; when the session's MCP server is gone it exits 2 with a notice saying so."`
 	Max    time.Duration `help:"With --wait: the longest to wait. Stay below the hook's timeout." default:"23h"`
 }
 
@@ -227,10 +227,12 @@ func (cmd *PendingCmd) Run(ctx context.Context) error {
 	case "plugin":
 		op, format = hook.PeekMail, hook.PluginOutput
 	}
-	if reply, ok := hook.Ask(hook.Dir(), op); ok {
-		if output := format(reply); output != "" {
-			fmt.Println(output)
-		}
+	reply, ok := hook.Ask(hook.Dir(), op)
+	if !ok && cmd.Format != "plugin" { // the plugin keeps its own state and has no turn to spend on this
+		reply.Problem = hook.LostServer(hook.Dir())
+	}
+	if output := format(reply); output != "" {
+		fmt.Println(output)
 	}
 	return nil
 }

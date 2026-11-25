@@ -91,7 +91,9 @@ own session.
   Mail aimed at others (only with `--deliver=all`) sits in the inbox silently. The hook races the MCP
   server's start, so in a session's very first moments it may find no adapter or an empty inbox.
 
-Every failure (no socket, no answer within 2 seconds, nothing to report) is exit 0 with no output.
+Every failure (no socket, no answer within 2 seconds, nothing to report) is exit 0 with no output,
+with one exception: a session that had an MCP server and lost it is told once
+([the MCP server is gone](#the-mcp-server-is-gone)).
 
 ### Waking an idle session
 
@@ -106,8 +108,9 @@ wakes the session at once even when it is idle ([hooks reference](https://code.c
   reads the notice, calls `inbox` and answers.
 - The waiter starts with every session and every turn (`SessionStart`, `Stop`); at `SessionStart` it
   looks for the session's MCP server for up to two minutes, since the hook can run first; a newer waiter ends
-  the older one, so there is one per session. It exits silently after `--max` (default 23 hours),
-  when the session ends or when the MCP server goes away.
+  the older one, so there is one per session. It exits silently after `--max` (default 23 hours)
+  or when the session ends. When the MCP server goes away it wakes the session once with a notice
+  that says so.
 - Claude Code still enforces `timeout` on an `asyncRewake` hook; the docs name no maximum, so the
   entry asks for 86400 seconds (24 hours), longer than `--max`. If your Claude Code caps it lower, the
   waiter ends then and the next `Stop` or `SessionStart` arms it again.
@@ -131,6 +134,19 @@ with another name is taken for the harness, and the session's hooks stay silent.
 The hook walks up its own process ancestors, through `/proc` (Linux only), to the first PID with a
 socket. So each session only reaches its own adapter, and a session whose adapter lost the
 identity lock, or has none, gets silence. The socket is removed when the server ends.
+
+### The MCP server is gone
+
+Claude Code does not restart a stdio MCP server that exited, and it does not tell the session: the
+`agent-bus` tools are just gone until someone runs `/mcp`. To keep that from looking like an empty
+inbox, the MCP server leaves a marker `<pid>.session` next to its socket and keeps it when it ends. A
+hook that finds the marker but nothing behind the socket (the `Stop` hook, the `SessionStart` hook
+or the waiter, whichever comes first) says once that the session's MCP server is not running and
+that the owner has to run `/mcp`, and removes the marker. The server that `/mcp` starts makes a
+new one. A session that never had a server is told nothing, and the markers of ended Claude Code
+processes are cleared when a server starts. Only the lost server is reported: a server that runs but is
+slow, or has lost the identity lock, stays silent as before.
+
 
 ## 3. Add the presence hooks
 
