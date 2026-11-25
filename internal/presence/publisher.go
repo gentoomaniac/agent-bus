@@ -24,11 +24,15 @@ type Publisher struct {
 	sink      Sink
 	heartbeat time.Duration
 	now       func() time.Time
+	// Log, when set, is told when publishing starts failing and when it works again: a failed
+	// heartbeat is otherwise silent, and the owner only sees the agent go offline.
+	Log func(format string, args ...any)
 
 	mu          sync.Mutex
 	tracker     *Tracker
 	lastContent string // of the last record published, without its Updated time
 	lastAt      time.Time
+	failingFrom time.Time // when the current run of failed publishes began; zero while they work
 }
 
 func NewPublisher(sink Sink, heartbeat time.Duration, now func() time.Time) *Publisher {
@@ -59,11 +63,25 @@ func (publisher *Publisher) Step(ctx context.Context) bool {
 
 // publish the record. The caller holds mu.
 func (publisher *Publisher) publish(ctx context.Context, record Record) bool {
-	if publisher.sink.PublishPresence(ctx, record) != nil {
+	if err := publisher.sink.PublishPresence(ctx, record); err != nil {
+		if publisher.failingFrom.IsZero() {
+			publisher.failingFrom = publisher.now()
+			publisher.log("presence: publishing failed, the monitor will show this agent offline until it works again: %v", err)
+		}
 		return false
+	}
+	if !publisher.failingFrom.IsZero() {
+		publisher.log("presence: publishing works again after %s", publisher.now().Sub(publisher.failingFrom).Round(time.Second))
+		publisher.failingFrom = time.Time{}
 	}
 	publisher.lastContent, publisher.lastAt = contentOf(record), record.Updated
 	return true
+}
+
+func (publisher *Publisher) log(format string, args ...any) {
+	if publisher.Log != nil {
+		publisher.Log(format, args...)
+	}
 }
 
 // contentOf is the record without its heartbeat time: what a change is measured on.

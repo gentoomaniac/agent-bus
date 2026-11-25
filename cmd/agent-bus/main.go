@@ -153,6 +153,7 @@ func (cmd *MCPCmd) Run(ctx context.Context, cli *CLI, session *adapter.Adapter) 
 	if session.Ready() == nil {
 		go refreshDirectory(ctx, session, cli.DirectoryRefresh)
 		publisher := presence.NewPublisher(session, cli.PresenceHeartbeat, time.Now)
+		publisher.Log = func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) }
 		publishing := make(chan struct{})
 		publishCtx, stopPublishing := context.WithCancel(ctx)
 		go func() { publisher.Run(publishCtx); close(publishing) }()

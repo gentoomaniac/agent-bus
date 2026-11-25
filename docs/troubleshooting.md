@@ -120,6 +120,16 @@ regenerates every agent's grants, which take effect on live connections; until t
 is refused and the server logs a permissions violation. An agent without hooks is `idle` while its process runs; `unresponsive` needs targeted mail
 unlisted for 10 minutes.
 
+## One agent goes offline while its session is still open
+
+The heartbeat goes out every 30 seconds while the session's `agent-bus` runs, busy or idle; the
+monitor calls the agent offline after 90 seconds without one. So the process stopped, its machine
+slept, or its connection to the broker is down. The session's MCP log says which:
+`presence: publishing failed ... : <error>` when the heartbeat starts failing and `publishing works
+again after <time>` when it is back, next to the connection lines (`lost the connection to the
+bus`, `reconnected`, `closed for good`). Claude Code keeps that log in
+`~/.cache/claude-cli-nodejs/<project>/mcp-logs-agent-bus/`.
+
 ## An agent shows idle while it is working, or working while it is idle
 
 Claude Code runs no `Stop` hook when you interrupt a turn with Esc, and the async tool hooks can

@@ -3,6 +3,7 @@ package presence
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -244,5 +245,33 @@ func TestRunPublishesOfflineWhenItEnds(t *testing.T) {
 	<-done
 	if len(sink.published) == 0 || sink.published[len(sink.published)-1].State != Offline {
 		t.Errorf("published %+v, want a last record that is offline", sink.published)
+	}
+}
+
+func TestPublisherLogsWhenPublishingFailsAndRecovers(t *testing.T) {
+	now := start
+	sink := &fakeSink{err: errors.New("bus unavailable")}
+	publisher := NewPublisher(sink, 30*time.Second, func() time.Time { return now })
+	var logged []string
+	publisher.Log = func(format string, args ...any) { logged = append(logged, fmt.Sprintf(format, args...)) }
+
+	for range 3 { // every step retries; the outage is logged once
+		publisher.Step(context.Background())
+		now = now.Add(time.Second)
+	}
+	if len(logged) != 1 || !strings.Contains(logged[0], "bus unavailable") {
+		t.Fatalf("the failure is logged once with its error: %q", logged)
+	}
+	sink.err = nil
+	now = now.Add(time.Minute)
+	if !publisher.Step(context.Background()) {
+		t.Fatal("the heartbeat did not publish once the bus was back")
+	}
+	if len(logged) != 2 || !strings.Contains(logged[1], "works again after 1m3s") {
+		t.Errorf("the recovery is logged with the outage's length: %q", logged)
+	}
+	publisher.Step(context.Background())
+	if len(logged) != 2 {
+		t.Errorf("logged again while publishing works: %q", logged)
 	}
 }
