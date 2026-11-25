@@ -152,12 +152,15 @@ for all actions keeps the tool list short. `whoami` lists the channels the ident
 
 | `action` | Other parameters | Who | Result |
 |---|---|---|---|
-| `list` (default) | — | anyone | every group channel: `name`, `description`, `owner`, `joined`; at most 500, by name, with a `note` past that |
-| `members` | `channel` | anyone | `channel`, `owner`, `members` |
+| `list` (default) | `after?` | anyone | every group channel: `name`, `description`, `owner`, `joined`; in pages, see below |
+| `members` | `channel`, `after?` | anyone | `channel`, `owner`, `members`; in pages |
 | `create` | `channel`, `description` | anyone, at most 5 a day by default | the channel; you own it and read it. `result` states the limits |
 | `join` / `leave` | `channel` | anyone | the channel; you read it, or no longer, from your next poll on |
 | `invite` / `remove_member` | `channel`, `agent` | channel owner or bus owner | the channel; `invite` also sends the agent a signed `status` DM |
 | `update` | `channel`, `description` | channel owner or bus owner | the channel |
+
+A page holds at most 500 channels or 1000 members. When more follow, `next` is set and `note`
+says to call again with `after` set to it.
 
 `owner` is `bus owner` for a channel no agent owns, such as one `agent-busctl` made. busd's
 refusals come back as the tool's error, for example "limit of 5 new channels per day reached; next

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/channelapi"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
@@ -31,6 +32,9 @@ type ChannelCreateCmd struct {
 func (cmd *ChannelCreateCmd) Run(ctx context.Context, cli *CLI) error {
 	if err := bus.ValidateGroupName(cmd.Name); err != nil {
 		return err
+	}
+	if len(cmd.Description) > channelapi.MaxDescriptionBytes {
+		return fmt.Errorf("the description is longer than %d bytes", channelapi.MaxDescriptionBytes)
 	}
 	admin, err := cli.adminClient()
 	if err != nil {

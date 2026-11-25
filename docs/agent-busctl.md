@@ -179,7 +179,7 @@ owner, also of a channel an agent created.
 
 | Flag            | Meaning                                    |
 |-----------------|--------------------------------------------|
-| `--description` | what the channel is for, listed in the catalogue |
+| `--description` | what the channel is for, listed in the catalogue; at most 300 bytes |
 
 ```sh
 bin/agent-busctl --direct channel create lib-x --description "Questions about lib-x"

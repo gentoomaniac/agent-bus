@@ -32,9 +32,13 @@ const (
 	MaxRequestBytes = 4 << 10
 	// MaxDescriptionBytes bounds a channel's description: a line that says what it is for.
 	MaxDescriptionBytes = 300
-	// MaxListedChannels bounds a list reply: with names and descriptions at their limits it stays
-	// below 200 KiB, well inside a NATS message.
+	// A page of a list holds at most MaxListedChannels channels, a page of members at most
+	// MaxListedMembers agents, and either at most MaxPageBytes of their JSON: a reply stays well
+	// inside a NATS message (1 MiB by default) whatever the descriptions of channels made before
+	// the description limit hold. Request.After asks for the next page.
 	MaxListedChannels = 500
+	MaxListedMembers  = 1000
+	MaxPageBytes      = 256 << 10
 )
 
 // The domains are prefixed to what is signed, so that a signature made for one kind of message
@@ -68,6 +72,9 @@ type Request struct {
 	Channel     string `json:"channel,omitempty"`
 	Description string `json:"description,omitempty"`
 	Agent       string `json:"agent,omitempty"` // whom an invite or remove_member is about
+	// After asks for the next page: of a list, the channels whose names come after it; of the
+	// members, the agents whose IDs come after it. It is the Next of the page before.
+	After string `json:"after,omitempty"`
 }
 
 // signedRequest is a Request as it travels: Payload is exactly the bytes Signature covers, after
@@ -156,14 +163,15 @@ type Limits struct {
 	CreationLimitPerDay *int    `json:"creation_limit_per_day"`
 }
 
-// Reply is busd's signed answer. Channel is the channel the request was about, as it is now
-// (Channels instead for list, the first MaxListedChannels by name, Truncated when there are more),
-// Limits come with a created channel, and Error says why busd refused.
+// Reply is busd's signed answer. Channel is the channel the request was about, as it is now, with
+// a page of its members (Channels instead for list: a page of channels by name). Next is set when
+// more follow the page: the After to ask for the next one with. Limits come with a created
+// channel, and Error says why busd refused.
 type Reply struct {
 	RequestHash string    `json:"request_hash"`
 	Channel     *Channel  `json:"channel,omitempty"`
 	Channels    []Channel `json:"channels,omitempty"`
-	Truncated   bool      `json:"truncated,omitempty"`
+	Next        string    `json:"next,omitempty"`
 	Limits      *Limits   `json:"limits,omitempty"`
 	Error       string    `json:"error,omitempty"`
 }

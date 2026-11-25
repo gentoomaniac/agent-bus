@@ -3,6 +3,7 @@ package busd
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -117,7 +118,7 @@ func (channels *Channels) HandleRequest(caller string, message []byte) []byte {
 func (channels *Channels) answer(ctx context.Context, request channelapi.Request, signer bus.AgentRecord, reply *channelapi.Reply) error {
 	if request.Action == channelapi.List {
 		var err error
-		reply.Channels, reply.Truncated, err = channels.list(ctx, request.AgentID)
+		reply.Channels, reply.Next, err = channels.list(ctx, request.AgentID, request.After)
 		return err
 	}
 	if err := bus.ValidateGroupName(request.Channel); err != nil {
@@ -125,7 +126,7 @@ func (channels *Channels) answer(ctx context.Context, request channelapi.Request
 	}
 	if request.Action == channelapi.Members {
 		var err error
-		reply.Channel, err = channels.describe(ctx, request.Channel)
+		reply.Channel, reply.Next, err = channels.describe(ctx, request.Channel, request.After)
 		return err
 	}
 	if channels.config.LockMutations != nil {
@@ -155,7 +156,7 @@ func (channels *Channels) answer(ctx context.Context, request channelapi.Request
 	if channels.config.DirectoryChanged != nil {
 		channels.config.DirectoryChanged()
 	}
-	reply.Channel, err = channels.describe(ctx, request.Channel)
+	reply.Channel, reply.Next, err = channels.describe(ctx, request.Channel, "")
 	return err
 }
 
@@ -364,49 +365,62 @@ func (channels *Channels) removeMember(ctx context.Context, name, agentID string
 	return channels.config.Admin.DeleteReadCursor(ctx, agentID, bus.GroupChannel(name))
 }
 
-func (channels *Channels) describe(ctx context.Context, name string) (*channelapi.Channel, error) {
+// describe is the channel with the page of its members that follows after.
+func (channels *Channels) describe(ctx context.Context, name, after string) (channel *channelapi.Channel, next string, err error) {
 	record, err := channels.find(ctx, name)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	members, err := channels.config.Admin.ReadCursorHolders(ctx, bus.GroupChannel(name))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return channelOf(record, members), nil
+	slices.Sort(members)
+	members, next = pageOf(members, func(id string) string { return id }, after, channelapi.MaxListedMembers)
+	return &channelapi.Channel{Name: record.Name, Description: record.Description, Owner: record.Owner, Members: members}, next, nil
 }
 
-// list is every channel by name, at most channelapi.MaxListedChannels, with whether the caller
-// reads it. The consumers are listed once for all channels.
-func (channels *Channels) list(ctx context.Context, caller string) (list []channelapi.Channel, truncated bool, err error) {
+// list is the page of channels by name that follows after, with whether the caller reads each. The
+// consumers are listed once for all channels.
+func (channels *Channels) list(ctx context.Context, caller, after string) (list []channelapi.Channel, next string, err error) {
 	groups, err := channels.config.Admin.GroupChannels(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
 	readers, err := channels.config.Admin.GroupReaders(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
 	groups = slices.DeleteFunc(groups, func(group bus.TopicRecord) bool { return group.Pending })
 	slices.SortFunc(groups, func(a, b bus.TopicRecord) int { return strings.Compare(a.Name, b.Name) })
-	if len(groups) > channelapi.MaxListedChannels {
-		groups, truncated = groups[:channelapi.MaxListedChannels], true
-	}
 	list = []channelapi.Channel{}
 	for _, group := range groups {
 		list = append(list, channelapi.Channel{
 			Name: group.Name, Description: group.Description, Owner: group.Owner, Joined: slices.Contains(readers[group.Name], caller),
 		})
 	}
-	return list, truncated, nil
+	list, next = pageOf(list, func(channel channelapi.Channel) string { return channel.Name }, after, channelapi.MaxListedChannels)
+	return list, next, nil
 }
 
-func channelOf(record bus.TopicRecord, members []string) *channelapi.Channel {
-	members = slices.Sorted(slices.Values(members))
-	if members == nil {
-		members = []string{}
+// pageOf takes, in order, the items whose key comes after after (all of them for ""), while they
+// are at most limit and their JSON at most channelapi.MaxPageBytes; at least one is taken. items
+// are sorted by key. next is the key of the last one taken when more follow, else "".
+func pageOf[T any](items []T, key func(T) string, after string, limit int) (page []T, next string) {
+	page = []T{}
+	size := 0
+	for _, item := range items {
+		if after != "" && key(item) <= after {
+			continue
+		}
+		data, _ := json.Marshal(item) // channels and IDs always marshal
+		if len(page) > 0 && (len(page) == limit || size+len(data) > channelapi.MaxPageBytes) {
+			return page, key(page[len(page)-1])
+		}
+		size += len(data) + 1 // and a comma
+		page = append(page, item)
 	}
-	return &channelapi.Channel{Name: record.Name, Description: record.Description, Owner: record.Owner, Members: members}
+	return page, ""
 }
 
 // days writes a duration as whole days ("90d") when it is, else as Go does.

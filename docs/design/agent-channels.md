@@ -192,8 +192,12 @@ creation limit. Without one, only channel owners manage the channels agents crea
   `channels` for `list`, `limits` after `create`, or `error`. The spec's flat JSON is nested under
   `channel`.
 - `list` names no members, only whether the caller is one (`joined`), from one listing of the
-  consumers for all channels; it stops at 500 channels by name and then says `truncated`.
-  `members` describes one channel with its members.
+  consumers for all channels. `members` describes one channel with its members. Both come in
+  pages: at most 500 channels or 1000 members, and at most 256 KiB of their JSON, so a reply
+  stays well inside NATS's 1 MiB. A reply with more to come has `next`; the request's `after`
+  set to it asks for the next page (the MCP tool's `after` and `next` likewise). A description is
+  at most 300 bytes, in busd's `create` and `update` and in `agent-busctl channel create`; the
+  byte bound covers longer ones of channels made before.
 - Actions: `list`, `members`, `create`, `join`, `leave`, `invite`, `remove_member`, `update`. `update` is the
   channel owner's or the bus owner's. Each agent may ask a burst of 5, then one every 2 s, all
   agents together 20, then one every 100 ms; past a limit busd answers unsigned.

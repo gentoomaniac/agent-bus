@@ -228,6 +228,7 @@ type channelsIn struct {
 	Channel     string `json:"channel,omitempty" jsonschema:"group channel name, for every action but list"`
 	Description string `json:"description,omitempty" jsonschema:"create, update: what the channel is for"`
 	Agent       string `json:"agent,omitempty" jsonschema:"invite, remove_member: agent ID"`
+	After       string `json:"after,omitempty" jsonschema:"list, members: the next of the answer before, for the next page"`
 }
 
 // channelEntry is a group channel in a listing. Members are left out: there may be many, and
@@ -246,7 +247,8 @@ type channelsOut struct {
 	Owner   string   `json:"owner,omitempty"`
 	Members []string `json:"members,omitempty"`
 	Result  string   `json:"result,omitempty"` // what a change did, in a line
-	Note    string   `json:"note,omitempty"`   // why a listing is only the local one
+	Next    string   `json:"next,omitempty"`   // more follow: ask again with after set to it
+	Note    string   `json:"note,omitempty"`   // why a listing is only the local one, or how to page
 	Warning string   `json:"warning,omitempty"`
 }
 
@@ -256,9 +258,9 @@ const busOwner = "bus owner"
 func (t tools) channels(ctx context.Context, _ *mcp.CallToolRequest, in channelsIn) (*mcp.CallToolResult, channelsOut, error) {
 	switch in.Action {
 	case "", channelapi.List:
-		return t.listChannels(ctx)
+		return t.listChannels(ctx, in.After)
 	case "members":
-		return t.channelMembers(ctx, in.Channel)
+		return t.channelMembers(ctx, in.Channel, in.After)
 	case channelapi.Invite:
 		reply, warning, err := t.session.Invite(ctx, in.Channel, in.Agent)
 		if err != nil {
@@ -288,6 +290,14 @@ func (t tools) channels(ctx context.Context, _ *mcp.CallToolRequest, in channels
 	return nil, out, nil
 }
 
+// morePages says how to get the page after one whose answer ended at next.
+func morePages(next string) string {
+	if next == "" {
+		return ""
+	}
+	return fmt.Sprintf("more follow: call again with after %q", next)
+}
+
 func describeChannel(channel channelapi.Channel) channelsOut {
 	return channelsOut{Channel: channel.Name, Owner: cmp.Or(channel.Owner, busOwner), Members: channel.Members}
 }
@@ -309,20 +319,17 @@ func createdLine(name string, limits *channelapi.Limits) string {
 
 // listChannels is every group channel from busd. While busd cannot be asked it is the local
 // catalogue's, without descriptions and owners, and the note says why.
-func (t tools) listChannels(ctx context.Context) (*mcp.CallToolResult, channelsOut, error) {
+func (t tools) listChannels(ctx context.Context, after string) (*mcp.CallToolResult, channelsOut, error) {
 	if err := t.session.Ready(); err != nil {
 		return nil, channelsOut{}, err
 	}
-	reply, err := t.session.RequestChannel(ctx, channelapi.Request{Action: channelapi.List})
+	reply, err := t.session.RequestChannel(ctx, channelapi.Request{Action: channelapi.List, After: after})
 	if err == nil {
-		out := channelsOut{Channels: []channelEntry{}}
+		out := channelsOut{Channels: []channelEntry{}, Next: reply.Next, Note: morePages(reply.Next)}
 		for _, channel := range reply.Channels {
 			out.Channels = append(out.Channels, channelEntry{
 				Name: channel.Name, Description: channel.Description, Owner: cmp.Or(channel.Owner, busOwner), Joined: channel.Joined,
 			})
-		}
-		if reply.Truncated {
-			out.Note = fmt.Sprintf("only the first %d channels by name", len(reply.Channels))
 		}
 		return nil, out, nil
 	}
@@ -337,12 +344,14 @@ func (t tools) listChannels(ctx context.Context) (*mcp.CallToolResult, channelsO
 	return nil, out, nil
 }
 
-func (t tools) channelMembers(ctx context.Context, name string) (*mcp.CallToolResult, channelsOut, error) {
-	reply, err := t.session.RequestChannel(ctx, channelapi.Request{Action: channelapi.Members, Channel: name})
+func (t tools) channelMembers(ctx context.Context, name, after string) (*mcp.CallToolResult, channelsOut, error) {
+	reply, err := t.session.RequestChannel(ctx, channelapi.Request{Action: channelapi.Members, Channel: name, After: after})
 	if err != nil {
 		return nil, channelsOut{}, err
 	}
-	return nil, describeChannel(*reply.Channel), nil
+	out := describeChannel(*reply.Channel)
+	out.Next, out.Note = reply.Next, morePages(reply.Next)
+	return nil, out, nil
 }
 
 // unknownSenders says why mail is missing: its senders are not in the local directory.

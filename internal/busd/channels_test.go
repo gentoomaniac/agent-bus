@@ -3,6 +3,7 @@ package busd
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -367,14 +368,50 @@ func TestALateCreateDoesNotUndoALeave(t *testing.T) {
 	}
 }
 
-func TestAListStopsAtItsBound(t *testing.T) {
+// A list comes in pages bounded by count and by size, which After walks through without a gap or
+// a repeat; so do the members of a channel.
+func TestListsAndMembersComeInBoundedPages(t *testing.T) {
 	f := newChannelFixture(t)
-	for i := range channelapi.MaxListedChannels + 1 {
-		f.registry.groups = append(f.registry.groups, bus.TopicRecord{Name: fmt.Sprintf("c%04d", i)})
+	long := strings.Repeat("d", 4000) // a description of a channel made before the limit
+	for i := range 2 * channelapi.MaxListedChannels {
+		f.registry.groups = append(f.registry.groups, bus.TopicRecord{Name: fmt.Sprintf("c%04d", i), Description: long})
 	}
-	reply := f.must(channelapi.Request{AgentID: member, Action: channelapi.List})
-	if len(reply.Channels) != channelapi.MaxListedChannels || !reply.Truncated || reply.Channels[0].Name != "c0000" {
-		t.Errorf("%d channels, truncated %v", len(reply.Channels), reply.Truncated)
+	var names []string
+	after := ""
+	for pages := 0; ; pages++ {
+		reply, err := f.ask(channelapi.Request{AgentID: member, Action: channelapi.List, After: after})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if size, _ := json.Marshal(reply.Channels); len(size) > channelapi.MaxPageBytes+1 {
+			t.Fatalf("a page of %d bytes", len(size))
+		}
+		for _, channel := range reply.Channels {
+			names = append(names, channel.Name)
+		}
+		if reply.Next == "" {
+			break
+		}
+		after = reply.Next
+		if pages > 100 {
+			t.Fatal("the pages never end")
+		}
+	}
+	if len(names) != 2*channelapi.MaxListedChannels || !slices.IsSorted(names) || len(slices.Compact(slices.Clone(names))) != len(names) {
+		t.Errorf("%d channels over the pages", len(names))
+	}
+
+	f.registry.groups = append(f.registry.groups, bus.TopicRecord{Name: "crowd", Owner: owner})
+	for i := range channelapi.MaxListedMembers + 10 {
+		f.registry.cursors = append(f.registry.cursors, fmt.Sprintf("m%05d@x channel crowd after 0", i))
+	}
+	first := f.must(channelapi.Request{AgentID: member, Action: channelapi.Members, Channel: "crowd"})
+	if len(first.Channel.Members) != channelapi.MaxListedMembers || first.Next != first.Channel.Members[len(first.Channel.Members)-1] {
+		t.Fatalf("%d members, next %q", len(first.Channel.Members), first.Next)
+	}
+	rest := f.must(channelapi.Request{AgentID: member, Action: channelapi.Members, Channel: "crowd", After: first.Next})
+	if len(rest.Channel.Members) != 10 || rest.Next != "" || rest.Channel.Members[0] <= first.Next {
+		t.Errorf("the second page: %d members from %v, next %q", len(rest.Channel.Members), rest.Channel.Members[:1], rest.Next)
 	}
 }
 

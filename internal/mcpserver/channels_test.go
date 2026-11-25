@@ -112,6 +112,26 @@ func TestChannelsListsEveryChannelAndSaysWhichTheAgentReads(t *testing.T) {
 	}
 }
 
+func TestChannelsSaysHowToGetTheNextPage(t *testing.T) {
+	b := newTestBus(t, alice)
+	busd := b.startBusd(func(request channelapi.Request) channelapi.Reply {
+		if request.After == "" {
+			return channelapi.Reply{Channels: []channelapi.Channel{{Name: "a"}}, Next: "a"}
+		}
+		return channelapi.Reply{Channels: []channelapi.Channel{{Name: "b"}}}
+	})
+	client := b.connect(alice)
+
+	first := decode[channelsOut](t, call(t, client, "channels", nil))
+	if first.Next != "a" || !strings.Contains(first.Note, `after "a"`) {
+		t.Errorf("first page = %+v", first)
+	}
+	second := decode[channelsOut](t, call(t, client, "channels", map[string]any{"after": first.Next}))
+	if len(second.Channels) != 1 || second.Channels[0].Name != "b" || second.Next != "" || second.Note != "" || busd.requests[1].After != "a" {
+		t.Errorf("second page = %+v", second)
+	}
+}
+
 func TestChannelsWithoutBusdListsTheLocalCatalogueWithANote(t *testing.T) {
 	b := newTestBus(t, alice, bob)
 	if err := trust.DirectoryPath(b.configDir).WriteCatalogue(trust.Catalogue{"dev": {alice}, "ops": {bob}}); err != nil {
