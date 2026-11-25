@@ -17,7 +17,7 @@ no import or export between them ([design/jetstream-binding.md](design/jetstream
 
 ## Config directory
 
-On the broker all state lives in the container's `/config` folder. Change the location for
+On the broker the configuration lives in the container's `/config` folder, and the messages in `/data` (JetStream). Change the location for
 `agent-bus` and `agent-busctl` with `--config-dir` (or `BUS_CONFIG_DIR`); the default is
 `~/.config/agent-bus`. Three different layouts share that name: the broker's, an agent machine's and
 the monitor's. Files marked **secret** must never leave the machine that owns them.
@@ -72,7 +72,8 @@ Made by `monitor init`; it has no CA key and no admin or busd login
 monitor-config
 ├── ca.pem
 ├── monitor-bus/password, monitor-control/password   SECRET: its two read-only logins
-├── monitor-web/password.bcrypt, prefs.json           web password hash and shared preferences
+├── monitor-web/password.bcrypt                       the web password hash
+├── monitor-web/prefs.json                            shared preferences (favourites, subscriptions)
 ├── directory/                  snapshot of the agents' records
 └── monitor@alice/              SECRET: the identity it sends as, when set up with --agent
 ```
@@ -167,8 +168,8 @@ agent-bus`).
 
 ## Reloads
 
-Every command that changes access changes `nats/auth.conf` (`register`, `channel join`,
-`cert issue`, `cert switch`, `service init`, `enroll init`, and busd's approvals). Each change is one
+Every command that changes access on a running broker changes `nats/auth.conf` (`register`,
+`channel join`, `cert issue`, `cert switch`, `enroll init`, and busd's approvals). Each change is one
 operation:
 
 1. lock the file,
@@ -178,7 +179,8 @@ operation:
 5. wait until the monitoring endpoint (`--monitor-url`, default `http://127.0.0.1:8222`) reports a
    newer config load time.
 
-An invalid configuration is refused before it replaces the file. `agent-busctl` needs the server
+`tls init`, `tls broker`, `admin init` and `service init` write their files offline instead and take
+effect when the broker restarts. An invalid configuration is refused before it replaces the file. `agent-busctl` needs the server
 binary for the test (`--nats-server`, set by the image) and the pid file in `nats/`; in the
 container both are there. For a failed reload see [troubleshooting](troubleshooting.md#reload-failed).
 
