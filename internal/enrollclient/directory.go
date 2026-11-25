@@ -40,11 +40,14 @@ type DirectoryOptions struct {
 // there for an agent enrolled before that. Each call connects anew: it runs once a minute at most.
 func FetchDirectory(ctx context.Context, opts DirectoryOptions) error {
 	password, err := creds.ReadPassword(filepath.Join(opts.ConfigDir, passwordDir))
-	if errors.Is(err, fs.ErrNotExist) || err == nil && password == "" {
+	if errors.Is(err, fs.ErrNotExist) {
 		return ErrNoEnrollPassword
 	}
 	if err != nil {
 		return err
+	}
+	if password == "" {
+		return ErrNoEnrollPassword
 	}
 	ctx, cancel := context.WithTimeout(ctx, directoryTimeout)
 	defer cancel()
@@ -71,15 +74,20 @@ func mergeDirectory(ctx context.Context, requester Requester, dir trust.FileDire
 		return fmt.Errorf("busd cannot give the directory: %s", enroll.Printable(reply.Error))
 	}
 	// The login is shared, so anyone who has it can answer on this inbox: nothing that would name a
-	// file outside the directory, or a group the adapter would refuse, is written.
+	// file outside the directory, or a group or reader the adapter would refuse, is written.
 	for _, record := range reply.Records {
 		if err := bus.ValidateAgentID(record.AgentID); err != nil {
 			return fmt.Errorf("busd's directory has a bad record: %w", err)
 		}
 	}
-	for name := range reply.Channels {
+	for name, readers := range reply.Channels {
 		if err := bus.ValidateGroupName(name); err != nil {
 			return fmt.Errorf("busd's directory has a bad channel: %w", err)
+		}
+		for _, reader := range readers {
+			if err := bus.ValidateAgentID(reader); err != nil {
+				return fmt.Errorf("busd's directory has a bad reader of %s: %w", name, err)
+			}
 		}
 	}
 	return writeDirectory(dir, reply.Directory)

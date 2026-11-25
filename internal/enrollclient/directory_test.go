@@ -70,6 +70,7 @@ func TestADirectoryAnswerThatCannotBeTrustedWritesNothing(t *testing.T) {
 		"busd is unreachable":   {err: errors.New("no responders")},
 		"busd reports an error": {reply: enroll.DirectoryReply{Error: "the registry cannot be read"}},
 		"a record names a path": {reply: enroll.DirectoryReply{Directory: enroll.Directory{Records: []bus.AgentRecord{record("good@x"), record("../evil@x")}}}},
+		"a reader is invalid":   {reply: enroll.DirectoryReply{Directory: enroll.Directory{Channels: map[string][]string{"team": {"not an id"}}}}},
 		"a channel is invalid":  {reply: enroll.DirectoryReply{Directory: enroll.Directory{Channels: map[string][]string{"Bad Name": nil}}}},
 	}
 	for name, busd := range cases {
