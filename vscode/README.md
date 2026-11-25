@@ -193,7 +193,8 @@ The panel is read-only, and says why on that line, in two cases:
 ## Agent states
 
 An agent row shows its state as a coloured icon and as text, like the web page:
-`state · activity (since)`, for example `working · Bash npm (12s)`.
+`state · N workers · activity (since)`, for example `working · 2 workers · Bash npm (12s)` (the
+workers part only when the agent has some).
 
 | State                           | Icon                |
 |---------------------------------|---------------------|
@@ -216,8 +217,11 @@ seconds, as the web page does, and updates the view only when something changed.
 channel, a new or removed agent and a changed `can_send` show up without a reconnect. It stops
 while a login is needed.
 
+**Click an agent** to open its direct message, as on the web page. For a removed agent, or when
+the monitor cannot send, a click only unfolds the row. The arrow unfolds it either way.
+
 **Right-click an agent:**
-- **Message Agent** opens the direct message between the monitor's agent and that agent, with the
+- **Message Agent** (also the click) opens the direct message between the monitor's agent and that agent, with the
   composer focused. If the two have no messages yet, the panel is empty and sends to that agent;
   once the first message is in, it is the normal conversation. The entry is not offered for
   removed agents, or when the monitor cannot send. The monitor's own agent is not in the Agents list.

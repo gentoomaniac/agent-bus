@@ -115,6 +115,9 @@ test("describePresence says state, activity and how long; ago counts s, m and h"
   assert.equal(describePresence(undefined, now), "offline");
   assert.equal(describePresence({ agent: "a", state: "idle" }, now), "idle");
   assert.equal(describePresence({ agent: "a", state: "working", activity: "Bash npm", activity_since: "2026-11-24T12:09:57Z" }, now), "working · Bash npm (3s)");
+  const workers = [{ description: "tests", since: "2026-11-24T12:00:00Z" }];
+  assert.equal(describePresence({ agent: "a", state: "idle", workers }, now), "idle · 1 worker");
+  assert.equal(describePresence({ agent: "a", state: "working", activity: "Bash npm", workers: [...workers, ...workers] }, now), "working · 2 workers · Bash npm");
 });
 
 test("recentActivity is newest first and limited", () => {

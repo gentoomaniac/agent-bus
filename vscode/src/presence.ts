@@ -9,12 +9,16 @@ export function ago(time: string | undefined, now: number): string {
   return Math.floor(seconds / 3600) + "h";
 }
 
-// "state · activity (since)" for an agent's row.
+// "state · N workers · activity (since)" for an agent's row.
 export function describePresence(view: Presence | undefined, now: number): string {
-  const state = view?.state ?? "offline";
-  if (!view?.activity) return state;
-  const since = ago(view.activity_since, now);
-  return `${state} · ${view.activity}` + (since ? ` (${since})` : "");
+  const parts = [view?.state ?? "offline"];
+  const workers = view?.workers?.length ?? 0;
+  if (workers > 0) parts.push(workers + (workers === 1 ? " worker" : " workers"));
+  if (view?.activity) {
+    const since = ago(view.activity_since, now);
+    parts.push(view.activity + (since ? ` (${since})` : ""));
+  }
+  return parts.join(" · ");
 }
 
 // The CSS class of an agent's dot, grouped like the tree's icons: every error:<kind> looks the
