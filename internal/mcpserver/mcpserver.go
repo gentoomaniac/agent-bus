@@ -275,7 +275,7 @@ func (t tools) channels(ctx context.Context, _ *mcp.CallToolRequest, in channels
 	out := describeChannel(*reply.Channel)
 	switch in.Action {
 	case channelapi.Create:
-		out.Result = createdLine(in.Channel, *reply.Limits)
+		out.Result = createdLine(in.Channel, reply.Limits)
 	case channelapi.Join:
 		out.Result = "you read " + in.Channel + " from now on"
 	case channelapi.Leave:
@@ -293,8 +293,11 @@ func describeChannel(channel channelapi.Channel) channelsOut {
 }
 
 // createdLine says in one line what a new channel lives under (docs/design/agent-channels.md).
-func createdLine(name string, limits channelapi.Limits) string {
+func createdLine(name string, limits *channelapi.Limits) string {
 	line := "public channel " + name + " created, you own it"
+	if limits == nil {
+		return line
+	}
 	if limits.MessageRetention != nil {
 		line += "; messages kept " + *limits.MessageRetention
 	}
