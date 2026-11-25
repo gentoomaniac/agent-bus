@@ -19,8 +19,19 @@ extension can follow at their own pace.
 1. **Check the versions.** `agent-busctl --version` in the container and `agent-bus --version` on an
    agent machine tell you what runs.
 2. **Take a backup.** The retention step below deletes messages for good, and the restore is the
-   only way back ([docker](docker.md#backup-and-restore), [podman](podman.md#backup-and-restore)).
-   Keep the archive until the checks pass.
+   only way back. Keep the archive until the checks pass.
+   - **Folders** (the current compose file, the Podman scripts):
+     [docker](docker.md#backup-and-restore), [podman](podman.md#backup-and-restore).
+   - **Named volumes** (the compose file of 0.1.0): stop the services, then copy each volume out.
+     `docker volume ls` shows the names, usually `deploy_config`, `deploy_data` and
+     `deploy_monitor-config`.
+
+     ```sh
+     docker compose -f deploy/docker-compose.yaml down
+     ( umask 077; for v in config data monitor-config; do
+         docker run --rm -v deploy_$v:/from alpine tar -C /from -cz . > ~/agent-bus-volume-$v.tar.gz
+       done )
+     ```
 3. **Check where your bus keeps its state** (below), and which messages the new limits would delete:
    anything older than 90 days, or beyond the newest 1 GiB of the log. To keep more, note the
    `--max-age` and `--max-bytes` you want (`0` and `-1` keep everything) and pass them to `init` in
@@ -31,19 +42,19 @@ extension can follow at their own pace.
 `$AGENT_BUS_HOME` ([docker](docker.md#mounted-folders)). If you started with the 0.1.0 file, pick
 one of these before you go on:
 
-- Copy the volumes into the folders, let uid 10001 own them, and set `AGENT_BUS_HOME`:
+- Copy the volumes into the folders, let uid 10001 own them, and set `AGENT_BUS_HOME`. `PROJECT`
+  is the prefix of the volume names that `docker volume ls` shows, usually `deploy`:
 
   ```sh
   export AGENT_BUS_HOME=~/agent-bus
+  PROJECT=deploy
   docker compose -f deploy/docker-compose.yaml down
   for v in config data monitor-config; do
     mkdir -p $AGENT_BUS_HOME/$v
-    docker run --rm -v <project>_$v:/from -v $AGENT_BUS_HOME/$v:/to alpine cp -a /from/. /to/
+    docker run --rm -v ${PROJECT}_$v:/from -v $AGENT_BUS_HOME/$v:/to alpine cp -a /from/. /to/
   done
   sudo chown -R 10001 $AGENT_BUS_HOME/{config,data,monitor-config}
   ```
-
-  `docker volume ls` shows the volume names; `<project>` is usually `deploy`.
 - Or keep the named volumes: change the mounts in your copy of the compose file back to them.
 
 Without one of the two, the new container starts on empty folders and refuses to run without its
@@ -52,18 +63,28 @@ scripts) keeps its own mounts, so skip this.
 
 ## 1. The bus machine
 
-Pick your runtime. In the commands, `compose` is
-`docker compose -f deploy/docker-compose.yaml` and `agent-busctl` is the alias of
-[agent-busctl.md](agent-busctl.md#running-it); both are run from the checkout.
+Pick your runtime. Run these once in the shell you use, from the checkout; `agent-busctl` is the
+alias of [agent-busctl.md](agent-busctl.md#running-it):
+
+```sh
+export AGENT_BUS_HOME=~/agent-bus
+compose="docker compose -f $PWD/deploy/docker-compose.yaml"          # Docker
+alias agent-busctl="$compose exec agent-bus agent-busctl"            # Docker
+export IMG=ghcr.io/gentoomaniac/agent-messenger:latest              # Podman: the image to run
+alias agent-busctl='podman exec agent-bus agent-busctl'              # Podman, instead of the line above
+```
+
+The Podman scripts read `IMG` from the environment first and from `$AGENT_BUS_HOME/env` second, so
+an old `IMG=` line in `env` does not matter while the variable is exported.
 
 | Step | Docker | Podman |
 |---|---|---|
-| 1. New image, restart | `$compose pull`, then `$compose up -d agent-bus` | `podman pull $IMG`, then `$AGENT_BUS_HOME/start.sh`. It runs `init` with the default limits; for others recreate the broker with the `podman run` of [podman.md](podman.md#3-start-the-broker) instead and do step 2 yourself |
+| 1. New image, restart | `$compose pull`, then `$compose up -d agent-bus` | `podman pull $IMG`, set `BUS_MAX_AGE` and `BUS_MAX_BYTES` in `$AGENT_BUS_HOME/env` if you want other limits than the defaults ([podman.md](podman.md#the-start-scripts)), then `$AGENT_BUS_HOME/start.sh`, which runs step 2's `init` |
 | 2. Retention and grants | `agent-busctl --direct init` | `podman exec agent-bus agent-busctl --direct init` |
 | 3. The monitor | `$compose --profile monitor up -d` | `$AGENT_BUS_HOME/monitor.sh` |
 
-To pin the version, set `AGENT_BUS_IMAGE=ghcr.io/gentoomaniac/agent-messenger:0.2.0` (Docker) or
-`IMG=...` (Podman scripts).
+To pin the version, export `AGENT_BUS_IMAGE=ghcr.io/gentoomaniac/agent-messenger:0.2.0` (Docker)
+or `IMG=ghcr.io/gentoomaniac/agent-messenger:0.2.0` (Podman scripts) before the commands.
 
 ### Step 2 in detail
 
