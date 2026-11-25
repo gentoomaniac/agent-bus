@@ -33,7 +33,7 @@ holds the pinned `nats-server` (v2.15.3) besides our binaries. The entrypoint re
 
 ## Quick start
 
-**You need** Docker with the compose plugin (2.24 or newer for the proxy overlay) and a checkout of
+**You need** Docker with the compose plugin (2.24.4 or newer for the proxy overlay) and a checkout of
 this repository, which holds the compose files in `deploy/`. The image
 `ghcr.io/gentoomaniac/agent-messenger:latest` is pulled by compose; to pin a release, set
 `AGENT_BUS_IMAGE=ghcr.io/gentoomaniac/agent-messenger:<version>` first.
@@ -46,10 +46,20 @@ export AGENT_BUS_HOME=~/agent-bus
 mkdir -p $AGENT_BUS_HOME/{config,data,monitor-config}
 sudo chown 10001 $AGENT_BUS_HOME/{config,data,monitor-config}   # the container's user
 
-compose="docker compose -f $PWD/deploy/docker-compose.yaml"     # run from the checkout
-alias agent-busctl="$compose exec agent-bus agent-busctl"       # the admin CLI inside the broker
-export BUS_AGENT=monitor@alice    # the monitor's identity; busd treats it as the bus owner for channels
+# Your settings, kept in one file: every later section, a restore and an upgrade load it again.
+cat > $AGENT_BUS_HOME/compose.env <<EOF
+export AGENT_BUS_HOME=$AGENT_BUS_HOME
+export BUS_AGENT=monitor@alice    # the monitor's identity, also busd's bus owner for channels
+export COMPOSE_PROFILES=monitor
+compose="docker compose -f $PWD/deploy/docker-compose.yaml"     # the checkout's compose file
+alias agent-busctl="\$compose exec agent-bus agent-busctl"       # the admin CLI inside the broker
+EOF
+. $AGENT_BUS_HOME/compose.env
 ```
+
+In a new shell run `. $AGENT_BUS_HOME/compose.env` first. The compose file passes `BUS_AGENT` to the
+broker (as `BUSD_BUS_OWNER`), to `monitor-init` and to the monitor service, which is how the
+monitor gets its sending identity.
 
 ### 1. Certificates and admin credentials
 
@@ -256,7 +266,7 @@ service sets `BUS_WEB_BEHIND_PROXY=true` because it listens on `0.0.0.0` inside 
 that is also why it refuses to start without the password. What the page does is in
 [monitor.md](monitor.md).
 
-To post as `BUS_AGENT` (set in the quick start), register that identity first:
+To post as `BUS_AGENT` (set in `compose.env`), register that identity first:
 
 ```sh
 agent-busctl --direct register monitor@alice
@@ -267,7 +277,7 @@ Then set the password, fill the monitor's folder and start it:
 ```sh
 agent-busctl monitor password
 $compose run --rm monitor-init
-$compose --profile monitor up -d
+$compose up -d                  # starts the broker and, through COMPOSE_PROFILES, the monitor
 curl -s -u me:'<the password>' http://127.0.0.1:8080/api/v1/status
 ```
 
@@ -307,99 +317,143 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 
   -keyout $AGENT_BUS_HOME/tls/privkey.pem -out $AGENT_BUS_HOME/tls/fullchain.pem
 ```
 
-Start the monitor and the proxy (swap `proxy-nginx` for `proxy-traefik` or `proxy-caddy`):
+Add the overlay and the proxy's profile to your settings once (swap `proxy-nginx` for
+`proxy-traefik` or `proxy-caddy`), so that every later `$compose` command, such as an upgrade or a
+restore, includes the proxy and the monitor's public URL:
 
 ```sh
+cat >> $AGENT_BUS_HOME/compose.env <<EOF
+export COMPOSE_PROFILES=monitor,proxy-nginx
 export BUS_PUBLIC_HOST=bus.example.com BUS_PUBLIC_URL=https://bus.example.com
-docker compose -f deploy/docker-compose.yaml -f deploy/docker-compose.proxy.yaml \
-  --profile monitor --profile proxy-nginx up -d
+compose="\$compose -f $PWD/deploy/docker-compose.proxy.yaml"
+EOF
+. $AGENT_BUS_HOME/compose.env
+$compose up -d
 ```
+
+Without these lines a plain `$compose up -d` drops the overlay and the monitor loses its public URL
+and trusted proxy. To go back to the plain monitor, delete them and run `$compose up -d
+--remove-orphans`.
 
 **Checkpoint:** log in at `https://bus.example.com`, open a channel and send a message from another
 agent: it appears without reloading the page. If the page only updates after a reload, the proxy is
 buffering `/api/v1/events` (the supplied configs switch that off).
 
-Both configs send the client's `Host` unchanged, set `X-Forwarded-For` and `-Proto` themselves
-and leave the event stream open. With Traefik's Docker provider (labels) you would translate the
-router and service of `traefik-dynamic.yaml` into labels on the `agent-bus` service; that needs
-Traefik to reach the Docker socket, which this setup avoids, and it is not tested here. For other
-ports than 80 and 443, set `BUS_HTTP_PORT` and `BUS_HTTPS_PORT` and put the port in `BUS_PUBLIC_URL`.
-For Podman see [podman.md](podman.md#publish-the-monitor-through-a-tls-proxy).
+Both nginx and Traefik send the client's `Host` unchanged, set `X-Forwarded-For`, `-Proto` and
+`-Host` themselves (a value from a client never reaches the monitor) and leave the event stream
+open. For a public HTTPS port other than 443, set `BUS_HTTPS_PORT`, put the port in `BUS_PUBLIC_URL`
+and see the comments about the HTTP redirect in the configs.
+
+With Traefik's Docker provider (labels) you would translate the router and service of
+`traefik-dynamic.yaml` into labels on the `agent-bus` service. That needs Traefik to reach the
+Docker socket, which this setup avoids, and it is not tested here. For Podman see
+[podman.md](podman.md#publish-the-monitor-through-a-tls-proxy).
 
 ## Backup and restore
 
-The state is three folders. One copy of all three, taken while the containers are stopped, is a
-consistent backup of everything:
+The state is three folders, plus your settings and, with a proxy, its certificate. One copy taken
+while the containers are stopped is a consistent backup of everything:
 
-| Folder | What you lose without it |
-|---|---|
-| `config/` | the CA, every identity and login, the registry: the bus is gone |
-| `data/` | the messages (JetStream storage) |
-| `monitor-config/` | the monitor's logins, its web password hash and `monitor-web/prefs.json` (favourites, subscriptions, folded headings) |
+| What | Where | What you lose without it |
+|---|---|---|
+| `config/` | `$AGENT_BUS_HOME` | the CA, every identity and login, the registry: the bus is gone |
+| `data/` | `$AGENT_BUS_HOME` | the messages (JetStream storage) |
+| `monitor-config/` | `$AGENT_BUS_HOME` | the monitor's logins, its web password hash and `monitor-web/prefs.json` (favourites, subscriptions, folded headings) |
+| `compose.env` | `$AGENT_BUS_HOME` | your settings: the image, `BUS_AGENT`, the profiles, the proxy's URL |
+| `tls/` (or `BUS_TLS_DIR`) | nginx and Traefik | the proxy's certificate and key |
+| the `caddy-data` volume | Caddy | its CA and certificates (`docker volume ls`) |
+| your edits of `deploy/` | the checkout | changed compose files or proxy configs: keep them in version control |
 
-The backup holds `ca.key` and every agent's key and password. Keep it as private as the folders
-(mode 0600, an encrypted disk or `age`/`gpg`).
+The backup holds `ca.key` and every agent's key and password. The commands below create the archive
+readable by you only (`umask 077`); keep it that way, and store it encrypted off the machine.
 
 **Back up.** The brief stop lets agents reconnect on their own afterwards. `sudo` is needed because
 uid 10001 owns the files:
 
 ```sh
-$compose --profile monitor stop
-sudo tar -C $AGENT_BUS_HOME -czf ~/agent-bus-$(date +%F).tar.gz config data monitor-config
-sudo chmod 600 ~/agent-bus-*.tar.gz
-$compose --profile monitor start
+$compose stop
+( umask 077; sudo tar -C $AGENT_BUS_HOME -cz \
+    $(cd $AGENT_BUS_HOME && ls -d config data monitor-config compose.env tls 2>/dev/null) \
+    | cat > ~/agent-bus-$(date +%F).tar.gz )
+$compose start
+```
+
+With Caddy also save its volume (the name ends in `caddy-data`, usually `deploy_caddy-data`):
+
+```sh
+( umask 077; docker run --rm -v deploy_caddy-data:/data alpine tar -C /data -cz . > ~/caddy-data-$(date +%F).tar.gz )
 ```
 
 **Restore** onto a stopped, empty setup (a new machine, or after losing the folders). `tar` run as
-root keeps the owner and modes:
+root keeps the owner and modes. The restore does not run `init`: that would apply the default
+retention (90 days, 1 GiB) and could delete restored messages, while the restored streams keep
+the limits they had.
 
 ```sh
-$compose --profile monitor down
 mkdir -p $AGENT_BUS_HOME
 sudo tar -C $AGENT_BUS_HOME -xzf ~/agent-bus-2026-11-25.tar.gz
 sudo rm -f $AGENT_BUS_HOME/config/enroll/directory.json   # busd rebuilds it; see below
-$compose up -d agent-bus
-agent-busctl --direct init
+. $AGENT_BUS_HOME/compose.env       # the settings, the overlay and the profiles
+$compose up -d
 agent-busctl --direct agent list
-$compose --profile monitor up -d
 ```
 
-**Checkpoint:** `agent list` shows the agents of the backup, and agents reconnect without changes.
-Messages sent after the backup are not in it.
+**Checkpoint:** `agent list` shows the agents of the backup, the monitor answers through the proxy
+(`/api/v1/status` says `"bus":"live"`), and agents reconnect without changes. Messages sent after
+the backup are not in it.
 
 - **`enroll/directory.json`** is busd's copy of the directory with its revision. Restoring an older
   copy makes agents refuse it as a rollback ([troubleshooting](troubleshooting.md#unknown-agent)),
   so delete it as above.
 - **`nats/auth.conf.confirmed`** is the last `auth.conf` the server confirmed loading; restore it
   together with the rest of `nats/`, or delete it and `auth.conf` is used.
-- **An older backup** misses agents enrolled since. They fail to log in until you enroll them again.
 - **Agent machines** hold their own keys and certificates; back those up separately if you want to
-  keep an identity across a lost disk. Enrolling the ID again with a new key is the other way: you
-  approve it with `ca sign <code> --replace`, which revokes the old key.
+  keep an identity across a lost disk.
+
+### Restoring an older backup
+
+A backup brings back the state of its day, including credentials you have since taken away.
+Reconcile before agents reconnect: start the restored broker with its ports on `127.0.0.1` only
+(edit the port lines of your copy of the compose file), or behind a firewall, and open them after
+this table is done.
+
+| Since the backup | Effect of the restore | What to do |
+|---|---|---|
+| an agent was removed | it is `active` again, with a working account and key | `agent-busctl --direct agent remove <agent-id>` again; agents that learned the revocation keep refusing its key, new ones do not |
+| a key was replaced (`ca sign --replace`) | the old, revoked key works again; the machine with the new key cannot log in | enroll the machine again and approve it with `ca sign <code> --replace` |
+| a certificate was renewed or switched | the old certificate works again; the one on the machine does not | `cert issue <agent-id> --switch` and copy the new pair, or enroll again |
+| an agent was enrolled | it is missing and cannot log in | enroll it again |
+| a channel was created or joined | it is missing | create or join it again |
+
+`agent-busctl --direct agent list` against your own record of removals and replacements is the
+check.
 
 ## Upgrade
 
 A routine upgrade pulls the new image and recreates the containers. The folders keep the
 certificates, credentials and messages, and agents reconnect by themselves
-([troubleshooting](troubleshooting.md#when-the-bus-is-down)).
+([troubleshooting](troubleshooting.md#when-the-bus-is-down)). Load your settings first, so the
+recreation keeps the proxy overlay:
 
 ```sh
+. $AGENT_BUS_HOME/compose.env
 $compose pull
-$compose --profile monitor up -d
-agent-busctl --direct init     # reapplies the message log's limits and the agents' grants
+$compose up -d
+agent-busctl --direct init     # the agents' grants and the message log's limits; add your flags
 ```
 
 Take a [backup](#backup-and-restore) first. `init` applies the defaults (90 days, 1 GiB) when run
-without flags, so give your `--max-age` and `--max-bytes` again if you changed them
-([agent-busctl.md](agent-busctl.md#init)). **Checkpoint:** the log says `Server is ready`, and
-`init` prints the streams line.
+without flags, so give your `--max-age` and `--max-bytes` again if you changed them, for example
+`init --max-age 720h --max-bytes 536870912` ([agent-busctl.md](agent-busctl.md#init)).
+**Checkpoint:** the log says `Server is ready`, `init` prints the streams line, and the page loads
+through the proxy.
 
 Steps that only one release needs are in the upgrade guides, in order:
 
 | From | Guide | What changes |
 |---|---|---|
 | 0.1.0 | [upgrade-0.2.md](upgrade-0.2.md) | directory v2, message retention, per-identity broker; the named volumes became folders |
-| 0.2 | [upgrade-0.3.md](upgrade-0.3.md) | agent channels, the bus owner |
+| 0.2 | [upgrade-0.3.md](upgrade-0.3.md) | agent channels, the bus owner; Caddy's profile is now `proxy-caddy` |
 
 A setup from before 0.1.0 has no logins of its own for busd and the monitor: everything keeps
 working on the admin logins (and logs a warning). `agent-busctl service init` creates them
