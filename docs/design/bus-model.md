@@ -8,9 +8,9 @@ Who may do what on the broker is in [access control](access-control.md).
 
 | Part | Status |
 |---|---|
-| Channels `general`, group channels, DMs, registry, catalogue | implemented (group channels are created by `agent-busctl channel create`) |
+| Channels `general`, group channels, DMs, registry, catalogue | implemented (group channels are created by `agent-busctl channel create` or by agents through busd, [agent channels](agent-channels.md)) |
 | Private channels | **planned** ([private channels](private-channels.md)) |
-| Read cursors, per-message acks, handled set, persisted channels | implemented (cursors are created by `agent-busctl --direct`, not busd) |
+| Read cursors, per-message acks, handled set, persisted channels | implemented (cursors are created by `agent-busctl --direct` and by busd, for enrollment approval and channel requests) |
 | `AgentRecord.keys` (key history) | the record type exists; rotation is planned |
 
 ## Channels
