@@ -40,6 +40,8 @@ type fakeRegistry struct {
 	cursorErr error
 	// onCursor runs at each CreateReadCursor, before it does anything.
 	onCursor func()
+	// accountReads counts the reads of the account list.
+	accountReads int
 }
 
 func (fake *fakeRegistry) Agents(context.Context) ([]bus.AgentRecord, error) {
@@ -68,8 +70,9 @@ func (fake *fakeRegistry) CreateReadCursor(_ context.Context, agentID string, ch
 	fake.cursors = append(fake.cursors, fmt.Sprintf("%s%d", cursor, afterSequence))
 	return nil
 }
-func (fake *fakeRegistry) AccountExists(_ context.Context, agentID string) (bool, error) {
-	return slices.Contains(fake.accounts, agentID), nil
+func (fake *fakeRegistry) AgentAccounts(context.Context) ([]string, error) {
+	fake.accountReads++
+	return slices.Clone(fake.accounts), nil
 }
 func (fake *fakeRegistry) LastSequence(context.Context) (uint64, error) { return fake.last, nil }
 func (fake *fakeRegistry) EnsureCertAccount(_ context.Context, agentID, certID string) error {

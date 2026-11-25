@@ -358,6 +358,7 @@ Where the build refined or departed from the text above.
   after the record, the account last); a removed agent's tombstone always counts. A failed
   approval therefore announces nothing, and since the check reads only what the broker holds, a
   restart of busd keeps it. busd writes its own machine's lookup file only after the account too.
+  The accounts are read once per reconcile, from one parse of the authorization file.
 - The first attempt to approve a request records where the agent's read cursors start (in
   `enroll/state.json`); a repeated approval, after a restart too, starts them there and not at
   the then end of the log, so nothing sent in between is skipped. The position is written to disk

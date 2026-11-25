@@ -381,3 +381,18 @@ func TestAnApprovalWhoseCursorStartCannotBeSavedChangesNothing(t *testing.T) {
 		t.Errorf("the broker changed: %v, %v, %v", f.registry.cursors, f.registry.records, f.registry.accounts)
 	}
 }
+
+func TestAReconcileReadsTheAccountsOnce(t *testing.T) {
+	f := newFixture(t)
+	for _, agentID := range []string{"a@x", "b@x", "c@x"} {
+		f.enroll(agentID, f.newKey())
+	}
+
+	if _, err := f.directory().Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if f.registry.accountReads != 1 {
+		t.Errorf("the accounts were read %d times for three agents, want once", f.registry.accountReads)
+	}
+}

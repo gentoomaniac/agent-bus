@@ -99,6 +99,26 @@ func NewServer(configDir, binary, monitorURL string) Server {
 }
 
 // hasAgent says whether auth.conf lists the agent.
+// agentAccounts are the agent IDs that have an account in auth.conf, read once.
+func (server Server) agentAccounts() ([]string, error) {
+	current, err := os.ReadFile(server.path(authFile))
+	if err != nil {
+		return nil, fmt.Errorf("reading the authorization file (has `agent-busctl admin init` run?): %w", err)
+	}
+	body, _ := splitGeneration(string(current))
+	table, err := parseUserTable(body)
+	if err != nil {
+		return nil, err
+	}
+	var agentIDs []string
+	for _, user := range table {
+		if user.role == roleAgent {
+			agentIDs = append(agentIDs, bus.AgentIDFromToken(user.name))
+		}
+	}
+	return agentIDs, nil
+}
+
 func (server Server) hasAgent(agentToken string) (bool, error) {
 	current, err := os.ReadFile(server.path(authFile))
 	if err != nil {

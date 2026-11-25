@@ -45,7 +45,7 @@ const (
 type DirectorySource interface {
 	trust.CatalogueSource
 	Agents(ctx context.Context) ([]bus.AgentRecord, error)
-	AccountExists(ctx context.Context, agentID string) (bool, error)
+	AgentAccounts(ctx context.Context) ([]string, error)
 }
 
 // DirectoryConfig is what a Directory is made of.
@@ -271,15 +271,14 @@ func (published *Directory) enrolled(ctx context.Context) ([]bus.AgentRecord, er
 	if err != nil {
 		return nil, err
 	}
+	accounts, err := source.AgentAccounts(ctx) // once: it parses the whole authorization file
+	if err != nil {
+		return nil, err
+	}
 	var enrolled []bus.AgentRecord
 	for _, record := range records {
 		if !record.Removed() {
-			if !slices.Contains(dmReaders, record.AgentID) || !slices.Contains(generalReaders, record.AgentID) {
-				continue
-			}
-			if exists, err := source.AccountExists(ctx, record.AgentID); err != nil {
-				return nil, err
-			} else if !exists {
+			if !slices.Contains(dmReaders, record.AgentID) || !slices.Contains(generalReaders, record.AgentID) || !slices.Contains(accounts, record.AgentID) {
 				continue
 			}
 		}

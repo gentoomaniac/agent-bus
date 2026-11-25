@@ -162,6 +162,11 @@ func (admin *Admin) EnsureCertAccount(ctx context.Context, agentID, certID strin
 	})
 }
 
+// AgentAccounts are the agents that have an account on the broker, from one read of auth.conf.
+func (admin *Admin) AgentAccounts(context.Context) ([]string, error) {
+	return admin.server.agentAccounts()
+}
+
 func (admin *Admin) AccountExists(_ context.Context, agentID string) (bool, error) {
 	return admin.server.hasAgent(bus.AgentToken(agentID))
 }
