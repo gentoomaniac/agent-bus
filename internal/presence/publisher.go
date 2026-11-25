@@ -104,7 +104,8 @@ func (publisher *Publisher) Run(ctx context.Context) {
 			defer publisher.mu.Unlock()
 			now := publisher.now()
 			publisher.tracker.Apply(Event{Kind: EventSessionEnd}, now)
-			publisher.publish(final, publisher.tracker.Record(now, Mail{}))
+			// Straight to the sink: an outage or recovery logged at exit would only mislead.
+			_ = publisher.sink.PublishPresence(final, publisher.tracker.Record(now, Mail{}))
 			return
 		case <-ticker.C:
 			publisher.Step(ctx)

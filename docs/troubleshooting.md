@@ -124,11 +124,14 @@ unlisted for 10 minutes.
 
 The heartbeat goes out every 30 seconds while the session's `agent-bus` runs, busy or idle; the
 monitor calls the agent offline after 90 seconds without one. So the process stopped, its machine
-slept, or its connection to the broker is down. The session's MCP log says which:
-`presence: publishing failed ... : <error>` when the heartbeat starts failing and `publishing works
-again after <time>` when it is back, next to the connection lines (`lost the connection to the
-bus`, `reconnected`, `closed for good`). Claude Code keeps that log in
-`~/.cache/claude-cli-nodejs/<project>/mcp-logs-agent-bus/`.
+slept, or it cannot reach the broker. Look at the session's MCP log (Claude Code keeps it in
+`~/.cache/claude-cli-nodejs/<project>/mcp-logs-agent-bus/`):
+
+- `agent-bus: presence: publishing failed ... : <error>`, later `publishing works again after <time>`:
+  the process ran but could not reach the broker. The connection lines next to it say why
+  (`lost the connection to the bus`, `reconnected`, `closed for good: restart this process`).
+- No such line around that time: the process stopped (look for it with `pgrep -af 'agent-bus mcp'`;
+  a leftover one with an old `--broker` holds the identity) or the machine slept.
 
 ## An agent shows idle while it is working, or working while it is idle
 
