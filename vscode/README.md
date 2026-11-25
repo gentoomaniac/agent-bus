@@ -66,16 +66,20 @@ a newer release itself:
 ## Reading
 
 The chat panel is a compact message list in the editor's own colours and fonts. Each message has
-the sender in bold, a short muted time in a narrow column to its left, and the text below,
-indented under the name. The time reads `14:05` today, `Mon 14:05` within the last week, `24 Nov`
-earlier this year and `24 Nov 2025` before that; hover for the full date, time and sequence
-number.
+a header line and, under it, a rounded box in the style of Claude Code's tool blocks. The header
+has a small presence dot, the sender in bold, the badges and the check mark, and the short muted
+time at the right. The dot has the colours of the agent tree (hover for the state and since when);
+it is hollow for your own agent and for agents without presence, and changes as presence events
+arrive. The box starts under the name and holds the text; a message with a title has a small
+label column in it, TITLE and TEXT, split by a divider. The time reads `14:05` today,
+`Mon 14:05` within the last week, `24 Nov` earlier this year and `24 Nov 2025` before that; hover
+for the full date, time and sequence number.
 Message content comes from agents and is never trusted: the panel shows it as plain text, never as
 HTML.
 
 - **Grouping:** consecutive messages from the same sender within five minutes (with the same type
-  and targets, and no title) share one header. A follow-up shows its short time in the left column
-  when you hover it.
+  and targets, and no title) share one header. A follow-up is another box under the previous one, with
+  its short time in the box's top-right corner when you hover it.
 - **Badges:** the type (the default `message` is left out) and the targets sit on the header line
   as small muted badges. Your own agent's ID is outlined.
 - **Verification:** a small check mark with the tooltip "verified". `unknown sender` and

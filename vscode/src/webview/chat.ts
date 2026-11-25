@@ -3,6 +3,7 @@ import { matchTargets, mentionBefore, mentionText } from "../completion";
 import { continuesGroup, insertMessage } from "../messages";
 import { parsePresenceMarks } from "../protocol";
 import type { ChatState, FromWebview, ToWebview } from "../protocol";
+import { presenceClass } from "../presence";
 import { shortTime } from "../time";
 import { isSeen } from "../viewport";
 import { ThreadRow, ThreadSummary, summarizeThreads, threadRows } from "../threads";
@@ -40,16 +41,38 @@ const problem = document.getElementById("problem") as HTMLElement;
 
 for (const type of MESSAGE_TYPES) typeSelect.append(new Option(type, type));
 
-// The short time in the narrow column left of the text; the tooltip has the full date and the sequence.
-function renderTime(message: Message): HTMLElement {
-  const time = el("span", "time muted", message.time ? shortTime(message.time, new Date()) : "");
+// The short time; the tooltip has the full date and the sequence.
+function renderTime(message: Message, className: string): HTMLElement {
+  const time = el("span", className + " muted", message.time ? shortTime(message.time, new Date()) : "");
   if (message.time) time.title = `${new Date(message.time).toLocaleString([], { dateStyle: "full", timeStyle: "medium" })} · #${message.sequence}`;
   return time;
 }
 
-function renderHeader(message: Message): HTMLElement {
+// The dot shows the sender's presence. The monitor's own messages and agents without presence get a
+// hollow one.
+function paintDot(dot: HTMLElement, from: string): void {
+  const mark = from === state?.self ? undefined : state?.presence.get(from);
+  dot.className = "dot " + presenceClass(mark?.state);
+  if (!mark) dot.title = from === state?.self ? "you" : "no presence";
+  else dot.title = mark.state + (mark.since ? " since " + shortTime(mark.since, new Date()) : "");
+}
+
+function renderDot(from: string): HTMLElement {
+  const dot = el("span");
+  dot.dataset.from = from;
+  paintDot(dot, from);
+  return dot;
+}
+
+// A presence event changes the dots only: no new drawing, so nothing moves.
+function paintDots(): void {
+  for (const dot of list.querySelectorAll<HTMLElement>(".dot")) paintDot(dot, dot.dataset.from ?? "");
+}
+
+// `newTag` is the "New" or "new" marker of a thread view, shown before the time.
+function renderHeader(message: Message, newTag: string | undefined): HTMLElement {
   const header = el("div", "meta");
-  header.append(renderTime(message), el("span", "from", message.from || "unknown sender"));
+  header.append(renderDot(message.from ?? ""), el("span", "from", message.from || "unknown sender"));
   if (message.type && message.type !== DEFAULT_TYPE) header.append(el("span", "badge", message.type));
   for (const target of message.targets ?? []) header.append(el("span", target === state?.self ? "badge me" : "badge", "→ " + target));
   if (message.status === "verified") {
@@ -62,7 +85,31 @@ function renderHeader(message: Message): HTMLElement {
     if (message.reason) warning.title = message.reason;
     header.append(warning);
   }
+  if (newTag) header.append(el("span", "new", newTag));
+  header.append(renderTime(message, "time"));
   return header;
+}
+
+// A row of the box: a small label on the left, the content on the right.
+function renderSection(label: string, content: HTMLElement): HTMLElement {
+  const section = el("div", "section");
+  section.append(el("span", "label", label), content);
+  return section;
+}
+
+// With a title the box has a label column, TITLE and TEXT split by a divider; without one it holds
+// the text alone. A follow-up of a group has no header, so its time sits in the box's corner.
+function renderBox(message: Message, continued: boolean): HTMLElement {
+  const box = el("div", "box");
+  if (continued) box.append(renderTime(message, "time corner"));
+  if (message.title) {
+    box.classList.add("labelled");
+    box.append(renderSection("Title", el("div", "title", message.title)));
+    if (message.text) box.append(renderSection("Text", el("div", "text", message.text)));
+  } else {
+    box.append(el("div", "text", message.text ?? ""));
+  }
+  return box;
 }
 
 // `row` carries the thread view's depth and the "reply to" line of a reply whose parent is missing.
@@ -76,10 +123,8 @@ function renderMessage(row: ThreadRow, continued: boolean, isNew: boolean, highl
     replyTo.title = row.replyTo;
     item.append(replyTo);
   }
-  item.append(continued ? renderTime(message) : renderHeader(message));
-  if (!continued && (isNew || highlighted)) item.lastElementChild?.append(el("span", "new", isNew ? "New" : "new"));
-  if (message.title) item.append(el("div", "title", message.title));
-  if (message.text) item.append(el("div", "text", message.text));
+  if (!continued) item.append(renderHeader(message, isNew ? "New" : highlighted ? "new" : undefined));
+  if (continued || message.title || message.text) item.append(renderBox(message, continued));
   if (message.reason && message.status !== "verified") item.append(el("div", "warning", message.reason));
   return item;
 }
@@ -312,8 +357,8 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
   else if (data.type === "activated") activate();
   else if (data.type === "presence") {
     if (state) state.presence = parsePresenceMarks(data.presence);
-  }
-  else if (data.type === "message") {
+    paintDots();
+  } else if (data.type === "message") {
     // Mail that arrives while nobody looks, with nothing unseen before it, starts a new unseen block.
     const lastBefore = messages.length > 0 ? messages[messages.length - 1].sequence : 0;
     const startsBlock = !isActive() && !messages.some(isUnseen);

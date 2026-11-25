@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ago, describePresence, recentActivity } from "../presence";
+import { ago, describePresence, presenceClass, recentActivity } from "../presence";
 import { matchTargets, mentionBefore, mentionText } from "../completion";
 import { categorize, describeChannel, destinationOf, dmChannelId } from "../channels";
 import { parseFromWebview, parsePresenceMarks } from "../protocol";
@@ -161,4 +161,11 @@ test("parsePresenceMarks keeps only well-formed marks", () => {
   const raw = new Map<unknown, unknown>([["a", { state: "idle", since: "t" }], ["b", { state: "working", since: 3 }], ["c", { state: 1 }], ["d", null], [4, { state: "idle" }]]);
   assert.deepEqual([...parsePresenceMarks(raw)], [["a", { state: "idle", since: "t" }], ["b", { state: "working" }]]);
   assert.equal(parsePresenceMarks({ a: { state: "idle" } }).size, 0);
+});
+
+test("presenceClass groups the states like the tree", () => {
+  assert.equal(presenceClass("working"), "working");
+  assert.equal(presenceClass("error:auth"), "error");
+  assert.equal(presenceClass("offline"), "offline");
+  assert.equal(presenceClass(undefined), "offline");
 });

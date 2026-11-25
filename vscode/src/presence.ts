@@ -17,6 +17,13 @@ export function describePresence(view: Presence | undefined, now: number): strin
   return `${state} · ${view.activity}` + (since ? ` (${since})` : "");
 }
 
+// The CSS class of an agent's dot, grouped like the tree's icons: every error:<kind> looks the
+// same, and an unknown state, like no presence at all, is a hollow dot.
+export function presenceClass(state: string | undefined): string {
+  if (state === "working" || state === "idle" || state === "waiting_for_owner" || state === "rate_limited" || state === "unresponsive") return state;
+  return state?.startsWith("error:") ? "error" : "offline";
+}
+
 // The recent activity, newest first, at most `limit` entries.
 export function recentActivity(view: Presence | undefined, limit: number): { at: string; text: string }[] {
   return (view?.recent ?? []).slice(-limit).reverse();
