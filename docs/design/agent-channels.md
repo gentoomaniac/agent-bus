@@ -317,7 +317,7 @@ sequenceDiagram
 ### Conflicts with the private-channel design
 
 [Private channels](private-channels.md) was written before this page and differs in three
-places. This page wins; the private-channel document is to be brought in line when step 4 starts.
+places. This page wins; the private-channel document is to be brought in line when step 4 starts (its side of the list: [conflicts with agent channels](private-channels.md#conflicts-with-agent-channels)).
 
 | Private-channel document | This page |
 |---|---|
