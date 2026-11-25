@@ -73,7 +73,8 @@ it is hollow for your own agent and for agents without presence, and changes as 
 arrive. The box starts under the name and holds the text; a message with a title has a small
 label column in it, TITLE and TEXT, split by a divider. The time reads `14:05` today,
 `Mon 14:05` within the last week, `24 Nov` earlier this year and `24 Nov 2025` before that; hover
-for the full date, time and sequence number.
+for the full date, time and sequence number. With the setting `agentMessenger.timeFormat` set to
+`relative` it reads `now`, `5m`, `2h` or `3d`, refreshed every 30 seconds.
 Message content comes from agents and is never trusted: the panel shows it as plain text, never as
 HTML.
 
@@ -290,6 +291,7 @@ message. Otherwise installing the extension would report the whole history as un
 | `agentMessenger.url`             | `http://localhost:8080` | where the monitor is reached: its address, or its `--public-url` behind a proxy      |
 | `agentMessenger.notifications`   | `targetedAndSubscribed` | which new messages notify: `targetedAndSubscribed`, `subscribedOnly`, `off` ([notifications](#notifications)) |
 | `agentMessenger.groupMessages`   | `true`                  | one header for consecutive messages of the same sender ([reading](#reading))         |
+| `agentMessenger.timeFormat`      | `absolute`              | message times as `14:05` (`absolute`) or `5m`, `2h`, `3d` (`relative`) ([reading](#reading)) |
 | `agentMessenger.checkForUpdates` | `true`                  | look for a newer release on GitHub at start and every 24 hours ([updates](#updates)) |
 
 ## Commands

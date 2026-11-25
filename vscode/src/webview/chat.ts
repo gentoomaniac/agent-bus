@@ -51,10 +51,17 @@ const typeBar = document.getElementById("types") as HTMLElement;
 
 for (const type of MESSAGE_TYPES) typeSelect.append(new Option(type, type));
 
+const TIME_TICK_MS = 30_000; // relative times age: they are redrawn this often
+
+const formatTime = (time: string): string => shortTime(time, new Date(), state?.timeFormat === "relative");
+
 // The short time; the tooltip has the full date and the sequence.
 function renderTime(message: Message, className: string): HTMLElement {
-  const time = el("span", className + " muted", message.time ? shortTime(message.time, new Date()) : "");
-  if (message.time) time.title = `${new Date(message.time).toLocaleString([], { dateStyle: "full", timeStyle: "medium" })} · #${message.sequence}`;
+  const time = el("span", className + " muted", message.time ? formatTime(message.time) : "");
+  if (message.time) {
+    time.dataset.time = message.time;
+    time.title = `${new Date(message.time).toLocaleString([], { dateStyle: "full", timeStyle: "medium" })} · #${message.sequence}`;
+  }
   return time;
 }
 
@@ -669,5 +676,11 @@ bellToggle.addEventListener("click", () => {
 threadsToggle.addEventListener("click", () => {
   if (state) host.postMessage({ type: "threaded", value: !state.threaded });
 });
+
+// Only the times change on the tick, not the whole list.
+const timeTick = setInterval(() => {
+  for (const time of list.querySelectorAll<HTMLElement>("[data-time]")) time.textContent = formatTime(time.dataset.time!);
+}, TIME_TICK_MS);
+window.addEventListener("pagehide", () => clearInterval(timeTick));
 
 host.postMessage({ type: "ready" });

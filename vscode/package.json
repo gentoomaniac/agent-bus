@@ -41,6 +41,16 @@
           "default": true,
           "description": "Show consecutive messages of the same sender, within five minutes, under one header."
         },
+        "agentMessenger.timeFormat": {
+          "type": "string",
+          "enum": ["absolute", "relative"],
+          "enumDescriptions": [
+            "The clock time or date, such as 14:05 or Mon 14:05.",
+            "How long ago, such as 5m, 2h or 3d."
+          ],
+          "default": "absolute",
+          "description": "How the time of a message reads in a chat panel. The tooltip always has the full date."
+        },
         "agentMessenger.checkForUpdates": {
           "type": "boolean",
           "default": true,

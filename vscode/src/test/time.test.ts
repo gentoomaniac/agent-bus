@@ -16,6 +16,18 @@ test("shortTime is the clock today, weekday and clock within a week, then the da
   assert.equal(shortTime(local(2025, 11, 24).toISOString(), now), "24 Nov 2025");
 });
 
+test("relative shortTime counts minutes, hours and days, and is now below a minute", () => {
+  const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();
+  assert.equal(shortTime(ago(59_999), now, true), "now");
+  assert.equal(shortTime(ago(-5_000), now, true), "now"); // a clock slightly ahead
+  assert.equal(shortTime(ago(60_000), now, true), "1m");
+  assert.equal(shortTime(ago(5 * 60_000), now, true), "5m");
+  assert.equal(shortTime(ago(2 * 3_600_000), now, true), "2h");
+  assert.equal(shortTime(ago(23 * 3_600_000), now, true), "23h");
+  assert.equal(shortTime(ago(3 * 24 * 3_600_000), now, true), "3d");
+  assert.equal(shortTime("soon", now, true), "");
+});
+
 test("shortTime of a time that is not a date is empty", () => {
   assert.equal(shortTime("soon", now), "");
 });

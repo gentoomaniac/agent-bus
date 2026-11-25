@@ -49,7 +49,7 @@ export class ChatPanels implements vscode.Disposable {
       }),
       session.onDidRefresh(() => this.chats.forEach((chat, channelId) => void this.show(channelId, chat, chat.panel.visible))),
       vscode.workspace.onDidChangeConfiguration((change) => {
-        if (change.affectsConfiguration("agentMessenger.groupMessages")) this.chats.forEach((chat, channelId) => this.post(channelId, chat));
+        if (change.affectsConfiguration("agentMessenger.groupMessages") || change.affectsConfiguration("agentMessenger.timeFormat")) this.chats.forEach((chat, channelId) => this.post(channelId, chat));
       }),
     ];
   }
@@ -275,6 +275,7 @@ export class ChatPanels implements vscode.Disposable {
       members: chat.members,
       subscribed: chat.subscribed,
       groupMessages: vscode.workspace.getConfiguration("agentMessenger").get<boolean>("groupMessages", true),
+      timeFormat: vscode.workspace.getConfiguration("agentMessenger").get<string>("timeFormat") === "relative" ? "relative" : "absolute",
       threaded: this.context.globalState.get<boolean>(THREADED_KEY, false),
       shownTypes: this.shownTypes,
       presence: this.presenceMarks(),
