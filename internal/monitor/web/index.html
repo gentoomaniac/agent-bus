@@ -1266,7 +1266,7 @@ function renderMessage(message, grouped, depth, orphanOf, thread) {
   return el("div", attributes,
     grouped ? el("span", { class: "avatar-gap" }) : avatarFor(message.from),
     el("div", { class: "body" },
-      ...(orphanOf ? [el("div", { class: "reply-to", title: orphanOf }, "\u21b3 reply to " + orphanOf.slice(0, 8))] : []),
+      ...(orphanOf ? [el("div", { class: "reply-to", title: orphanOf }, "\u21b3 reply to " + orphanOf.slice(-8))] : []),
       header,
       ...(targets.length ? [el("div", { class: "targets-row" }, ...targets)] : []),
       ...(message.title ? [el("div", { class: "title" }, message.title)] : []),

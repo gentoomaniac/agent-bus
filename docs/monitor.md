@@ -286,7 +286,7 @@ and keeps the session token, which it sends as a `Bearer` header.
   with a thin left border (four levels at most, a smaller indent on narrow screens). It is
   remembered in the browser only. A message's parent is its `reply_to` if that message is loaded,
   else its `thread` root if loaded; otherwise it stands alone with a muted "reply to <id>" line
-  (the first 8 characters of the ID, the full ID in the tooltip). Messages are ordered by
+  (the last 8 characters of the ID, the full ID in the tooltip). Messages are ordered by
   sequence, and same-sender grouping applies between siblings only. The tree is built from the
   messages the type filter lets through, so a reply to a hidden message becomes a root. The "New"
   line comes before the first unseen message in display order. A root whose thread holds an unseen
