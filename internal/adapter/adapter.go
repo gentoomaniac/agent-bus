@@ -47,6 +47,9 @@ type Config struct {
 	Dir       string // the identity's directory: key, lock, known_agents, handled.jsonl, alerts.log
 	Transport bus.Transport
 	Directory trust.Directory
+	// FetchDirectory brings the local Directory up to date from busd. Nil: the directory only
+	// changes when someone copies files in.
+	FetchDirectory func(ctx context.Context) error
 	// Groups are group channels to read besides the agent's DM channel, general and the groups the
 	// directory's catalogue snapshot lists the agent in (written by `agent-busctl channel join`). Their
 	// read cursors must exist (agent-busctl creates them).
@@ -275,6 +278,17 @@ func (adapter *Adapter) Agents(ctx context.Context) ([]string, error) {
 		}
 	}
 	return agentIDs, nil
+}
+
+// SyncDirectory fetches the directory from busd, if the adapter can, and then re-reads it as
+// RefreshDirectory does. A failed fetch leaves the local directory as it is and is returned next
+// to the result of the re-read: what is already known keeps working.
+func (adapter *Adapter) SyncDirectory(ctx context.Context) error {
+	var fetchErr error
+	if adapter.config.FetchDirectory != nil {
+		fetchErr = adapter.config.FetchDirectory(ctx)
+	}
+	return errors.Join(fetchErr, adapter.RefreshDirectory(ctx))
 }
 
 // RefreshDirectory re-reads the local directory and remembers the fingerprint of every revoked key

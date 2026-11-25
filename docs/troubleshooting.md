@@ -83,8 +83,9 @@ read the channel.
 
 The directory's catalogue snapshot `<config-dir>/directory/channels` does not list the group, or
 does not list the target as a reader. It is written by `agent-busctl channel create` and `channel join`
-on the machine they run on. Copy `directory/` over (or `agent-busctl directory export` and copy the
-result) and restart the adapter to read a newly joined group. Meanwhile DM the agent: a DM always
+on the machine they run on, and a running agent fetches it from busd every minute (an agent without
+the enrollment password in `<config-dir>/enroll/password`, or of an older version, needs `directory/` copied
+over, or `agent-busctl directory export` and a copy of the result). Restart the adapter to read a newly joined group. Meanwhile DM the agent: a DM always
 arrives.
 
 ## Removed agent
@@ -94,10 +95,10 @@ key ...".
 
 The agent was removed with `agent-busctl agent remove` and its key is revoked. Its ID is never
 registered again; register a new one. If `agent remove` printed "NOT completely removed", it names
-the steps that are left: run the same command again. A machine learns of a removal when its
-`directory/` is refreshed: `agent-busctl directory export` on the broker's host, copy the result over
-`<config-dir>/directory/` ([agent-busctl.md](agent-busctl.md#directory-export)); a running session picks it up
-within a minute, or at once with `kill -HUP <agent-bus pid>`.
+the steps that are left: run the same command again. A running agent learns of a removal from busd within a minute, or at once with
+`kill -HUP <agent-bus pid>`. One without the enrollment password in `<config-dir>/enroll/password`, or of an older version, needs
+`agent-busctl directory export` on the broker's host and the result copied over
+`<config-dir>/directory/` ([agent-busctl.md](agent-busctl.md#directory-export)).
 
 ## Hook is silent
 

@@ -245,12 +245,15 @@ agent-bus enroll --broker <broker-host>:4222 --agent lib-x@<owner> \
 Then approve on the broker's machine (`podman exec -it agent-bus agent-busctl ca review`), comparing
 the code it prints. The machine makes its own keys, receives its certificate, the CA and the
 directory of agents, and `agent-bus mcp` logs in with the certificate from then on (port `4223` must
-be published). Step by step, with autosign and existing IDs: [podman.md](podman.md#9-enrolling-a-new-machine).
+be published). `agent-bus mcp` also asks busd for the directory every minute with the enrollment
+password, which `enroll` keeps in `<config-dir>/enroll/password`, so it learns of agents enrolled
+or removed later without any copying. Step by step, with autosign and existing IDs: [podman.md](podman.md#9-enrolling-a-new-machine).
 
 The older way, still working, is to copy the files. A sender is pinned on first contact from `<config-dir>/directory/<token>.json`, one record per
 agent, which `register` writes on the machine it runs on. Agents cannot read the registry on the
-broker ([design/jetstream-binding.md](design/jetstream-binding.md)) and enrollment delivers the directory only once, so to keep an agent's
-machine current, copy that `directory/` there, together with `ca.pem`, and again after agents are added or removed
+broker ([design/jetstream-binding.md](design/jetstream-binding.md)); an agent of this version fetches the directory from busd (above),
+but one that has no enrollment password, or runs an older version, needs that `directory/` copied to its
+machine, together with `ca.pem`, and again after agents are added or removed
 ([docker.md](docker.md#give-an-agent-machine-its-files), [agent-busctl.md](agent-busctl.md#directory-export)). A recipient with no entry in the directory
 fails with "unknown agent" ([troubleshooting.md](troubleshooting.md#unknown-agent)).
 

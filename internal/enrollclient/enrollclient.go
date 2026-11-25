@@ -80,14 +80,8 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	inbox := make([]byte, 8)
-	if _, err := rand.Read(inbox); err != nil {
-		return err
-	}
 	backoff := broker.DefaultBackoff
-	requester, err := broker.NewRequester(broker.Connection{
-		Address: opts.Broker, CACertPath: caPath, User: enroll.EnrollUser, Password: opts.EnrollPassword, Reconnect: &backoff,
-	}, enroll.InboxPrefix+"."+hex.EncodeToString(inbox))
+	requester, err := newRequester(opts.Broker, caPath, opts.EnrollPassword, &backoff)
 	if err != nil {
 		return err
 	}
@@ -96,6 +90,18 @@ func Run(ctx context.Context, opts Options) error {
 		opts: opts, requester: requester, caPEM: caPEM, dir: creds.AgentDir(opts.ConfigDir, opts.AgentID),
 		pollEvery: defaultPoll, exchangeTimeout: defaultExchangeTimeout,
 	}).run(ctx)
+}
+
+// newRequester logs in as the shared enrollment user, with an inbox of its own below
+// enroll.InboxPrefix.
+func newRequester(address, caPath, password string, reconnect *broker.Backoff) (*broker.Requester, error) {
+	inbox := make([]byte, 8)
+	if _, err := rand.Read(inbox); err != nil {
+		return nil, err
+	}
+	return broker.NewRequester(broker.Connection{
+		Address: address, CACertPath: caPath, User: enroll.EnrollUser, Password: password, Reconnect: reconnect,
+	}, enroll.InboxPrefix+"."+hex.EncodeToString(inbox))
 }
 
 // trustedCA returns the CA certificate this machine trusts. One that was copied here is used (and
@@ -308,6 +314,10 @@ func (e *enrolment) finish(request enroll.Request, tlsKeyPEM string, reply enrol
 		if err := writeDirectory(trust.DirectoryPath(e.opts.ConfigDir), *reply.Directory); err != nil {
 			return err
 		}
+	}
+	// Kept so that the running agent can ask busd for the directory later (FetchDirectory).
+	if err := creds.WritePassword(filepath.Join(e.opts.ConfigDir, passwordDir), e.opts.EnrollPassword, true); err != nil {
+		return err
 	}
 	_ = os.Remove(e.pendingPath())
 	certPath, keyPath := creds.ClientCertPaths(e.dir)

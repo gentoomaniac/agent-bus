@@ -186,6 +186,12 @@ What was built, and where it differs from the plan above it:
   this trusted-LAN MVP accepts. **Residual risk:** whoever holds the enrollment password can also
   answer on an agent's inbox space with a forged directory; a forged record only matters for an
   agent that is not pinned yet. busd rate-limits it (5 a second, burst 20).
+  `agent-bus enroll` keeps the password in `<config-dir>/enroll/password`; the running adapter
+  (`agent-bus mcp`) asks every `--directory-refresh` and merges the answer into its local
+  directory: records are added and replaced, never deleted, and a revoked key stays revoked
+  (`revoked_keys` only grows). A busd that cannot be reached, or an agent without the password,
+  leaves the local directory as it is. An agent enrolled before this needs the file written by
+  hand; an older agent or busd still needs `directory export` and a copy.
 - **Request.** `agent-bus enroll --broker <host> --agent <id> [--waitforcert[=<max>]] [--secret <s>]
   [--ca-fingerprint <sha256>]`. An existing identity keeps its signing key (and so its pins, ID and
   consumers); only the TLS key and CSR are new. The request has the agent ID, CSR, public signing
@@ -235,8 +241,8 @@ What was built, and where it differs from the plan above it:
   of busd). Renewal is still `cert issue`, or enrolling again from the machine; either replaces the earlier
   certificate of the ID (revocation, above).
 - **Removal** is as before (`agent remove`: mapping dropped with the account, ID tombstoned, never
-  reused). The directory still reaches other agents by hand (`directory export`); an enrolled machine
-  starts with the directory busd returns.
+  reused). Other agents learn of the removal through the directory fetch above (an older agent still
+  needs `directory export`); an enrolled machine starts with the directory busd returns.
 
 Not built from the earlier plan: busd's signed `busd.<method>` API for agents (only the enrollment
 and approval subjects exist), reload through a helper called by the monitor (busd reloads locally, the

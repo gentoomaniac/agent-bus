@@ -296,8 +296,11 @@ one year, never from the request's own names), registers the agent (or switches 
 creates its read cursors, switches its account to certificate login with a confirmed reload, and
 the new machine installs the certificate, `ca.pem` and the directory of agents. It then reaches the
 broker on port `4223` as any certificate agent does: publish that port ([5a](#5a-certificate-login-optional)).
-Agents that already run need the new agent in their `directory/` (`agent-busctl --direct
-directory export`, copied as in section 5) until busd serves it over the bus.
+Running agents learn of the new agent from busd, which answers their directory request
+every minute, if both are of this version and the agent
+has the enrollment password in `<config-dir>/enroll/password` (`enroll` writes it; for an
+agent enrolled before, put it there). Older agents still need the new agent in their `directory/`
+(`agent-busctl --direct directory export`, copied as in section 5).
 
 - **An ID that exists.** A machine that enrolls an ID that is already registered *with its own key*
   (the agent's `key` file is there) only gets a certificate; its password stops working. An ID

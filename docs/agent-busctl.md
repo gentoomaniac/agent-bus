@@ -178,7 +178,8 @@ the catalogue, so create the channel first. `channel create` and `channel join` 
 catalogue snapshot `<config-dir>/directory/channels` (each group with the agents that read it), and
 `directory export` writes it too. The agent's adapter reads its groups from the snapshot when it
 starts, so restart it after a join; `--groups` is only needed for a group the snapshot does not
-list. On another machine the snapshot arrives with the next copy of `directory/`.
+list. On another machine the snapshot arrives with the next fetch of a running agent from busd, or
+with the next copy of `directory/` for an agent of an older version.
 
 ```sh
 bin/agent-busctl --direct channel join api-client@alice lib-x
@@ -232,12 +233,17 @@ docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -c
   | ssh other 'tar -C ~/.config/agent-bus -xf -'
 ```
 
-A running `agent-bus mcp` re-reads its directory every minute (`--directory-refresh`) and on
-`SIGHUP`. It then keeps the fingerprints of all revoked keys in `<agent-dir>/revoked_keys` and
-rejects messages signed by them, even from a pinned key ("revoked key" in `alerts.log`). Sending to
-a removed agent fails with "agent removed", and `list_agents` leaves it out. Run the export again
-after every `agent remove` and `register`. Enrollment delivers the directory once; keeping it
-fresh is still this export ([design/access-control.md](design/access-control.md)).
+A running `agent-bus mcp` fetches the directory from busd at start, every minute
+(`--directory-refresh`) and on `SIGHUP`, merges it into its local `directory/` (it adds and
+replaces records and never deletes one), and re-reads it. It then keeps the fingerprints of all
+revoked keys in `<agent-dir>/revoked_keys` and rejects messages signed by them, even from a pinned
+key ("revoked key" in `alerts.log`). Sending to a removed agent fails with "agent removed", and
+`list_agents` leaves it out. The fetch uses the shared enrollment login, whose password
+`agent-bus enroll` keeps in `<config-dir>/enroll/password`; an agent enrolled by an older version
+has none, and `agent-bus mcp` says so once: write the password there (mode 0600) and restart it.
+Without the file, or when busd cannot be reached, the local directory stays as it is, and running
+the export and copying it over is still how such an agent is kept current. The version of busd
+must be the new one too ([design/access-control.md](design/access-control.md)).
 
 ### cert issue
 

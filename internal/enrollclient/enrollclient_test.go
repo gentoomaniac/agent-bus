@@ -101,7 +101,7 @@ func newFixture(t *testing.T) *fixture {
 
 func (f *fixture) run(wait time.Duration) error {
 	e := &enrolment{
-		opts:      Options{ConfigDir: f.configDir, AgentID: agentID, Wait: wait, Out: f.out},
+		opts:      Options{ConfigDir: f.configDir, AgentID: agentID, EnrollPassword: "shared-secret", Wait: wait, Out: f.out},
 		requester: f.busd, caPEM: f.busd.caPEM, dir: creds.AgentDir(f.configDir, agentID),
 		pollEvery: broker.Backoff{Initial: time.Millisecond, Max: 5 * time.Millisecond}, exchangeTimeout: time.Second,
 	}
@@ -154,6 +154,9 @@ func TestApprovalInstallsTheCertificateAndTheDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.agentDir(), pendingFile)); err == nil {
 		t.Error("the pending file is still there")
+	}
+	if password, err := creds.ReadPassword(filepath.Join(f.configDir, passwordDir)); err != nil || password != "shared-secret" {
+		t.Errorf("the enrollment password kept for the directory fetch: %q, %v", password, err)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enrollclient"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/hook"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/mcpserver"
@@ -48,7 +50,7 @@ type CLI struct {
 	ReconnectInitial time.Duration `help:"mcp only: the first wait before reconnecting to the broker; it doubles for each failed attempt." default:"1s" env:"BUS_RECONNECT_INITIAL"`
 	ReconnectMax     time.Duration `help:"mcp only: the longest wait between reconnect attempts." default:"30s" env:"BUS_RECONNECT_MAX"`
 
-	DirectoryRefresh time.Duration `help:"mcp only: how often the local directory is re-read for revoked keys (also on SIGHUP)." default:"1m" env:"BUS_DIRECTORY_REFRESH"`
+	DirectoryRefresh time.Duration `help:"mcp only: how often the directory is fetched from busd and re-read for revoked keys (also on SIGHUP)." default:"1m" env:"BUS_DIRECTORY_REFRESH"`
 
 	PresenceHeartbeat time.Duration `help:"mcp only: how often an unchanged presence record is published; readers call an agent offline after three times this." default:"30s" env:"BUS_PRESENCE_HEARTBEAT"`
 
@@ -167,8 +169,9 @@ func (cmd *MCPCmd) Run(ctx context.Context, cli *CLI, session *adapter.Adapter) 
 	return mcpserver.Serve(ctx, session, &mcp.StdioTransport{})
 }
 
-// refreshDirectory re-reads the local directory on a timer and on SIGHUP until ctx ends. The
-// directory is copied in by hand until busd exists (docs/agent-busctl.md), so a failure is only logged.
+// refreshDirectory fetches the directory from busd and re-reads it at once, on a timer and on
+// SIGHUP, until ctx ends. A failure is only logged, once per round: the local directory stays
+// as it is and keeps working.
 func refreshDirectory(ctx context.Context, session *adapter.Adapter, interval time.Duration) {
 	hangups := make(chan os.Signal, 1)
 	signal.Notify(hangups, syscall.SIGHUP)
@@ -176,14 +179,14 @@ func refreshDirectory(ctx context.Context, session *adapter.Adapter, interval ti
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
+		if err := session.SyncDirectory(ctx); err != nil {
+			log.Printf("agent-bus: refreshing the directory: %v", err)
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		case <-hangups:
-		}
-		if err := session.RefreshDirectory(ctx); err != nil {
-			log.Printf("agent-bus: refreshing the directory: %v", err)
 		}
 	}
 }
@@ -284,6 +287,26 @@ func main() {
 	kongCtx.FatalIfErrorf(kongCtx.Run())
 }
 
+// directoryFetcher asks busd for the directory over the shared enrollment login, whose password
+// `agent-bus enroll` kept. An agent enrolled before that has none: its directory then only changes
+// when it is copied in, which a long-running session says once instead of failing every round.
+func (cli *CLI) directoryFetcher(caCert string, longRunning bool) func(context.Context) error {
+	var saidNoPassword sync.Once
+	return func(ctx context.Context) error {
+		err := enrollclient.FetchDirectory(ctx, enrollclient.DirectoryOptions{ConfigDir: cli.ConfigDir, Broker: cli.Broker, CACertPath: caCert})
+		if errors.Is(err, enrollclient.ErrNoEnrollPassword) {
+			if longRunning {
+				saidNoPassword.Do(func() {
+					log.Printf("agent-bus: no enrollment password in %s: the directory is not fetched from busd and only changes when it is copied in",
+						filepath.Join(cli.ConfigDir, "enroll", "password"))
+				})
+			}
+			return nil
+		}
+		return err
+	}
+}
+
 // open connects as the agent and takes the identity. closeSession releases both. A long-running
 // session keeps reconnecting when the broker is down, also at start; a command fails at once.
 func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession func(), err error) {
@@ -311,7 +334,8 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 		return nil, nil, err
 	}
 	session, err = adapter.Open(adapter.Config{
-		AgentID: cli.Agent, Dir: dir, Transport: transport, Directory: trust.DirectoryPath(cli.ConfigDir), Groups: cli.Groups, Deliver: cli.Deliver, AutoAccept: cli.AutoAccept,
+		AgentID: cli.Agent, Dir: dir, Transport: transport, Directory: trust.DirectoryPath(cli.ConfigDir), FetchDirectory: cli.directoryFetcher(caCert, longRunning),
+		Groups: cli.Groups, Deliver: cli.Deliver, AutoAccept: cli.AutoAccept,
 	})
 	if err != nil {
 		transport.Close()
