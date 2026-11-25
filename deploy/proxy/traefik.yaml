@@ -1,0 +1,33 @@
+# Traefik in front of the web monitor, static configuration
+# (docs/docker.md#publish-the-monitor-through-a-tls-proxy). Used as it is by the traefik service of
+# docker-compose.proxy.yaml. The routing is in traefik-dynamic.yaml, which Traefik re-reads when it
+# changes.
+#
+# The monitor must run with
+#   BUS_WEB_BEHIND_PROXY=true  BUS_WEB_PUBLIC_URL=https://<host name clients use>
+#   BUS_WEB_TRUSTED_PROXY=<Traefik's address or network>
+# The compose overlay sets all three.
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    # No forwardedHeaders.trustedIPs here: Traefik drops the X-Forwarded-* headers a client sent and
+    # sets its own, which the monitor needs to count login attempts per client.
+    # Server-sent events need no setting: Traefik flushes the stream as it arrives, and its default
+    # timeouts (none for responses) leave /api/v1/events open.
+    address: ":443"
+
+providers:
+  file:
+    # Not the docker provider: this way Traefik needs no access to the container engine's socket.
+    filename: /etc/traefik/dynamic.yaml
+    watch: true
+
+log:
+  level: INFO

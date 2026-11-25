@@ -1,0 +1,28 @@
+# Traefik's routing for the web monitor, the dynamic configuration read through providers.file of
+# traefik.yaml. Used as it is by docker-compose.proxy.yaml.
+http:
+  routers:
+    monitor:
+      entryPoints: [websecure]
+      # Any host name: the monitor itself accepts only the host of its public URL. Narrow it with
+      # Host(`bus.example.com`) if this Traefik serves other sites too.
+      rule: "PathPrefix(`/`)"
+      service: monitor
+      tls: {}
+
+  services:
+    monitor:
+      loadBalancer:
+        # Traefik passes the client's Host header on by default, which the monitor needs.
+        passHostHeader: true
+        servers:
+          # EDIT: where the monitor listens: the compose service name of the broker (the monitor
+          # shares its network), or http://127.0.0.1:8080 for Traefik on the same host.
+          - url: "http://agent-bus:8080"
+
+tls:
+  certificates:
+    # EDIT: the certificate and its key. For Let's Encrypt, drop this section, add a
+    # certificatesResolvers entry to traefik.yaml and `tls: {certResolver: ...}` on the router.
+    - certFile: /etc/traefik/certs/fullchain.pem
+      keyFile: /etc/traefik/certs/privkey.pem

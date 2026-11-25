@@ -1,14 +1,19 @@
-# Overlay: Caddy in front of the web monitor. Only Caddy publishes the monitor; the broker keeps its
-# ports. Use it on top of docker-compose.yaml (docs/monitor.md, "Behind a reverse proxy"):
+# Overlay: a TLS reverse proxy in front of the web monitor. Pick one: nginx, Traefik or Caddy. Only
+# the proxy publishes the monitor; the broker keeps its NATS ports (4222 and 4223 are TLS with the
+# bus's own CA and go straight to the broker, never through the proxy). Use it on top of
+# docker-compose.yaml (docs/docker.md#publish-the-monitor-through-a-tls-proxy):
 #
-#   docker compose -f deploy/docker-compose.yaml -f deploy/docker-compose.proxy.yaml --profile monitor up -d
+#   docker compose -f deploy/docker-compose.yaml -f deploy/docker-compose.proxy.yaml \
+#     --profile monitor --profile proxy-nginx up -d          # or proxy-traefik, or proxy-caddy
 #
-# Needs Docker Compose 2.24 or newer (`!override`). Before the first start set the password:
+# Needs Docker Compose 2.24 or newer (`!override`). Before the first start set the monitor's password:
 #   docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
 #
-# BUS_PUBLIC_HOST   the host name clients use, for Caddy's certificate (default: localhost, a local CA)
-# BUS_PUBLIC_URL    how clients reach Caddy, e.g. https://bus.example (default: https://localhost)
+# BUS_PUBLIC_HOST   the host name clients use (default: localhost); Caddy gets its certificate for it
+# BUS_PUBLIC_URL    how clients reach the proxy, e.g. https://bus.example.com (default: https://localhost)
 # BUS_HTTPS_PORT    host port for 443 (default: 443); BUS_HTTP_PORT likewise for 80 (default: 80)
+# BUS_TLS_DIR       nginx and Traefik: the folder with fullchain.pem and privkey.pem
+#                   (default: tls/ in AGENT_BUS_HOME, or next to this file)
 services:
   agent-bus:
     ports: !override
@@ -19,8 +24,35 @@ services:
     environment:
       BUS_WEB_BEHIND_PROXY: "true"
       BUS_WEB_PUBLIC_URL: ${BUS_PUBLIC_URL:-https://localhost}
-      # Caddy's address is in this subnet (see the network below); it tells the monitor who the client is.
+      # The proxy's address is in this subnet (see the network below); it tells the monitor who the client is.
       BUS_WEB_TRUSTED_PROXY: 172.29.0.0/24
+
+  nginx:
+    image: nginx:1.27
+    restart: unless-stopped
+    ports:
+      - "${BUS_HTTP_PORT:-80}:80"
+      - "${BUS_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${BUS_TLS_DIR:-${AGENT_BUS_HOME:-.}/tls}:/etc/nginx/certs:ro
+    depends_on:
+      - monitor
+    profiles: ["proxy-nginx"]
+
+  traefik:
+    image: traefik:v3.2
+    restart: unless-stopped
+    ports:
+      - "${BUS_HTTP_PORT:-80}:80"
+      - "${BUS_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./proxy/traefik.yaml:/etc/traefik/traefik.yaml:ro
+      - ./proxy/traefik-dynamic.yaml:/etc/traefik/dynamic.yaml:ro
+      - ${BUS_TLS_DIR:-${AGENT_BUS_HOME:-.}/tls}:/etc/traefik/certs:ro
+    depends_on:
+      - monitor
+    profiles: ["proxy-traefik"]
 
   caddy:
     image: caddy:2
@@ -35,7 +67,7 @@ services:
       - caddy-data:/data
     depends_on:
       - monitor
-    profiles: ["monitor"]
+    profiles: ["proxy-caddy"]
 
 networks:
   default:
