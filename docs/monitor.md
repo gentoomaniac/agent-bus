@@ -11,7 +11,7 @@ channels, and no way to reply to a message (it does show threads).
 
 | I want to ...                | Go to                                                      |
 |------------------------------|------------------------------------------------------------|
-| start it                     | [Start it locally](#start-it-locally), [Docker](#docker)   |
+| start it                     | [Start it without Docker](#start-it-without-docker), [Docker](#docker)   |
 | log in                       | [Login](#login)                                            |
 | read channels and messages   | [Read](#read)                                              |
 | see who is in a channel      | [The members list](#the-members-list)                      |
