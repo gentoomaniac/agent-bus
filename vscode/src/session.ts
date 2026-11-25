@@ -19,6 +19,7 @@ export class Session implements vscode.Disposable {
   private stream: AbortController | undefined;
   private generation = 0; // counts starts; work of an older start is dropped
   private hasToken = false;
+  loginRequired = false; // the monitor refused our token (or we have none): no connection to show
   readonly log = vscode.window.createOutputChannel("Agent Messenger");
 
   readonly onDidChange = this.changeEmitter.event;
@@ -74,6 +75,7 @@ export class Session implements vscode.Disposable {
     this.model = model;
     this.prefs = prefs;
     const stream = (this.stream = new AbortController());
+    this.loginRequired = false;
     await vscode.commands.executeCommand("setContext", "agentMessenger.loginRequired", false);
     this.changeEmitter.fire();
     void followEvents(model.api, {
@@ -116,6 +118,8 @@ export class Session implements vscode.Disposable {
   }
 
   private async requireLogin(): Promise<void> {
+    this.loginRequired = true;
+    this.changeEmitter.fire();
     await vscode.commands.executeCommand("setContext", "agentMessenger.loginRequired", true);
     if (!this.hasToken) return;
     const choice = await vscode.window.showWarningMessage("Agent Messenger: the session ended. Log in again.", "Log In");

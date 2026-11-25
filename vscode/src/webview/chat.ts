@@ -372,8 +372,7 @@ function showState(next: ChatState): void {
   threadsToggle.setAttribute("aria-pressed", String(next.threaded));
   showSubscribed(next.subscribed);
   composer.hidden = !next.canSend;
-  note.hidden = next.canSend;
-  note.textContent = next.note;
+  showNote();
   textInput.placeholder = isDirect() ? "Message " + next.defaultTarget : `Message ${next.title.replace(/^# /, "#")} (Enter sends, Shift+Enter for a new line)`;
   if (first || isDirect()) targets = [next.defaultTarget];
   renderTargets();
@@ -389,6 +388,15 @@ function growComposer(): void {
 }
 
 let sending = false;
+let sentNote: ReturnType<typeof setTimeout> | undefined;
+const SENT_NOTE_MS = 3000;
+
+// The note under the messages: who the page sends as, "Sent." for a moment after a send.
+function showNote(sent = false): void {
+  clearTimeout(sentNote);
+  note.textContent = sent ? "Sent." : state?.note ?? "";
+  if (sent) sentNote = setTimeout(showNote, SENT_NOTE_MS);
+}
 
 function updateSend(): void {
   sendButton.disabled = sending || !textInput.value.trim();
@@ -579,6 +587,7 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
       textInput.value = "";
       titleInput.value = "";
       growComposer();
+      showNote(true);
     }
     updateSend();
   }

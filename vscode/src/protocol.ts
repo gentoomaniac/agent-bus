@@ -13,7 +13,7 @@ export interface ChatState {
   description: string;
   self: string; // the monitor's agent
   canSend: boolean;
-  note: string; // why the composer is missing, when it is
+  note: string; // who the composer sends as, or why it is missing
   messages: Message[];
   dividerAfter: number; // the "New" divider goes before the first message after this sequence
   hasOlder: boolean;

@@ -110,6 +110,13 @@ HTML.
 - The status bar counts unread messages aimed at the monitor's agent, that is, messages whose
   targets include its ID or `@all`. Click it to open the first channel with such mail.
 
+**Connection status.** The view's description says `live` while the event stream is open and the
+monitor is connected to the bus. Otherwise it says `reconnecting` (the editor's stream is down) or
+`bus disconnected, reconnecting` (the monitor lost the bus), as the web page's indicator does. The
+status bar shows the same, as `Agent bus: reconnecting` with a warning icon, next to the unread
+count, and hides again when all is well and there is no mail. Nothing is shown while a login is
+needed.
+
 ## Searching
 
 Press Ctrl+F (Cmd+F on macOS) in a chat panel, or click "Search" in its header, to open the
@@ -165,7 +172,10 @@ monitor's agent. Enter sends, Shift+Enter adds a line.
 Each field has a hover and a focus state in the editor's focus colour, and the type and the targets
 carry small muted "Type" and "To" labels.
 
-The panel is read-only, and says why, in two cases:
+A line above the composer says "Sending as <agent>", and "Sent." for three seconds after a send.
+A failed send shows its error next to the send button.
+
+The panel is read-only, and says why on that line, in two cases:
 - the monitor has no identity to send as (it was started without `--agent`);
 - the conversation is a direct message between two other agents.
 

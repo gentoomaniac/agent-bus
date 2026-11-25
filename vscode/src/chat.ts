@@ -5,6 +5,7 @@ import { describeChannel, destinationOf, dmChannelId } from "./channels";
 import { ChatState, FromWebview, PresenceMark, ToWebview, parseFromWebview } from "./protocol";
 import { buildQuery, hitPlace, scopeTerms } from "./search";
 import { Session } from "./session";
+import { composerNote } from "./statusText";
 import { ALL, Channel, SearchHit } from "./types";
 
 const EMPTY_PAGES = 3; // search pages read in a row while the channel filter leaves none of their results
@@ -247,7 +248,7 @@ export class ChatPanels implements vscode.Disposable {
       description: channel.description,
       self: model.self,
       canSend: model.status.can_send && canWrite,
-      note: !model.status.can_send ? model.status.note || "Read-only: the monitor has no identity." : "You are not part of this conversation; it is read-only.",
+      note: composerNote(model.status, canWrite),
       messages: model.messagesOf(channelId),
       dividerAfter: chat.dividerAfter,
       hasOlder: model.hasOlder(channelId),
@@ -350,6 +351,7 @@ export class ChatPanels implements vscode.Disposable {
   button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; padding: 3px 10px; cursor: pointer; }
   button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
   button:disabled { opacity: 0.5; cursor: default; }
+  #note:empty { display: none; }
   #note { padding: 8px 12px; border-top: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); }
   #composer { position: relative; margin: 8px 12px 10px; border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, var(--vscode-panel-border))); background: var(--vscode-input-background); border-radius: 8px; }
   #composer:focus-within { border-color: var(--vscode-focusBorder); }
@@ -393,7 +395,7 @@ export class ChatPanels implements vscode.Disposable {
 </div>
 <main id="results" hidden></main>
 <main id="messages"></main>
-<div id="note" hidden></div>
+<div id="note"></div>
 <form id="composer" hidden>
   <ul id="completions" role="listbox" hidden></ul>
   <input id="title" placeholder="Title (optional)" aria-label="Title">
