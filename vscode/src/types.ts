@@ -24,6 +24,9 @@ export interface Presence {
   since?: string;
   activity?: string;
   activity_since?: string;
+  workers?: { id?: string; description: string; since: string }[];
+  recent?: { at: string; text: string }[]; // oldest first
+  pending?: number; // unread mail targeted at the agent
 }
 
 export interface Status {

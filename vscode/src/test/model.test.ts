@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Api } from "../api";
 import { Model, ReadStore } from "../model";
-import { Channel, Message } from "../types";
+import { Channel, Message, Presence } from "../types";
 
 const SELF = "monitor@bob";
 
@@ -23,7 +23,8 @@ class FakeApi {
   status = async () => ({ bus: "live" as const, agent: SELF, can_send: true, note: "", password_set: true });
   channels = async () => this.channelList;
   agents = async () => [];
-  presence = async () => [];
+  presenceList: Presence[] = [];
+  presence = async () => this.presenceList;
   messages = async (channel: string, after: number, limit: number) =>
     this.store.filter((m) => m.channel === channel && m.sequence > after).slice(0, limit);
 }
@@ -92,4 +93,18 @@ test("a channel that appears after the first refresh starts unread, its message 
   assert.equal(model.unreadCount("group:new"), 1);
   assert.equal(model.targetedUnreadCount(), 1);
   assert.equal(model.unreadCount("general"), 0);
+});
+
+test("presence comes from the snapshot and from presence events, and a change is announced", async () => {
+  const api = new FakeApi([message("general", 1)]);
+  api.presenceList = [{ agent: "a@x", state: "idle" }];
+  const model = new Model(api as unknown as Api, memoryStore());
+  await model.refresh();
+  assert.equal(model.presence.get("a@x")?.state, "idle");
+  let changes = 0;
+  model.onChange(() => changes++);
+  const view: Presence = { agent: "a@x", state: "working", activity: "Bash npm", workers: [{ description: "tests", since: "2026-11-24T12:00:00Z" }] };
+  await model.apply({ event: "presence", data: JSON.stringify(view), id: undefined });
+  assert.deepEqual(model.presence.get("a@x"), view);
+  assert.equal(changes, 1);
 });

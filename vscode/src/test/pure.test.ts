@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { ago, describePresence, recentActivity } from "../presence";
 import { matchTargets, mentionBefore } from "../completion";
 import { categorize, describeChannel, destinationOf } from "../channels";
 import { nextBackoff } from "../events";
@@ -97,6 +98,23 @@ test("continuesGroup joins the same sender within five minutes only", () => {
   assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { targets: ["b@y"] })), false);
   assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { title: "New topic" })), false);
   assert.equal(continuesGroup(first, at("not a time")), false);
+});
+
+test("describePresence says state, activity and how long; ago counts s, m and h", () => {
+  const now = Date.parse("2026-11-24T12:10:00Z");
+  assert.equal(ago("2026-11-24T12:09:48Z", now), "12s");
+  assert.equal(ago("2026-11-24T12:05:00Z", now), "5m");
+  assert.equal(ago("2026-11-24T09:10:00Z", now), "3h");
+  assert.equal(ago(undefined, now), "");
+  assert.equal(describePresence(undefined, now), "offline");
+  assert.equal(describePresence({ agent: "a", state: "idle" }, now), "idle");
+  assert.equal(describePresence({ agent: "a", state: "working", activity: "Bash npm", activity_since: "2026-11-24T12:09:57Z" }, now), "working · Bash npm (3s)");
+});
+
+test("recentActivity is newest first and limited", () => {
+  const recent = [1, 2, 3, 4].map((n) => ({ at: "t" + n, text: "e" + n }));
+  assert.deepEqual(recentActivity({ agent: "a", state: "idle", recent }, 2).map((e) => e.text), ["e4", "e3"]);
+  assert.deepEqual(recentActivity(undefined, 2), []);
 });
 
 test("matchTargets matches by prefix on the whole ID or the name, ignoring case and chosen targets", () => {
