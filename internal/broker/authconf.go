@@ -12,11 +12,28 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// The two admin users. NATS user names are server-wide, so the admin of each account has its own.
+// The password logins besides the agents'. NATS user names are server-wide, so each account has
+// its own admin, and the monitor has one login per account. busd's is the one it serves CONTROL
+// with; it still uses bus-admin for BUS.
 const (
-	BusAdminUser     = "bus-admin"
-	ControlAdminUser = "control-admin"
+	BusAdminUser       = "bus-admin"
+	ControlAdminUser   = "control-admin"
+	BusdUser           = "busd"
+	MonitorBusUser     = "monitor-bus"
+	MonitorControlUser = "monitor-control"
 )
+
+// principals says where each of those logins lives and what it is for.
+var principals = map[string]struct {
+	role authRole
+	file string // the authorization file of its account
+}{
+	BusAdminUser:       {roleAdmin, authFile},
+	ControlAdminUser:   {roleAdmin, controlAuthFile},
+	BusdUser:           {roleBusd, controlAuthFile},
+	MonitorBusUser:     {roleMonitor, authFile},
+	MonitorControlUser: {roleMonitor, controlAuthFile},
+}
 
 // agentBusdMethods are the busd calls an agent may make (docs/design/jetstream-binding.md). Nothing answers them before
 // milestone 3; the grants are in place so the per-role matrix is complete.
@@ -38,10 +55,12 @@ type authRole string
 const (
 	roleAgent authRole = "agent"
 	roleAdmin authRole = "admin"
-	// roleEnrollment is the shared login of new machines (docs/design/access-control.md). roleMonitor is
-	// reserved: a file that has it is read and written back unchanged, with no access.
+	// roleEnrollment is the shared login of new machines, roleBusd the login busd serves CONTROL
+	// with, roleMonitor the monitor's read-only logins (docs/design/access-control.md). A
+	// monitor entry that is none of the monitor's two logins has no access.
 	roleMonitor    authRole = "monitor"
 	roleEnrollment authRole = "enrollment"
+	roleBusd       authRole = "busd"
 )
 
 // authMode is how an entry logs in: with a password, or with a client certificate that
@@ -133,7 +152,7 @@ func parseUser(natsName, passwordHash string, role authRole) (authUser, error) {
 			role = roleAdmin
 		}
 	}
-	if !slices.Contains([]authRole{roleAgent, roleAdmin, roleMonitor, roleEnrollment}, role) {
+	if !slices.Contains([]authRole{roleAgent, roleAdmin, roleMonitor, roleEnrollment, roleBusd}, role) {
 		return authUser{}, fmt.Errorf("unknown role %q", role)
 	}
 	if passwordHash != "" {
@@ -234,8 +253,66 @@ func permissions(user authUser, groups []string) string {
 		// It may ask busd for approval and hear the answers on its own inbox space, nothing else:
 		// no stream, no JetStream API. The login is shared, so its replies hold public data only.
 		return allowOnly([]string{enroll.SubjectRequest, enroll.SubjectStatus}, []string{enroll.InboxPrefix + ".>"})
-	default:
-		return `{publish: {deny: [">"]}, subscribe: {deny: [">"]}}`
+	case roleBusd:
+		return busdPermissions()
+	case roleMonitor:
+		switch user.name {
+		case MonitorBusUser:
+			return monitorBusPermissions()
+		case MonitorControlUser:
+			return monitorControlPermissions()
+		}
+	}
+	return `{publish: {deny: [">"]}, subscribe: {deny: [">"]}}`
+}
+
+// busdPermissions are what busd needs in CONTROL and no more: it reads the registry and the
+// catalogue, writes registry records, answers requests into inbox space and announces the pending
+// count. It cannot delete a stream, purge one or write the catalogue or the ledger, whatever
+// subject a request tells it to reply on.
+func busdPermissions() string {
+	publish := slices.Concat(
+		kvReadSubjects(registryKV), kvReadSubjects(catalogueKV),
+		[]string{"$KV." + registryKV + ".>", "_INBOX.>", enroll.SubjectPending})
+	subscribe := []string{"_INBOX.>", enroll.SubjectRequest, enroll.SubjectStatus, enroll.SubjectList, enroll.SubjectSign, enroll.SubjectReject}
+	return allowOnly(publish, subscribe)
+}
+
+// monitorControlPermissions let the monitor read the registry and the catalogue and hear the
+// pending count: no write, no approval subject, no auth file.
+func monitorControlPermissions() string {
+	publish := slices.Concat(kvReadSubjects(registryKV), kvReadSubjects(catalogueKV))
+	return allowOnly(publish, []string{"_INBOX.>", enroll.SubjectPending})
+}
+
+// monitorBusPermissions let the monitor read every channel through consumers of its own, list who
+// holds a read cursor and read presence. It publishes no message. JetStream subjects cannot name
+// a consumer prefix, so these grants also reach the consumers of agents; the monitor sees all
+// traffic anyway (docs/design/access-control.md).
+func monitorBusPermissions() string {
+	publish := []string{
+		"$JS.API.STREAM.INFO." + busStream,
+		"$JS.API.CONSUMER.CREATE." + busStream + ".>",
+		"$JS.API.CONSUMER.INFO." + busStream + ".*",
+		"$JS.API.CONSUMER.DELETE." + busStream + ".*",
+		"$JS.API.CONSUMER.MSG.NEXT." + busStream + ".*",
+		"$JS.API.CONSUMER.NAMES." + busStream,
+		presenceReadSubject("*"),
+	}
+	return allowOnly(publish, []string{"_INBOX.>", presenceSubject("*")})
+}
+
+// kvReadSubjects are the JetStream API subjects that read a KV bucket: its stream's info, direct
+// gets and ordered consumers for the key listing.
+func kvReadSubjects(bucket string) []string {
+	stream := "KV_" + bucket
+	return []string{
+		"$JS.API.STREAM.INFO." + stream,
+		"$JS.API.DIRECT.GET." + stream, "$JS.API.DIRECT.GET." + stream + ".>",
+		"$JS.API.CONSUMER.CREATE." + stream, "$JS.API.CONSUMER.CREATE." + stream + ".>",
+		"$JS.API.CONSUMER.INFO." + stream + ".*",
+		"$JS.API.CONSUMER.DELETE." + stream + ".*",
+		"$JS.API.CONSUMER.MSG.NEXT." + stream + ".*",
 	}
 }
 

@@ -9,10 +9,10 @@ enrollment flow in phase B).
 | Part | Status |
 |---|---|
 | TLS-only broker, private CA (`agent-busctl tls init`), static users with bcrypt passwords, per-role grants, `admin init`, generated `auth.conf` | implemented |
-| Roles `agent`, `admin` | implemented; `monitor` and `enrollment` roles are reserved with no access (the monitor logs in as the two admin users) |
+| Roles `agent`, `admin`, `enrollment`, `busd`, `monitor` | implemented; busd serves CONTROL as its own login (`busd`), the monitor has two read-only logins (`monitor-bus`, `monitor-control`), `agent-busctl service init` creates them on an older setup |
 | mTLS phase A: certificate login on a second listener (`cert issue`, `cert sign`, `cert switch`) | implemented |
 | mTLS phase B: enrollment flow, `ca list\|sign\|reject\|fingerprint\|review`, autosigning, CA key in a minimal busd (decision 41) | implemented (see below) |
-| The busd and monitor columns of the grants matrix | **planned**: the minimal busd logs in as the two admin users and serves only enrollment and approval; there is no `monitor_<owner>` user yet |
+| The busd and monitor columns of the grants matrix | **partly built**: busd's CONTROL login and the monitor's two logins have the narrow grants listed below; busd's BUS connection is still `bus-admin`, and the signed `busd.<method>` API and `monitor@<owner>` roles are planned |
 
 ## Accounts and access
 
@@ -86,11 +86,21 @@ copies them to the agent's machine; no request or approval flow. What differs fr
 - *Certificates* are built by `tlsinit.CA.IssueClientCert` from the approved identity only: client
   auth, not a CA, one year by default, no names from a CSR (`SignCSR` checks the request's signature
   and uses only its public key).
-- *Roles and modes.* The authorization files model agent, admin, monitor and enrollment users, each
+- *Roles and modes.* The authorization files model agent, admin, busd, monitor and enrollment users,
   in password or certificate mode, and are rewritten without losing any entry (the role is a trailing
-  comment; older files are still read). Monitor and enrollment are reserved with no access. The web
-  monitor has no user of its own yet: it logs in as the two admin users, so `cert issue --admin`
-  covers it.
+  comment; older files are still read). The principals besides the agents are `bus-admin` and
+  `control-admin` (`>`), `busd` (CONTROL: read the registry and the catalogue, write registry
+  records, `_INBOX.>`, the pending count; no stream delete or purge, no catalogue or ledger write),
+  `monitor-bus` (BUS: its own ordered consumers, consumer and stream info, presence; publishes no
+  message) and `monitor-control` (CONTROL: read the registry and the catalogue, hear the pending
+  count; no approval subject). They log in with passwords. `agent-busctl admin init` creates all of
+  them; on a setup older than this, `agent-busctl service init` adds the three. Until then busd
+  and the monitor fall back to the admin logins and say so in their log.
+- *busd answers into inbox space only.* The sender of a request names its reply subject, and busd
+  publishes the reply itself. It therefore answers an enrollment request only below
+  `_INBOX.enroll.` and an owner command below `_INBOX.agent-busctl.`, to a literal subject, and
+  drops anything else (it logs the first). With its own narrow login a request could not reach more
+  than busd may do anyway.
 - *Rollback and removal.* `cert switch <id> --password` goes back; `agent remove` drops the
   mapping with the account and the tombstone keeps the ID from being certified again.
 - *Reload topology.* Only the broker's container reloads nats-server; the monitor container never

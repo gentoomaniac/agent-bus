@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -470,6 +471,46 @@ func TestEnrollment(t *testing.T) {
 		if list := h.run(t, h.agentBusctl, "ca", "list"); !strings.Contains(list, "later@carol") {
 			t.Errorf("busd no longer serves the owner after the attacks:\n%s", list)
 		}
+	})
+
+	t.Run("busd serves CONTROL with its own login, which cannot delete, purge or write what it does not own", func(t *testing.T) {
+		response, err := http.Get(h.monitorURL + "/connz?auth=true")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		var connz struct {
+			Connections []struct {
+				AuthorizedUser string `json:"authorized_user"`
+			} `json:"connections"`
+		}
+		if err := json.NewDecoder(response.Body).Decode(&connz); err != nil {
+			t.Fatal(err)
+		}
+		served := false
+		for _, connection := range connz.Connections {
+			served = served || connection.AuthorizedUser == broker.BusdUser
+		}
+		if !served {
+			t.Errorf("no connection of %s: %+v", broker.BusdUser, connz.Connections)
+		}
+
+		busdPassword, err := creds.ReadPassword(creds.AdminDir(h.configDir, broker.BusdUser))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := h.connectRaw(t, broker.Connection{User: broker.BusdUser, Password: busdPassword}, "")
+		for _, subject := range []string{
+			"$JS.API.STREAM.DELETE.LEDGER", "$JS.API.STREAM.PURGE.KV_registry", "$JS.API.STREAM.DELETE.KV_registry",
+			"$KV.catalogue.x", "ledger.x", "$JS.API.STREAM.CREATE.X", "dm." + bus.AgentToken(alice),
+		} {
+			c.denyPublish(t, subject)
+		}
+		c.expectNoViolation(t, "reading the registry", func() {
+			if _, err := c.conn.Request("$JS.API.STREAM.INFO.KV_registry", nil, 2*time.Second); err != nil {
+				t.Error(err)
+			}
+		})
 	})
 
 	t.Run("an agent of the bus cannot reach busd's approval API", func(t *testing.T) {

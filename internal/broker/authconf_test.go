@@ -147,7 +147,7 @@ func TestTableSetReplacesAndRemoveDrops(t *testing.T) {
 
 func TestWriteAdminAuthKeepsCertificateAgents(t *testing.T) {
 	server := Server{Dir: t.TempDir()}
-	if err := server.WriteAdminAuth("$2a$10$one", "$2a$10$two"); err != nil {
+	if err := server.WritePasswordLogins(map[string]string{BusAdminUser: "$2a$10$one", ControlAdminUser: "$2a$10$two"}); err != nil {
 		t.Fatal(err)
 	}
 	body, _ := splitGeneration(readFile(t, server.path(authFile)))
@@ -162,7 +162,7 @@ func TestWriteAdminAuthKeepsCertificateAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := server.WriteAdminAuth("$2a$10$three", "$2a$10$four"); err != nil {
+	if err := server.WritePasswordLogins(map[string]string{BusAdminUser: "$2a$10$three", ControlAdminUser: "$2a$10$four"}); err != nil {
 		t.Fatal(err)
 	}
 	body, generation := splitGeneration(readFile(t, server.path(authFile)))
@@ -201,7 +201,7 @@ func TestEnrollmentLoginMayOnlyRequestAndHearItsInbox(t *testing.T) {
 
 func TestWriteAdminAuthKeepsTheEnrollmentLogin(t *testing.T) {
 	server := Server{Dir: t.TempDir()}
-	if err := server.WriteAdminAuth("$2a$10$one", "$2a$10$two"); err != nil {
+	if err := server.WritePasswordLogins(map[string]string{BusAdminUser: "$2a$10$one", ControlAdminUser: "$2a$10$two"}); err != nil {
 		t.Fatal(err)
 	}
 	body, generation := splitGeneration(readFile(t, server.path(controlAuthFile)))
@@ -214,7 +214,7 @@ func TestWriteAdminAuthKeepsTheEnrollmentLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := server.WriteAdminAuth("$2a$10$three", "$2a$10$four"); err != nil {
+	if err := server.WritePasswordLogins(map[string]string{BusAdminUser: "$2a$10$three", ControlAdminUser: "$2a$10$four"}); err != nil {
 		t.Fatal(err)
 	}
 	body, _ = splitGeneration(readFile(t, server.path(controlAuthFile)))

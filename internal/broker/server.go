@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -38,37 +40,41 @@ type Server struct {
 	MonitorURL string // the server's local monitoring endpoint, for example http://127.0.0.1:8222
 }
 
-// WriteAdminAuth writes both authorization files with the admin users' password hashes, under the
-// same lock as UpdateAuth. An existing auth.conf is kept as it is except for the bus-admin entry,
-// so the agents keep their grants, group channels included. It does not reload a running server.
-func (server Server) WriteAdminAuth(busAdminHash, controlAdminHash string) error {
+// WritePasswordLogins writes the password hashes of principals (by user name, see Principals) into
+// the authorization files, under the same lock as UpdateAuth. An existing file is kept as it is
+// except for those entries, so the agents keep their grants, group channels included. It does
+// not reload a running server: that takes a restart, or the next UpdateAuth.
+func (server Server) WritePasswordLogins(hashes map[string]string) error {
 	unlock, err := server.lock()
 	if err != nil {
 		return err
 	}
 	defer unlock()
 
-	body, generation := "users = [\n]\n", 0
-	if current, err := os.ReadFile(server.path(authFile)); err == nil {
-		body, generation = splitGeneration(string(current))
+	bodies := map[string]string{}
+	generations := map[string]int{}
+	for _, name := range []string{authFile, controlAuthFile} {
+		bodies[name] = "users = [\n]\n"
+		if current, err := os.ReadFile(server.path(name)); err == nil {
+			bodies[name], generations[name] = splitGeneration(string(current))
+		}
 	}
-	body, err = replaceUserEntry(body, authUser{role: roleAdmin, name: BusAdminUser, mode: modePassword, passwordHash: busAdminHash})
-	if err != nil {
-		return err
+	for _, user := range slices.Sorted(maps.Keys(hashes)) {
+		principal, known := principals[user]
+		if !known {
+			return fmt.Errorf("%s is not a principal of the broker", user)
+		}
+		bodies[principal.file], err = replaceUserEntry(bodies[principal.file], authUser{role: principal.role, name: user, mode: modePassword, passwordHash: hashes[user]})
+		if err != nil {
+			return err
+		}
 	}
-	if err := writeAuthFile(server.path(authFile), generation+1, body); err != nil {
-		return err
+	for _, name := range []string{authFile, controlAuthFile} {
+		if err := writeAuthFile(server.path(name), generations[name]+1, bodies[name]); err != nil {
+			return err
+		}
 	}
-	// The same for control-auth.conf, which also holds the enrollment login.
-	controlBody, controlGeneration := "users = [\n]\n", 0
-	if current, err := os.ReadFile(server.path(controlAuthFile)); err == nil {
-		controlBody, controlGeneration = splitGeneration(string(current))
-	}
-	controlBody, err = replaceUserEntry(controlBody, authUser{role: roleAdmin, name: ControlAdminUser, mode: modePassword, passwordHash: controlAdminHash})
-	if err != nil {
-		return err
-	}
-	return writeAuthFile(server.path(controlAuthFile), controlGeneration+1, controlBody)
+	return nil
 }
 
 // SetEnrollmentLogin creates or replaces the shared enrollment login in control-auth.conf, as one

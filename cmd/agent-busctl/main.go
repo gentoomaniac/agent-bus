@@ -67,8 +67,12 @@ type CLI struct {
 	} `cmd:"" help:"TLS setup."`
 
 	Admin struct {
-		Init AdminInitCmd `cmd:"" help:"Create the credentials of the two admin users and the server's authorization files."`
+		Init AdminInitCmd `cmd:"" help:"Create the credentials of the two admin users, of busd and of the monitor, and the server's authorization files."`
 	} `cmd:"" help:"Admin users."`
+
+	Service struct {
+		Init ServiceInitCmd `cmd:"" help:"Give busd and the monitor their own logins on a broker set up before they existed."`
+	} `cmd:"" help:"The logins of busd and the monitor."`
 }
 
 // caCertPath is where the CA certificate lives, unless --ca-cert says otherwise.

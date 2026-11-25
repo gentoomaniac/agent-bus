@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -44,6 +45,17 @@ type CLI struct {
 	CertValidity time.Duration `help:"How long an enrolled agent's certificate is valid." default:"8760h" env:"BUS_CERT_VALIDITY"`
 }
 
+// controlUser is the login busd serves CONTROL with: its own, which can do no more than busd does.
+// A broker set up before it existed has none; busd then runs as the control admin, as it used to.
+func (cli *CLI) controlUser() string {
+	if _, err := creds.ReadPassword(creds.AdminDir(cli.ConfigDir, broker.BusdUser)); errors.Is(err, os.ErrNotExist) {
+		log.Printf("busd: no login of its own in %s, so it runs with the rights of %s; "+
+			"`agent-busctl service init` and a restart of the broker give it one (docs/podman.md)", cli.ConfigDir, broker.ControlAdminUser)
+		return broker.ControlAdminUser
+	}
+	return broker.BusdUser
+}
+
 func (cli *CLI) Run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -71,7 +83,7 @@ func (cli *CLI) Run() error {
 	if err != nil {
 		return err
 	}
-	controlConn, err := connection(broker.ControlAdminUser)
+	controlConn, err := connection(cli.controlUser())
 	if err != nil {
 		return err
 	}

@@ -208,7 +208,16 @@ admin certificates. The web monitor only shows "N pending enrollments"; it holds
 cannot approve.
 
 **An existing setup** needs nothing: after the image is updated, busd starts by itself and does
-nothing until `enroll init` ran. Password logins, certificate logins and the monitor go on as
+nothing until `enroll init` ran. One step is recommended: busd and the monitor get logins of their
+own with narrow rights instead of the admin logins (busd logs a warning until then):
+
+```sh
+podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" service init
+podman restart agent-bus          # the broker reads the new logins, busd uses its own
+```
+
+Nothing else changes: the monitor keeps its admin login until it gets a config of its own
+(step 6). Password logins, certificate logins and the monitor go on as
 they were. One optional step, for `--ca-fingerprint` below: a broker certificate made by an older
 `tls init` lacks the CA after it, which is what a new machine reads to check the CA against your
 fingerprint. Without it, copy `ca.pem` to the new machine instead (no step needed), or add the CA once:

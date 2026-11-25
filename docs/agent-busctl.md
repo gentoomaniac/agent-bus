@@ -66,8 +66,9 @@ bin/agent-busctl tls init --san bus.example.org
 ### admin init
 
 Creates the passwords of the admin users (`bus-admin/password`, `control-admin/password`, mode
-0600) and the server's authorization files `nats/auth.conf` and `nats/control-auth.conf`. No
-broker needed.
+0600), of busd and of the monitor (`busd/password`, `monitor-bus/password`,
+`monitor-control/password`, each with only the rights it needs) and the server's authorization
+files `nats/auth.conf` and `nats/control-auth.conf`. No broker needed.
 
 | Flag      | Meaning                                                                          |
 |-----------|----------------------------------------------------------------------------------|
@@ -75,6 +76,17 @@ broker needed.
 
 ```sh
 bin/agent-busctl admin init
+```
+
+### service init
+
+Gives busd and the monitor their own logins on a broker whose `admin init` ran before they existed:
+it creates the missing `busd`, `monitor-bus` and `monitor-control` passwords and adds the entries to
+the authorization files. The broker reads them when it restarts. `--force` replaces the passwords
+that exist. No broker needed.
+
+```sh
+bin/agent-busctl service init
 ```
 
 ### init
