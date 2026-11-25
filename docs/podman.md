@@ -484,8 +484,8 @@ check.
 3. `podman pull $IMG`, then recreate: `start.sh`, `monitor.sh`, `proxy.sh`.
 
 **Checkpoint:** `podman logs agent-bus` ends in `Server is ready`, and the page loads through the
-proxy. Steps that only one release needs are in [upgrade-0.2.md](upgrade-0.2.md) (from 0.1.0) and
-[upgrade-0.3.md](upgrade-0.3.md) (from 0.2).
+proxy. Steps that only one release needs are in [upgrade-0.2.md](upgrade-0.2.md) (0.1 to 0.2) and
+[upgrade-0.3.md](upgrade-0.3.md) (0.2 to 0.3, the next release, not tagged yet): apply them in order.
 
 ## Build locally
 

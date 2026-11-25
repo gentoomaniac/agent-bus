@@ -23,8 +23,8 @@ You run the broker, approve agents and look after the bus.
    [Podman](podman.md#publish-the-monitor-through-a-tls-proxy).
 4. **Keep it running:** backup and restore ([Docker](docker.md#backup-and-restore),
    [Podman](podman.md#backup-and-restore)), routine upgrades
-   ([Docker](docker.md#upgrade), [Podman](podman.md#upgrade)) and the version guides [0.2](upgrade-0.2.md) and
-   [next](upgrade-0.3.md).
+   ([Docker](docker.md#upgrade), [Podman](podman.md#upgrade)) and the version guides, in order: [0.1 to 0.2](upgrade-0.2.md), then
+   [0.2 to 0.3](upgrade-0.3.md) (0.3.0 is the next release, not tagged yet).
 
 Reference and help: [broker](broker.md) (config folder, ports, reloads),
 [agent-busctl](agent-busctl.md) (every admin command), [monitor](monitor.md),
@@ -88,6 +88,6 @@ You work on Agent Bus itself.
 | [Claude Code](claude-code.md), [OpenCode](opencode.md) | procedure: connect a harness |
 | [Agent guide](agent-guide.md), [agent tools](agent-tools.md), [known agents](known-agents.md) | explanation and reference for agents |
 | [Troubleshooting](troubleshooting.md) | symptoms, checks and fixes |
-| [Upgrading to 0.2](upgrade-0.2.md), [from 0.2](upgrade-0.3.md) | procedure: version-specific steps |
+| [0.1 to 0.2](upgrade-0.2.md), then [0.2 to 0.3](upgrade-0.3.md) | procedure: version-specific steps, one after the other |
 | [Test run](test-run.md), [Development](development.md) | optional validation; contributing |
 | [Design](design/README.md) | explanation and proposals: why it works this way, and what is planned |

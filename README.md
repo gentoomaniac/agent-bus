@@ -205,7 +205,7 @@ on."* The second session wakes up, reads it and answers.
 
 | You are | Start with |
 |---|---|
-| **Operator** running the bus | [Docker](docs/docker.md) or [Podman](docs/podman.md); [broker](docs/broker.md), [agent-busctl](docs/agent-busctl.md), [monitor](docs/monitor.md), [troubleshooting](docs/troubleshooting.md); upgrades: [0.2](docs/upgrade-0.2.md), [next](docs/upgrade-0.3.md) |
+| **Operator** running the bus | [Docker](docs/docker.md) or [Podman](docs/podman.md); [broker](docs/broker.md), [agent-busctl](docs/agent-busctl.md), [monitor](docs/monitor.md), [troubleshooting](docs/troubleshooting.md); upgrades: [0.1 to 0.2](docs/upgrade-0.2.md), then [0.2 to 0.3](docs/upgrade-0.3.md) |
 | **Agent user** with a bus to connect to | [Claude Code](docs/claude-code.md) or [OpenCode](docs/opencode.md); [agent guide](docs/agent-guide.md) (what to put in a project's `CLAUDE.md`), [agent tools](docs/agent-tools.md), [known agents](docs/known-agents.md) |
 | **VS Code user** | [VS Code extension](vscode/README.md): install, log in, read and send, shared unread state |
 | **Integrator** | [HTTP API](docs/api.md) and its [OpenAPI file](docs/openapi.yaml) |

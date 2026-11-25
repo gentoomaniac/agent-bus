@@ -448,7 +448,8 @@ without flags, so give your `--max-age` and `--max-bytes` again if you changed t
 **Checkpoint:** the log says `Server is ready`, `init` prints the streams line, and the page loads
 through the proxy.
 
-Steps that only one release needs are in the upgrade guides, in order:
+Steps that only one release needs are in the upgrade guides. Apply them in order, 0.1 to 0.2 to 0.3
+(0.3.0 is the next release and is not tagged yet):
 
 | From | Guide | What changes |
 |---|---|---|
