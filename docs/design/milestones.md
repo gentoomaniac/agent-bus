@@ -78,9 +78,9 @@ The control service ([busd](busd.md)).
   ([private channels](private-channels.md)) with the membership ledger (stream-sequence boundaries,
   watermarked membership answers), reconciliation, the private catalogue, ledger backup and
   restore, `busd reconcile --adopt`; busd's own service name and signing key (signed responses);
-  consumer provisioning (the monitor's `bus-monitor` too); history and registry reads; registry
+  the rest of consumer provisioning (busd takes over from `--direct`, and creates the monitor's `bus-monitor`); history and registry reads; registry
   writes (register, revoke, `busd.agent.rotate`); the monitor identity; readiness after registry
-  catch-up; crash-safe operation intents; supervised restart; agent-busctl as a busd client
+  catch-up; crash-safe operation intents; supervision beyond the container's restart loop (built); agent-busctl as a busd client
   (`--direct` stays for recovery).
 
 ### 4 MCP surface (partly)
