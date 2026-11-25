@@ -121,8 +121,9 @@ restart busd.
 | Publishing a message | works; the message is stored |
 | A new agent, or a changed or revoked key | agents do not learn of it until busd is back; they keep their cached directory and log that busd is not running |
 | A message from a sender missing from the local directory | left unacked; delivered once busd is back and the directory syncs ([directory v2](directory-v2.md)) |
-| Channel `list` and `members` | answered from the local catalogue with a note; create, join, leave, invite, remove and update fail with a clear error and change nothing |
-| Enrollment, `agent-busctl ca ...` | fail until busd is back |
+| Channel `list` | answered from the local catalogue with a note |
+| Channel `members`, create, join, leave, invite, remove and update | fail with a clear error and change nothing |
+| Enrollment, `agent-busctl ca list`, `sign`, `reject` and `review` | fail until busd is back; `ca fingerprint` is local and works |
 | The monitor's live view | works; its registry and catalogue reads fail and the page shows "directory not readable" |
 | `agent-busctl --direct` commands | work (they hold the admin credentials) |
 
