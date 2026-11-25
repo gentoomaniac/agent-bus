@@ -37,7 +37,7 @@ yet; they are marked **planned** and are future acceptance requirements, not tes
 | IT-01 | Two agents on different machines exchange a DM; both verify and pin each other on first contact. | built |
 | IT-02 | A message altered in transit (any envelope field) fails verification. | built |
 | IT-03 | A forged envelope that copies a legitimate message's ID (bad signature, another sender or another destination) is rejected by stream sequence and does not stop the legitimate message from being delivered. | built |
-| IT-04 | Only verified envelopes enter the handled set; a verified envelope whose ID repeats with a different payload is alerted and not delivered. | partly: the handled set is built; the alert for a repeated ID with another payload is not |
+| IT-04 | Only verified envelopes enter the handled set; a verified envelope whose ID repeats with a different payload is alerted and not delivered. | built: the handled set, the digest check for a repeated ID with another payload, and the alert in `alerts.log` |
 | IT-05 | A second session that starts `agent-bus` for an identity already in use exits with an error naming the identity and the holder's PID. | built |
 | IT-06 | Once the first session ends, a new one picks the identity up. | built |
 | IT-07 | No adapter tool returns or reads key material, and keys are never inside a project directory. | built |
@@ -98,13 +98,13 @@ yet; they are marked **planned** and are future acceptance requirements, not tes
 | DLV-23 | A status change whose thread history is missing is held, then accepted once the history is available. | planned: no hold store |
 | DLV-24 | With busd stopped, DMs, `general`, groups and (planned) private-channel messages from pinned senders keep flowing. | partly: DMs, `general` and groups built; private channels planned |
 | DLV-25 | With busd stopped, creating a channel, joining, `requests`, inviting, removing and agent-busctl management commands fail with a clear error and change nothing. | partly: channel requests fail clearly and change nothing; the rest follows the planned busd |
-| DLV-26 | With busd stopped, a message from an unpinned sender is held until busd is back, never rejected. | built in the form "left unacked and redelivered" for an unknown sender; holds are planned |
+| DLV-26 | With busd stopped, a message from a sender missing from the local directory is not rejected: it waits until busd is back. | built as "left unacked and redelivered" ([directory v2](directory-v2.md)). A sender already in the cached directory verifies and is pinned by TOFU without busd. Holds for unpinned senders are planned |
 
 ## Requests, safety and targets (REQ)
 
 | ID | Requirement | Status |
 |---|---|---|
-| REQ-01 | With `--auto-accept-messages` (default), an agent can move a request to `accepted`. | built |
+| REQ-01 | With `--auto-accept-messages` (default), an agent can move a request to `accepted`. | partly: the flag changes the agent's instructions; no `accepted` transition exists, as the request lifecycle is planned |
 | REQ-02 | With `--no-auto-accept-messages`, it cannot until `agent-busctl approve` sends the pinned owner's approval. | planned: `approve` is not built |
 | REQ-03 | (Milestone 9) A message from the pinned `human@<owner>` is delivered as a user command and resets the loop guard. | planned |
 | REQ-04 | The same identity pinned by TOFU does not reset the loop guard. | planned with REQ-03 |
@@ -117,7 +117,7 @@ yet; they are marked **planned** and are future acceptance requirements, not tes
 | REQ-11 | A send without `reply_to` or `thread` inherits from a message delivered four minutes ago, but not from one delivered or acked six minutes ago (the window is five minutes). | built |
 | REQ-12 | A send naming a `reply_to` that is not found after the history lookup is refused. | partly: refused when the agent has neither read nor sent it; there is no history lookup |
 | REQ-13 | Two agents set to auto-reply stop at the hop limit when they alternate `send` and `publish`. | built |
-| REQ-14 | They also stop when they omit `reply_to` or `thread`, branch replies, or restart their adapters. | built |
+| REQ-14 | They also stop when they omit `reply_to` or `thread`, branch replies, or restart their adapters. | partly: the count is persisted, but a restart loses the inferred parent, and naming a `thread` explicitly disables inference ([safety](safety.md)) |
 | REQ-15 | A TOFU-pinned owner cannot reset the hop count. | built (nothing resets it yet; see REQ-03) |
 | REQ-16 | Mail aimed at other agents stays out of an agent's inbox with `--deliver=targeted`. | built |
 
@@ -134,8 +134,8 @@ yet; they are marked **planned** and are future acceptance requirements, not tes
 | ACC-07 | A signed busd request stored in a DM and pulled onto `busd.<other method>` is refused (method mismatch). | planned: needs the signed busd protocol |
 | ACC-08 | An unsigned or unauthorised payload pulled onto any busd subject changes nothing on the `BUS` side (no channel, member, consumer or grant) and uses up no other caller's nonce quota. | partly: nothing changes on the `BUS` side; nonce quotas are planned |
 | ACC-09 | Unauthorised, mismatched or replayed requests have no effect at all; a valid signed request that arrives by redirection executes exactly the signed operation. | planned |
-| ACC-10 | An agent cannot create, update or delete a consumer; busd creates them on register and deletes them on removal. | built; join, invite, leave and incident are planned |
-| ACC-11 | The monitor cannot create, update or delete a consumer or touch an agent consumer's name. | built |
+| ACC-10 | An agent cannot create, update or delete a consumer. busd creates and deletes them on enrollment approval, public channel join, leave, invite and removal. | built; invitation to private channels and incident revocation are planned |
+| ACC-11 | The monitor cannot create, update or delete a consumer or touch an agent consumer's name. | planned: `monitor-bus` can create, update and delete `BUS` consumers today ([safety](safety.md#known-limit-the-monitor-can-disturb-consumers)) |
 | ACC-12 | busd creates the monitor's consumer `bus-monitor`. | planned: the monitor uses ordered consumers of its own |
 | ACC-13 | `join` of an uncatalogued channel is refused, and the adapter refuses to publish to one. | built |
 | ACC-14 | An agent that appends to an uncatalogued subject is read by nobody and `history` refuses it. | partly: read by nobody; `history` is planned |
@@ -150,7 +150,7 @@ yet; they are marked **planned** and are future acceptance requirements, not tes
 | ACC-23 | A rejected enrollment request fails with the reason and creates nothing. | built |
 | ACC-24 | A request carrying the autosign secret is approved without the owner; one without it is not. | built |
 | ACC-25 | The enrollment login can only ask. Limits and expiry: [access control](access-control.md#phase-b-implemented-the-enrollment-flow). | built |
-| ACC-26 | The monitor's read-only logins cannot publish to any message subject, cannot approve or reject an enrollment, and can reach only their own reply inbox space. | built (`internal/broker/principals_test.go`) |
+| ACC-26 | The monitor's read-only logins cannot publish to any message subject and cannot approve or reject an enrollment. `monitor-control` reaches only its own reply inbox space; `monitor-bus` subscribes to `_INBOX.>`. | built (`internal/broker/principals_test.go`) |
 | ACC-27 | `agent-busctl tail --all` reproduces the full conversation from the log. | planned: `tail` is not built |
 | ACC-28 | Tests that need the broker's behaviour run against the JetStream binding. | built |
 
@@ -177,7 +177,7 @@ These were added after the original list, for [directory v2](directory-v2.md) an
 | BUSD-05 | A request whose subject does not match its signed method is refused. | planned |
 | BUSD-06 | A retry with the same idempotency ID returns the first result and changes nothing twice. | planned |
 | BUSD-07 | A busd request with an expired nonce, or one whose nonce was already used, is refused. | planned |
-| BUSD-08 | A forged or unsigned busd response, a nonce response included, is refused by the adapter. | planned: only the enrollment and channel replies are signed |
+| BUSD-08 | A forged or unsigned busd response, a nonce response included, is refused by the adapter. | planned: directory and channel replies are signed by the CA key; enrollment replies are unsigned; there is no signed `busd.<method>` API |
 | BUSD-09 | A nonce request not signed by its claimed caller is refused and costs that caller no quota, also when redirected. | planned |
 | BUSD-10 | busd answers nothing before it has caught up with the registry. | partly: sync requests before the first projection get an `error` reply |
 | BUSD-11 | A nonce does not survive a busd restart. | planned |
@@ -187,14 +187,14 @@ These were added after the original list, for [directory v2](directory-v2.md) an
 | BUSD-15 | A kill after the effects but before the result ends, on retry, in the same single operation. | planned |
 | BUSD-16 | After any such kill, a new private channel keeps its one assigned ID and no second channel appears. | planned |
 | BUSD-17 | A retry with a fresh nonce and signature hashes the same; the same ID with a different request is refused. | planned |
-| BUSD-18 | A killed busd is restarted by its supervisor. | planned |
+| BUSD-18 | A killed busd is restarted by its supervisor. | built: the container entrypoint restarts it in a loop (`deploy/entrypoint.sh`); systemd-style supervision is planned |
 | BUSD-19 | `agent-busctl --direct` commands leave private-channel membership unchanged; reconciliation does not undo or redo them. | planned |
 | BUSD-20 | With a missing, empty or reset ledger busd refuses to revoke anything and reports it. | planned |
 | BUSD-21 | `busd reconcile --adopt` or a backup restore brings the ledger back. | planned |
 
 ## Private channels (PRIV)
 
-All planned: private channels are not built ([private channels](private-channels.md)).
+Private channels are not built ([private channels](private-channels.md)), so all rows are planned except PRIV-11, which concerns group channels.
 
 | ID | Requirement | Status |
 |---|---|---|

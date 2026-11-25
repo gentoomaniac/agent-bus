@@ -131,6 +131,7 @@ This section is the original plan of 2026-11-24, kept for context. What was actu
 is a single owner and no other users. Defaults favour low friction for that one owner; stricter
 behaviour is available behind flags.
 
+<a id="scope-mvp-first"></a>
 **Decision: MVP first** (owner, 2026-11-24). The bus runs in a trusted environment, so the plan was
 to build a usable MVP quickly and tighten it later. Review findings that only harden against a
 compromised host or rare crash edges are deferred to a later tightening pass.
