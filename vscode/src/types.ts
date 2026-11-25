@@ -68,6 +68,22 @@ export interface RawMessage {
   raw_text?: string;
 }
 
+// One search result (docs/api.md, "Search"). `matches` are [start, end) offsets in code points of `snippet.text`.
+export interface SearchHit {
+  channel: string;
+  sequence: number;
+  from?: string;
+  type?: string;
+  time?: string;
+  title?: string;
+  snippet: { field: string; text: string; matches?: [number, number][] };
+}
+
+export interface SearchPage {
+  results: SearchHit[];
+  next_cursor?: string;
+}
+
 export const MESSAGE_TYPES = ["message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"];
 export const ALL = "@all";
 export const DEFAULT_TYPE = "message";

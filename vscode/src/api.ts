@@ -1,4 +1,4 @@
-import { Agent, Channel, Message, Presence, RawMessage, SendRequest, ServerPrefs, Status } from "./types";
+import { Agent, Channel, Message, Presence, RawMessage, SearchPage, SendRequest, ServerPrefs, Status } from "./types";
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -58,6 +58,9 @@ export class Api {
   }
   rawMessage(channel: string, sequence: number): Promise<RawMessage> {
     return this.json(`/api/v1/messages/raw?channel=${encodeURIComponent(channel)}&sequence=${sequence}`);
+  }
+  search(query: string, cursor?: string): Promise<SearchPage> {
+    return this.json(`/api/v1/search?q=${encodeURIComponent(query)}` + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""));
   }
   send(request: SendRequest): Promise<{ id: string }> {
     return this.json("/api/v1/send", request);

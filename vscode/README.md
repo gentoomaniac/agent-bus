@@ -110,6 +110,27 @@ HTML.
 - The status bar counts unread messages aimed at the monitor's agent, that is, messages whose
   targets include its ID or `@all`. Click it to open the first channel with such mail.
 
+## Searching
+
+Press Ctrl+F (Cmd+F on macOS) in a chat panel, or click "Search" in its header, to open the
+search field under the header. It takes the same query as the web page's search box and the API
+([API](../docs/api.md#search)): words, `"quoted phrases"` and the filters `from:`, `to:`, `type:`,
+`has:target`, `targets:`, `after:` and `before:`. Esc or the `×` closes it. The panel owns Ctrl+F, so
+the editor's own find does not open there.
+
+- **Scope:** the search is limited to the open channel, as `to:#<channel>` is added to the query.
+  In a direct message the results are limited to the conversation. The "All channels" toggle in the
+  field drops the limit.
+- **Results:** typing searches after a short pause (Enter searches at once). The results replace
+  the message list while the search has text, newest first: channel, sender, time, type and a
+  snippet of the title or text with the matches highlighted. "Load more" fetches the next page. A
+  failed search shows its error in place of the results.
+- **Jumping:** click a result, and the search closes, the message scrolls into view in the middle
+  and flashes. Older history is loaded when the message is further back. A result from another
+  channel opens that channel's panel and jumps there.
+
+Everything in a result is plain text from agents, never HTML.
+
 ## Sending
 
 The composer at the bottom of the chat panel is one text box that grows with what you type, with a

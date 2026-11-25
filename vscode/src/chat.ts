@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { ApiError } from "./api";
 import { describeChannel, destinationOf, dmChannelId } from "./channels";
 import { ChatState, FromWebview, PresenceMark, ToWebview, parseFromWebview } from "./protocol";
+import { buildQuery, hitPlace, scopeTerms } from "./search";
 import { Session } from "./session";
 import { ALL, Channel } from "./types";
 
@@ -14,6 +15,8 @@ interface Chat {
   dividerAfter: number; // last-read sequence when the panel was opened or shown again
   members: string[];
   focusComposer: boolean; // focus it once the page has drawn
+  ready: boolean; // the page has asked for its state
+  reveal?: number; // a message to scroll to once the page has it
 }
 
 // One chat panel per channel. The page only draws; the monitor is read and written from here.
@@ -53,6 +56,47 @@ export class ChatPanels implements vscode.Disposable {
     this.open(id, true);
   }
 
+  // Shows a message, for example a search result: opens its channel's panel, which loads older
+  // history until it holds the message.
+  async jumpTo(channelId: string, sequence: number): Promise<void> {
+    this.open(channelId);
+    const chat = this.chats.get(channelId);
+    if (!chat) return;
+    chat.reveal = sequence;
+    if (chat.ready) await this.reveal(channelId, chat);
+  }
+
+  private async reveal(channelId: string, chat: Chat): Promise<void> {
+    const { reveal: sequence } = chat;
+    if (sequence === undefined) return;
+    chat.reveal = undefined;
+    const model = this.session.model;
+    await this.guarded(async () => {
+      while (!model.messagesOf(channelId).some((message) => message.sequence === sequence) && model.hasOlder(channelId)) await model.loadOlder(channelId);
+    });
+    this.post(channelId, chat);
+    void chat.panel.webview.postMessage({ type: "reveal", sequence } satisfies ToWebview);
+  }
+
+  // Answers a search of the page. A failure goes to the page, which shows it in place of the results.
+  private async search(channelId: string, chat: Chat, { run, text, allChannels, cursor }: Extract<FromWebview, { type: "search" }>): Promise<void> {
+    const { model } = this.session;
+    const channel = this.channelOf(channelId);
+    const scope = allChannels || !channel ? [] : scopeTerms(channel);
+    let answer: Extract<ToWebview, { type: "searchResults" }>;
+    try {
+      const page = await model.api.search(buildQuery(scope, text), cursor);
+      const hits = page.results
+        .filter((hit) => allChannels || hit.channel === channelId)
+        .map((hit) => ({ ...hit, where: hitPlace(model.channels, hit.channel) }));
+      answer = { type: "searchResults", run, hits, next: page.next_cursor };
+    } catch (error) {
+      if (error instanceof ApiError && error.unauthenticated) this.session.report(error);
+      answer = { type: "searchResults", run, hits: [], error: (error as Error).message };
+    }
+    void chat.panel.webview.postMessage(answer satisfies ToWebview);
+  }
+
   // A conversation the monitor lists, or an empty direct message opened here.
   private channelOf(channelId: string): Channel | undefined {
     return this.session.model.channels.find((channel) => channel.id === channelId) ?? this.emptyDirects.get(channelId);
@@ -72,7 +116,7 @@ export class ChatPanels implements vscode.Disposable {
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "dist")],
     });
-    const chat: Chat = { panel, dividerAfter: 0, members: [], focusComposer };
+    const chat: Chat = { panel, dividerAfter: 0, members: [], focusComposer, ready: false };
     this.chats.set(channelId, chat);
     panel.webview.html = this.html(panel.webview);
     panel.onDidDispose(() => {
@@ -100,9 +144,15 @@ export class ChatPanels implements vscode.Disposable {
   private async handle(channelId: string, chat: Chat, message: FromWebview): Promise<void> {
     const model = this.session.model;
     if (message.type === "ready") {
+      chat.ready = true;
       await this.show(channelId, chat);
       if (chat.focusComposer) void chat.panel.webview.postMessage({ type: "focusComposer" } satisfies ToWebview);
       chat.focusComposer = false;
+      await this.reveal(channelId, chat);
+    } else if (message.type === "search") {
+      await this.search(channelId, chat, message);
+    } else if (message.type === "jump") {
+      await this.jumpTo(message.channel, message.sequence);
     } else if (message.type === "older") {
       await this.guarded(() => model.loadOlder(channelId));
       this.post(channelId, chat);
@@ -211,7 +261,24 @@ export class ChatPanels implements vscode.Disposable {
   .depth-4 { margin-left: 48px; }
   .has-new { border-left: 3px solid var(--vscode-focusBorder); }
   #description { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #messages { flex: 1; overflow-y: auto; padding: 4px 0; }
+  #messages, #results { flex: 1; overflow-y: auto; padding: 4px 0; }
+  #searchbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  #searchInput { flex: 1; min-width: 0; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px; padding: 3px 6px; outline: 0; }
+  #searchInput:focus { border-color: var(--vscode-focusBorder); }
+  #searchbar .pill { color: var(--vscode-descriptionForeground); background: transparent; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 10px; font-size: 0.85em; padding: 1px 8px; white-space: nowrap; }
+  #searchbar .pill:hover:not(:disabled) { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground); }
+  #searchbar .pill[aria-pressed="true"] { color: var(--vscode-foreground); border-color: var(--vscode-focusBorder); }
+  #searchbar .link { color: var(--vscode-foreground); background: transparent; padding: 0 6px; font-size: 1.1em; }
+  #searchbar button:focus-visible, header .link:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
+  .hit { display: block; width: 100%; box-sizing: border-box; text-align: left; padding: 6px 12px; color: var(--vscode-foreground); background: transparent; border-bottom: 1px solid var(--vscode-panel-border); }
+  .hit:hover:not(:disabled), .hit:focus-visible { background: var(--vscode-list-hoverBackground); }
+  .hit-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 0.9em; }
+  .hit-text { display: block; margin-top: 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .hit-title { font-weight: bold; }
+  mark { color: inherit; background: var(--vscode-editor-findMatchHighlightBackground); }
+  .empty { padding: 12px; text-align: center; color: var(--vscode-descriptionForeground); }
+  .flash { animation: flash 1.5s ease-out; }
+  @keyframes flash { from { background: var(--vscode-editor-findMatchHighlightBackground); } to { background: transparent; } }
   .message { padding: 6px 12px; font-family: var(--vscode-editor-font-family, var(--vscode-font-family)); font-size: var(--vscode-editor-font-size, inherit); }
   .message.continued { padding-top: 0; }
   .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
@@ -288,7 +355,13 @@ export class ChatPanels implements vscode.Disposable {
 </style>
 </head>
 <body>
-<header><h1 id="heading"></h1><div id="description"></div><button id="threads" class="link" type="button" title="Show replies under their parent" aria-pressed="false">Threads</button></header>
+<header><h1 id="heading"></h1><div id="description"></div><button id="searchToggle" class="link" type="button" title="Search messages (Ctrl+F)" aria-pressed="false">Search</button><button id="threads" class="link" type="button" title="Show replies under their parent" aria-pressed="false">Threads</button></header>
+<div id="searchbar" role="search" hidden>
+  <input id="searchInput" type="text" placeholder="Search: words, &quot;phrases&quot;, from: type: targets: after: before:" aria-label="Search messages" autocomplete="off" spellcheck="false">
+  <button id="scope" class="pill" type="button" title="Search all channels, not only this one" aria-pressed="false">All channels</button>
+  <button id="searchClose" class="link" type="button" title="Close search (Esc)" aria-label="Close search">×</button>
+</div>
+<main id="results" hidden></main>
 <main id="messages"></main>
 <div id="note" hidden></div>
 <form id="composer" hidden>

@@ -1,4 +1,4 @@
-import { Message } from "./types";
+import { Message, SearchHit } from "./types";
 
 // An agent's presence as the page draws it: a dot, with the state and its start as the tooltip.
 export interface PresenceMark {
@@ -22,12 +22,19 @@ export interface ChatState {
   presence: Record<string, PresenceMark>; // by agent; a plain object, as a Map does not survive postMessage
 }
 
+// A search result with the channel's name, so the page does not need the channel list.
+export interface SearchHitView extends SearchHit {
+  where: string;
+}
+
 export type ToWebview =
   | { type: "state"; state: ChatState }
   | { type: "message"; message: Message }
   | { type: "presence"; presence: Record<string, PresenceMark> } // a presence event: only the dots change
   | { type: "sendResult"; error?: string }
   | { type: "focusComposer" }
+  | { type: "searchResults"; run: number; hits: SearchHitView[]; next?: string; error?: string } // the answer to the search with the same run
+  | { type: "reveal"; sequence: number } // scroll to the message and flash it
   | { type: "activated" }; // the panel became visible and active
 
 export interface Draft {
@@ -42,7 +49,9 @@ export type FromWebview =
   | { type: "older" }
   | { type: "send"; draft: Draft }
   | { type: "threaded"; value: boolean }
-  | { type: "raw"; sequence: number }; // open the record as stored
+  | { type: "raw"; sequence: number } // open the record as stored
+  | { type: "search"; run: number; text: string; allChannels: boolean; cursor?: string }
+  | { type: "jump"; channel: string; sequence: number }; // show a search result: load history and open its channel if needed
 
 // What the page posted, if it is a well-formed message. The page is our own code, but it renders
 // untrusted text, so the host checks what it acts on.
@@ -51,6 +60,16 @@ export function parseFromWebview(raw: unknown): FromWebview | undefined {
   const message = raw as Record<string, unknown>;
   if (message.type === "ready" || message.type === "older") return { type: message.type };
   if (message.type === "raw") return Number.isSafeInteger(message.sequence) && (message.sequence as number) >= 0 ? { type: "raw", sequence: message.sequence as number } : undefined;
+  if (message.type === "search") {
+    const { run, text, allChannels, cursor } = message;
+    if (!Number.isSafeInteger(run) || typeof text !== "string" || typeof allChannels !== "boolean") return undefined;
+    if (cursor !== undefined && typeof cursor !== "string") return undefined;
+    return { type: "search", run: run as number, text, allChannels, ...(cursor === undefined ? {} : { cursor }) };
+  }
+  if (message.type === "jump") {
+    const { channel, sequence } = message;
+    return typeof channel === "string" && channel !== "" && Number.isSafeInteger(sequence) && (sequence as number) >= 0 ? { type: "jump", channel, sequence: sequence as number } : undefined;
+  }
   if (message.type === "threaded") return typeof message.value === "boolean" ? { type: "threaded", value: message.value } : undefined;
   if (message.type !== "send" || typeof message.draft !== "object" || message.draft === null) return undefined;
   const { type, targets, title, text } = message.draft as Record<string, unknown>;

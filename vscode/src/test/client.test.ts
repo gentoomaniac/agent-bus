@@ -42,11 +42,13 @@ test("requests carry the bearer token, and a send is a JSON POST", async () => {
   assert.deepEqual(await api.send({ to: { kind: "group", name: "general" }, type: "message", targets: ["@all"], text: "hi" }), { id: "m1" });
   await api.messages("dm:a:b", 7, 50);
   await api.rawMessage("group:ops", 9);
+  await api.search("to:#ops deploy", "c 1");
   await api.logout();
   assert.deepEqual(requests.map((r) => [r.method, r.url, r.authorization]), [
     ["POST", "/api/v1/send", "Bearer good"],
     ["GET", "/api/v1/messages?channel=dm%3Aa%3Ab&after=7&limit=50", "Bearer good"],
     ["GET", "/api/v1/messages/raw?channel=group%3Aops&sequence=9", "Bearer good"],
+    ["GET", "/api/v1/search?q=to%3A%23ops%20deploy&cursor=c%201", "Bearer good"],
     ["POST", "/api/v1/logout", "Bearer good"],
   ]);
   assert.deepEqual(JSON.parse(requests[0].body).to, { kind: "group", name: "general" });

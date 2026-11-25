@@ -2,7 +2,8 @@
 import { matchTargets, mentionBefore, mentionText } from "../completion";
 import { continuesGroup, insertMessage } from "../messages";
 import { parsePresenceMarks } from "../protocol";
-import type { ChatState, FromWebview, PresenceMark, ToWebview } from "../protocol";
+import { snippetParts } from "../search";
+import type { ChatState, FromWebview, PresenceMark, SearchHitView, ToWebview } from "../protocol";
 import { presenceClass } from "../presence";
 import { shortTime } from "../time";
 import { isSeen } from "../viewport";
@@ -38,6 +39,11 @@ const titleInput = document.getElementById("title") as HTMLInputElement;
 const textInput = document.getElementById("text") as HTMLTextAreaElement;
 const sendButton = document.getElementById("send") as HTMLButtonElement;
 const problem = document.getElementById("problem") as HTMLElement;
+const searchToggle = document.getElementById("searchToggle") as HTMLButtonElement;
+const searchbar = document.getElementById("searchbar") as HTMLElement;
+const searchInput = document.getElementById("searchInput") as HTMLInputElement;
+const scopeToggle = document.getElementById("scope") as HTMLButtonElement;
+const results = document.getElementById("results") as HTMLElement;
 
 for (const type of MESSAGE_TYPES) typeSelect.append(new Option(type, type));
 
@@ -189,14 +195,18 @@ function activate(): void {
   markVisibleRows();
 }
 
+// A hidden list loses its scroll position: the distance from the bottom is kept for the next drawing.
+let heldFromBottom: number | undefined;
+
 // Draws the list again. It keeps the distance from the bottom, so new messages at the end and
 // older ones at the top leave what the reader looks at in place; the first drawing goes to the
 // first unseen message, or to the end. The flat list marks it with a "New" divider above it; the
 // thread view, whose order is not the stream's, with a "New" tag in its header.
 function render(first = false): void {
-  if (!state) return;
+  if (!state || list.hidden) return; // a search shows its results instead; the list is drawn again when it closes
   const { threaded } = state;
-  const fromBottom = list.scrollHeight - list.scrollTop;
+  const fromBottom = heldFromBottom ?? list.scrollHeight - list.scrollTop;
+  heldFromBottom = undefined;
   seenObserver.disconnect();
   list.replaceChildren();
   if (state.hasOlder) {
@@ -365,9 +375,131 @@ function updateSend(): void {
   sendButton.disabled = sending || !textInput.value.trim();
 }
 
+// ---- search ----
+// While the search has text, its results take the place of the message list.
+
+const SEARCH_DELAY_MS = 250;
+let searching = false;
+let allChannels = false; // the search is not limited to the open channel
+let searchRun = 0; // the host's answers to an older search are dropped
+let appending = false; // the search under way asks for the next page
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+function hideList(): void {
+  if (!list.hidden) heldFromBottom = list.scrollHeight - list.scrollTop;
+  list.hidden = true;
+  results.hidden = false;
+}
+
+function showList(): void {
+  results.hidden = true;
+  list.hidden = false;
+  render();
+}
+
+function openSearch(): void {
+  searching = true;
+  searchbar.hidden = false;
+  searchToggle.setAttribute("aria-pressed", "true");
+  searchInput.focus();
+  searchInput.select();
+  runSearch();
+}
+
+function closeSearch(): void {
+  searching = false;
+  searchRun++;
+  clearTimeout(searchTimer);
+  searchbar.hidden = true;
+  searchToggle.setAttribute("aria-pressed", "false");
+  showList();
+}
+
+function renderHit(hit: SearchHitView): HTMLElement {
+  const button = el("button", "hit");
+  button.type = "button";
+  const meta = el("span", "hit-meta");
+  meta.append(el("span", "", hit.where), el("span", "from", hit.from ?? ""), el("span", "muted", hit.time ? shortTime(hit.time, new Date()) : ""));
+  if (hit.type) meta.append(el("span", "badge", hit.type));
+  button.append(meta);
+  if (hit.title && hit.snippet.field !== "title") button.append(el("span", "hit-text hit-title", hit.title));
+  const snippet = el("span", "hit-text");
+  snippet.append(...snippetParts(hit.snippet.text, hit.snippet.matches).map((part) => (part.match ? el("mark", "", part.text) : document.createTextNode(part.text))));
+  button.append(snippet);
+  button.addEventListener("click", () => {
+    closeSearch();
+    host.postMessage({ type: "jump", channel: hit.channel, sequence: hit.sequence });
+  });
+  return button;
+}
+
+function runSearch(cursor?: string): void {
+  clearTimeout(searchTimer);
+  searchRun++;
+  if (!searchInput.value.trim()) return showList();
+  hideList();
+  appending = cursor !== undefined;
+  if (!appending) results.replaceChildren(el("div", "empty", "Searching…"));
+  host.postMessage({ type: "search", run: searchRun, text: searchInput.value, allChannels, cursor });
+}
+
+function showResults(answer: Extract<ToWebview, { type: "searchResults" }>): void {
+  if (!searching || answer.run !== searchRun) return;
+  if (!appending) results.replaceChildren();
+  results.querySelector(".more")?.remove();
+  if (answer.error) results.append(el("div", "empty", "Search failed: " + answer.error));
+  else if (!appending && answer.hits.length === 0) results.append(el("div", "empty", "No messages found."));
+  results.append(...answer.hits.map(renderHit));
+  const { next } = answer;
+  if (next) {
+    const more = el("button", "older more", "Load more");
+    more.addEventListener("click", () => {
+      more.disabled = true;
+      runSearch(next);
+    });
+    results.append(more);
+  }
+}
+
+// Scrolls to the message and marks it for a moment.
+function reveal(sequence: number): void {
+  if (searching) closeSearch();
+  const row = list.querySelector<HTMLElement>(`[data-sequence="${sequence}"]`);
+  if (!row) return;
+  row.scrollIntoView({ block: "center" });
+  row.classList.add("flash");
+  row.addEventListener("animationend", () => row.classList.remove("flash"), { once: true });
+}
+
+searchToggle.addEventListener("click", () => (searching ? closeSearch() : openSearch()));
+document.getElementById("searchClose")!.addEventListener("click", closeSearch);
+scopeToggle.addEventListener("click", () => {
+  allChannels = !allChannels;
+  scopeToggle.setAttribute("aria-pressed", String(allChannels));
+  runSearch();
+});
+searchInput.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, SEARCH_DELAY_MS);
+});
+searchbar.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && event.target === searchInput) runSearch();
+  else if (event.key === "Escape") closeSearch();
+  else return;
+  event.preventDefault();
+});
+// Capturing, so the editor's own find does not open: the page owns Ctrl+F (Cmd+F on macOS).
+window.addEventListener("keydown", (event) => {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "f") return;
+  event.preventDefault();
+  openSearch();
+}, true);
+
 window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
   const data = event.data;
   if (data.type === "state") showState(data.state);
+  else if (data.type === "searchResults") showResults(data);
+  else if (data.type === "reveal") reveal(data.sequence);
   else if (data.type === "focusComposer") textInput.focus();
   else if (data.type === "activated") activate();
   else if (data.type === "presence") {
