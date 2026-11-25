@@ -13,6 +13,7 @@ IMG="${envIMG:-${IMG:-agent-messenger:dev}}"
 MONITOR_AGENT="${envAGENT:-${MONITOR_AGENT:-monitor@$USER}}"
 U="--userns=keep-id:uid=10001,gid=10001"
 
+mkdir -p "$BASE_PATH/monitor-config"
 podman rm -f agent-bus-monitor >/dev/null 2>&1
 podman run --rm $U -v "${BASE_PATH}/config:/config:ro" -v "${BASE_PATH}/monitor-config:/monitor-config" \
   --entrypoint agent-busctl $IMG monitor init /monitor-config --agent "$MONITOR_AGENT" || exit 1

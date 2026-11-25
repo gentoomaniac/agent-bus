@@ -6,8 +6,8 @@ FROM docker.io/library/alpine:3.22
 ARG TARGETPLATFORM
 RUN apk add --no-cache gettext-envsubst \
  && adduser -D -u 10001 bus \
- && mkdir /config /data \
- && chown bus /config /data
+ && mkdir /config /data /monitor-config \
+ && chown bus /config /data /monitor-config
 
 COPY --from=nats /usr/local/bin/nats-server /usr/local/bin/nats-server
 COPY ${TARGETPLATFORM}/busd ${TARGETPLATFORM}/agent-busctl ${TARGETPLATFORM}/agent-bus ${TARGETPLATFORM}/bus-monitor /usr/local/bin/

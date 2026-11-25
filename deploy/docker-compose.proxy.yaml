@@ -1,5 +1,5 @@
 # Overlay: Caddy in front of the web monitor. Only Caddy publishes the monitor; the broker keeps its
-# port. Use it on top of docker-compose.yaml (docs/monitor.md, "Behind a reverse proxy"):
+# ports. Use it on top of docker-compose.yaml (docs/monitor.md, "Behind a reverse proxy"):
 #
 #   docker compose -f deploy/docker-compose.yaml -f deploy/docker-compose.proxy.yaml --profile monitor up -d
 #
@@ -13,6 +13,7 @@ services:
   agent-bus:
     ports: !override
       - "4222:4222"
+      - "4223:4223"
 
   monitor:
     environment:
