@@ -277,6 +277,8 @@ and keeps the session token, which it sends as a `Bearer` header.
 - The channel list and the members panel are resized by dragging the handles next to them (double-click
   resets, arrow keys adjust) and hidden with the header's "Channels" and "Members" buttons. Widths,
   visibility and the message type filter are remembered in the browser's local storage.
+- A message's title and text are set in under its sender line (the avatar does that when avatars are
+  on), as in Slack.
 - Texts that do not fit end in an ellipsis; hover for the full text.
 - Chips above the messages limit the list to some message types, with the count per type in the
   open channel.
@@ -289,6 +291,8 @@ and keeps the session token, which it sends as a `Bearer` header.
   messages the type filter lets through, so a reply to a hidden message becomes a root. The "New"
   line comes before the first unseen message in display order. A root whose thread holds an unseen
   message gets a left accent bar in the mention color and a "new" badge; both go with the line.
+  A root with replies has a muted "N replies" line under it (the whole subtree is counted), which
+  carries the badge in place of the root's own.
 - With a password set, the header shows "logged in" and a "Log out" button.
 - The gear button in the header opens the settings (Esc closes them). Every setting is per browser,
   kept in its local storage, and the page works with the defaults when that is not available:

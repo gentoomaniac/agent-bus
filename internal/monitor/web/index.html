@@ -124,7 +124,9 @@
   .message[data-depth="2"] { margin-left: calc(var(--thread-indent) * 2); }
   .message[data-depth="3"] { margin-left: calc(var(--thread-indent) * 3); }
   .message[data-depth="4"] { margin-left: calc(var(--thread-indent) * 4); }
-  .message.fresh-thread { box-shadow: inset 3px 0 0 var(--mention); }
+  .fresh-thread { box-shadow: inset 3px 0 0 var(--mention); }
+  .reply-count { margin-left: 1.25em; padding: 2px 0 var(--message-pad); font-size: var(--font-s); color: var(--muted); }
+  .reply-count .pill { margin-left: 6px; }
   .pill.new-thread { background: var(--mention); color: var(--mention-text); border-color: var(--mention); font-weight: 600; }
   .reply-to { font-size: var(--font-xs); color: var(--muted); }
   #messages { flex: 1; overflow-y: auto; padding: 0 16px; min-height: 0; }
@@ -133,6 +135,8 @@
   .message.grouped { border-top: 0; padding-top: 0; }
   :root[data-avatars=on] .message { grid-template-columns: var(--avatar) minmax(0, 1fr); }
   .message .body { min-width: 0; }
+  /* Like Slack: the sender line stays at the edge, what was said is set in under it. With avatars the avatar column does that. */
+  :root:not([data-avatars=on]) .message .body > :is(.title, .text, .reason, .targets-row) { margin-left: 1.25em; }
   /* A grouped message has no header: its time and sequence number show on hover. */
   .meta.slim { position: absolute; right: 0; top: 0; padding-left: 8px; background: var(--panel); opacity: 0; }
   .message:hover .meta.slim { opacity: 1; }
@@ -1212,21 +1216,35 @@ function threadOrder(messages) {
   return entries;
 }
 
-// The root messages of threadOrder entries whose thread holds an unseen message after the marker
-// (not the monitor's own agent's). A root is the entry of depth 0; the entries after it down to the
-// next root are its replies.
-function threadsWithUnseen(entries, marker, agent) {
-  const roots = new Set();
-  if (marker === null) return roots;
-  let root = null;
+// Per root message of threadOrder entries: how many replies its thread holds, and whether one of
+// its messages is unseen (after the marker, not the monitor's own agent's). A root is the entry of
+// depth 0; the entries after it down to the next root are its replies.
+function threadSummaries(entries, marker, agent) {
+  const summaries = new Map();
+  let summary = null;
   for (const { message, depth } of entries) {
-    if (depth === 0) root = message;
-    if (message.sequence > marker && message.from !== agent) roots.add(root);
+    if (depth === 0) {
+      summary = { replies: 0, unseen: false };
+      summaries.set(message, summary);
+    } else {
+      summary.replies++;
+    }
+    if (marker !== null && message.sequence > marker && message.from !== agent) summary.unseen = true;
   }
-  return roots;
+  return summaries;
 }
 
-function renderMessage(message, grouped, depth, orphanOf, freshThread) {
+function newBadge() {
+  return el("span", { class: "pill new-thread" }, "new");
+}
+
+// Slack-like line under a thread root: how many replies follow.
+function repliesLine({ replies, unseen }) {
+  return el("div", { class: "reply-count" + (unseen ? " fresh-thread" : "") },
+    replies + (replies === 1 ? " reply" : " replies"), ...(unseen ? [newBadge()] : []));
+}
+
+function renderMessage(message, grouped, depth, orphanOf, thread) {
   const sequence = el("span", { class: "muted seq" }, "#" + message.sequence);
   const header = grouped
     ? el("div", { class: "meta slim" }, timeSpan(message.time), sequence)
@@ -1241,8 +1259,9 @@ function renderMessage(message, grouped, depth, orphanOf, freshThread) {
     const mine = target === state.status.agent;
     return el("span", { class: "pill " + (target === ALL ? "all" : mine ? "me" : "target"), title: target }, target);
   });
-  if (freshThread) header.append(el("span", { class: "pill new-thread" }, "new"));
-  const attributes = { class: "message" + (grouped ? " grouped" : "") + (freshThread ? " fresh-thread" : ""), "data-sequence": String(message.sequence) };
+  // A thread with replies shows its badge on the replies line.
+  if (thread && thread.unseen && thread.replies === 0) header.append(newBadge());
+  const attributes = { class: "message" + (grouped ? " grouped" : "") + (thread && thread.unseen ? " fresh-thread" : ""), "data-sequence": String(message.sequence) };
   if (depth > 0) attributes["data-depth"] = String(depth);
   return el("div", attributes,
     grouped ? el("span", { class: "avatar-gap" }) : avatarFor(message.from),
@@ -1312,13 +1331,18 @@ function renderMessages(scrollToEnd) {
   // A type filter that hides every unseen message hides the line too.
   // In thread mode a reply to a hidden message becomes a root: the tree is built from what is shown.
   const entries = state.threads ? threadOrder(shown) : shown.map((message) => ({ message, depth: 0, orphanOf: null, parent: null }));
-  const freshThreads = state.threads ? threadsWithUnseen(entries, state.marker, state.status.agent) : new Set();
+  const summaries = state.threads ? threadSummaries(entries, state.marker, state.status.agent) : new Map();
   const markerAt = state.marker === null ? -1 : entries.findIndex(({ message: m }) => m.sequence > state.marker && m.from !== state.status.agent);
   const rows = entries.flatMap(({ message, depth, orphanOf, parent }, i) => {
     const previous = entries[i - 1];
     const grouped = settings.grouping && i !== markerAt && previous && previous.parent === parent && continues(previous.message, message);
-    const row = renderMessage(message, grouped, depth, orphanOf, freshThreads.has(message));
-    return i === markerAt ? [el("div", { class: "new-marker", role: "separator" }, "New"), row] : [row];
+    const thread = summaries.get(message);
+    const row = renderMessage(message, grouped, depth, orphanOf, thread);
+    return [
+      ...(i === markerAt ? [el("div", { class: "new-marker", role: "separator" }, "New")] : []),
+      row,
+      ...(thread && thread.replies ? [repliesLine(thread)] : []),
+    ];
   });
   box.replaceChildren(...(shown.length ? rows : [el("div", { class: "empty" }, none)]));
   observeRows(box);
