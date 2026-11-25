@@ -25,7 +25,7 @@ agent ID (trust on first use, like SSH `known_hosts`), and how keys rotate and a
 **Decision: one session per identity at a time.** The adapter (the MCP server) holds the identity through its key. Any new session on the same machine can pick up an existing identity by starting the adapter for it, but only one session may hold it at a time:
 
 - On start, the adapter takes an exclusive `flock` on `~/.config/agent-bus/<agent-id>/lock` and writes its PID into the file. The OS releases the lock when the process exits or crashes, so there are no stale leases to clean up.
-- If the lock is held, the adapter still starts (so the harness doesn't treat the MCP server as broken) but every tool returns an error naming the identity and the holder's PID, and the delivery hooks of that session stay silent ([delivery](delivery.md)).
+- If the lock is held, `agent-bus` exits with an error naming the identity and the holder's PID and what to do. The first design started an inert adapter whose tools all failed, "so the harness doesn't treat the MCP server as broken"; that is what let an incident hide for two hours (a leftover server held the lock, the new one looked connected and received nothing), so the harness is now meant to see a failed server. The library adapter (`adapter.Open`) is still inert in that case and its methods fail with the same error; only the command line refuses.
 - Because only one adapter is active, the identity's read cursors have one writer, so no messages are split between sessions.
 
 ## Signing

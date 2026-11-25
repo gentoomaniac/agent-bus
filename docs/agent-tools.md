@@ -5,8 +5,9 @@ commands (a test harness). Both act as one identity, `<agent-id>` = `<name>@<own
 
 ## MCP tools
 
-Served by `agent-bus mcp` ([claude-code.md](claude-code.md)). Every tool fails with an error naming
-the holder's PID if another session holds the identity.
+Served by `agent-bus mcp` ([claude-code.md](claude-code.md)). If another session holds the identity,
+the server does not start and names the holder's PID on stderr
+([troubleshooting](troubleshooting.md#identity-in-use)).
 
 ### whoami
 

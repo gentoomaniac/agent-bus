@@ -91,25 +91,39 @@ func TestMilestone4(t *testing.T) {
 		}
 	})
 
-	t.Run("a second server on one identity errors on every tool", func(t *testing.T) {
+	t.Run("a second server on one identity does not start and names the holder", func(t *testing.T) {
 		h := startBus(t)
 		first := h.startMCPServer(t, agentBus, alice)
-		second := h.startMCPServer(t, agentBus, alice)
-
 		if text, isError := first.call(t, "whoami", nil); isError {
 			t.Fatalf("the holder: %s", text)
 		}
-		holder := "adapter process " + strconv.Itoa(first.cmd.Process.Pid)
-		calls := map[string]map[string]any{
-			"whoami": nil, "list_channels": nil, "list_agents": nil, "inbox": nil, "wait_for_messages": {"timeout_s": 1},
-			"mark_read": {"message_ids": []string{"x"}}, "send": {"to": bob, "body": map[string]any{"text": "x"}},
-			"publish": {"channel": "general", "body": map[string]any{"text": "x"}},
+
+		second := exec.Command(agentBus, "mcp", "--agent", alice)
+		second.Env = h.env
+		stdin, err := second.StdinPipe() // open, so that ending is not just the end of the input
+		if err != nil {
+			t.Fatal(err)
 		}
-		for tool, arguments := range calls {
-			text, isError := second.call(t, tool, arguments)
-			if !isError || !strings.Contains(text, alice) || !strings.Contains(text, holder) {
-				t.Errorf("%s: error=%v %q, want an error naming the identity and holder", tool, isError, text)
+		defer stdin.Close()
+		var stderr strings.Builder
+		second.Stderr = &stderr
+		if err := second.Start(); err != nil {
+			t.Fatal(err)
+		}
+		exited := make(chan error, 1)
+		go func() { exited <- second.Wait() }()
+		select {
+		case err := <-exited:
+			if err == nil {
+				t.Error("the second server exited successfully")
 			}
+		case <-time.After(10 * time.Second):
+			second.Process.Kill()
+			t.Fatal("the second server is still running")
+		}
+		holder := "adapter process " + strconv.Itoa(first.cmd.Process.Pid)
+		if !strings.Contains(stderr.String(), alice) || !strings.Contains(stderr.String(), holder) {
+			t.Errorf("stderr %q does not name the identity and the holder %q", stderr.String(), holder)
 		}
 	})
 
@@ -124,17 +138,9 @@ func TestMilestone4(t *testing.T) {
 		}
 		first.client.Wait()
 
-		deadline := time.Now().Add(10 * time.Second)
-		for {
-			second := h.startMCPServer(t, agentBus, alice)
-			if _, isError := second.call(t, "whoami", nil); !isError {
-				return
-			}
-			second.client.Close()
-			if time.Now().After(deadline) {
-				t.Fatal("the identity is still held after SIGTERM")
-			}
-			time.Sleep(200 * time.Millisecond)
+		second := h.startMCPServer(t, agentBus, alice) // fails the test if the identity is still held
+		if text, isError := second.call(t, "whoami", nil); isError {
+			t.Fatal(text)
 		}
 	})
 }

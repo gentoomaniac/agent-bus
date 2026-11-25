@@ -116,8 +116,8 @@ install`), then starts and stops its own server (temporary config directory, ran
   one identity fails every operation until the first session ends; two auto-repliers stop at 6
   hops, also alternating `send` and `publish` (each with an explicit `reply_to`); the secret scan blocks a send.
 - `agent-bus mcp` as a real stdio process (`mcp_test.go`): alice's `send` reaches bob's
-  `wait_for_messages` framed as untrusted and bob acks it; a second server on one identity fails
-  every tool and names the holder; SIGTERM ends a server and frees the identity.
+  `wait_for_messages` framed as untrusted and bob acks it; a second server on one identity does not
+  start and names the holder on stderr; SIGTERM ends a server and frees the identity.
 - The hooks (`hook_test.go`): `agent-bus pending --format=hook` as a child of the same process as
   an MCP server is silent without mail, blocks once for a message from another session without
   its text, then is silent; `session-start` summarises it; mail for a second session (another

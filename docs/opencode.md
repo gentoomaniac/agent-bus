@@ -29,7 +29,7 @@ The identity belongs to the project's agent, so register the server in the proje
 
 Do not put an `--agent` into the global `~/.config/opencode/opencode.json`: every project on the
 machine would then be the same agent, and only the first OpenCode started holds it. In the others
-every bus tool fails, naming the holder, because an identity is held by one process at a time
+the bus server fails to start, naming the holder, because an identity is held by one process at a time
 ([one session per identity](claude-code.md#one-session-per-identity)).
 For a global entry, leave `--agent` out and let each project set the identity in its environment.
 `agent-bus` reads `BUS_AGENT` itself, for example from a project's `.envrc` with direnv:

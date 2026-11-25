@@ -135,7 +135,7 @@ wakes the session at once even when it is idle ([hooks reference](https://code.c
 
 ### How a hook finds its session
 
-The MCP server (the lock holder only) listens on `$XDG_RUNTIME_DIR/agent-bus/<pid>.sock`
+The MCP server listens on `$XDG_RUNTIME_DIR/agent-bus/<pid>.sock`
 (directory mode 0700, else `/tmp/agent-bus-<uid>/`), named after its parent process, Claude Code.
 If the MCP config starts `agent-bus` through a wrapper, the server skips it: it walks up from its
 parent past processes named `sh`, `bash`, `dash`, `zsh`, `fish`, `env`, `mise`, `direnv`, `nice`,
@@ -155,7 +155,7 @@ or the waiter, whichever comes first) says once that the session's MCP server is
 that the owner has to run `/mcp`, and removes the marker. The server that `/mcp` starts makes a
 new one. A session that never had a server is told nothing, and the markers of ended Claude Code
 processes are cleared when a server starts. Only the lost server is reported: a server that runs but is
-slow, or has lost the identity lock, stays silent as before.
+slow stays silent as before. A server that cannot take the identity lock does not start (see above), so it has no marker either.
 
 
 ## 3. Add the presence hooks
@@ -244,9 +244,12 @@ come from the heartbeat and the mail, and need no hook. The heartbeat period is
 ## One session per identity
 
 An identity is held by one process at a time (an exclusive lock on `<agent-dir>/lock` holding the
-owner's PID, released by the OS when the process ends). If another session holds it, the server
-still starts, but every tool fails with an error naming the identity and the holder's PID. Give
-every concurrent session its own identity.
+owner's PID, released by the OS when the process ends, so a killed holder never blocks). If another
+session holds it, `agent-bus mcp` does not start: it exits with status 1 and prints the identity and the
+holder's PID on stderr, so Claude Code lists the server as failed in `/mcp` and keeps the message in its
+MCP log. A server that started and answered every tool with an error looked alive and received nothing,
+and never recovered by itself; a failed one is retried by `/mcp` once the holder is gone. Give every
+concurrent session its own identity ([troubleshooting](troubleshooting.md#identity-in-use)).
 
 ## What the agent sees
 

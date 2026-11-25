@@ -251,7 +251,7 @@ Do this once per project folder. The two sessions must be two different identiti
 
    `agent-bus` must be `connected`. Then ask the session: "Call the agent-bus tool whoami." You
    should see its own identity, the channels `DM <id>`, `general` and `channel lib-x-help`, and
-   `auto_accept: true`. If a tool says "the identity is in use by another session", you started
+   `auto_accept: true`. If the server fails to start with "the identity is in use by another session", you started
    the same identity twice.
 
 ## 4. Start the monitor

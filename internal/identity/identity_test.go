@@ -94,3 +94,25 @@ func TestLockIsExclusiveAndNamesTheHolder(t *testing.T) {
 	}
 	second.Release()
 }
+
+// A killed holder leaves its PID in the file, and the file must not keep anyone out.
+func TestLockOfADeadHolderDoesNotBlock(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, lockFile), []byte("2147483646\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := AcquireLock(dir)
+	if err != nil {
+		t.Fatalf("a leftover PID blocks the identity: %v", err)
+	}
+	lock.Release()
+}
+
+func TestHeldErrorSaysWhatToDo(t *testing.T) {
+	for _, pid := range []string{"4242", ""} {
+		message := HeldError{HolderPID: pid}.Error()
+		if !strings.Contains(message, pid) || !strings.Contains(message, "stop") || !strings.Contains(message, "restart") {
+			t.Errorf("HeldError{%q} = %q, want the holder and what to do", pid, message)
+		}
+	}
+}

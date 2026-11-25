@@ -150,21 +150,18 @@ func (cmd *MCPCmd) Run(ctx context.Context, cli *CLI, session *adapter.Adapter) 
 	if cli.DirectoryRefresh <= 0 {
 		return errors.New("--directory-refresh must be positive")
 	}
-	// Only the lock holder answers hooks and publishes presence; a failure here only costs the
-	// end-of-turn check and the owner's view.
-	if session.Ready() == nil {
-		go refreshDirectory(ctx, session, cli.DirectoryRefresh)
-		publisher := presence.NewPublisher(session, cli.PresenceHeartbeat, time.Now)
-		publisher.Log = func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) }
-		publishing := make(chan struct{})
-		publishCtx, stopPublishing := context.WithCancel(ctx)
-		go func() { publisher.Run(publishCtx); close(publishing) }()
-		defer func() { stopPublishing(); <-publishing }()
-		if stop, err := hook.Listen(hook.Dir(), hookSession{session, publisher}); err != nil {
-			log.Printf("agent-bus: no hook socket: %v", err)
-		} else {
-			defer stop()
-		}
+	go refreshDirectory(ctx, session, cli.DirectoryRefresh)
+	publisher := presence.NewPublisher(session, cli.PresenceHeartbeat, time.Now)
+	publisher.Log = func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) }
+	publishing := make(chan struct{})
+	publishCtx, stopPublishing := context.WithCancel(ctx)
+	go func() { publisher.Run(publishCtx); close(publishing) }()
+	defer func() { stopPublishing(); <-publishing }()
+	// A failure here only costs the end-of-turn check and the owner's view.
+	if stop, err := hook.Listen(hook.Dir(), hookSession{session, publisher}); err != nil {
+		log.Printf("agent-bus: no hook socket: %v", err)
+	} else {
+		defer stop()
 	}
 	return mcpserver.Serve(ctx, session, &mcp.StdioTransport{})
 }
@@ -346,8 +343,16 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 		transport.Close()
 		return nil, nil, err
 	}
+	// A session without the identity lock would start and look healthy while every tool failed.
+	// Failing here shows the harness a server that did not start, and its reconnect retries once
+	// the holder is gone.
+	if err := session.Ready(); err != nil {
+		session.Close()
+		transport.Close()
+		return nil, nil, err
+	}
 	// A command or session starts with the revocations the directory has now.
-	if err := session.RefreshDirectory(context.Background()); err != nil && session.Ready() == nil {
+	if err := session.RefreshDirectory(context.Background()); err != nil {
 		log.Printf("agent-bus: reading the directory: %v", err)
 	}
 	return session, func() { session.Close(); transport.Close() }, nil

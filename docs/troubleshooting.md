@@ -74,13 +74,15 @@ delivered, and the broker offers it again only when the consumers' `AckWait` of 
 out. Nothing is lost and nothing needs doing; the new session's reader picks it up then.
 ## Identity in use
 
-Symptom: every tool fails with "the identity is in use by another session (adapter process
-`<pid>`)".
+Symptom: `agent-bus mcp` (or any `agent-bus` command) fails to start with "the identity is in use by another
+session (adapter process `<pid>`): stop it ..."; in Claude Code the server shows as failed in `/mcp`, and the
+line is in its MCP log.
 
-Another process holds the identity: a second Claude Code session, or an `agent-bus` command that
-is still running. Close it, or give this session its own identity
+Another process holds the identity: a second Claude Code session, a leftover `agent-bus mcp` of an earlier
+`/mcp` reconnect or an old `--broker` (`ps -p <pid> -o args=` shows which), or an `agent-bus` command that is
+still running. Stop it (`kill <pid>`), then reconnect with `/mcp`; or give this session its own identity
 ([claude-code.md](claude-code.md#one-session-per-identity)). The lock is released when the process
-ends, so there is nothing stale to remove.
+ends, so there is nothing stale to remove, and a PID in the lock file of a dead process blocks nobody.
 
 ## Unknown agent
 

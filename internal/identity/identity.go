@@ -79,7 +79,10 @@ type Lock struct{ file *os.File }
 type HeldError struct{ HolderPID string }
 
 func (err HeldError) Error() string {
-	return "the identity is in use by another session (adapter process " + err.HolderPID + ")"
+	if err.HolderPID == "" { // the holder has locked the file but not written its PID yet
+		return "the identity is in use by another session: stop its adapter process, then restart this one"
+	}
+	return "the identity is in use by another session (adapter process " + err.HolderPID + "): stop it (kill " + err.HolderPID + "), then restart this one"
 }
 
 // AcquireLock takes an exclusive flock on dir/lock and writes the process ID into it. If another
