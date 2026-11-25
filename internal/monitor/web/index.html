@@ -321,9 +321,11 @@ const MESSAGE_TYPES = ["message", "request", "question", "answer", "feedback", "
 const REFRESH_MS = 5000;
 const PAGE_SIZE = 500;
 const TYPES_KEY = "bus-monitor-types";
-const READ_KEY = "bus-monitor-read";
-const FAVOURITES_KEY = "bus-monitor-favourites";
-const COLLAPSED_KEY = "bus-monitor-collapsed";
+// Read markers, favourites and folded sections live on the server now; these keys are only read
+// once, to move an older browser's state there (loadPrefs).
+const OLD_READ_KEY = "bus-monitor-read";
+const OLD_FAVOURITES_KEY = "bus-monitor-favourites";
+const OLD_COLLAPSED_KEY = "bus-monitor-collapsed";
 const STATUS_LABEL = { verified: "verified", unknown_sender: "unknown sender", rejected: "rejected" };
 
 const state = {
@@ -333,9 +335,11 @@ const state = {
   selected: null,                 // channel ID
   messages: new Map(),            // channel ID -> messages ordered by sequence, once loaded
   unread: new Map(),              // channel ID -> count of messages that arrived since the page loaded
-  read: loadSetting(READ_KEY, null), // channel ID -> sequence read up to, kept in this browser; null on a first visit
-  favourites: new Set(loadSetting(FAVOURITES_KEY, [])), // channel IDs shown under Favourites, kept in this browser
-  collapsed: new Set(loadSetting(COLLAPSED_KEY, [])),   // sidebar sections that are folded
+  // The next three are the server's shared prefs (/api/v1/prefs).
+  read: null,                     // channel ID -> sequence read up to; null on a first visit
+  favourites: new Set(),          // channel IDs shown under Favourites
+  collapsed: new Set(),           // sidebar sections that are folded
+  prefsOnline: false,             // false when the server has no prefs (an old one): the state stays in memory
   marker: null,                   // sequence after which the open channel's "New" line is drawn, or null
   picked: new Set(),              // targets ticked in the composer
   shownTypes: new Set(loadSetting(TYPES_KEY, [])), // message types the list is limited to; none means all
@@ -804,7 +808,40 @@ function markRead(channelId, sequence) {
   const last = sequence ?? (list.length ? list[list.length - 1].sequence : 0);
   if (!state.read || last <= readSequence(channelId)) return; // nothing is kept before the first visit is set up
   state.read[channelId] = last;
-  saveSetting(READ_KEY, state.read);
+  postRead({ [channelId]: last });
+}
+
+// Read markers go to the server at most one request at a time; what is marked meanwhile is merged
+// (highest sequence per channel) and sent when the request ends, so scrolling or arriving mail
+// cannot flood it. A failed request keeps its markers for the next one.
+const pendingRead = {};
+let readInFlight = false;
+
+async function postRead(updates) {
+  for (const [channel, sequence] of Object.entries(updates)) pendingRead[channel] = Math.max(pendingRead[channel] || 0, sequence);
+  if (!state.prefsOnline || readInFlight || !Object.keys(pendingRead).length) return;
+  readInFlight = true;
+  const sending = { ...pendingRead };
+  for (const channel of Object.keys(sending)) delete pendingRead[channel];
+  try {
+    await api("/api/v1/prefs/read", jsonRequest("POST", sending));
+  } catch (error) {
+    for (const [channel, sequence] of Object.entries(sending)) pendingRead[channel] = Math.max(pendingRead[channel] || 0, sequence);
+    readInFlight = false;
+    return;
+  }
+  readInFlight = false;
+  postRead({});
+}
+
+function jsonRequest(method, body) {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+
+// Favourites and folded sections replace the server's list. Failing is harmless: the page keeps
+// its state and the next change sends it again.
+function putPref(name, values) {
+  if (state.prefsOnline) api("/api/v1/prefs/" + name, jsonRequest("PUT", [...values])).catch(() => {});
 }
 
 // On a first visit everything there is counts as read, so the page does not open with every
@@ -812,7 +849,51 @@ function markRead(channelId, sequence) {
 function initReadMarkers() {
   if (state.read) return;
   state.read = Object.fromEntries(state.channels.map((c) => [c.id, c.last_sequence || 0]));
-  saveSetting(READ_KEY, state.read);
+  postRead(state.read);
+}
+
+// Takes the server's prefs. Read markers only move forward, as on the server, so a marker set
+// here that has not arrived there yet is kept. Reading elsewhere clears the unread count here.
+function applyPrefs(prefs) {
+  if (Object.keys(prefs.read).length) {
+    state.read = state.read || {};
+    for (const [channel, sequence] of Object.entries(prefs.read)) {
+      state.read[channel] = Math.max(state.read[channel] || 0, sequence);
+      const known = state.messages.get(channel) || [];
+      const newest = Math.max((state.channels.find((c) => c.id === channel) || {}).last_sequence || 0, known.length ? known[known.length - 1].sequence : 0);
+      if (state.read[channel] >= newest) state.unread.delete(channel);
+    }
+  }
+  state.favourites = new Set(prefs.favourites);
+  state.collapsed = new Set(prefs.collapsed);
+}
+
+// Loads the shared prefs after login. A browser that kept them in local storage before moves them
+// to the server once, if the server has none yet, and then forgets them.
+async function loadPrefs() {
+  let prefs;
+  try {
+    prefs = await api("/api/v1/prefs");
+  } catch (error) {
+    return; // an old server, or it is down: the state stays in memory until a reload
+  }
+  state.prefsOnline = true;
+  const old = { read: loadSetting(OLD_READ_KEY, null), favourites: loadSetting(OLD_FAVOURITES_KEY, null), collapsed: loadSetting(OLD_COLLAPSED_KEY, null) };
+  const serverEmpty = !Object.keys(prefs.read).length && !prefs.favourites.length && !prefs.collapsed.length;
+  if (serverEmpty && (old.read || old.favourites || old.collapsed)) {
+    try {
+      if (old.read && Object.keys(old.read).length) prefs.read = await api("/api/v1/prefs/read", jsonRequest("POST", old.read));
+      if (old.favourites?.length) prefs.favourites = (await api("/api/v1/prefs/favourites", jsonRequest("PUT", old.favourites))).favourites;
+      if (old.collapsed?.length) prefs.collapsed = (await api("/api/v1/prefs/collapsed", jsonRequest("PUT", old.collapsed))).collapsed;
+    } catch (error) {
+      applyPrefs(prefs);
+      return; // kept in local storage for the next visit
+    }
+  }
+  for (const key of [OLD_READ_KEY, OLD_FAVOURITES_KEY, OLD_COLLAPSED_KEY]) {
+    try { localStorage.removeItem(key); } catch (error) { /* nothing to remove */ }
+  }
+  applyPrefs(prefs);
 }
 
 function looking() {
@@ -950,7 +1031,7 @@ function pairLabel(agents) {
 
 function toggleFavourite(channelId) {
   if (!state.favourites.delete(channelId)) state.favourites.add(channelId);
-  saveSetting(FAVOURITES_KEY, [...state.favourites]);
+  putPref("favourites", state.favourites);
   renderSidebar();
   // The list was rebuilt: keep the keyboard on the star that moved.
   document.querySelector(`button.star[data-channel="${CSS.escape(channelId)}"]`)?.focus();
@@ -969,7 +1050,7 @@ for (const button of document.querySelectorAll("button.section")) {
   button.addEventListener("click", () => {
     const section = button.dataset.section;
     if (!state.collapsed.delete(section)) state.collapsed.add(section);
-    saveSetting(COLLAPSED_KEY, [...state.collapsed]);
+    putPref("collapsed", state.collapsed);
     renderSidebar();
   });
 }
@@ -1286,6 +1367,10 @@ function connectEvents() {
     else if (state.selected) noteUnseen(state.selected);
     renderMessages(false);
   };
+  source.addEventListener("prefs", (event) => {
+    applyPrefs(JSON.parse(event.data));
+    renderSidebar();
+  });
   source.addEventListener("presence", (event) => {
     const view = JSON.parse(event.data);
     state.presence.set(view.agent, view);
@@ -1336,6 +1421,8 @@ window.addEventListener("focus", readOnReturn);
 
 async function start() {
   state.loggedOut = false;
+  await loadPrefs();
+  if (state.loggedOut) return;
   await refresh();
   if (state.loggedOut) return;
   const wanted = decodeURIComponent(location.hash.slice(1));

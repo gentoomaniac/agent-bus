@@ -170,13 +170,16 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   Conversations appear when their first message is read. Click a heading (Channels, Direct
   messages, Agents, Favourites) to fold it; a folded channel list still shows the open channel and
   those with unseen mail. The star on a channel or conversation (shown on hover) moves it to
-  **Favourites** at the top, and back. Both are kept per browser, like the read markers.
+  **Favourites** at the top, and back. Favourites and folded headings are shared: every browser and
+  the VS Code extension see the same ones (`prefs.json` next to the password hash).
 - **New messages**: a channel with messages you have not seen is bold; a number counts those that
   arrived while the page was open. Opening it draws a **New** line above the first unseen message
   (starting there when the new part is longer than the screen); the line stays until you open
   another channel. Your own messages in the open channel never count as new. Mail that arrives
   while the tab is hidden or unfocused stays unseen until you come back. What you have seen is kept
-  per browser (local storage), not on the server; on the first visit everything counts as seen.
+  on the server, shared by every browser and the extension: reading on one device clears the bold
+  on the others. When the server has no read markers yet, everything counts as seen. A browser
+  that kept its state in local storage uploads it once, if the server has none, and forgets it.
 - **Agents** (left): every agent in the registry, with a status dot and its state (see
   [Presence](#presence); the monitor's own identity shows `monitor`), "N workers" and what it is doing with how long. Hover for the key
   fingerprint. Click one to point the composer at it and to open its panel. A removed agent
