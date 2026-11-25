@@ -32,8 +32,9 @@ type ChannelLink interface {
 // RequestChannel asks busd, as this agent and signed with its key, and returns busd's verified
 // answer; a refusal is the error. Every answer but a list's describes the channel. After a change
 // the directory is synced, so a channel the agent joined is read from the next poll on, not only
-// after busd's next head. A read (list, members) that gets no answer makes the reads of the next
-// channelReadRest fail at once with its error; changes are always tried.
+// after busd's next head. A read (list, members) that busd does not answer makes the reads of the
+// next channelReadRest fail at once with its error, until busd's next verified answer; changes are
+// always tried.
 func (adapter *Adapter) RequestChannel(ctx context.Context, request channelapi.Request) (channelapi.Reply, error) {
 	if err := adapter.Ready(); err != nil {
 		return channelapi.Reply{}, err
@@ -54,23 +55,29 @@ func (adapter *Adapter) RequestChannel(ctx context.Context, request channelapi.R
 	if err != nil {
 		return channelapi.Reply{}, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	askCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	answer, err := adapter.config.ChannelLink.RequestChannel(ctx, message)
+	answer, err := adapter.config.ChannelLink.RequestChannel(askCtx, message)
 	if err != nil {
-		if isRead {
+		// Only busd's silence rests the reads, not a caller that gave up.
+		if isRead && ctx.Err() == nil {
 			adapter.restChannelReads(err)
 		}
 		return channelapi.Reply{}, err
 	}
 	reply, err := channelapi.VerifyReply(adapter.config.CACert, answer, message)
+	if refusal := (channelapi.Refusal{}); err == nil || errors.As(err, &refusal) {
+		adapter.restChannelReads(nil) // busd answers
+	}
 	if err != nil || request.Action == channelapi.List {
 		return reply, err
 	}
 	if reply.Channel == nil {
 		return channelapi.Reply{}, errors.New("busd's answer names no channel")
 	}
-	adapter.RequestDirectorySync()
+	if !isRead {
+		adapter.RequestDirectorySync()
+	}
 	return reply, nil
 }
 
@@ -78,12 +85,13 @@ func (adapter *Adapter) RequestChannel(ctx context.Context, request channelapi.R
 func (adapter *Adapter) channelReadsResting() error {
 	adapter.channelReadMu.Lock()
 	defer adapter.channelReadMu.Unlock()
-	if adapter.config.Now().Before(adapter.channelReadsResume) {
+	if adapter.channelReadErr != nil && adapter.config.Now().Before(adapter.channelReadsResume) {
 		return fmt.Errorf("%w (not asking busd again until %s)", adapter.channelReadErr, clock(adapter.channelReadsResume))
 	}
 	return nil
 }
 
+// restChannelReads starts the rest with busd's error, or ends it with nil.
 func (adapter *Adapter) restChannelReads(err error) {
 	adapter.channelReadMu.Lock()
 	defer adapter.channelReadMu.Unlock()
