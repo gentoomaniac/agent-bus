@@ -45,7 +45,8 @@ flowchart LR
   busctl -->|"ca ...: control-admin"| busd
   adapter -->|"agent-bus enroll: shared enroll login"| busd
   monitor -->|"reads every channel: monitor-bus"| buss
-  monitor -->|"registry, catalogue, pending count: monitor-control"| busd
+  monitor -->|"registry, catalogue requests: monitor-control"| busd
+  busd -->|"pending count heard"| monitor
   monitor --- prefs
   browser -->|"HTTP"| monitor
   vscode -->|"HTTP, Bearer token"| monitor
@@ -76,7 +77,7 @@ flowchart LR
 
 The binding is the only implementation and lives in one package, `internal/broker`, the only one that imports the broker's client library. Envelope, signing, TOFU, the handled set, the inbox, hooks, busd's logic and agent-busctl's commands never import it (`internal/itest` also does, to test against a real broker). The interfaces speak in bus terms (channel kind and name, account, acknowledgement), never in subjects or access rules; the mapping lives in the binding. Another broker (Kafka was the first one) is a possible later option, not a design goal, and the interfaces are not shaped for it.
 
-**Decision: the broker is its own process, not embedded in busd.** `nats-server` runs separately ([JetStream binding](jetstream-binding.md)), so a busd crash or restart doesn't drop agent connections. On the dev machine it is a plain binary started by a script or user service unit; the server configuration and that start script are the only runtime-specific files. If a container runtime is used later, a Pod manifest replaces the start script. Nothing in the Go code or agent-busctl depends on how the process starts. busd runs on the broker's host (it rewrites the server's authorization file and reloads it, [JetStream binding](jetstream-binding.md)); the monitor is a plain binary and can run anywhere.
+**Decision: the broker is its own process, not embedded in busd.** `nats-server` runs separately ([JetStream binding](jetstream-binding.md)), so a busd crash or restart doesn't drop agent connections. It runs from one container image together with busd, started by the compose file or the Podman scripts; the server configuration is the only runtime-specific file, and a plain binary with the start script is for development ([operations](operations.md)). Nothing in the Go code or agent-busctl depends on how the process starts. busd runs on the broker's host (it rewrites the server's authorization file and reloads it, [JetStream binding](jetstream-binding.md)); the monitor runs in its own container from the same image.
 
 ## Language and libraries
 

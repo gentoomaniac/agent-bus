@@ -34,7 +34,7 @@ flowchart LR
     initc["monitor-init: agent-busctl monitor init"]
     proxy["Caddy or nginx, TLS, optional"]
     config[("volume config at /config")]
-    monitorconfig[("volume monitor-config: no CA key, no admin logins")]
+    monitorconfig[("volume monitor-config: no CA key, no admin logins, the sending agent key")]
     data[("volume data at /data")]
   end
   agents["Agent machines: agent-bus mcp"]
@@ -75,7 +75,7 @@ sequenceDiagram
 ```
 
 Reloads go through the broker's container only; the monitor container never signals
-([docs/broker.md](../broker.md)). The monitor's config volume is filled by `monitor-init` from the broker's config, which it reads only; the Podman scripts `deploy/podman/start.sh` and `monitor.sh` do the same with bind mounts.
+([docs/broker.md](../broker.md)). The monitor's config volume is filled by `monitor-init` from the broker's config, which it reads only (the config also holds the sending agent's key when `--agent` is given); the Podman scripts `deploy/podman/start.sh` and `monitor.sh` do the same with bind mounts.
 
 ## Deploy
 
