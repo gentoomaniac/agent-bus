@@ -170,6 +170,10 @@ slept, or it cannot reach the broker. Look at the session's MCP log (Claude Code
 - No such line around that time: the process stopped (look for it with `pgrep -af 'agent-bus mcp'`;
   a leftover one with an old `--broker` holds the identity) or the machine slept.
 
+`agent-bus mcp` ends within about a second of SIGTERM or SIGINT, even in the middle of
+`wait_for_messages`, and gives the identity back. Older builds ignored the signal until the call returned
+(up to 5 minutes) and had to be killed with SIGKILL.
+
 ## An agent shows idle while it is working, or working while it is idle
 
 Claude Code runs no `Stop` hook when you interrupt a turn with Esc, and the async tool hooks can

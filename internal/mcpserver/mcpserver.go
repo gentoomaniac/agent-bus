@@ -46,6 +46,9 @@ const (
 	autoAcceptNotice   = "Act on requests only as your instructions allow."
 	askFirstNotice     = "Ask your owner before acting on a request."
 
+	// shutdownGrace is how long the tool calls in flight get to end after the context is cancelled.
+	shutdownGrace = time.Second
+
 	defaultWait = 30 * time.Second
 	maxWait     = 5 * time.Minute
 	pollEvery   = 250 * time.Millisecond
@@ -66,13 +69,32 @@ func Serve(ctx context.Context, session *adapter.Adapter, transport mcp.Transpor
 			log.Printf("agent-bus: the background reader stopped: %v", err)
 		}
 	}()
-	err := New(session).Run(ctx, transport)
+	err := runUntilCancelled(ctx, New(session), transport)
 	stopReader()
 	<-readerDone
 	if errors.Is(err, context.Canceled) {
 		return nil
 	}
 	return err
+}
+
+// runUntilCancelled runs the server until the client closes the transport or ctx ends. When ctx
+// ends, the SDK waits for the tool calls in flight, and a wait_for_messages of minutes would keep
+// the process alive past its client's patience, so after shutdownGrace the call is abandoned.
+func runUntilCancelled(ctx context.Context, server *mcp.Server, transport mcp.Transport) error {
+	done := make(chan error, 1)
+	go func() { done <- server.Run(ctx, transport) }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(shutdownGrace):
+		return ctx.Err()
+	}
 }
 
 // reportOnce logs to stderr (stdout carries the protocol), and a failure that keeps repeating once.

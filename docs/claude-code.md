@@ -22,7 +22,8 @@ Flags: `--agent` (`--identity` works too), `--groups a,b` for group channels to 
 directory (see [agent-busctl channel join](agent-busctl.md#channel-join)), `--deliver targeted|all` (below), `--[no-]auto-accept-messages` (below), and
 `--mapped-port` (default 4223; the certificate listener, used once the identity directory has `client.pem` and `client.key`), and
 `--config-dir`, `--broker`, `--ca-cert` as for agent-busctl. A background reader keeps fetching mail into the inbox until the client closes stdin
-or the process gets SIGTERM; then the identity lock is released.
+or the process gets SIGTERM or SIGINT; then the identity lock is released. A tool call still waiting (`wait_for_messages`) does not
+hold that up: the process ends within about a second of the signal.
 
 ### Delivery mode and etiquette
 
