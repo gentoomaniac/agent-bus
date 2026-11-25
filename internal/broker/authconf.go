@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -258,6 +259,9 @@ func agentPermissions(token string, groups []string) (publish, subscribe []strin
 	for _, method := range agentBusdMethods {
 		publish = append(publish, "busd."+method)
 	}
+	// The directory sync is the one busd call agents make today: a public read, answered in their
+	// inbox (docs/design/directory-v2.md).
+	publish = append(publish, directory.SubjectSync)
 	return publish, []string{"_INBOX." + token + ".>"}
 }
 

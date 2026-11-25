@@ -5,11 +5,33 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/time/rate"
+
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
 )
 
 func (f *fixture) directory() *Directory {
-	return NewDirectory(DirectoryConfig{Source: f.registry, ConfigDir: f.dir})
+	ca, err := tlsinit.LoadCA(filepath.Join(f.dir, "ca.pem"), filepath.Join(f.dir, "ca.key"))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return NewDirectory(DirectoryConfig{Source: f.registry, CA: ca, ConfigDir: f.dir})
+}
+
+// syncFrom asks published as an agent at since and returns the verified reply.
+func (f *fixture) syncFrom(published *Directory, since directory.Version) directory.SyncReply {
+	f.t.Helper()
+	request := directory.NewSyncRequest(since)
+	reply, err := directory.VerifySyncReply(mustRead(f.t, filepath.Join(f.dir, "ca.pem")), published.HandleSync(request), request)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return reply
 }
 
 func TestTheRevisionAdvancesOnlyWhenTheContentChanges(t *testing.T) {
@@ -103,5 +125,71 @@ func TestAnApprovalTellsTheDirectory(t *testing.T) {
 	}
 	if told != 1 {
 		t.Errorf("the directory was told %d times, want once", told)
+	}
+}
+
+func TestASyncIsAnsweredWithWhatTheAgentLacks(t *testing.T) {
+	f := newFixture(t)
+	f.register("alice@x", f.newKey())
+	published := f.directory()
+	ctx := context.Background()
+	if _, err := published.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	first := published.Version()
+
+	if reply := f.syncFrom(published, directory.Version{}); reply.Kind != directory.Full || len(reply.Records) != 1 || reply.Version() != first {
+		t.Errorf("a new agent got %s with %d records at %s", reply.Kind, len(reply.Records), reply.Version())
+	}
+	if reply := f.syncFrom(published, first); reply.Kind != directory.Unchanged {
+		t.Errorf("an agent at the current version got %s", reply.Kind)
+	}
+
+	f.register("bob@x", f.newKey())
+	if _, err := published.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	reply := f.syncFrom(published, first)
+	if reply.Kind != directory.Diff || len(reply.Records) != 1 || reply.Records[0].AgentID != "bob@x" || reply.Catalogue != nil {
+		t.Errorf("an agent one revision behind got %s with %+v, catalogue %v", reply.Kind, reply.Records, reply.Catalogue)
+	}
+
+	// A restart forgets the earlier projections: one full sync, nothing worse.
+	if reply := f.syncFrom(f.directory(), first); reply.Kind != directory.Full || reply.Version() != published.Version() {
+		t.Errorf("after a restart an agent behind got %s at %s", reply.Kind, reply.Version())
+	}
+}
+
+func TestASyncBeforeTheFirstProjectionAndAMalformedOneGetSignedErrors(t *testing.T) {
+	f := newFixture(t)
+	published := f.directory()
+	caPEM := mustRead(t, filepath.Join(f.dir, "ca.pem"))
+	request := directory.NewSyncRequest(directory.Version{})
+
+	if _, err := directory.VerifySyncReply(caPEM, published.HandleSync(request), request); err == nil || !strings.Contains(err.Error(), "not built") {
+		t.Errorf("a sync before the first projection: %v", err)
+	}
+	if _, err := published.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	garbage := []byte("not a request")
+	if _, err := directory.VerifySyncReply(caPEM, published.HandleSync(garbage), garbage); err == nil || !strings.Contains(err.Error(), "not a sync request") {
+		t.Errorf("a malformed request: %v", err)
+	}
+}
+
+func TestSyncsPastTheLimitAreAnsweredWithoutASignature(t *testing.T) {
+	f := newFixture(t)
+	published := f.directory()
+	if _, err := published.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	published.limiter = rate.NewLimiter(rate.Every(time.Hour), 1)
+	f.syncFrom(published, directory.Version{})
+
+	request := directory.NewSyncRequest(directory.Version{})
+	_, err := directory.VerifySyncReply(mustRead(t, filepath.Join(f.dir, "ca.pem")), published.HandleSync(request), request)
+	if err == nil || !strings.Contains(err.Error(), "too many") {
+		t.Errorf("a sync past the limit: %v", err)
 	}
 }

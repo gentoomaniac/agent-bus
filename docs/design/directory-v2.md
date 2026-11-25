@@ -231,3 +231,18 @@ Where the build refined or departed from the text above.
   deterministic for that shape, so busd and agents of the same release hash the same bytes.
 - A busd restored from a backup keeps its old epoch with a lower revision, which agents refuse as
   a rollback. The owner deletes `enroll/directory.json` after a restore so that a new epoch starts.
+
+**Sync (commit 2).**
+
+- busd serves `busd.directory.sync` on its `bus-admin` connection. NATS does not tell the receiver
+  who published a request, so busd cannot check "the caller's" inbox. It answers only on a literal
+  subject `_INBOX.<agent-token>.<token>...` whose token is a well-formed agent token: the inbox
+  space of some agent, which only that agent may subscribe to. Anything else (another account
+  subject, a wildcard, an empty token) is dropped, so a request cannot make busd's full-rights BUS
+  login publish anywhere else. A reply sent into another agent's inbox is public data bound to a
+  request that agent never made, and its client drops it.
+- The rate limit is global (a burst of 50, then one every 20 ms), not per connection: busd cannot
+  tell connections apart either. Past it busd answers unsigned (`{"error": …}`), which the agent
+  treats as a transport error, so a flood costs no signatures.
+- A malformed request, and a request before busd's first projection, get a signed `error` reply.
+- Diffs come from a cache of the last 16 projections, kept in memory only.

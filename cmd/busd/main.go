@@ -21,6 +21,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/busd"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
 )
@@ -104,7 +105,7 @@ func (cli *CLI) Run() error {
 	defer admin.Close()
 
 	published := busd.NewDirectory(busd.DirectoryConfig{
-		Source: admin, ConfigDir: cli.ConfigDir,
+		Source: admin, CA: ca, ConfigDir: cli.ConfigDir,
 		LockMutations: func() (func(), error) { return server.LockMutations(reconcileLockWait) },
 	})
 	directoryChanged := make(chan struct{}, 1)
@@ -161,7 +162,12 @@ func (cli *CLI) Run() error {
 		}
 		defer stopServing()
 	}
-	log.Printf("busd %s: serving enrollment and approval on the bus", version)
+	stopSync, err := admin.ServeAgents(directory.SubjectSync, published.HandleSync)
+	if err != nil {
+		return fmt.Errorf("serving %s: %w", directory.SubjectSync, err)
+	}
+	defer stopSync()
+	log.Printf("busd %s: serving enrollment, approval and the directory on the bus", version)
 
 	reconcile := directoryReconciler(ctx, published)
 	reconcile()

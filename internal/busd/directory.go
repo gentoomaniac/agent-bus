@@ -11,10 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
+
+	"golang.org/x/time/rate"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
@@ -23,6 +27,10 @@ const (
 	// directoryHistory is how many earlier projections are kept in memory to answer a sync with a
 	// diff. An agent further behind, or one asking after a restart of busd, gets the full directory.
 	directoryHistory = 16
+	// syncInterval and syncBurst bound the signatures busd makes for sync requests, which anyone in
+	// BUS may send: agents sync on a change all at once, then about once a minute.
+	syncInterval = 20 * time.Millisecond
+	syncBurst    = 50
 )
 
 // DirectorySource is what the published directory is made of: the registry, the catalogue and the
@@ -35,7 +43,8 @@ type DirectorySource interface {
 // DirectoryConfig is what a Directory is made of.
 type DirectoryConfig struct {
 	Source    DirectorySource
-	ConfigDir string // the state is enroll/directory.json in it
+	CA        *tlsinit.CA // signs what busd publishes, so that agents verify it against ca.pem alone
+	ConfigDir string      // the state is enroll/directory.json in it
 	// LockMutations takes the lock that approvals and agent-busctl --direct hold while they change
 	// the registry, the cursors and the accounts, so that a projection never shows half an
 	// enrollment. Nil: no lock, for tests.
@@ -52,7 +61,8 @@ type revision struct {
 // broker, and each change of its content is a new revision, persisted before anyone hears of it.
 // busd is its only writer.
 type Directory struct {
-	config DirectoryConfig
+	config  DirectoryConfig
+	limiter *rate.Limiter
 
 	mu      sync.Mutex
 	current revision
@@ -62,7 +72,7 @@ type Directory struct {
 // NewDirectory reads the projection and version a former run left. State that cannot be read
 // counts as lost: the next projection starts a new epoch, which agents accept as a restore.
 func NewDirectory(config DirectoryConfig) *Directory {
-	published := &Directory{config: config}
+	published := &Directory{config: config, limiter: rate.NewLimiter(rate.Every(syncInterval), syncBurst)}
 	path := published.path()
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -128,6 +138,45 @@ func (published *Directory) Reconcile(ctx context.Context) ([]directory.Change, 
 	changes := directory.Changes(previous.Projection, projection)
 	log.Printf("busd: directory %s: %d changes", next.Version, len(changes))
 	return changes, nil
+}
+
+// HandleSync answers a sync request from anyone in BUS. It proves nothing about the asker and
+// holds public data only. The answer comes from the committed projection, signed and bound to the
+// request; past the rate limit busd answers unsigned, without spending a signature.
+func (published *Directory) HandleSync(request []byte) []byte {
+	if !published.limiter.Allow() {
+		return directory.Unsigned("too many directory requests, try again in a moment")
+	}
+	reply := directory.SyncReply{RequestHash: directory.RequestHash(request)}
+	if parsed, err := directory.ParseSyncRequest(request); err != nil {
+		reply.Kind, reply.Error = directory.Failed, err.Error()
+	} else {
+		reply = published.answer(parsed.Since, reply.RequestHash)
+	}
+	signed, err := directory.SignSyncReply(published.config.CA, reply)
+	if err != nil {
+		log.Printf("busd: signing a directory reply: %v", err)
+		return directory.Unsigned("busd cannot sign the directory")
+	}
+	return signed
+}
+
+func (published *Directory) answer(since directory.Version, requestHash string) directory.SyncReply {
+	published.mu.Lock()
+	defer published.mu.Unlock()
+	current := published.current
+	if current.Version.IsZero() {
+		return directory.SyncReply{RequestHash: requestHash, Kind: directory.Failed, Error: "busd has not built the directory yet"}
+	}
+	var base *directory.Projection
+	for _, earlier := range published.earlier {
+		if earlier.Version == since {
+			base = &earlier.Projection
+		}
+	}
+	reply := directory.Answer(since, current.Version, current.Projection, base)
+	reply.RequestHash = requestHash
+	return reply
 }
 
 // build reads a coherent cut: under the mutation lock, nothing changes the registry or the cursors
