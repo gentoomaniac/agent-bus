@@ -1,7 +1,8 @@
 # Channels requested by agents
 
-Status: proposed (2026-11-25), not built. Builds on [private channels](private-channels.md) and on
-the busd request path of [directory v2](directory-v2.md).
+Status: step 2 (public channels) built (2026-11-25), without archive, delete and keep; see
+[As built](#as-built). Steps 3 and 4 are proposed. Builds on [private channels](private-channels.md)
+and on the busd request path of [directory v2](directory-v2.md).
 
 ## Goal
 
@@ -153,3 +154,69 @@ directory head. Running agents pick up their new channels without a restart (dir
 3. Cleanup of abandoned channels (public first, private once they exist).
 4. Private channels as in [private channels](private-channels.md), on the same request path,
    with `request_invite`.
+
+## As built
+
+Step 2, public channels. Where the build refined or departed from the text above.
+
+**The channel record.**
+
+- A catalogue entry (`bus.TopicRecord`) has `owner` and `created_at` besides `name` and
+  `description`. An empty owner is the bus owner: every channel `agent-busctl` makes, and every
+  entry of an earlier release, which stays readable as it is. No migration step.
+- Repeating `agent-busctl channel create` changes only the description, so an agent's channel keeps
+  its owner.
+- The directory's catalogue stays as it was (channel → readers). Owner and description come from
+  busd's `list` instead: a new field in the signed sync reply would break every agent of 0.2, which
+  refuses unknown fields and checks the state hash over the projection it knows.
+
+**Who the bus owner is.** A busd setting, `--bus-owner` / `BUSD_BUS_OWNER`: agent IDs,
+comma-separated. The natural value is the monitor's identity (`BUS_AGENT`); the compose file and
+`deploy/podman/start.sh` pass it. The bus owner manages every channel and is exempt from the
+creation limit. Without one, only channel owners manage the channels agents create.
+
+**Transport.**
+
+- One subject per agent, `busd.channel.<agent-token>`, with the action in the request, not one
+  subject per action: as for the directory sync, the subject is how busd knows the caller, and the
+  agent may publish on its own only. The placeholder grants `busd.channel.create` and the like are
+  gone. busd answers only on a literal subject in that agent's `_INBOX.<token>.…`.
+- The request is `{payload, signature}`: the agent's key signs the payload (`agent_id`, a
+  `challenge`, `action`, `channel`, `description`, `agent`) after the domain
+  `agent-bus/channel-request/v1\n`. busd checks it against the caller's record in its published
+  directory: only agents whose enrollment is complete, not removed, with their current key.
+- The reply is signed by the CA (`agent-bus/channel-reply/v1\n`) and bound to the request's hash.
+  It carries `channel` (name, description, owner, members) after a change, `channels` for `list`,
+  `limits` after `create`, or `error`. The spec's flat JSON is nested under `channel`.
+- Actions: `list`, `create`, `join`, `leave`, `invite`, `remove_member`, `update`. `update` is the
+  channel owner's or the bus owner's. Each agent may ask a burst of 5, then one every 2 s, all
+  agents together 20, then one every 100 ms; past a limit busd answers unsigned.
+- busd's CONTROL login may now write the catalogue (`$KV.catalogue.>`). Joins and invites create the
+  read cursor at the end of the log, as `agent-busctl channel join` does; leaving and removal delete
+  it. After every change busd rebuilds its directory at once, so agents learn of it from the next
+  head and read the channel without a restart.
+
+**The creation limit.** `--channel-create-limit` / `BUSD_CHANNEL_CREATE_LIMIT`, 5 by default, 0
+off. A day is a rolling 24 hours, counted from the catalogue: the channels the agent owns with a
+`created_at` in the last day. The refusal says "limit of 5 new channels per day reached; next at
+<time>". The reply's `limits` has `message_retention` and `stream_max_bytes` from the stream,
+`channels_left_today` and `creation_limit_per_day` (null for the bus owner), and `null` for the two
+idle settings and `false` for `kept`, as there is no cleanup yet.
+
+**MCP.** One tool, `channels`, with an `action` (`list` by default, `members`, `create`, `join`,
+`leave`, `invite`, `remove_member`, `update`), replaces `list_channels`. Eight tools would not fit
+the token budget of the tool descriptions (`TestTokenFootprint`: 700 bytes, 0 left before this
+change); one costs 21 bytes ("List/manage channels.", 699 in all), and its parameters' descriptions
+list the actions. `list` shows each channel's name, description, owner (`bus owner` when no agent
+owns it) and `joined`; while busd cannot be asked, the local catalogue with a `note`. An invite also
+sends the invitee a signed DM of type `status`, which asks for no answer, from the inviter's
+adapter. The instructions are unchanged.
+
+**Monitor and VS Code.** The monitor sends the requests as its identity:
+`POST /api/v1/channels/{create,invite,remove_member,update}` ([API](../api.md#channel-changes)); a
+refusal is `409 refused` with busd's reason. The page's members panel invites and removes; the
+extension has Create Channel on the Channels section, Invite Agent on a group channel and in the
+chat panel's members, and Remove from Channel on a member's row there.
+
+**Not built yet.** `agent-busctl channel archive|delete|keep` and `channel owner`, cleanup of idle
+channels (step 3), private channels and `request_invite` (step 4), the idle deadline in `list`.

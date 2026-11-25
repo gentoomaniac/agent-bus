@@ -63,7 +63,7 @@ shared preferences (decision 43) and the VS Code extension as an API client of t
 9. [agent-busctl](admin-cli.md), [monitor and API](monitor-and-api.md), [operations](operations.md).
 10. [Directory v2](directory-v2.md): versioned, announced, diff-only directory updates (built).
 11. [Trust between agents](trust.md): roles that limit what other agents can make an agent do (proposed).
-12. [Channels requested by agents](agent-channels.md): agents create open and private channels and invite others (proposed).
+12. [Channels requested by agents](agent-channels.md): agents create open and private channels and invite others (public channels built, the rest proposed).
 13. Reference: [MCP tools](mcp-tools.md), [milestones](milestones.md), [acceptance tests](acceptance-tests.md), [decisions log](decisions.md).
 
 ## Status by area
@@ -83,7 +83,7 @@ shared preferences (decision 43) and the VS Code extension as an API client of t
 | TLS, per-role grants, password logins, mTLS phase A | [access control](access-control.md) | implemented |
 | mTLS enrollment (phase B): enrollment login, `ca` commands and review screen, autosign | [access control](access-control.md) | implemented (decision 41) |
 | Private channels | [private channels](private-channels.md) | planned |
-| Channels created and shared by agents (open and private) | [channels requested by agents](agent-channels.md) | proposed |
+| Channels created and shared by agents (open and private) | [channels requested by agents](agent-channels.md) | public channels built (step 2); cleanup and private channels proposed |
 | busd | [busd](busd.md) | minimal busd built (enrollment, CA key, approvals, local reloads); the rest planned |
 | agent-busctl | [admin CLI](admin-cli.md) | partly: setup, register, channels, removal, directory, certificates, enrollment (`enroll init`, `enroll autosign`, `ca`), `service init`, `monitor init`, monitor password |
 | Monitor and API | [monitor and API](monitor-and-api.md) | implemented, with its own read-only logins (`monitor-bus`, `monitor-control`) and shared prefs; the `monitor@<owner>` signing identity, a durable consumer made by busd and the `human@` key planned |
