@@ -12,7 +12,7 @@ import { ThreadRow, ThreadSummary, summarizeThreads, threadRows } from "../threa
 import { shownMessages, toggleType, typeCounts } from "../typeFilter";
 import { ALL, DEFAULT_TYPE, MESSAGE_TYPES, Message } from "../types";
 
-declare function acquireVsCodeApi(): { postMessage(message: FromWebview): void };
+declare function acquireVsCodeApi(): { postMessage(message: FromWebview): void; getState(): unknown; setState(state: unknown): void };
 const host = acquireVsCodeApi();
 
 const STATUS_LABEL: Record<string, string> = { unknown_sender: "unknown sender", rejected: "rejected" };
@@ -51,6 +51,7 @@ const results = document.getElementById("results") as HTMLElement;
 const typeBar = document.getElementById("types") as HTMLElement;
 const memberPane = document.getElementById("members") as HTMLElement;
 const membersToggle = document.getElementById("membersToggle") as HTMLButtonElement;
+const memberSplit = document.getElementById("memberSplit") as HTMLElement;
 
 for (const type of MESSAGE_TYPES) typeSelect.append(new Option(type, type));
 
@@ -114,6 +115,8 @@ function renderMembers(): void {
   membersToggle.hidden = members.length === 0;
   membersToggle.setAttribute("aria-pressed", String(showMembers));
   memberPane.hidden = members.length === 0 || !showMembers;
+  memberSplit.hidden = memberPane.hidden;
+  if (!memberPane.hidden) memberSplit.setAttribute("aria-valuenow", String(Math.round(memberPane.getBoundingClientRect().width)));
   memberPane.replaceChildren();
   for (const { key, items } of groupBy(members, ownerOf)) {
     memberPane.append(el("h2", "", key || "no owner"));
@@ -127,6 +130,44 @@ function renderMembers(): void {
     }
   }
 }
+
+// The member list's width: dragged at the split or moved with the arrow keys, kept with the panel.
+const MEMBER_WIDTH = { min: 120, max: 480, step: 16 };
+// At most 60% of the panel, so the messages keep their room in a narrow one.
+function setMemberWidth(px: number): void {
+  const max = Math.min(MEMBER_WIDTH.max, memberPane.parentElement!.clientWidth * 0.6 || MEMBER_WIDTH.max);
+  const width = Math.round(Math.min(max, Math.max(MEMBER_WIDTH.min, px)));
+  memberPane.style.width = width + "px";
+  memberSplit.setAttribute("aria-valuenow", String(width));
+  host.setState({ ...((host.getState() as object | undefined) ?? {}), memberWidth: width });
+}
+const savedWidth = (host.getState() as { memberWidth?: unknown } | undefined)?.memberWidth;
+if (typeof savedWidth === "number") setMemberWidth(savedWidth);
+
+memberSplit.addEventListener("pointerdown", (event) => {
+  event.preventDefault(); // no text selection while dragging
+  memberSplit.focus(); // so the arrow keys work after a click too
+  memberSplit.setPointerCapture(event.pointerId);
+  memberSplit.classList.add("dragging");
+  const startX = event.clientX;
+  const startWidth = memberPane.getBoundingClientRect().width;
+  const move = (moved: PointerEvent) => setMemberWidth(startWidth + startX - moved.clientX);
+  const stop = () => {
+    memberSplit.classList.remove("dragging");
+    memberSplit.removeEventListener("pointermove", move);
+    memberSplit.removeEventListener("pointerup", stop);
+    memberSplit.removeEventListener("pointercancel", stop);
+  };
+  memberSplit.addEventListener("pointermove", move);
+  memberSplit.addEventListener("pointerup", stop);
+  memberSplit.addEventListener("pointercancel", stop);
+});
+memberSplit.addEventListener("keydown", (event) => {
+  const delta = event.key === "ArrowLeft" ? MEMBER_WIDTH.step : event.key === "ArrowRight" ? -MEMBER_WIDTH.step : 0;
+  if (delta === 0) return;
+  event.preventDefault();
+  setMemberWidth(memberPane.getBoundingClientRect().width + delta);
+});
 
 membersToggle.addEventListener("click", () => {
   showMembers = !showMembers;

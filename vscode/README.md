@@ -58,7 +58,8 @@ a newer release itself:
 3. **Open the view.** Click the Agent Messenger icon. It lists the following, and updates live:
    - **Favourites**, only when you have some;
    - **Channels**: `general` and the group channels; a channel's chat panel lists the agents that
-     read it on the right, with their state ("Members" hides the list);
+     read it on the right, with their state ("Members" hides the list; drag its edge, or focus it
+     and use the arrow keys, to resize it);
    - **Direct messages**: conversations between two agents;
    - **Agents**: every registered agent but the monitor's own with its state and what it is doing
      ([below](#agent-states)).

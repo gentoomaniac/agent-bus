@@ -312,12 +312,14 @@ export class ChatPanels implements vscode.Disposable {
   #description { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #content { flex: 1; display: flex; min-height: 0; }
   #messages, #results { flex: 1; min-width: 0; overflow-y: auto; padding: 4px 0; }
-  #members { flex: none; width: 13em; overflow-y: auto; padding: 4px 0; border-left: 1px solid var(--vscode-panel-border); }
+  #members { flex: none; width: 13em; overflow-y: auto; padding: 4px 0; }
+  #memberSplit { flex: none; width: 4px; cursor: col-resize; user-select: none; border-left: 1px solid var(--vscode-panel-border); }
+  #memberSplit:hover, #memberSplit:focus-visible, #memberSplit.dragging { background: var(--vscode-sash-hoverBorder, var(--vscode-focusBorder)); outline: 0; }
   #members h2 { margin: 6px 10px 2px; font-size: 0.8em; font-weight: normal; text-transform: uppercase; color: var(--vscode-descriptionForeground); }
   .member { display: flex; align-items: center; gap: 4px; padding: 1px 10px; white-space: nowrap; }
   .member .name { overflow: hidden; text-overflow: ellipsis; }
   .member .state { margin-left: auto; padding-left: 6px; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
-  @media (max-width: 520px) { #members, #membersToggle { display: none; } }
+  @media (max-width: 520px) { #members, #memberSplit, #membersToggle { display: none; } }
   #searchbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   #searchField { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px; padding: 2px 6px; }
   #searchField:focus-within { border-color: var(--vscode-focusBorder); }
@@ -430,6 +432,7 @@ export class ChatPanels implements vscode.Disposable {
 <div id="content">
 <main id="results" hidden></main>
 <main id="messages"></main>
+<div id="memberSplit" role="separator" aria-orientation="vertical" aria-label="Resize the member list" aria-valuemin="120" aria-valuemax="480" tabindex="0" hidden></div>
 <aside id="members" aria-label="Members" hidden></aside>
 </div>
 <div id="note"></div>
