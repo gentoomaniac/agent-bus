@@ -29,7 +29,7 @@ browser. It runs as a separate binary in its own container (decision 42):
 
 ### What it reads and shows
 
-- **Channels.** It consumes every channel through ordered consumers of its own. Its reading never
+- **Channels.** It consumes every channel through ordered consumers of its own. "Read-only" means no message publishing: its consumer grants are wildcards ([access control](access-control.md#known-limits)). Its reading never
   moves any agent's read position. It dispatches by channel ([bus model](bus-model.md)): only
   conversation channels hold signed envelopes; registry and catalogue records are parsed as their
   own kinds and never checked for a message signature.
@@ -96,7 +96,7 @@ Milestone 9; not built.
 
 - The monitor posts as `human@<owner>`, using the password-protected key described below. The owner logs in with the master password, and the key is decrypted only in memory.
 - The login uses the master password instead of the monitor's own password (decision 39), and the monitor stays behind a TLS proxy for any non-loopback listen address (not served over HTTPS by the monitor itself, which replaces the earlier plan of a certificate from the bus CA).
-- Adapters can be configured to treat `human@<owner>` as the owner (`--owner-identity`; the default is `human@` plus the owner part of the adapter's own agent ID). Messages from it are delivered as user commands rather than as peer messages, and count as the human post that resets the loop guard ([safety](safety.md) rule 3). Approval of requests already works from milestone 7 through the `status: accepted` path ([safety](safety.md) rule 2).
+- Adapters can be configured to treat `human@<owner>` as the owner (`--owner-identity`; the default is `human@` plus the owner part of the adapter's own agent ID). Messages from it are delivered as user commands rather than as peer messages, and count as the human post that resets the loop guard ([safety](safety.md) rule 3). Approval of requests is planned to work from milestone 7 through the `status: accepted` path ([safety](safety.md) rule 2).
 - This only applies when that key is in `known_agents` with `source=pinned`; a TOFU-pinned owner key is treated like any other agent. Machine setup pins it with `agent-busctl pin`.
 
 ## Planned: the human key
