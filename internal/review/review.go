@@ -45,6 +45,7 @@ type Model struct {
 	selected string // request ID, so a refresh keeps the selection on the same request
 	filter   string
 	mode     mode
+	asked    string // request ID a prompt was opened for: its answer applies to that request only
 	input    string // the reason being typed
 	notice   string // the result of the last action, or the last error
 	width    int
@@ -116,6 +117,17 @@ func (m Model) visible() []enroll.Pending {
 	return shown
 }
 
+// asking is the request a prompt is about. A refresh can drop a request while its prompt is open;
+// the selection then falls back to another one, which the answer must not reach.
+func (m Model) asking() (request enroll.Pending, ok bool) {
+	for _, candidate := range m.pending {
+		if candidate.RequestID == m.asked {
+			return candidate, true
+		}
+	}
+	return enroll.Pending{}, false
+}
+
 // current is the selected request among the visible ones; without a match it is the first.
 func (m Model) current() (request enroll.Pending, index int, ok bool) {
 	shown := m.visible()
@@ -145,6 +157,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		request, _, ok := m.current()
 		if ok {
 			m.selected = request.RequestID
+		}
+		if _, stillThere := m.asking(); (m.mode == askingReason || m.mode == confirmingReplace) && !stillThere {
+			m.mode, m.notice = browsing, "the request is gone (decided elsewhere, or expired): nothing was sent"
 		}
 	case actionDoneMsg:
 		m.notice = message.message
@@ -176,10 +191,9 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case askingReason:
 		return m.handleReasonKey(key)
 	case confirmingReplace:
-		request, _, ok := m.current()
 		m.mode = browsing
-		if ok && key.String() == "y" {
-			return m, m.signCmd(request.RequestID, true)
+		if key.String() == "y" {
+			return m, m.signCmd(m.asked, true)
 		}
 		m.notice = "not replaced"
 		return m, nil
@@ -204,13 +218,13 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case !ok:
 		case request.Identity == enroll.IdentityReplaces:
-			m.mode = confirmingReplace
+			m.mode, m.asked = confirmingReplace, request.RequestID
 		default:
 			return m, m.signCmd(request.RequestID, false)
 		}
 	case "r":
 		if ok {
-			m.mode, m.input = askingReason, ""
+			m.mode, m.asked, m.input = askingReason, request.RequestID, ""
 		}
 	}
 	return m, nil
@@ -235,11 +249,8 @@ func (m Model) handleReasonKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		m.mode = browsing
 	case tea.KeyEnter:
-		request, _, ok := m.current()
 		m.mode = browsing
-		if ok {
-			return m, m.rejectCmd(request.RequestID, m.input)
-		}
+		return m, m.rejectCmd(m.asked, m.input)
 	default:
 		m.input = edit(m.input, key)
 	}
@@ -259,6 +270,7 @@ func (m Model) View() string {
 
 	shown := m.visible()
 	selected, _, hasSelection := m.current()
+	asked, _ := m.asking()
 	if len(shown) == 0 {
 		out.WriteString(dimStyle.Render("no pending requests") + "\n")
 	}
@@ -280,9 +292,9 @@ func (m Model) View() string {
 	case filtering:
 		fmt.Fprintf(&out, "filter: %s_   (enter keeps it, esc clears it)\n", m.filter)
 	case askingReason:
-		fmt.Fprintf(&out, "reject %s, reason (told to the agent): %s_   (enter rejects, esc cancels)\n", selected.AgentID, m.input)
+		fmt.Fprintf(&out, "reject %s (%s), reason (told to the agent): %s_   (enter rejects, esc cancels)\n", asked.AgentID, asked.Code, m.input)
 	case confirmingReplace:
-		out.WriteString(warningStyle.Render(fmt.Sprintf("%s is registered with another key. Replace it and revoke the old key? [y/N]", selected.AgentID)) + "\n")
+		out.WriteString(warningStyle.Render(fmt.Sprintf("%s (%s) is registered with another key. Replace it and revoke the old key? [y/N]", asked.AgentID, asked.Code)) + "\n")
 	default:
 		if m.filter != "" {
 			fmt.Fprintf(&out, "filter: %s\n", m.filter)
