@@ -103,6 +103,9 @@ type testBus struct {
 	t         *testing.T
 	configDir string
 	broker    *fakeBroker
+	// clockOffset moves the clock of the agents connected after it is set, so that messages
+	// sent meanwhile look old to them.
+	clockOffset time.Duration // read when an agent connects
 }
 
 func newTestBus(t *testing.T, agents ...string) *testBus {
@@ -130,9 +133,11 @@ func (b *testBus) connect(agentID string) *mcp.ClientSession {
 
 func (b *testBus) connectWith(agentID string, autoAccept bool) *mcp.ClientSession {
 	b.t.Helper()
+	clockOffset := b.clockOffset
 	session, err := adapter.Open(adapter.Config{
 		AgentID: agentID, Dir: filepath.Join(b.configDir, agentID), Transport: fakeTransport{b.broker, agentID},
 		Directory: trust.DirectoryPath(b.configDir), AutoAccept: autoAccept,
+		Now: func() time.Time { return time.Now().Add(clockOffset) },
 	})
 	if err != nil {
 		b.t.Fatal(err)
@@ -506,6 +511,35 @@ func TestMessagesAreCompactAndTheNoticeComesOncePerResult(t *testing.T) {
 	}
 }
 
+func TestMessagesCarryTheirAgeAndOldOnesAreStale(t *testing.T) {
+	b := newTestBus(t, alice, bob, "carol@alice")
+	a := b.connect(alice)
+	send(t, a, bob, map[string]any{"body": map[string]any{"text": "asked a while ago"}})
+	b.clockOffset = adapter.StaleAfter + 2*time.Hour
+	bobClient, carolClient := b.connect(bob), b.connect("carol@alice")
+	send(t, carolClient, bob, map[string]any{"body": map[string]any{"text": "asked just now"}})
+
+	var messages []message
+	for len(messages) < 2 {
+		time.Sleep(50 * time.Millisecond)
+		messages = decode[messagesOut](t, call(t, bobClient, "inbox", nil)).Messages
+	}
+	for _, listed := range messages {
+		wantStale := listed.Text == "asked a while ago"
+		if listed.Stale != wantStale || (listed.Age == "1d") != wantStale {
+			t.Errorf("%q has age %q, stale %v, want stale %v", listed.Text, listed.Age, listed.Stale, wantStale)
+		}
+	}
+}
+
+func TestAgeIsShortAndRoundsDown(t *testing.T) {
+	for elapsed, want := range map[time.Duration]string{0: "0m", 59 * time.Minute: "59m", 3*time.Hour + 40*time.Minute: "3h", 49 * time.Hour: "2d"} {
+		if got := age(elapsed); got != want {
+			t.Errorf("age(%s) = %q, want %q", elapsed, got, want)
+		}
+	}
+}
+
 func TestLongTextIsCutInAListingAndFullByID(t *testing.T) {
 	b := newTestBus(t, alice, bob)
 	a, bobClient := b.connect(alice), b.connect(bob)
@@ -693,7 +727,7 @@ func TestTokenFootprint(t *testing.T) {
 	}
 	instructions := len(a.InitializeResult().Instructions)
 	t.Logf("bytes: instructions %d, tool descriptions %d, inbox with 3 messages %d", instructions, descriptions, len(listing))
-	if instructions > 1150 || descriptions > 700 || len(listing) > 1000 {
+	if instructions > 1250 || descriptions > 700 || len(listing) > 1000 {
 		t.Errorf("footprint grew: instructions %d, descriptions %d, listing %d", instructions, descriptions, len(listing))
 	}
 }

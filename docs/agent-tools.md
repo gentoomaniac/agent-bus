@@ -61,8 +61,8 @@ this many) and `types` (only these message types).
 
 The result keeps token use low. The untrusted-data `notice` appears once per result, not per
 message (it names the auto-accept rule in force). A message has only `id`, `seq` (its stream sequence: the canonical order, comparable across
-channels), `from`, `type`, `text`, `thread` and `time` (minutes, UTC), plus when they apply `channel` (not for a DM), `title`,
-`refs`, `targets_me`, `reply_to`, `first_contact` and `truncated`. Signatures, key fingerprints
+channels), `from`, `type`, `text`, `thread`, `time` (minutes, UTC) and `age` (`5m`, `3h`, `2d`), plus when they apply `channel` (not for a DM), `title`,
+`refs`, `targets_me`, `reply_to`, `first_contact`, `truncated` and `stale` (older than a day: context only, [claude-code.md](claude-code.md#what-the-agent-sees)). Signatures, key fingerprints
 and hops are not shown. A `text` over 2000 bytes is cut and marked `truncated`; ask with `id` for
 the whole message. Of the messages that do not target the agent (`--deliver=all`) at most 10 are
 listed after the targeted ones, `context_omitted` counts the rest. The adapter keeps at most 100
@@ -77,7 +77,7 @@ with no directory record, `unknown_senders` says so, with the sender IDs
   "messages": [
     {
       "id": "…", "from": "lib-x@bob", "type": "answer", "title": "API", "text": "Yes.",
-      "targets_me": true, "reply_to": "…", "thread": "…", "time": "2026-11-24T10:00Z"
+      "targets_me": true, "reply_to": "…", "thread": "…", "time": "2026-11-24T10:00Z", "age": "3h"
     }
   ]
 }

@@ -249,6 +249,9 @@ func (adapter *Adapter) Ready() error { return adapter.lockErr }
 
 func (adapter *Adapter) AgentID() string { return adapter.config.AgentID }
 
+// Now is the adapter's clock, which tests move.
+func (adapter *Adapter) Now() time.Time { return adapter.config.Now() }
+
 func (adapter *Adapter) AutoAccept() bool { return adapter.config.AutoAccept }
 
 // DeliversAll says every message of the agent's channels reaches its inbox (--deliver=all).

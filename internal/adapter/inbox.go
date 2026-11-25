@@ -18,6 +18,11 @@ const (
 	DefaultContextMessages = 100
 )
 
+// StaleAfter is how old a message must be to count as context only: the agent is told not to act on
+// it (the MCP instructions name it "older than a day"), and the delivery hooks do not announce it.
+// A message waits that long when the agent was offline, or after a bus outage.
+const StaleAfter = 24 * time.Hour
+
 // Message is a verified message waiting for the agent.
 type Message struct {
 	Envelope     envelope.Envelope
@@ -35,6 +40,12 @@ type Message struct {
 
 	delivery bus.Delivery
 	size     int
+}
+
+// Age is the time since the sender wrote the message, by its signed timestamp: the time it
+// reached this agent says nothing when the agent was offline. A sender whose clock is ahead has age 0.
+func (message Message) Age(now time.Time) time.Duration {
+	return max(now.Sub(message.Envelope.TS), 0)
 }
 
 // inbox holds verified, unacknowledged messages in arrival order. Mail that targets the agent is

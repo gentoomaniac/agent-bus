@@ -138,3 +138,29 @@ func TestNotificationsOfAnAdapterWithoutTheLockFail(t *testing.T) {
 		t.Error("UnreadSummary without the lock succeeded")
 	}
 }
+
+func TestStaleMailIsNeverAnnounced(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob)
+	ctx := context.Background()
+
+	a.Send(ctx, bob, text("old news"))
+	poll(t, bobAdapter)
+	b.now = b.now.Add(StaleAfter + time.Hour)
+	fresh, _ := a.Send(ctx, bob, text("fresh"))
+	poll(t, bobAdapter)
+
+	got, unread, err := bobAdapter.NewMail()
+	if err != nil || len(got) != 1 || got[0].Envelope.ID != fresh || unread != 2 {
+		t.Errorf("NewMail = %v, %d unread, %v, want only the fresh message and both unread", got, unread, err)
+	}
+	if summary, _ := bobAdapter.UnreadSummary(); len(summary) != 1 || summary[0].Envelope.ID != fresh {
+		t.Errorf("the summary lists %v, want only the fresh message", summary)
+	}
+	if inbox, _ := bobAdapter.Inbox(InboxQuery{Peek: true}); len(inbox) != 2 {
+		t.Errorf("the inbox lists %d messages, want both", len(inbox))
+	}
+}

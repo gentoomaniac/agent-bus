@@ -10,7 +10,7 @@ import (
 const notifyCooldown = 10 * time.Second
 
 // notifications remembers which buffered messages the delivery hooks already told the agent about.
-// Only mail that targets the agent is ever told: the rest sits in the inbox silently (docs/design/delivery.md).
+// Only mail that targets the agent and is not stale is ever told: the rest sits in the inbox silently (docs/design/delivery.md).
 type notifications struct {
 	notified map[string]bool // by message ID
 	lastAt   time.Time
@@ -104,15 +104,17 @@ func (adapter *Adapter) UnreadSummary() ([]Message, error) {
 	return adapter.markNotified(true, true), nil
 }
 
-// markNotified marks the buffered messages that target the agent told and returns the new ones, or
+// markNotified marks the buffered messages that target the agent and are not stale told and returns the new ones, or
 // all of them when includeTold is set. The caller holds mu.
 func (adapter *Adapter) markNotified(includeTold, mark bool) []Message {
 	if adapter.notifications.notified == nil {
 		adapter.notifications.notified = map[string]bool{}
 	}
+	now := adapter.config.Now()
 	var listed []Message
 	for _, message := range adapter.inbox.messages {
-		if !message.TargetsMe {
+		// A stale message is never announced: the agent would act on old news. `inbox` lists it.
+		if !message.TargetsMe || message.Age(now) > StaleAfter {
 			continue
 		}
 		id := message.Envelope.ID

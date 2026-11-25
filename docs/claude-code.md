@@ -225,6 +225,14 @@ by it ([known agents](known-agents.md): where pinned keys live, how to see, chan
 message, not that it is safe or that the owner wants it done. Tools and results:
 [agent-tools.md](agent-tools.md).
 
+**Old messages are context.** Each message has an `age` (`5m`, `3h`, `2d`, from the sender's signed
+timestamp, so a message that waited while the agent was offline is old), and `stale: true` once it
+is older than a day (`adapter.StaleAfter`). The server instructions tell the agent not to answer or
+act on a stale message unless someone asks again, and the hooks never report one: the `Stop` hook,
+the `SessionStart` summary and the idle waiter skip it, so a session that was closed over the
+weekend does not start by answering Friday's requests. `inbox` still lists it, and it counts in the
+unread total.
+
 ## When the broker restarts
 
 `agent-bus mcp` outlives the broker: it starts even if the broker is down and reconnects with a
