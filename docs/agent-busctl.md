@@ -21,6 +21,8 @@ Run these once, in this order:
 5. `agent-busctl --direct channel create <name>`: group channels (optional).
 6. `agent-busctl --direct register <agent-id>`: one per agent.
 7. `agent-busctl --direct channel join <agent-id> <name>`: group membership (optional).
+8. `agent-busctl --direct service init`: busd's and the monitor's logins, only for a setup from before busd.
+9. `agent-busctl enroll init`: turns on the enrollment of new machines (optional).
 
 Every `--direct` command holds a lock on the config directory (`nats/mutations.lock`) while it runs,
 and so does each approval of busd, so they wait for one another; a command that cannot get the lock
@@ -42,7 +44,7 @@ Every command takes these.
 | `--nats-server`         | `BUS_NATS_SERVER`  | `bin/nats-server` in the config dir | the binary that tests configurations        |
 | `--version`             |                    |                            | print the version                                    |
 
-`--direct` is needed by every command that requires admin rights, except `ca` and `enroll autosign`, which talk to busd or write a file (the `ca` commands need busd to be running, which the broker container starts by itself). `agent-busctl`
+`--direct` is needed by every command that requires admin rights, except `ca`, `enroll init`, `enroll autosign` and the commands that only write files (`tls init`, `admin init`, `service init`, `monitor ...`). The `ca` commands talk to busd, which the broker container starts by itself. `agent-busctl`
 then connects to `--broker` as `bus-admin` and `control-admin` (two connections), trusting
 `--ca-cert`, with their passwords, or with their certificates once `cert issue --admin` has run. It must run on the broker's host, because access changes rewrite `nats/auth.conf`.
 
@@ -214,8 +216,8 @@ A running `agent-bus mcp` re-reads its directory every minute (`--directory-refr
 `SIGHUP`. It then keeps the fingerprints of all revoked keys in `<agent-dir>/revoked_keys` and
 rejects messages signed by them, even from a pinned key ("revoked key" in `alerts.log`). Sending to
 a removed agent fails with "agent removed", and `list_agents` leaves it out. Run the export again
-after every `agent remove` and `register`. An automatic refresh over the bus comes with `busd`
-and enrollment ([design/access-control.md](design/access-control.md)).
+after every `agent remove` and `register`. Enrollment delivers the directory once; keeping it
+fresh is still this export ([design/access-control.md](design/access-control.md)).
 
 ### cert issue
 
@@ -277,7 +279,7 @@ checked and only its public key is used: names, usages and CA rights in it are i
 certificate goes to standard output or `--out`; put it into the agent's folder as `client.pem`,
 next to `client.key`. The broker accepts it once `--switch` was given, the agent logged in with a
 certificate already (it is then switched to this one, and the old one stops working), or `cert switch
-<agent-id> --cert <that file>` ran.
+<agent-id> --cert <that file>` ran. `--validity` (default `8760h`) works as for `cert issue`.
 
 ### cert switch
 
@@ -343,6 +345,20 @@ A terminal screen for the same, updated every two seconds: the list of pending r
 pane, and the keys up/down, `a` approve, `r` reject (reason prompt), `/` filter, `q` quit. An approval of an
 ID that would replace another key asks for confirmation first. It needs a terminal: `podman exec -it
 agent-bus agent-busctl ca review`.
+
+### monitor init
+
+`monitor init <dir> [--agent <agent-id>]` creates or refreshes the monitor's own config directory (a
+separate folder or volume, never the broker's one). It copies `ca.pem` (not `ca.key`), the passwords
+of `monitor-bus` and `monitor-control` (not the admins' or busd's), the web password hash
+(`monitor-web/password.bcrypt`, or the old `monitor/password.bcrypt`), the `directory/` snapshot and,
+with `--agent` (env `BUS_AGENT`), that registered agent's `key`, `password`, `client.pem` and
+`client.key`. It needs `service init` or `admin init` to have run, and no broker. Run it again after
+agents are registered or enrolled, or after a password change, then restart `bus-monitor`.
+
+```sh
+agent-busctl monitor init /monitor-config --agent monitor@alice
+```
 
 ### monitor password
 
