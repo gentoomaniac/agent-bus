@@ -1,7 +1,7 @@
 # Directory v2: versioned, announced, diff-only
 
-Status: approved by the owner and being built (2026-11-25); what the build settled is in
-[As built](#as-built). Replaces the once-a-minute full fetch over the enrollment login
+Status: built (2026-11-25), as the owner approved it; what the build settled is in
+[As built](#as-built), the upgrade steps in [Migration](#migration). Replaces the once-a-minute full fetch over the enrollment login
 (commits 80c500a..8be64cd). Based on a design review by GPT 6.1 sol, with the owner's decisions
 below.
 
@@ -184,6 +184,20 @@ A restore can never un-revoke a key or replace a pinned key.
 - busd and agents must both run v2. An older agent keeps working with its local directory but
   needs the manual `directory export` copy to learn new agents.
 - The broker auth files must be regenerated for the new BUS grants.
+
+Upgrade steps for the owner (also in [docker.md](../docker.md#upgrade)):
+
+1. Deploy busd (the broker image) and the agents' `agent-bus` of the same release together: an
+   old agent never syncs, and an old busd answers no sync (agents then log "busd is not running"
+   and keep their local directory).
+2. Regenerate the auth files once: `agent-busctl --direct init` (with the retention flags, if they
+   were changed). It gives agents publish `busd.directory.sync` and subscribe `directory.head`, the
+   monitor subscribe `directory.head`, and drops `busd.directory` from the enrollment login.
+3. Restart the agents' sessions. Each syncs the whole directory once at start, then diffs.
+4. Delete `<config-dir>/enroll/password` on agent machines, which v1's `enroll` left there.
+5. Agents of an older release that must stay: keep copying `directory export` to them.
+6. After restoring busd's config folder from a backup, delete `enroll/directory.json` so that busd
+   starts a new epoch; agents refuse an older revision of the same epoch.
 
 ## Risks and open points
 

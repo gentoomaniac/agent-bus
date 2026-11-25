@@ -196,6 +196,24 @@ docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl --direc
 
 Messages older than 90 days, or beyond the newest 1 GiB, are deleted at once.
 
+**Upgrading to directory v2** (agents sync the directory from busd with their own login,
+[design/directory-v2.md](design/directory-v2.md)). Deploy busd and the agents together, then
+regenerate the broker's auth files once, so agents may ask `busd.directory.sync` and hear
+`directory.head`, and the monitor may hear it too:
+
+```sh
+docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl --direct init   # with your --max-age/--max-bytes, if you changed them
+```
+
+`init` regenerates every agent's grants with a confirmed reload; connected agents keep their
+connections. Then restart each `agent-bus mcp` (the next session start does it): at its first start
+it syncs the whole directory once, later only what changed. Nothing has to be copied, and the
+enrollment password that an earlier `enroll` left in `<config-dir>/enroll/password` on agent
+machines is no longer used: delete it. An agent of an older release keeps working with its local
+`directory/`, but learns of new agents only from a copy (below). busd keeps its directory in
+`enroll/directory.json` of its config folder; after restoring busd's config from a backup, delete
+that file, or agents refuse the older revision as a rollback ([troubleshooting](troubleshooting.md#unknown-agent)).
+
 **Upgrading from a release without the service logins.** Everything keeps working: busd and a monitor
 that mounts the broker's config folder use the admin logins and say so in their log. To give them logins of
 their own (busd) and the monitor a config folder without the CA key, once:

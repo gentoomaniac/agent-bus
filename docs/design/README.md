@@ -61,7 +61,7 @@ shared preferences (decision 43) and the VS Code extension as an API client of t
 7. [Access control](access-control.md): accounts, grants, mTLS phase A and the enrollment flow.
 8. [Private channels](private-channels.md) and [busd](busd.md): the control plane (minimal busd built, the rest planned).
 9. [agent-busctl](admin-cli.md), [monitor and API](monitor-and-api.md), [operations](operations.md).
-10. [Directory v2](directory-v2.md): versioned, announced, diff-only directory updates (proposed).
+10. [Directory v2](directory-v2.md): versioned, announced, diff-only directory updates (built).
 11. [Trust between agents](trust.md): roles that limit what other agents can make an agent do (proposed).
 12. [Channels requested by agents](agent-channels.md): agents create open and private channels and invite others (proposed).
 13. Reference: [MCP tools](mcp-tools.md), [milestones](milestones.md), [acceptance tests](acceptance-tests.md), [decisions log](decisions.md).
@@ -90,7 +90,7 @@ shared preferences (decision 43) and the VS Code extension as an API client of t
 | VS Code extension (`vscode/`) | [monitor and API](monitor-and-api.md) | implemented, API client only (decision 44) |
 | MCP tools | [MCP tools](mcp-tools.md) | partly: 8 of the specified tools |
 | Deployment, reload, releases | [operations](operations.md) | implemented |
-| Directory updates: signed head on BUS, diff sync, announcements | [directory v2](directory-v2.md) | proposed; v1 (full fetch over the enrollment login) merged, unreleased |
+| Directory updates: signed head on BUS, diff sync, announcements | [directory v2](directory-v2.md) | built; v1 (full fetch over the enrollment login) removed |
 | Per-receiver trust roles, owner approval, taint marking | [trust between agents](trust.md) | proposed |
 
 ## Where this text and the code differ

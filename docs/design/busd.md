@@ -20,7 +20,10 @@ directory of its own with read-only logins and no CA key ([access control](acces
 > `busd.enroll.*`, `busd.ca.*` and `busd.monitor.*` subjects of the `CONTROL` account (the signed
 > `busd.<method>` protocol below is not built). `busd.monitor.registry` and `busd.monitor.catalogue`
 > give the monitor the registry and the catalogue as unsigned replies; busd also publishes the pending
-> count for the monitor. Every answer goes only into the caller's inbox space (the enrollment, admin
+> count for the monitor. In `BUS` it publishes the directory: a versioned projection of the registry,
+> the catalogue and the readership (`enroll/directory.json`), announced on `directory.head` and served
+> on `busd.directory.sync` to every agent's own login, signed by the CA key
+> ([directory v2](directory-v2.md)). Every answer goes only into the caller's inbox space (the enrollment, admin
 > or monitor one, decision 42). busd has no HTTP interface. The container's entrypoint starts it in a
 > restart loop (`deploy/entrypoint.sh`; `BUS_BUSD=off` runs the broker without it). As built: [access control](access-control.md#phase-b-implemented-the-enrollment-flow),
 > user documentation [docs/podman.md](../podman.md#9-enrolling-a-new-machine). Still true of the MVP: `agent-busctl --direct` holds the
