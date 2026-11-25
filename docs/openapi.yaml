@@ -425,8 +425,8 @@ components:
           items: { type: string, description: A channel ID. }
         collapsed:
           type: array
-          maxItems: 20
-          items: { type: string, description: "A section: favourites, channels, dms or agents." }
+          maxItems: 200
+          items: { type: string, description: "A folded section: favourites, channels, dms or agents, or a client's own, such as the VS Code extension's owner groups (agents@<owner>, dms@<owner>)." }
     Error:
       type: object
       required: [error, code]

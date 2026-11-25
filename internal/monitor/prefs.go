@@ -19,7 +19,7 @@ const (
 	maxPrefChannels   = 2000 // read markers
 	maxPrefFavourites = 200
 	maxPrefSubscribed = 200
-	maxPrefSections   = 20
+	maxPrefSections   = 200
 	maxPrefNameLength = 200
 )
 

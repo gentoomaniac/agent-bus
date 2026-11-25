@@ -191,7 +191,7 @@ hash and answered by `GET /api/v1/prefs`:
   stored one and answer the new prefs.
 
 Like `send`, these want `Content-Type: application/json` and the same origin rules. Names are
-strings of 1 to 200 bytes; there are at most 2000 read markers, 200 favourites, 200 subscriptions and 20 sections;
+strings of 1 to 200 bytes; there are at most 2000 read markers, 200 favourites, 200 subscriptions and 200 sections;
 sequences are non-negative integers; a body is at most 256 KiB. A wrong `Content-Type` gets a
 `415` `unsupported_media_type`; anything else invalid (including `null`) is a `400` `bad_request`. Every change is sent to the open event streams as a `prefs` event.
 
