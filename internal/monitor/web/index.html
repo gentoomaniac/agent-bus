@@ -1394,7 +1394,7 @@ function renderMembers() {
       onclick: (event) => { event.stopPropagation(); removeMember(id); } }, "\u00d7"));
     return row;
   }) : [el("li", { class: "empty" }, "none")]));
-  const invitable = state.agents.filter((agent) => !agent.removed && !state.members.includes(agent.id)).map((agent) => agent.id);
+  const invitable = state.agents.filter((agent) => !agent.removed && agent.id !== state.status.agent && !state.members.includes(agent.id)).map((agent) => agent.id);
   const form = document.forms["member-invite"];
   form.hidden = !manage || invitable.length === 0;
   const picked = form.agent.value;
