@@ -57,6 +57,16 @@
   .cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   li.item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   li.item .unread { flex: none; }
+  /* Section headings fold their list; a folded list still shows the open channel and unread ones. */
+  button.section { all: unset; cursor: pointer; display: flex; align-items: center; gap: 4px; color: inherit; }
+  button.section::before { content: "\25be"; display: inline-block; width: 1em; transition: transform .1s; }
+  button.section[aria-expanded=false]::before { transform: rotate(-90deg); }
+  button.section:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The star moves a channel to Favourites and back; it shows on hover, and always on a favourite. */
+  button.star { all: unset; cursor: pointer; flex: none; color: var(--side-muted); visibility: hidden; padding: 0 2px; }
+  li.item:hover button.star, button.star:focus-visible, button.star.on { visibility: visible; }
+  button.star.on { color: var(--warn); }
+  button.star:focus-visible { outline: 2px solid var(--accent); }
   li.item.has-unread .label { font-weight: 700; color: var(--side-text); }
   /* The line above the first message that arrived since the channel was last looked at. */
   .new-marker { display: flex; align-items: center; gap: 8px; margin: 6px 0; color: var(--mention); font-size: var(--font-xs); font-weight: 700; }
@@ -208,9 +218,10 @@
 <div id="app">
   <aside id="sidebar">
     <h1>Agent bus monitor</h1>
-    <h2>Channels</h2><ul id="channels"></ul>
-    <h2>Direct messages</h2><ul id="dms"></ul>
-    <h2>Agents</h2><ul id="agents"></ul>
+    <div id="favourites-section" hidden><h2><button class="section" type="button" data-section="favourites" aria-expanded="true">Favourites</button></h2><ul id="favourites"></ul></div>
+    <h2><button class="section" type="button" data-section="channels" aria-expanded="true">Channels</button></h2><ul id="channels"></ul>
+    <h2><button class="section" type="button" data-section="dms" aria-expanded="true">Direct messages</button></h2><ul id="dms"></ul>
+    <h2><button class="section" type="button" data-section="agents" aria-expanded="true">Agents</button></h2><ul id="agents"></ul>
   </aside>
   <div class="handle" id="sidebar-handle" role="separator" aria-orientation="vertical" aria-label="Resize the channel list" tabindex="0" title="Drag to resize, double-click to reset"></div>
   <main>
@@ -309,6 +320,8 @@ const REFRESH_MS = 5000;
 const PAGE_SIZE = 500;
 const TYPES_KEY = "bus-monitor-types";
 const READ_KEY = "bus-monitor-read";
+const FAVOURITES_KEY = "bus-monitor-favourites";
+const COLLAPSED_KEY = "bus-monitor-collapsed";
 const STATUS_LABEL = { verified: "verified", unknown_sender: "unknown sender", rejected: "rejected" };
 
 const state = {
@@ -319,6 +332,8 @@ const state = {
   messages: new Map(),            // channel ID -> messages ordered by sequence, once loaded
   unread: new Map(),              // channel ID -> count of messages that arrived since the page loaded
   read: loadSetting(READ_KEY, null), // channel ID -> sequence read up to, kept in this browser; null on a first visit
+  favourites: new Set(loadSetting(FAVOURITES_KEY, [])), // channel IDs shown under Favourites, kept in this browser
+  collapsed: new Set(loadSetting(COLLAPSED_KEY, [])),   // sidebar sections that are folded
   marker: null,                   // sequence after which the open channel's "New" line is drawn, or null
   picked: new Set(),              // targets ticked in the composer
   shownTypes: new Set(loadSetting(TYPES_KEY, [])), // message types the list is limited to; none means all
@@ -931,17 +946,49 @@ function pairLabel(agents) {
   return el("span", { class: "label pair" }, el("span", { class: "cut" }, agents[0]), el("span", { class: "cut" }, "\u2194 " + agents[1]));
 }
 
+function toggleFavourite(channelId) {
+  if (!state.favourites.delete(channelId)) state.favourites.add(channelId);
+  saveSetting(FAVOURITES_KEY, [...state.favourites]);
+  renderSidebar();
+}
+
+for (const button of document.querySelectorAll("button.section")) {
+  button.addEventListener("click", () => {
+    const section = button.dataset.section;
+    if (!state.collapsed.delete(section)) state.collapsed.add(section);
+    saveSetting(COLLAPSED_KEY, [...state.collapsed]);
+    renderSidebar();
+  });
+}
+
+function isUnseen(channel) {
+  return channel.id !== state.selected && Boolean(state.unread.get(channel.id) || (channel.last_sequence || 0) > readSequence(channel.id));
+}
+
+// A folded section keeps the open channel and the unread ones, as in Slack.
+function fillSection(section, channels, emptyText) {
+  const folded = state.collapsed.has(section);
+  $(section).previousElementSibling.firstElementChild.setAttribute("aria-expanded", String(!folded));
+  const shown = folded ? channels.filter((c) => c.id === state.selected || isUnseen(c)) : channels;
+  $(section).replaceChildren(...(shown.length ? shown.map(channelItem) : folded || !emptyText ? [] : [el("li", { class: "empty" }, emptyText)]));
+}
+
+function channelItem(channel) {
+  const unread = state.unread.get(channel.id);
+  const favourite = state.favourites.has(channel.id);
+  const star = el("button", { type: "button", class: "star" + (favourite ? " on" : ""), title: favourite ? "Remove from Favourites" : "Move to Favourites", "aria-label": favourite ? "Remove from Favourites" : "Move to Favourites", "aria-pressed": String(favourite),
+    onclick: (event) => { event.stopPropagation(); toggleFavourite(channel.id); } }, favourite ? "\u2605" : "\u2606");
+  return el("li", { class: "item" + (channel.id === state.selected ? " selected" : "") + (isUnseen(channel) ? " has-unread" : ""), title: describeChannel(channel) + (channel.description ? ": " + channel.description : ""), onclick: () => select(channel.id) },
+    channel.kind === "dm" ? pairLabel(channel.agents) : el("span", { class: "label" }, describeChannel(channel)), unread ? el("span", { class: "unread" }, String(unread)) : "", star);
+}
+
 function renderSidebar() {
-  const channelItems = state.channels.filter((c) => c.kind !== "dm");
-  const dmItems = state.channels.filter((c) => c.kind === "dm");
-  const item = (channel) => {
-    const unread = state.unread.get(channel.id);
-    const isNew = channel.id !== state.selected && (unread || (channel.last_sequence || 0) > readSequence(channel.id));
-    return el("li", { class: "item" + (channel.id === state.selected ? " selected" : "") + (isNew ? " has-unread" : ""), title: describeChannel(channel) + (channel.description ? ": " + channel.description : ""), onclick: () => select(channel.id) },
-      channel.kind === "dm" ? pairLabel(channel.agents) : el("span", { class: "label" }, describeChannel(channel)), unread ? el("span", { class: "unread" }, String(unread)) : "");
-  };
-  $("channels").replaceChildren(...channelItems.map(item));
-  $("dms").replaceChildren(...(dmItems.length ? dmItems.map(item) : [el("li", { class: "empty" }, "none yet")]));
+  const favourites = state.channels.filter((c) => state.favourites.has(c.id));
+  const others = state.channels.filter((c) => !state.favourites.has(c.id));
+  $("favourites-section").hidden = favourites.length === 0;
+  fillSection("favourites", favourites);
+  fillSection("channels", others.filter((c) => c.kind !== "dm"));
+  fillSection("dms", others.filter((c) => c.kind === "dm"), "none yet");
   $("agents").replaceChildren(...(state.agents.length ? state.agents.map((agent) => {
     if (agent.removed) {
       return el("li", { class: "item removed", title: agent.fingerprint },
@@ -951,6 +998,8 @@ function renderSidebar() {
     return el("li", { class: "item", title: agent.fingerprint, onclick: () => { document.forms.composer.target.value = "agent:" + agent.id; showDetail(agent.id); } },
       el("div", {}, agentLine(agent.id, view), agentSummary(view)));
   }) : [el("li", { class: "empty" }, "no agents registered")]));
+  $("agents").hidden = state.collapsed.has("agents");
+  $("agents").previousElementSibling.firstElementChild.setAttribute("aria-expanded", String(!$("agents").hidden));
   renderDetail();
 }
 

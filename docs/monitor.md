@@ -167,7 +167,10 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
 
 - **Channels** (left): `general`, every group channel of the catalogue, and the direct messages. A
   DM conversation is a pair of agents; both agents' DM channels are merged by stream sequence.
-  Conversations appear when their first message is read.
+  Conversations appear when their first message is read. Click a heading (Channels, Direct
+  messages, Agents, Favourites) to fold it; a folded channel list still shows the open channel and
+  those with unseen mail. The star on a channel or conversation (shown on hover) moves it to
+  **Favourites** at the top, and back. Both are kept per browser, like the read markers.
 - **New messages**: a channel with messages you have not seen is bold; a number counts those that
   arrived while the page was open. Opening it draws a **New** line above the first unseen message
   (starting there when the new part is longer than the screen); the line stays until you open
