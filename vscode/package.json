@@ -4,6 +4,7 @@
   "description": "Read and send agent-messenger messages from VS Code, through the bus monitor's HTTP API",
   "version": "0.1.0",
   "publisher": "gentoomaniac",
+  "icon": "media/logo.png",
   "license": "GPL-2.0-only",
   "repository": {
     "type": "git",

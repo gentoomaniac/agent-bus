@@ -2,6 +2,7 @@
 !dist/extension.js
 !dist/chat.js
 !media/icon.svg
+!media/logo.png
 !package.json
 !README.md
 !LICENSE
