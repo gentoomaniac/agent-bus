@@ -399,18 +399,28 @@ func (service *Service) approve(ctx context.Context, request *entry, replace boo
 		return "", err
 	}
 
-	if identity != enroll.IdentitySameKey {
-		records, err := registry.Agents(ctx)
-		if err != nil {
-			return "", err
+	records, err := registry.Agents(ctx)
+	if err != nil {
+		return "", err
+	}
+	var record bus.AgentRecord
+	if identity == enroll.IdentitySameKey {
+		index := slices.IndexFunc(records, func(existing bus.AgentRecord) bool { return existing.AgentID == agentID })
+		if index < 0 {
+			return "", fmt.Errorf("%s is no longer in the registry", agentID)
 		}
-		record := service.recordFor(records, request)
+		record = records[index]
+	} else {
+		record = service.recordFor(records, request)
 		if err := registry.PutAgentRecord(ctx, record); err != nil {
 			return "", err
 		}
-		if err := trust.DirectoryPath(service.config.ConfigDir).Write(record); err != nil {
-			return "", err
-		}
+	}
+	// Written whatever the identity is, from what the registry holds: an approval repeated after a
+	// failure at this step finds the new key in the registry (so it counts as the same key) and
+	// would otherwise leave the old key in the directory.
+	if err := trust.DirectoryPath(service.config.ConfigDir).Write(record); err != nil {
+		return "", err
 	}
 	for _, channel := range []bus.Channel{bus.DMChannel(agentID), bus.GeneralChannel()} {
 		if err := registry.CreateReadCursor(ctx, agentID, channel, 0); err != nil {

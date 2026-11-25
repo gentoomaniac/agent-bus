@@ -539,3 +539,41 @@ func mustRead(t *testing.T, path string) []byte {
 	}
 	return data
 }
+
+// A failure after the registry took the new key leaves the old key in the directory file, and a
+// repeated approval sees the registry already holding the new key.
+func TestARepeatedReplacementRewritesTheDirectoryEntry(t *testing.T) {
+	f := newFixture(t)
+	oldKey, newKey := f.newKey(), f.newKey()
+	f.register("lib-x@bob", oldKey)
+	directory := filepath.Join(f.dir, "directory")
+	if err := os.WriteFile(directory, []byte("in the way"), 0o600); err != nil { // the directory cannot be written
+		t.Fatal(err)
+	}
+	reply := f.submit("lib-x@bob", newKey, "")
+	if r := f.sign(reply.Code, true); r.Error == "" {
+		t.Fatal("the approval succeeded although the directory could not be written")
+	}
+	if f.service.PendingCount() != 1 {
+		t.Fatal("the failed approval is no longer pending")
+	}
+
+	if err := os.Remove(directory); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.sign(reply.Code, false); r.Error != "" { // the registry has the new key now: no --replace needed
+		t.Fatal(r.Error)
+	}
+	data, err := os.ReadFile(filepath.Join(directory, "lib-x_bob.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written bus.AgentRecord
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatal(err)
+	}
+	wantKey := base64.StdEncoding.EncodeToString(newKey.Public().(ed25519.PublicKey))
+	if written.PublicKey != wantKey || len(written.Keys) != 2 || !written.Keys[0].Revoked {
+		t.Errorf("the directory entry after the repeat: %+v, want the new key %s", written, wantKey)
+	}
+}
