@@ -8,14 +8,14 @@ process.
 
 | Part | Status |
 |---|---|
-| Broker (`nats-server`), adapter (`agent-bus`), delivery hooks, `agent-busctl --direct`, monitor | implemented |
+| Broker (`nats-server`), adapter (`agent-bus`), delivery hooks, `agent-busctl`, monitor, VS Code extension, OpenCode plugin | implemented |
 | Internal boundary (`internal/bus` interfaces, `internal/broker` binding) | implemented |
 | busd (control service) | **minimal busd built** (enrollment, CA key, approvals, local reloads); the rest is **planned**; the MVP uses `agent-busctl --direct` and a copied directory instead ([busd](busd.md)) |
 | Browser admin UI | later, not specified |
 
 ## Component diagram
 
-Solid lines exist today. Dashed lines belong to busd and are planned.
+Solid lines exist today. The dashed line, signed requests from agents to busd, is planned.
 
 ```mermaid
 flowchart LR
@@ -32,18 +32,26 @@ flowchart LR
       buss[("account BUS: streams BUS and PRESENCE")]
       control[("account CONTROL: registry, catalogue, LEDGER")]
     end
-    busctl["agent-busctl --direct"]
-    monitor["bus-monitor, web page"]
-    busd["busd, control service (planned)"]
+    busctl["agent-busctl"]
+    monitor["bus-monitor, web page, /api/v1"]
+    busd["busd, control service (minimal)"]
+    prefs[("monitor-web/prefs.json")]
   end
+  browser["Browser"]
+  vscode["VS Code extension"]
   adapter <-->|"4222 password, 4223 certificate"| buss
-  busctl -->|"bus-admin"| buss
-  busctl -->|"control-admin"| control
-  monitor -->|"reads every channel"| buss
-  busd -.->|"message connection"| buss
-  busd -.->|"control connection"| control
-  adapter -.->|"signed requests over BUS"| busd
-  busctl -.->|"normal path later"| busd
+  busctl -->|"--direct: bus-admin"| buss
+  busctl -->|"--direct: control-admin"| control
+  busctl -->|"ca ...: control-admin"| busd
+  adapter -->|"agent-bus enroll: shared enroll login"| busd
+  monitor -->|"reads every channel: monitor-bus"| buss
+  monitor -->|"registry, catalogue, pending count: monitor-control"| busd
+  monitor --- prefs
+  browser -->|"HTTP"| monitor
+  vscode -->|"HTTP, Bearer token"| monitor
+  busd -->|"message connection: bus-admin"| buss
+  busd -->|"control connection: login busd"| control
+  adapter -.->|"signed requests over BUS (planned)"| busd
 ```
 
 ## Components
@@ -51,9 +59,11 @@ flowchart LR
 1. **Broker** — the message broker (NATS JetStream, [JetStream binding](jetstream-binding.md)), reached through the two small interfaces below. Holds all messages and state. It is not in busd's data path: agents talk to it directly.
 2. **Bus adapter** — a local process per agent session, exposed to the agent as a stdio MCP server. It owns the agent's private key, signs outgoing messages, verifies incoming ones, maintains the TOFU store and the handled-message set, and runs a background reader that buffers incoming messages within a fixed memory bound ([delivery](delivery.md)). It calls busd for private-channel management ([busd](busd.md)).
 3. **busd** — the control service. It holds the admin principal and does what needs admin rights: private channels and their membership, granting and revoking broker access, creating the agents' consumers, serving history and registry reads, and the normal path for agent-busctl's management commands. It never carries messages ([busd](busd.md)). It is not a bus agent: it has a service name and a broker account of its own, and signs no bus messages.
-4. **agent-busctl** — admin and human CLI: register identities, create channels, tail and inspect history, manage known keys. It goes through busd; direct admin access is the recovery path ([admin CLI](admin-cli.md)).
+4. **agent-busctl** — admin and human CLI: register identities, create channels, tail and inspect history, manage known keys. Only `agent-busctl ca ...` goes through busd today; the rest runs `--direct`, which stays the recovery path later ([admin CLI](admin-cli.md)).
 5. **Delivery hooks** — per-harness glue that makes agents notice new mail (see [delivery](delivery.md)).
-6. **Bus monitor** — a small web service that shows messages flowing through the bus (see [monitor](monitor-and-api.md)). It runs as a separate process with its own read-only broker principal and its own signing identity, `monitor@<owner>` ([monitor](monitor-and-api.md)); it may share busd's binary.
+6. **Bus monitor** — a small web service that shows messages flowing through the bus (see [monitor](monitor-and-api.md)). It runs as a separate binary in its own container, with its own read-only broker logins (`monitor-bus`, `monitor-control`) and a config directory of its own (decision 42). Its signing identity `monitor@<owner>` is planned ([monitor](monitor-and-api.md)).
+7. **VS Code extension** — an API client of the monitor's `/api/v1`: no broker connection and no keys, it sends as the monitor's agent (decision 44, `vscode/`).
+8. **OpenCode plugin** — the OpenCode counterpart of the Claude Code hooks: it feeds presence and wakes idle sessions through the adapter ([delivery](delivery.md)).
 
 ## Architecture decisions
 
@@ -78,9 +88,9 @@ The binding is the only implementation and lives in one package, `internal/broke
 - MCP: the official Go SDK (`github.com/modelcontextprotocol/go-sdk`).
 - JCS (RFC 8785): a small maintained library such as `github.com/gowebpki/jcs`, or an in-repo implementation with the RFC's test vectors.
 
-Binaries: `agent-bus` (the adapter: `agent-bus mcp` runs the MCP server, `agent-bus pending` is called by hooks), `agent-busctl`, `busd`, and `bus-monitor` (which may be built into `busd`, [busd](busd.md)).
+Binaries: `agent-bus` (the adapter: `agent-bus mcp` runs the MCP server, `agent-bus pending` is called by hooks), `agent-busctl`, `busd`, and `bus-monitor`. busd runs in the broker container, the monitor in its own ([busd](busd.md)).
 
-Not every binary exists yet: `agent-bus`, `agent-busctl` and `bus-monitor` are built; `busd` is not.
+Not every binary exists yet: `agent-bus`, `agent-busctl`, `bus-monitor` and `busd` are built; busd is minimal (enrollment and approvals, the monitor's reads).
 
 ## See also
 
