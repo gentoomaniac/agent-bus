@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
@@ -101,6 +102,12 @@ type Config struct {
 	// PrefsPath is the file the shared preferences (read markers, favourites, subscriptions, folded sections) are
 	// kept in; empty keeps them in memory only.
 	PrefsPath string
+	// DirectoryHeads subscribes to busd's directory heads (broker.Admin.WatchDirectoryHeads): a
+	// head that names a new version makes the monitor read the registry and the catalogue at once,
+	// instead of at its next round. Nil: only the rounds. CACert (PEM) is what heads are checked
+	// against.
+	DirectoryHeads func(handler func(head []byte)) (stop func(), err error)
+	CACert         []byte
 }
 
 // Monitor follows every channel and answers the web interface's questions.
@@ -127,6 +134,19 @@ type Monitor struct {
 	pendingMu    sync.Mutex
 	pendingCount int       // enrollment requests waiting, as busd announced
 	pendingAt    time.Time // when busd announced it
+
+	// headSeen asks Run for a round at once: a head named a new directory version.
+	headSeen    chan struct{}
+	directoryMu sync.Mutex
+	directory   DirectoryStatus
+}
+
+// DirectoryStatus is how the monitor follows the directory, apart from presence: the last version
+// busd announced, and why the last read of the registry or the catalogue failed, if it did.
+type DirectoryStatus struct {
+	Version string    `json:"version,omitempty"`
+	HeadAt  time.Time `json:"head_at,omitzero"`
+	Error   string    `json:"error,omitempty"`
 }
 
 func New(config Config) *Monitor {
@@ -140,6 +160,7 @@ func New(config Config) *Monitor {
 		shownState:    map[string]string{},
 		askedPresence: map[string]bool{},
 		prefs:         loadPrefs(config.PrefsPath, config.Report),
+		headSeen:      make(chan struct{}, 1),
 	}
 }
 
@@ -149,16 +170,64 @@ func (monitor *Monitor) Run(ctx context.Context) {
 	defer monitor.followers.Wait()
 	monitor.followers.Go(func() { monitor.followPresence(ctx) })
 	monitor.followers.Go(func() { monitor.followPendingEnrollments(ctx) })
+	if monitor.config.DirectoryHeads != nil {
+		monitor.followers.Go(func() { monitor.followDirectoryHeads(ctx) })
+	}
 	for {
-		if err := monitor.discover(ctx); err != nil && ctx.Err() == nil {
+		err := monitor.discover(ctx)
+		if err != nil && ctx.Err() == nil {
 			monitor.report(err)
 		}
+		monitor.directoryMu.Lock()
+		monitor.directory.Error = ""
+		if err != nil && !errors.Is(err, bus.ErrUnavailable) {
+			monitor.directory.Error = err.Error()
+		}
+		monitor.directoryMu.Unlock()
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(discoverInterval):
+		case <-monitor.headSeen:
 		}
 	}
+}
+
+// followDirectoryHeads takes busd's heads until ctx ends. Only a head signed by the CA counts, and
+// only as a cue: the agents and channels still come from the registry and the catalogue.
+func (monitor *Monitor) followDirectoryHeads(ctx context.Context) {
+	for ctx.Err() == nil {
+		stop, err := monitor.config.DirectoryHeads(func(message []byte) {
+			head, err := directory.VerifyHead(monitor.config.CACert, message)
+			if err != nil {
+				return
+			}
+			monitor.directoryMu.Lock()
+			changed := head.Version.String() != monitor.directory.Version
+			monitor.directory.Version, monitor.directory.HeadAt = head.Version.String(), time.Now()
+			monitor.directoryMu.Unlock()
+			if changed {
+				select {
+				case monitor.headSeen <- struct{}{}:
+				default:
+				}
+			}
+		})
+		if err == nil {
+			defer stop()
+			<-ctx.Done()
+			return
+		}
+		monitor.report(err)
+		sleep(ctx, failedReadPause)
+	}
+}
+
+// Directory is the monitor's view of the directory, for the status.
+func (monitor *Monitor) Directory() DirectoryStatus {
+	monitor.directoryMu.Lock()
+	defer monitor.directoryMu.Unlock()
+	return monitor.directory
 }
 
 // report passes on an error unless it is the bus being unavailable: the connection tells of that
@@ -342,9 +411,10 @@ func (monitor *Monitor) Status() Status {
 	}
 	sender := monitor.config.Sender
 	if sender == nil {
-		return Status{Bus: busState, PendingEnrollments: monitor.pendingEnrollments(), Note: cmp.Or(monitor.config.ReadOnlyNote, "read-only: the monitor was started without --agent")}
+		return Status{Bus: busState, PendingEnrollments: monitor.pendingEnrollments(), Directory: monitor.Directory(),
+			Note: cmp.Or(monitor.config.ReadOnlyNote, "read-only: the monitor was started without --agent")}
 	}
-	status := Status{Bus: busState, Agent: sender.AgentID(), PendingEnrollments: monitor.pendingEnrollments()}
+	status := Status{Bus: busState, Agent: sender.AgentID(), PendingEnrollments: monitor.pendingEnrollments(), Directory: monitor.Directory()}
 	if err := sender.Ready(); err != nil {
 		status.Note = err.Error()
 		return status

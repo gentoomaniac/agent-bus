@@ -139,7 +139,14 @@ func (cli *CLI) Run() error {
 	}
 	defer closeSender()
 
-	web := monitor.New(monitor.Config{Admin: registry, History: history, Sender: sender, ReadOnlyNote: readOnlyNote, Report: func(err error) { log.Print(err) }, PrefsPath: creds.MonitorPrefsPath(cli.ConfigDir)})
+	caPEM, err := os.ReadFile(caCert)
+	if err != nil {
+		return err
+	}
+	web := monitor.New(monitor.Config{
+		Admin: registry, History: history, Sender: sender, ReadOnlyNote: readOnlyNote, Report: func(err error) { log.Print(err) },
+		PrefsPath: creds.MonitorPrefsPath(cli.ConfigDir), DirectoryHeads: admin.WatchDirectoryHeads, CACert: caPEM,
+	})
 	go web.Run(ctx)
 
 	handler, err := web.Handler(access)

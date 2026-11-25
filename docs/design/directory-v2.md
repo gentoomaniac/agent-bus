@@ -310,3 +310,14 @@ Where the build refined or departed from the text above.
   even if the plugin fails to deliver it; it is informational, and the directory itself is right.
 - The MCP instructions do not mention them, to keep the briefing within its budget; the field's
   name and the text ("Directory updated: ...") say what they are.
+
+**Monitor (commit 7).**
+
+- The monitor subscribes to `directory.head` (a new subscribe grant of `monitor-bus`, nothing to
+  publish) and, on a CA-signed head naming a new version, runs its discovery round at once; the
+  5 s round stays. It does not use `busd.directory.sync`: it already reads the registry and the
+  catalogue from busd over `monitor-control` (`busd.monitor.*`), which has what it shows (removed
+  agents included), so a second path would add grants and nothing else.
+- `GET /api/v1/status` has `directory`: the version busd last announced, when, and the error of
+  the last registry or catalogue read, apart from presence; the page shows "directory not
+  readable" while that error is set.

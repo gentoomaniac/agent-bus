@@ -384,7 +384,9 @@ behind the same endpoint, query syntax and cursor.
 
 - The monitor keeps all messages it has read in memory and rereads the whole history when it
   starts. It is meant for a bus with thousands of messages, not millions.
-- A new group channel or agent shows up within five seconds.
+- A new group channel or agent shows up as soon as busd announces the change on `directory.head`
+  (it checks the head's CA signature, then reads the registry and the catalogue), and within five
+  seconds without busd. "directory not readable" in the header says the last read failed.
 - One password for everyone and no HTTPS of its own (a proxy does it), no private channels, and
   the composer cannot reply to a message (the page does show threads). The event stream has no replay after a reconnect: the
   page re-reads the state ([api.md](api.md#events)).

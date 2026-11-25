@@ -459,6 +459,13 @@ components:
         note: { type: string, description: Why it cannot send. }
         password_set: { type: boolean }
         pending_enrollments: { type: integer, description: Enrollment requests that wait for the owner, as busd last announced; absent when none. The monitor cannot approve them (agent-busctl ca review). }
+        directory:
+          type: object
+          description: How the monitor follows the directory, apart from presence (docs/design/directory-v2.md).
+          properties:
+            version: { type: string, description: "The version busd last announced on directory.head, <epoch>/<revision>." }
+            head_at: { type: string, format: date-time }
+            error: { type: string, description: Why the last read of the registry or the catalogue failed; absent when it worked. }
     Channel:
       type: object
       required: [id, kind, name, messages, last_sequence]

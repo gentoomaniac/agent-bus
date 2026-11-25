@@ -40,6 +40,9 @@ type Status struct {
 	// PendingEnrollments is how many enrollment requests wait for the owner, as busd last
 	// announced (docs/design/busd.md). The monitor learns the number and nothing else.
 	PendingEnrollments int `json:"pending_enrollments,omitempty"`
+	// Directory is how the monitor follows the directory (docs/design/directory-v2.md): busd's
+	// last announced version and a failure to read the registry or the catalogue.
+	Directory DirectoryStatus `json:"directory"`
 }
 
 // Handler serves the page and the JSON API under /api/v1. Everything but the page and the login

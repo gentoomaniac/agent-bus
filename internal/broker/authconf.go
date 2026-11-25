@@ -324,7 +324,7 @@ func monitorControlPermissions() string {
 }
 
 // monitorBusPermissions let the monitor read every channel through consumers of its own, list who
-// holds a read cursor and read presence. It publishes no message. JetStream subjects cannot name
+// holds a read cursor, read presence and hear busd's directory heads. It publishes no message. JetStream subjects cannot name
 // a consumer prefix, so these grants also reach the consumers of agents; the monitor sees all
 // traffic anyway (docs/design/access-control.md).
 func monitorBusPermissions() string {
@@ -337,7 +337,7 @@ func monitorBusPermissions() string {
 		"$JS.API.CONSUMER.NAMES." + busStream,
 		presenceReadSubject("*"),
 	}
-	return allowOnly(publish, []string{"_INBOX.>", presenceSubject("*")})
+	return allowOnly(publish, []string{"_INBOX.>", presenceSubject("*"), directory.SubjectHead})
 }
 
 // kvReadSubjects are the JetStream API subjects that read a KV bucket: its stream's info, direct

@@ -488,6 +488,19 @@ func (admin *Admin) PublishDirectoryHead(head []byte) error {
 	return admin.bus.conn.Publish(directory.SubjectHead, head)
 }
 
+// WatchDirectoryHeads hands every message on directory.SubjectHead in BUS to handler until stop
+// is called: what the monitor refreshes its agents and channels on.
+func (admin *Admin) WatchDirectoryHeads(handler func(head []byte)) (func(), error) {
+	subscription, err := admin.bus.conn.Subscribe(directory.SubjectHead, func(message *nats.Msg) { handler(message.Data) })
+	if err == nil {
+		err = admin.bus.conn.Flush()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return func() { _ = subscription.Unsubscribe() }, nil
+}
+
 // pendingEnrollments is the body of a message on enroll.SubjectPending.
 type pendingEnrollments struct {
 	Pending int `json:"pending"`

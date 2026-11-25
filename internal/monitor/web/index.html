@@ -333,7 +333,7 @@
         <button class="toggle" id="toggle-sidebar" type="button" title="Show or hide the channel list" aria-pressed="true">Channels</button>
         <div><span class="title cut" id="channel-title">Select a channel</span> <span class="muted cut" id="channel-description"></span> <button class="toggle" id="channel-bell" type="button" aria-pressed="false" hidden></button></div>
       </div>
-      <div class="right"><span id="live">connecting...</span><span id="pending" class="muted" hidden></span><span id="identity" class="muted cut"></span><button id="logout" type="button" hidden>Log out</button>
+      <div class="right"><span id="live">connecting...</span><span id="pending" class="muted" hidden></span><span id="directory" class="muted" hidden></span><span id="identity" class="muted cut"></span><button id="logout" type="button" hidden>Log out</button>
         <button class="toggle" id="open-settings" type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog">&#9881;</button>
         <button class="toggle" id="toggle-members" type="button" title="Show or hide the members panel" aria-pressed="true">Members</button></div>
     </header>
@@ -1163,6 +1163,11 @@ function renderIdentity() {
   $("pending").hidden = pending === 0;
   $("pending").textContent = pending + (pending === 1 ? " pending enrollment" : " pending enrollments");
   $("pending").title = "Approve with agent-busctl ca review";
+  // Apart from presence: the agents and channels shown are only as fresh as the last directory read.
+  const directory = state.status.directory || {};
+  $("directory").hidden = !directory.error;
+  $("directory").textContent = "directory not readable";
+  $("directory").title = (directory.error || "") + (directory.version ? " (busd announced " + directory.version + ")" : "");
 }
 
 async function select(channelId) {
