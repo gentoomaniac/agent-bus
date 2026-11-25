@@ -61,7 +61,12 @@ Symptom: `inbox` or `whoami` shows `unknown_senders` ("N messages from unknown s
 or `send` fails with "unknown agent `<id>`: it has no entry in the directory".
 
 The agent (the recipient, or the sender of the waiting mail) has no file
-`<config-dir>/directory/<token>.json` on this machine. `register` writes it on the machine it runs
+`<config-dir>/directory/<token>.json` on this machine. A running agent asks busd for the directory
+every minute and, at most every five seconds, when it meets an unknown agent, so a newly enrolled agent
+is known at once; the message then says if the fetch failed ("fetching the directory failed: ...").
+If it keeps failing, the machine has no enrollment password in `<config-dir>/enroll/password` (`agent-bus mcp`
+logs it once; `enroll` writes the file, an agent enrolled before has to get it by hand), busd or the agent is
+of an older version, or busd is down. Then `register` writes the file on the machine it runs
 on; copy that `directory/` to this one, for example `rsync -a other:~/.config/agent-bus/directory/
 ~/.config/agent-bus/directory/` ([claude-code.md](claude-code.md#other-machines)). The waiting mail
 is read within a minute of the copy.

@@ -297,7 +297,7 @@ creates its read cursors, switches its account to certificate login with a confi
 the new machine installs the certificate, `ca.pem` and the directory of agents. It then reaches the
 broker on port `4223` as any certificate agent does: publish that port ([5a](#5a-certificate-login-optional)).
 Running agents learn of the new agent from busd, which answers their directory request
-every minute, if both are of this version and the agent
+every minute and when they meet an unknown agent, if both are of this version and the agent
 has the enrollment password in `<config-dir>/enroll/password` (`enroll` writes it; for an
 agent enrolled before, put it there). Older agents still need the new agent in their `directory/`
 (`agent-busctl --direct directory export`, copied as in section 5).

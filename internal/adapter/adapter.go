@@ -29,7 +29,10 @@ const (
 	// reply_to (docs/design/safety.md rule 3).
 	recentParentWindow = 5 * time.Minute
 	keepAliveInterval  = 20 * time.Second // well inside the consumers' one-minute AckWait
-	idlePause          = time.Second      // between rounds of Run that fetched nothing
+	// missFetchInterval is the least time between two directory fetches caused by an unknown agent,
+	// so that a sender busd does not know either costs one fetch, not one per message.
+	missFetchInterval = 5 * time.Second
+	idlePause         = time.Second // between rounds of Run that fetched nothing
 
 	// DeliverTargeted keeps untargeted channel messages out of the inbox; DeliverAll delivers every
 	// message (docs/design/delivery.md).
@@ -48,7 +51,8 @@ type Config struct {
 	Transport bus.Transport
 	Directory trust.Directory
 	// FetchDirectory brings the local Directory up to date from busd. Nil: the directory only
-	// changes when someone copies files in.
+	// changes when someone copies files in. It also runs when an agent is missing from the
+	// directory, so it must not call the adapter.
 	FetchDirectory func(ctx context.Context) error
 	// Groups are group channels to read besides the agent's DM channel, general and the groups the
 	// directory's catalogue snapshot lists the agent in (written by `agent-busctl channel join`). Their
@@ -108,10 +112,14 @@ type Adapter struct {
 	alertsPath string
 	channels   []bus.Channel
 
-	pollMu sync.Mutex // one reader at a time; fetching must not hold mu
-	mu     sync.Mutex // guards everything below and the stores above
-	inbox  inbox
-	rate   rateLimiter
+	// fetchMu serialises the directory fetches that unknown agents cause. It may be taken while
+	// holding mu, so nothing that holds it may take mu.
+	fetchMu       sync.Mutex
+	lastMissFetch time.Time
+	pollMu        sync.Mutex // one reader at a time; fetching must not hold mu
+	mu            sync.Mutex // guards everything below and the stores above
+	inbox         inbox
+	rate          rateLimiter
 	// closingRate limits ack, answer and status replies on their own.
 	closingRate rateLimiter
 
@@ -330,11 +338,39 @@ func (adapter *Adapter) Send(ctx context.Context, to string, message Outgoing) (
 	return adapter.post(ctx, bus.DMChannel(to), message)
 }
 
+// fetchDirectoryOnMiss brings the directory up to date because an agent is missing from it, at
+// most once per missFetchInterval; a call inside the interval returns nil and leaves it to the
+// fetch that just ran. It returns the fetch's error. It re-reads nothing: RefreshDirectory takes
+// mu, which the caller of this may hold.
+func (adapter *Adapter) fetchDirectoryOnMiss(ctx context.Context) error {
+	if adapter.config.FetchDirectory == nil {
+		return nil
+	}
+	adapter.fetchMu.Lock()
+	defer adapter.fetchMu.Unlock()
+	now := adapter.config.Now()
+	if now.Sub(adapter.lastMissFetch) < missFetchInterval {
+		return nil
+	}
+	adapter.lastMissFetch = now
+	return adapter.config.FetchDirectory(ctx)
+}
+
 // checkRecipient refuses an agent that has no directory record or was removed, as ErrBadTargets:
-// the sender's mistake. A lookup that fails otherwise is returned as it is.
+// the sender's mistake. An agent with no record is looked for at busd first, since it may have
+// been enrolled after this one; a busd that cannot be asked does not fail the send by itself, the
+// agent only stays unknown. A lookup that fails otherwise is returned as it is.
 func (adapter *Adapter) checkRecipient(ctx context.Context, agentID string) error {
 	record, err := adapter.config.Directory.Lookup(ctx, agentID)
+	var fetchErr error
 	if errors.Is(err, fs.ErrNotExist) {
+		fetchErr = adapter.fetchDirectoryOnMiss(ctx)
+		record, err = adapter.config.Directory.Lookup(ctx, agentID)
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		if fetchErr != nil {
+			return fmt.Errorf("%w: unknown agent %s: it has no entry in the directory, and fetching the directory failed: %v", ErrBadTargets, agentID, fetchErr)
+		}
 		return fmt.Errorf("%w: unknown agent %s: it has no entry in the directory", ErrBadTargets, agentID)
 	}
 	if err != nil {
@@ -673,7 +709,17 @@ func (adapter *Adapter) receive(ctx context.Context, channel bus.Channel, delive
 	if err := env.CheckTo(channel); err != nil {
 		return adapter.reject(ctx, channel, delivery, err)
 	}
-	resolution, err := adapter.trust.Resolve(ctx, adapter.config.Directory, env.From, env.KeyFP, adapter.config.Now())
+	resolve := func() (trust.Resolution, error) {
+		return adapter.trust.Resolve(ctx, adapter.config.Directory, env.From, env.KeyFP, adapter.config.Now())
+	}
+	resolution, err := resolve()
+	if errors.Is(err, fs.ErrNotExist) {
+		// Under mu, so a fetch that hangs holds the adapter up for its timeout; it runs at most every
+		// missFetchInterval. Its error is not reported: the message waits as before, and the refresh
+		// loop tells of a busd that cannot be reached.
+		_ = adapter.fetchDirectoryOnMiss(ctx)
+		resolution, err = resolve()
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		adapter.noteUnknownSender(env.From, destination, delivery.Sequence)
 	} else {

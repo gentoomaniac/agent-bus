@@ -234,7 +234,8 @@ docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -c
 ```
 
 A running `agent-bus mcp` fetches the directory from busd at start, every minute
-(`--directory-refresh`) and on `SIGHUP`, merges it into its local `directory/` (it adds and
+(`--directory-refresh`), on `SIGHUP` and, at most every five seconds, when it meets an agent that is
+not in it (a recipient to send to, or the sender of a message); `send` does the same on a miss. It merges it into its local `directory/` (it adds and
 replaces records and never deletes one), and re-reads it. It then keeps the fingerprints of all
 revoked keys in `<agent-dir>/revoked_keys` and rejects messages signed by them, even from a pinned
 key ("revoked key" in `alerts.log`). Sending to a removed agent fails with "agent removed", and

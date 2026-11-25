@@ -189,7 +189,10 @@ What was built, and where it differs from the plan above it:
   `agent-bus enroll` keeps the password in `<config-dir>/enroll/password`; the running adapter
   (`agent-bus mcp`) asks every `--directory-refresh` and merges the answer into its local
   directory: records are added and replaced, never deleted, and a revoked key stays revoked
-  (`revoked_keys` only grows). A busd that cannot be reached, or an agent without the password,
+  (`revoked_keys` only grows). The adapter also fetches when a recipient or a sender has no record,
+  at most once per five seconds, and then looks again, so a message from an agent enrolled later is
+  delivered at once instead of held as "unknown sender" (a delivery it still cannot resolve is
+  redelivered by the broker after the ack wait, and meets the same fetch). A busd that cannot be reached, or an agent without the password,
   leaves the local directory as it is. An agent enrolled before this needs the file written by
   hand; an older agent or busd still needs `directory export` and a copy.
 - **Request.** `agent-bus enroll --broker <host> --agent <id> [--waitforcert[=<max>]] [--secret <s>]
