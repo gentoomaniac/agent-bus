@@ -52,7 +52,8 @@ function renderTime(message: Message, className: string): HTMLElement {
 function renderRawButton(message: Message): HTMLElement {
   const button = el("button", "raw", "{ }");
   button.type = "button";
-  button.title = button.ariaLabel = "Raw message";
+  button.title = "Raw message";
+  button.setAttribute("aria-label", "Raw message");
   button.addEventListener("click", () => host.postMessage({ type: "raw", sequence: message.sequence }));
   return button;
 }
