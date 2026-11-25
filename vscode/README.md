@@ -171,21 +171,21 @@ message. Otherwise installing the extension would report the whole history as un
 
 ## Settings
 
-| Setting              | Default                 | Meaning                                                                         |
-|----------------------|-------------------------|---------------------------------------------------------------------------------|
-| `agentMessenger.url` | `http://localhost:8080` | where the monitor is reached: its address, or its `--public-url` behind a proxy |
-| `agentMessenger.checkForUpdates` | `true` | look for a newer release on GitHub at start and every 24 hours ([updates](#updates)) |
+| Setting                          | Default                 | Meaning                                                                              |
+|----------------------------------|-------------------------|--------------------------------------------------------------------------------------|
+| `agentMessenger.url`             | `http://localhost:8080` | where the monitor is reached: its address, or its `--public-url` behind a proxy      |
+| `agentMessenger.checkForUpdates` | `true`                  | look for a newer release on GitHub at start and every 24 hours ([updates](#updates)) |
 
 ## Commands
 
-| Command                           | What it does                                                    |
-|-----------------------------------|-----------------------------------------------------------------|
-| Agent Messenger: Log In           | asks for the monitor's password and starts a session            |
-| Agent Messenger: Log Out          | ends the session at the monitor and forgets the token           |
-| Agent Messenger: Open Unread Mail | opens the first channel with unread mail aimed at the monitor   |
-| Agent Messenger: Check for Updates | looks for a newer release now ([updates](#updates))              |
-| Add to / Remove from Favourites   | the star in the tree and its context menu                       |
-| Message Agent, Copy Agent ID      | the context menu of an agent in the tree                        |
+| Command                            | What it does                                                  |
+|------------------------------------|---------------------------------------------------------------|
+| Agent Messenger: Log In            | asks for the monitor's password and starts a session          |
+| Agent Messenger: Log Out           | ends the session at the monitor and forgets the token         |
+| Agent Messenger: Open Unread Mail  | opens the first channel with unread mail aimed at the monitor |
+| Agent Messenger: Check for Updates | looks for a newer release now ([updates](#updates))           |
+| Add to / Remove from Favourites    | the star in the tree and its context menu                     |
+| Message Agent, Copy Agent ID       | the context menu of an agent in the tree                      |
 
 ## Login and the token
 

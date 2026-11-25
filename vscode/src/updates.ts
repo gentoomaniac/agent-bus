@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as vscode from "vscode";
-import { isNewer, parseRelease, Release } from "./release";
+import { fetchFromGithub, isNewer, parseRelease, Release } from "./release";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/gentoomaniac/agent-bus/releases/latest";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -52,7 +52,12 @@ export class UpdateChecker implements vscode.Disposable {
       if (manual) void vscode.window.showErrorMessage(`Agent Messenger: the update check failed (${(error as Error).message}).`);
       return;
     }
-    if (!release || !isNewer(release.version, this.currentVersion)) {
+    if (!release) {
+      this.log.appendLine("update check: the answer is no usable release");
+      if (manual) void vscode.window.showErrorMessage("Agent Messenger: couldn't read the latest release.");
+      return;
+    }
+    if (!isNewer(release.version, this.currentVersion)) {
       if (manual) void vscode.window.showInformationMessage(`Agent Messenger: you have the latest version (${this.currentVersion}).`);
       return;
     }
@@ -62,22 +67,23 @@ export class UpdateChecker implements vscode.Disposable {
   }
 
   private async fetchLatestRelease(): Promise<Release | undefined> {
-    const response = await fetchWithin(API_TIMEOUT_MS, LATEST_RELEASE_URL, {
+    const response = await fetch(LATEST_RELEASE_URL, {
+      signal: AbortSignal.timeout(API_TIMEOUT_MS), // covers the body too
       headers: { Accept: "application/vnd.github+json", "User-Agent": `agent-messenger-vscode/${this.currentVersion}` },
       redirect: "manual", // the API has no reason to send us to another host
     });
-    if (!response.ok) throw new Error(`GitHub answered HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`GitHub answered HTTP ${response.status}${response.status < 400 ? " (the API does not redirect)" : ""}`);
     return parseRelease(await response.json());
   }
 
   private async offer(release: Release): Promise<void> {
-    const buttons = release.vsixUrl ? [INSTALL, RELEASE_NOTES, SKIP] : [RELEASE_NOTES, SKIP];
+    const buttons = [...(release.vsixUrl ? [INSTALL] : []), ...(release.url ? [RELEASE_NOTES] : []), SKIP];
     const choice = await vscode.window.showInformationMessage(
       `Agent Messenger ${release.version} is available (you have ${this.currentVersion}).`,
       ...buttons,
     );
     if (choice === INSTALL && release.vsixUrl) await this.install(release.version, release.vsixUrl);
-    else if (choice === RELEASE_NOTES) await vscode.env.openExternal(vscode.Uri.parse(release.url));
+    else if (choice === RELEASE_NOTES && release.url) await vscode.env.openExternal(vscode.Uri.parse(release.url));
     else if (choice === SKIP) await this.context.globalState.update(SKIPPED_KEY, release.version);
   }
 
@@ -87,7 +93,7 @@ export class UpdateChecker implements vscode.Disposable {
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: `Installing Agent Messenger ${version}` },
         async () => {
-          const response = await fetchWithin(DOWNLOAD_TIMEOUT_MS, vsixUrl);
+          const response = await fetchFromGithub(vsixUrl, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
           if (!response.ok) throw new Error(`the download answered HTTP ${response.status}`);
           await fs.mkdir(this.context.globalStorageUri.fsPath, { recursive: true });
           await fs.writeFile(file.fsPath, Buffer.from(await response.arrayBuffer()));
@@ -106,9 +112,4 @@ export class UpdateChecker implements vscode.Disposable {
       await vscode.commands.executeCommand("workbench.action.reloadWindow");
     }
   }
-}
-
-// The timeout covers the whole transfer, the body included.
-function fetchWithin(timeoutMs: number, url: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 }
