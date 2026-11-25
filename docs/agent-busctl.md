@@ -387,8 +387,8 @@ the broker. A new machine passes it as `agent-bus enroll --ca-fingerprint`.
 
 A terminal screen for the same, updated every two seconds: the list of pending requests, a detail
 pane, and the keys up/down, `a` approve, `r` reject (reason prompt), `/` filter, `q` quit. An approval of an
-ID that would replace another key asks for confirmation first. It needs a terminal: `podman exec -it
-agent-bus agent-busctl ca review`.
+ID that would replace another key asks for confirmation first. It needs a terminal: `docker exec -it
+agent-bus agent-busctl ca review` (or `podman exec -it`).
 
 ### monitor init
 

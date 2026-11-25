@@ -16,7 +16,7 @@ type CAReviewCmd struct{}
 // them. Everything it does goes through busd, like `ca sign` and `ca reject`.
 func (cmd *CAReviewCmd) Run(cli *CLI) error {
 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) {
-		return errors.New("ca review needs a terminal: in the container run `podman exec -it agent-bus agent-busctl ca review`, or use ca list, sign and reject")
+		return errors.New("ca review needs a terminal: in the container run `docker exec -it agent-bus agent-busctl ca review` (or podman exec -it), or use ca list, sign and reject")
 	}
 	client, closeClient, err := cli.busdClient()
 	if err != nil {

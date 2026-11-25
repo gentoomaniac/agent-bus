@@ -90,7 +90,7 @@ func (cmd *ChannelJoinCmd) Run(ctx context.Context, cli *CLI) error {
 	if err := writeCatalogue(ctx, admin, trust.DirectoryPath(cli.ConfigDir)); err != nil {
 		return err
 	}
-	fmt.Printf("%s reads %s from now on; its adapter picks that up at the next start, "+
-		"and other machines with the next copy of the directory (docs/agent-busctl.md)\n", cmd.AgentID, cmd.Name)
+	fmt.Printf("%s reads %s from now on; a running adapter of 0.2 or later picks that up within seconds, "+
+		"an older one at its next start (docs/agent-busctl.md)\n", cmd.AgentID, cmd.Name)
 	return nil
 }
