@@ -64,6 +64,7 @@ func (cli *CLI) connection(caCert, user, password string) broker.Connection {
 func (cli *CLI) access() (monitor.Access, error) {
 	access := monitor.Access{Listen: cli.Listen, BehindProxy: cli.BehindProxy, AllowedHosts: cli.AllowedHost}
 	var err error
+	access.PasswordPath = creds.MonitorPasswordPath(cli.ConfigDir)
 	if access.PasswordHash, err = creds.ReadMonitorPasswordHash(cli.ConfigDir); err != nil {
 		return access, err
 	}

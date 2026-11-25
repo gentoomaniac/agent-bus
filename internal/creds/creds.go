@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +21,9 @@ import (
 const (
 	passwordFile        = "password"
 	passwordBytes       = 32
-	monitorPasswordFile = "monitor/password.bcrypt"
+	monitorPasswordFile = "monitor-web/password.bcrypt"
+	// oldMonitorPasswordFile was easily confused with the monitor@<owner> agent folder.
+	oldMonitorPasswordFile = "monitor/password.bcrypt"
 	// MinMonitorPasswordBytes keeps out the passwords that are guessed in a few tries.
 	MinMonitorPasswordBytes = 8
 )
@@ -58,6 +61,11 @@ func ReadPassword(dir string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
+// MonitorPasswordPath is the file that holds the web monitor's password hash.
+func MonitorPasswordPath(configDir string) string {
+	return filepath.Join(configDir, monitorPasswordFile)
+}
+
 // WriteMonitorPassword stores the bcrypt hash of the web monitor's password, replacing the old one.
 func WriteMonitorPassword(configDir, password string) error {
 	if len(password) < MinMonitorPasswordBytes {
@@ -67,13 +75,21 @@ func WriteMonitorPassword(configDir, password string) error {
 	if err != nil {
 		return err // for example longer than bcrypt's 72 bytes
 	}
-	return files.Write(filepath.Join(configDir, monitorPasswordFile), append(hash, '\n'), files.SecretMode, true)
+	return files.Write(MonitorPasswordPath(configDir), append(hash, '\n'), files.SecretMode, true)
 }
 
 // ReadMonitorPasswordHash returns the stored hash, or nil when no password is set. A file with
-// no hash in it is an error, not "no password": it must not leave the monitor open.
+// no hash in it is an error, not "no password": it must not leave the monitor open. The old
+// location is read when the new one does not exist yet, so that existing setups keep working.
 func ReadMonitorPasswordHash(configDir string) ([]byte, error) {
-	data, err := os.ReadFile(filepath.Join(configDir, monitorPasswordFile))
+	data, err := os.ReadFile(MonitorPasswordPath(configDir))
+	if errors.Is(err, os.ErrNotExist) {
+		oldPath := filepath.Join(configDir, oldMonitorPasswordFile)
+		if data, err = os.ReadFile(oldPath); err == nil {
+			log.Printf("the monitor password moved from %s to %s: it is read from the old place until "+
+				"`agent-busctl monitor password` writes the new file", oldPath, MonitorPasswordPath(configDir))
+		}
+	}
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}

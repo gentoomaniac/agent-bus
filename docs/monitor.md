@@ -30,7 +30,8 @@ port).
 ## Login
 
 `agent-busctl monitor password` sets the one password: it prompts twice (or reads one line from standard
-input) and stores a bcrypt hash in `monitor/password.bcrypt` of the config directory. Restart
+input) and stores a bcrypt hash in `monitor-web/password.bcrypt` of the config directory (older
+versions used `monitor/password.bcrypt`; that file is still read until the new one exists). Restart
 `bus-monitor` after changing it; a restart also ends all login sessions. Sending stays the
 monitor's one identity (`--agent`); several users may come later.
 

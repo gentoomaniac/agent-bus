@@ -19,6 +19,8 @@ type Access struct {
 	// PasswordHash is the bcrypt hash of the monitor's password. Without one the monitor has no login,
 	// which is only allowed on loopback.
 	PasswordHash []byte
+	// PasswordPath is the file PasswordHash is read from; it is named in the error that asks for one.
+	PasswordPath string
 
 	// BehindProxy lets Listen be a non-loopback address, for a reverse proxy to reach. Only then do
 	// TrustedProxies and PublicURL mean anything.
@@ -40,7 +42,8 @@ var loopbackProxies = []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32"), neti
 func (access Access) Validate() error {
 	host, _ := splitHostPort(access.Listen)
 	if access.BehindProxy && len(access.PasswordHash) == 0 {
-		return errors.New("--behind-proxy needs a password: set one with `agent-busctl monitor password`")
+		return fmt.Errorf("--behind-proxy needs the web login password, and none is set: run `agent-busctl monitor password` "+
+			"(it writes %s) and restart the monitor", access.PasswordPath)
 	}
 	if !access.BehindProxy {
 		if !isLoopbackHost(host) {

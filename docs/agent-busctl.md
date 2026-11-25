@@ -203,7 +203,7 @@ and enrollment (design.md §4c).
 ### monitor password
 
 Sets the password of the [web monitor](monitor.md#login), stored as a bcrypt hash in
-`monitor/password.bcrypt` of the config directory. On a terminal it asks twice without echo;
+`monitor-web/password.bcrypt` of the config directory. On a terminal it asks twice without echo;
 otherwise it reads one line from standard input. At least 8 characters, at most 72 bytes. It needs
 no broker. Restart `bus-monitor` afterwards: it reads the hash at start, and a restart ends every
 login session.

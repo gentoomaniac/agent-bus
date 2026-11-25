@@ -103,7 +103,7 @@ podman run -d --name agent-bus-monitor --network container:agent-bus \
 ```
 
 Open <http://localhost:8080> (or `127.0.0.1`, on any published port) and log in. Without the
-password the monitor refuses to start (`--behind-proxy needs a password`; see
+password the monitor refuses to start (`--behind-proxy needs the web login password`; see
 `podman logs agent-bus-monitor`). Restart it after changing the password. To reach it from other
 machines, put a TLS proxy in front instead ([monitor.md](monitor.md#behind-a-reverse-proxy)).
 
