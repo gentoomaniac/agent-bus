@@ -2,12 +2,14 @@
 import { matchTargets, mentionBefore } from "../completion";
 import { continuesGroup, insertMessage } from "../messages";
 import type { ChatState, FromWebview, ToWebview } from "../protocol";
+import { ThreadRow, threadRows } from "../threads";
 import { ALL, DEFAULT_TYPE, MESSAGE_TYPES, Message } from "../types";
 
 declare function acquireVsCodeApi(): { postMessage(message: FromWebview): void };
 const host = acquireVsCodeApi();
 
 const STATUS_LABEL: Record<string, string> = { unknown_sender: "unknown sender", rejected: "rejected" };
+const ID_PREFIX = 8; // characters of a message ID shown in "reply to"
 const COMPOSER_MAX_HEIGHT = 12 * 16; // px; the CSS max-height says the same
 
 let state: ChatState | undefined;
@@ -26,7 +28,8 @@ const note = document.getElementById("note") as HTMLElement;
 const typeSelect = document.getElementById("type") as HTMLSelectElement;
 const targetBox = document.getElementById("targets") as HTMLElement;
 const targetInput = document.getElementById("targetInput") as HTMLInputElement;
-const completions = document.getElementById("completions") as HTMLElement;
+const threadsToggle = document.getElementById("threads") as HTMLButtonElement;
+const completions =document.getElementById("completions") as HTMLElement;
 const titleInput = document.getElementById("title") as HTMLInputElement;
 const titleToggle = document.getElementById("toggleTitle") as HTMLButtonElement;
 const textInput = document.getElementById("text") as HTMLTextAreaElement;
@@ -65,9 +68,13 @@ function renderHeader(message: Message): HTMLElement {
   return header;
 }
 
-function renderMessage(message: Message, continued: boolean): HTMLElement {
-  const item = el("div", continued ? "message continued" : "message");
+// `row` carries the thread view's depth and the "reply to" line of a reply whose parent is missing.
+function renderMessage(row: ThreadRow, continued: boolean, isNew: boolean): HTMLElement {
+  const { message } = row;
+  const item = el("div", (continued ? "message continued" : "message") + (row.depth > 0 ? " depth-" + row.depth : ""));
+  if (row.replyTo) item.append(el("div", "reply-to muted", "↳ reply to " + row.replyTo.slice(0, ID_PREFIX)));
   if (!continued) item.append(renderHeader(message));
+  if (isNew && !continued) item.firstElementChild?.append(el("span", "new", "New"));
   if (message.title) item.append(el("div", "title", message.title));
   if (message.text) item.append(el("div", "text", message.text));
   if (message.reason && message.status !== "verified") item.append(el("div", "warning", message.reason));
@@ -76,9 +83,11 @@ function renderMessage(message: Message, continued: boolean): HTMLElement {
 
 // Draws the list again. It keeps the distance from the bottom, so new messages at the end and
 // older ones at the top leave what the reader looks at in place; the first drawing goes to the
-// "New" divider, or to the end.
+// first unseen message, or to the end. The flat list marks it with a "New" divider above it; the
+// thread view, whose order is not the stream's, with a "New" tag in its header.
 function render(first = false): void {
   if (!state) return;
+  const { threaded, dividerAfter, self } = state;
   const fromBottom = list.scrollHeight - list.scrollTop;
   list.replaceChildren();
   if (state.hasOlder) {
@@ -86,18 +95,23 @@ function render(first = false): void {
     older.addEventListener("click", () => host.postMessage({ type: "older" }));
     list.append(older);
   }
-  let divider: HTMLElement | undefined;
+  const firstUnseen = messages.find((message) => message.sequence > dividerAfter && message.from !== self);
+  const rows: ThreadRow[] = threaded ? threadRows(messages) : messages.map((message) => ({ message, depth: 0 }));
+  let marked: HTMLElement | undefined;
   let previous: Message | undefined;
-  for (const message of messages) {
-    if (!divider && message.sequence > state.dividerAfter && message.from !== state.self) {
-      divider = el("div", "divider", "New");
-      list.append(divider);
+  for (const row of rows) {
+    const isNew = row.message === firstUnseen;
+    if (isNew && !threaded) {
+      marked = el("div", "divider", "New");
+      list.append(marked);
       previous = undefined;
     }
-    list.append(renderMessage(message, continuesGroup(previous, message)));
-    previous = message;
+    const item = renderMessage(row, !threaded && continuesGroup(previous, row.message), isNew && threaded);
+    if (isNew && threaded) marked = item;
+    list.append(item);
+    previous = row.message;
   }
-  if (first) (divider ?? list.lastElementChild)?.scrollIntoView({ block: divider ? "start" : "end" });
+  if (first) (marked ?? list.lastElementChild)?.scrollIntoView({ block: marked ? "start" : "end" });
   else list.scrollTop = list.scrollHeight - fromBottom;
 }
 
@@ -205,6 +219,7 @@ function showState(next: ChatState): void {
   state = next;
   document.getElementById("heading")!.textContent = next.title;
   document.getElementById("description")!.textContent = next.description;
+  threadsToggle.setAttribute("aria-pressed", String(next.threaded));
   composer.hidden = !next.canSend;
   note.hidden = next.canSend;
   note.textContent = next.note;
@@ -270,6 +285,10 @@ targetInput.addEventListener("keydown", (event) => {
     event.preventDefault(); // not a send: the message is written in the text box
     textInput.focus();
   }
+});
+
+threadsToggle.addEventListener("click", () => {
+  if (state) host.postMessage({ type: "threaded", value: !state.threaded });
 });
 
 titleToggle.addEventListener("click", () => {

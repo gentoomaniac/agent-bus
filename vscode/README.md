@@ -58,6 +58,12 @@ HTML.
 - **Verification:** a small check mark with the tooltip "verified". `unknown sender` and
   `rejected` show as a visible warning, with the reason.
 - **History:** "Load older messages" at the top fetches more.
+- **Threads:** the "Threads" button in the panel header switches between the flat list and a
+  thread view. The choice is kept in the editor, not shared with the monitor. In the thread view
+  a reply sits under its parent (`reply_to`; if that is not loaded, the `thread` root), indented
+  with a thin line, up to four levels. Roots and siblings go by sequence. A reply whose parent
+  and root are not loaded stands alone with a "↳ reply to <id>" line. The first unseen message
+  gets a "New" tag instead of the divider.
 
 **Unread mail works as in the web page:**
 - A channel with messages you have not seen shows a count in the tree.

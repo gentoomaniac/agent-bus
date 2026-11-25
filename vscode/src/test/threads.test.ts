@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { threadRows } from "../threads";
+import { Message } from "../types";
+
+const message = (sequence: number, id: string, extra: Partial<Message> = {}): Message => ({ sequence, id, channel: "general", status: "verified", ...extra });
+const shape = (messages: Message[]) => threadRows(messages).map((row) => `${row.message.id}:${row.depth}${row.replyTo ? ":" + row.replyTo : ""}`);
+
+test("replies follow their parent, siblings and roots go by sequence", () => {
+  const messages = [
+    message(1, "a"),
+    message(2, "b"),
+    message(3, "a1", { reply_to: "a", thread: "a" }),
+    message(4, "b1", { reply_to: "b", thread: "b" }),
+    message(5, "a1x", { reply_to: "a1", thread: "a" }),
+    message(6, "a2", { reply_to: "a", thread: "a" }),
+  ];
+  assert.deepEqual(shape(messages), ["a:0", "a1:1", "a1x:2", "a2:1", "b:0", "b1:1"]);
+});
+
+test("an unloaded reply_to falls back to the loaded thread root", () => {
+  const messages = [message(1, "a"), message(5, "a9", { reply_to: "gone", thread: "a" })];
+  assert.deepEqual(shape(messages), ["a:0", "a9:1"]);
+});
+
+test("a reply whose parent and root are not loaded is a root that says what it answers", () => {
+  const messages = [message(7, "x", { reply_to: "01JABCDEFG", thread: "01JROOT" }), message(8, "y", { thread: "01JROOT" })];
+  assert.deepEqual(shape(messages), ["x:0:01JABCDEFG", "y:0:01JROOT"]);
+});
+
+test("the indent stops at four levels", () => {
+  const chain = [message(1, "m0")];
+  for (let i = 1; i <= 6; i++) chain.push(message(i + 1, "m" + i, { reply_to: "m" + (i - 1), thread: "m0" }));
+  assert.deepEqual(shape(chain), ["m0:0", "m1:1", "m2:2", "m3:3", "m4:4", "m5:4", "m6:4"]);
+});
+
+test("a reference to a later or the same message does not make a cycle", () => {
+  const messages = [message(1, "a", { reply_to: "b" }), message(2, "b", { reply_to: "b" })];
+  assert.deepEqual(shape(messages), ["a:0:b", "b:0:b"]);
+});

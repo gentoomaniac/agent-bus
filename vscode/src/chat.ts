@@ -7,6 +7,7 @@ import { Session } from "./session";
 import { ALL } from "./types";
 
 const HISTORY = 100; // messages loaded when a channel is opened
+const THREADED_KEY = "agentMessenger.threaded"; // UI only: not one of the preferences shared through the monitor
 
 interface Chat {
   panel: vscode.WebviewPanel;
@@ -64,6 +65,9 @@ export class ChatPanels implements vscode.Disposable {
     } else if (message.type === "older") {
       await this.guarded(() => model.loadOlder(channelId));
       this.post(channelId, chat);
+    } else if (message.type === "threaded") {
+      await this.context.globalState.update(THREADED_KEY, message.value);
+      this.chats.forEach((other, otherId) => this.post(otherId, other));
     } else {
       const { type, targets, title, text } = message.draft;
       let error: string | undefined;
@@ -118,6 +122,7 @@ export class ChatPanels implements vscode.Disposable {
       dividerAfter: chat.dividerAfter,
       hasOlder: model.hasOlder(channelId),
       members: chat.members,
+      threaded: this.context.globalState.get<boolean>(THREADED_KEY, false),
       defaultTarget: channel.kind === "dm" && destination ? destination.name : ALL,
     };
     void chat.panel.webview.postMessage({ type: "state", state } satisfies ToWebview);
@@ -139,6 +144,14 @@ export class ChatPanels implements vscode.Disposable {
   .muted, #description { color: var(--vscode-descriptionForeground); }
   header { display: flex; align-items: baseline; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   h1 { font-size: 1.1em; margin: 0; white-space: nowrap; }
+  header .link, #toolbar .link { color: var(--vscode-textLink-foreground); background: transparent; padding: 0 4px; font-size: 0.9em; }
+  header .link[aria-pressed="true"] { color: var(--vscode-foreground); border-bottom: 1px solid var(--vscode-focusBorder); }
+  .reply-to { font-size: 0.85em; font-family: var(--vscode-font-family); }
+  .new { padding: 0 5px; border-radius: 3px; font-size: 0.8em; color: var(--vscode-errorForeground); border: 1px solid var(--vscode-errorForeground); }
+  .depth-1, .depth-2, .depth-3, .depth-4 { margin-left: 12px; border-left: 2px solid var(--vscode-panel-border); }
+  .depth-2 { margin-left: 24px; }
+  .depth-3 { margin-left: 36px; }
+  .depth-4 { margin-left: 48px; }
   #description { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #messages { flex: 1; overflow-y: auto; padding: 4px 0; }
   .message { padding: 4px 12px; font-family: var(--vscode-editor-font-family, var(--vscode-font-family)); font-size: var(--vscode-editor-font-size, inherit); }
@@ -177,14 +190,14 @@ export class ChatPanels implements vscode.Disposable {
   .chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 6px; border-radius: 8px; font-size: 0.85em; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
   .chip button { color: inherit; background: transparent; padding: 0 4px; line-height: 1; }
   #toolbar select { max-width: 14em; color: var(--vscode-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border); font-size: 0.9em; padding: 1px 2px; }
-  #toolbar .link { color: var(--vscode-textLink-foreground); background: transparent; padding: 0 4px; font-size: 0.9em; }
+
   #toolbar .spacer { flex: 1; }
   #hint { font-size: 0.85em; }
   #problem { color: var(--vscode-errorForeground); font-size: 0.9em; }
 </style>
 </head>
 <body>
-<header><h1 id="heading"></h1><div id="description"></div></header>
+<header><h1 id="heading"></h1><div id="description"></div><button id="threads" class="link" type="button" title="Show replies under their parent" aria-pressed="false">Threads</button></header>
 <main id="messages"></main>
 <div id="note" hidden></div>
 <form id="composer" hidden>

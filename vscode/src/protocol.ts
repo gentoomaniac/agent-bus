@@ -12,6 +12,7 @@ export interface ChatState {
   hasOlder: boolean;
   members: string[]; // agents the target picker offers, besides @all
   defaultTarget: string; // @all in a channel, the recipient in a direct message
+  threaded: boolean; // the thread view is on (a UI choice, kept per editor)
 }
 
 export type ToWebview =
@@ -29,4 +30,5 @@ export interface Draft {
 export type FromWebview =
   | { type: "ready" }
   | { type: "older" }
-  | { type: "send"; draft: Draft };
+  | { type: "send"; draft: Draft }
+  | { type: "threaded"; value: boolean };
