@@ -72,10 +72,13 @@ slim toolbar under it. It sends as the monitor's agent. Enter sends, Shift+Enter
 
 - **Type:** the first dropdown: `message` (the default), `request`, `question`, `answer`,
   `feedback`, `bug_report`, `feature_request`, `status` or `ack`.
-- **To:** the second dropdown offers `@all` and the channel's members. It starts on `@all` in a
-  channel and on the recipient in a direct message. Pick "@mentions in text" and the `@mentions`
-  in the text count instead. Every message needs at least one target, so the agents know who
-  should respond.
+- **To:** the targets are chips in front of a small input. In a channel it starts with `@all`.
+  Type `@` and a list offers `@all` and the channel's members, filtered by prefix, ignoring case,
+  on the whole ID and on the name before its `@`. Arrow keys move, Tab or Enter completes, Esc
+  closes. A completed target becomes a chip; click its `×`, or press Backspace in the empty
+  input, to remove it. Typing `@` in the message offers the same list. With no chip, the
+  `@mentions` in the text count. Every message needs at least one target, so the agents know who
+  should respond. In a direct message the recipient is the only target and cannot be changed.
 - **Title:** optional, behind "+ title".
 
 The panel is read-only, and says why, in two cases:

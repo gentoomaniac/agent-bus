@@ -168,6 +168,14 @@ export class ChatPanels implements vscode.Disposable {
   #composer textarea { resize: none; max-height: 12em; }
   #title { font-weight: bold; border-bottom: 1px solid var(--vscode-panel-border); }
   #toolbar { display: flex; align-items: center; gap: 6px; padding: 2px 6px 4px; }
+  #composer { position: relative; }
+  #completions { position: absolute; bottom: 100%; left: 0; margin: 0 0 2px; padding: 2px 0; list-style: none; max-height: 10em; overflow-y: auto; min-width: 12em; color: var(--vscode-quickInput-foreground, var(--vscode-foreground)); background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background)); border: 1px solid var(--vscode-focusBorder); border-radius: 4px; z-index: 1; }
+  #completions li { padding: 2px 10px; cursor: pointer; }
+  #completions li.active { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); }
+  #targets { flex: 1; min-width: 6em; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  #targets input { flex: 1; min-width: 5em; width: auto; padding: 1px 4px; font-size: 0.9em; }
+  .chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 6px; border-radius: 8px; font-size: 0.85em; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
+  .chip button { color: inherit; background: transparent; padding: 0 4px; line-height: 1; }
   #toolbar select { max-width: 14em; color: var(--vscode-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border); font-size: 0.9em; padding: 1px 2px; }
   #toolbar .link { color: var(--vscode-textLink-foreground); background: transparent; padding: 0 4px; font-size: 0.9em; }
   #toolbar .spacer { flex: 1; }
@@ -180,11 +188,12 @@ export class ChatPanels implements vscode.Disposable {
 <main id="messages"></main>
 <div id="note" hidden></div>
 <form id="composer" hidden>
+  <ul id="completions" role="listbox" hidden></ul>
   <input id="title" placeholder="Title" aria-label="Title" hidden>
   <textarea id="text" rows="1" placeholder="Message" aria-label="Message"></textarea>
   <div id="toolbar">
     <select id="type" aria-label="Type"></select>
-    <select id="target" aria-label="To"></select>
+    <div id="targets"><input id="targetInput" placeholder="to: @name" aria-label="To"></div>
     <button id="toggleTitle" class="link" type="button">+ title</button>
     <span class="spacer"></span>
     <span id="problem"></span>

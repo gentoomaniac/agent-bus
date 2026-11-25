@@ -1,4 +1,5 @@
 // The chat panel's page. Messages are untrusted: everything goes in with textContent, never as HTML.
+import { matchTargets, mentionBefore } from "../completion";
 import { continuesGroup, insertMessage } from "../messages";
 import type { ChatState, FromWebview, ToWebview } from "../protocol";
 import { ALL, DEFAULT_TYPE, MESSAGE_TYPES, Message } from "../types";
@@ -7,7 +8,6 @@ declare function acquireVsCodeApi(): { postMessage(message: FromWebview): void }
 const host = acquireVsCodeApi();
 
 const STATUS_LABEL: Record<string, string> = { unknown_sender: "unknown sender", rejected: "rejected" };
-const MENTIONS = ""; // the target picker's value for "no target picked: the @mentions in the text count"
 const COMPOSER_MAX_HEIGHT = 12 * 16; // px; the CSS max-height says the same
 
 let state: ChatState | undefined;
@@ -24,7 +24,9 @@ const list = document.getElementById("messages") as HTMLElement;
 const composer = document.getElementById("composer") as HTMLFormElement;
 const note = document.getElementById("note") as HTMLElement;
 const typeSelect = document.getElementById("type") as HTMLSelectElement;
-const targetSelect = document.getElementById("target") as HTMLSelectElement;
+const targetBox = document.getElementById("targets") as HTMLElement;
+const targetInput = document.getElementById("targetInput") as HTMLInputElement;
+const completions = document.getElementById("completions") as HTMLElement;
 const titleInput = document.getElementById("title") as HTMLInputElement;
 const titleToggle = document.getElementById("toggleTitle") as HTMLButtonElement;
 const textInput = document.getElementById("text") as HTMLTextAreaElement;
@@ -99,13 +101,103 @@ function render(first = false): void {
   else list.scrollTop = list.scrollHeight - fromBottom;
 }
 
-// The picker offers the channel's members and @all. A pick survives a new state while it is still offered.
-function fillTargets(next: ChatState, keepPick: boolean): void {
-  const pick = keepPick ? targetSelect.value : next.defaultTarget;
-  const offered = [ALL, ...next.members.filter((id) => id !== next.self && id !== ALL)];
-  if (!offered.includes(next.defaultTarget)) offered.push(next.defaultTarget);
-  targetSelect.replaceChildren(new Option("to: @mentions in text", MENTIONS), ...offered.map((id) => new Option("to: " + id, id)));
-  targetSelect.value = pick === MENTIONS || offered.includes(pick) ? pick : next.defaultTarget;
+// The chosen targets, as chips before the input. With none, the @mentions in the text count.
+let targets: string[] = [];
+
+function candidates(): string[] {
+  return state ? [ALL, ...state.members.filter((id) => id !== state!.self && id !== ALL)] : [];
+}
+
+// In a direct message the recipient is the only target and cannot change.
+function isDirect(): boolean {
+  return state !== undefined && state.defaultTarget !== ALL;
+}
+
+function renderTargets(): void {
+  const chips = targets.map((id) => {
+    const chip = el("span", "chip", id);
+    if (!isDirect()) {
+      const remove = el("button", "", "×");
+      remove.type = "button";
+      remove.title = "Remove " + id;
+      remove.addEventListener("click", () => {
+        targets = targets.filter((t) => t !== id);
+        renderTargets();
+        targetInput.focus();
+      });
+      chip.append(remove);
+    }
+    return chip;
+  });
+  targetBox.replaceChildren(...chips, targetInput);
+  targetInput.hidden = isDirect();
+  targetInput.placeholder = targets.length ? "" : "to: @name, or @mentions in text";
+}
+
+// The completion list, shared by the target input and the textarea. `accept` inserts the pick.
+let completion: { items: string[]; index: number; accept: (id: string) => void } | undefined;
+
+function closeCompletion(): void {
+  completion = undefined;
+  completions.hidden = true;
+}
+
+function showCompletion(items: string[], accept: (id: string) => void): void {
+  if (items.length === 0) return closeCompletion();
+  completion = { items, index: 0, accept };
+  completions.replaceChildren(...items.map((id, i) => {
+    const row = el("li", i === 0 ? "active" : "", id);
+    row.setAttribute("role", "option");
+    row.addEventListener("mousedown", (event) => {
+      event.preventDefault(); // keep the focus where it is
+      accept(id);
+    });
+    return row;
+  }));
+  completions.hidden = false;
+}
+
+function moveCompletion(step: number): void {
+  if (!completion) return;
+  const rows = completions.children;
+  rows[completion.index].classList.remove("active");
+  completion.index = (completion.index + step + rows.length) % rows.length;
+  rows[completion.index].classList.add("active");
+  rows[completion.index].scrollIntoView({ block: "nearest" });
+}
+
+// Arrow keys move, Tab and Enter complete, Esc closes. The answer says whether the key was used.
+function completionKey(event: KeyboardEvent): boolean {
+  if (!completion) return false;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") moveCompletion(event.key === "ArrowDown" ? 1 : -1);
+  else if (event.key === "Tab" || event.key === "Enter") completion.accept(completion.items[completion.index]);
+  else if (event.key === "Escape") closeCompletion();
+  else return false;
+  event.preventDefault();
+  return true;
+}
+
+function addTarget(id: string): void {
+  if (!targets.includes(id)) targets.push(id);
+  targetInput.value = "";
+  closeCompletion();
+  renderTargets();
+  targetInput.focus();
+}
+
+function completeTarget(): void {
+  if (targetInput.value) showCompletion(matchTargets(candidates(), targetInput.value, targets), addTarget);
+  else closeCompletion();
+}
+
+function completeMention(): void {
+  const mention = mentionBefore(textInput.value, textInput.selectionStart);
+  if (!mention) return closeCompletion();
+  showCompletion(matchTargets(candidates(), mention.query), (id) => {
+    textInput.setRangeText(id + " ", mention.start + 1, textInput.selectionStart, "end");
+    closeCompletion();
+    growComposer();
+  });
 }
 
 function showState(next: ChatState): void {
@@ -116,7 +208,8 @@ function showState(next: ChatState): void {
   composer.hidden = !next.canSend;
   note.hidden = next.canSend;
   note.textContent = next.note;
-  fillTargets(next, !first);
+  if (first || isDirect()) targets = [next.defaultTarget];
+  renderTargets();
   messages.length = 0;
   for (const message of next.messages) insertMessage(messages, message);
   render(first);
@@ -148,15 +241,34 @@ composer.addEventListener("submit", (event) => {
   if (!textInput.value.trim()) return;
   sendButton.disabled = true;
   problem.textContent = "";
-  const targets = targetSelect.value === MENTIONS ? [] : [targetSelect.value];
-  host.postMessage({ type: "send", draft: { type: typeSelect.value, targets, title: titleInput.value, text: textInput.value } });
+  host.postMessage({ type: "send", draft: { type: typeSelect.value, targets: [...targets], title: titleInput.value, text: textInput.value } });
 });
 
-textInput.addEventListener("input", growComposer);
+textInput.addEventListener("input", () => {
+  growComposer();
+  completeMention();
+});
+textInput.addEventListener("click", completeMention);
+textInput.addEventListener("blur", closeCompletion);
 textInput.addEventListener("keydown", (event) => {
+  if (completionKey(event)) return;
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     composer.requestSubmit();
+  }
+});
+
+targetInput.addEventListener("input", completeTarget);
+targetInput.addEventListener("blur", closeCompletion);
+targetInput.addEventListener("keydown", (event) => {
+  if (completionKey(event)) return;
+  if (event.key === "Backspace" && targetInput.value === "" && targets.length > 0) {
+    targets.pop();
+    renderTargets();
+    targetInput.focus();
+  } else if (event.key === "Enter") {
+    event.preventDefault(); // not a send: the message is written in the text box
+    textInput.focus();
   }
 });
 

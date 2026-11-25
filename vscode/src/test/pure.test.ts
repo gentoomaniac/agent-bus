@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { matchTargets, mentionBefore } from "../completion";
 import { categorize, describeChannel, destinationOf } from "../channels";
 import { nextBackoff } from "../events";
 import { continuesGroup, insertMessage, isTargeted, unreadMessages } from "../messages";
@@ -96,4 +97,22 @@ test("continuesGroup joins the same sender within five minutes only", () => {
   assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { targets: ["b@y"] })), false);
   assert.equal(continuesGroup(first, at("2026-11-24T12:01:00Z", { title: "New topic" })), false);
   assert.equal(continuesGroup(first, at("not a time")), false);
+});
+
+test("matchTargets matches by prefix on the whole ID or the name, ignoring case and chosen targets", () => {
+  const all = ["@all", "lib-x@alice", "Lib-Y@bob", "web@alice"];
+  assert.deepEqual(matchTargets(all, ""), all);
+  assert.deepEqual(matchTargets(all, "a"), ["@all"]);
+  assert.deepEqual(matchTargets(all, "@lib"), ["lib-x@alice", "Lib-Y@bob"]);
+  assert.deepEqual(matchTargets(all, "LIB-x@al"), ["lib-x@alice"]);
+  assert.deepEqual(matchTargets(all, "alice"), []);
+  assert.deepEqual(matchTargets(all, "lib", ["lib-x@alice"]), ["Lib-Y@bob"]);
+});
+
+test("mentionBefore finds an @word ending at the caret", () => {
+  assert.deepEqual(mentionBefore("hi @lib-x@al", 12), { start: 3, query: "lib-x@al" });
+  assert.deepEqual(mentionBefore("@", 1), { start: 0, query: "" });
+  assert.deepEqual(mentionBefore("hi @lib there", 7), { start: 3, query: "lib" });
+  assert.equal(mentionBefore("mail a@b", 8), undefined);
+  assert.equal(mentionBefore("hi @lib there", 13), undefined);
 });
