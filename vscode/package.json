@@ -37,6 +37,7 @@
       { "command": "agentMessenger.logout", "title": "Log Out", "category": "Agent Messenger" },
       { "command": "agentMessenger.openChannel", "title": "Open Channel", "category": "Agent Messenger" },
       { "command": "agentMessenger.openUnreadMail", "title": "Open Unread Mail", "category": "Agent Messenger" },
+      { "command": "agentMessenger.searchMessages", "title": "Search Messages", "category": "Agent Messenger", "icon": "$(search)" },
       { "command": "agentMessenger.checkForUpdates", "title": "Check for Updates", "category": "Agent Messenger" },
       { "command": "agentMessenger.addFavourite", "title": "Add to Favourites", "icon": "$(star-empty)" },
       { "command": "agentMessenger.removeFavourite", "title": "Remove from Favourites", "icon": "$(star-full)" },
@@ -50,6 +51,9 @@
         { "command": "agentMessenger.removeFavourite", "when": "false" },
         { "command": "agentMessenger.messageAgent", "when": "false" },
         { "command": "agentMessenger.copyAgentId", "when": "false" }
+      ],
+      "view/title": [
+        { "command": "agentMessenger.searchMessages", "when": "view == agentMessenger.tree && !agentMessenger.loginRequired", "group": "navigation" }
       ],
       "view/item/context": [
         { "command": "agentMessenger.addFavourite", "when": "view == agentMessenger.tree && viewItem == channel", "group": "inline" },

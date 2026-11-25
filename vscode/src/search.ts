@@ -27,6 +27,11 @@ export function hitPlace(channels: readonly Channel[], channelId: string): strin
   return channel ? describeChannel(channel) : channelId;
 }
 
+// Text from an agent as one line of a quick pick, which would turn "$(name)" into an icon.
+export function plainLabel(text: string): string {
+  return text.replace(/\s+/g, " ").trim().replaceAll("$(", "\\$(");
+}
+
 // A piece of a snippet, as the page draws it: plain text or a match.
 export interface SnippetPart {
   text: string;

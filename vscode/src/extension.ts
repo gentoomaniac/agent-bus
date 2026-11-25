@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { ChatPanels } from "./chat";
 import { Session } from "./session";
+import { searchMessages } from "./searchPicker";
 import { AgentMessengerTree, Node } from "./tree";
 import { UpdateChecker } from "./updates";
 import { openUnreadMail, showUnreadIndicators } from "./unread";
@@ -22,6 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
     showUnreadIndicators(session, treeView),
     vscode.commands.registerCommand("agentMessenger.openUnreadMail", () => openUnreadMail(session)),
     vscode.commands.registerCommand("agentMessenger.login", () => session.login()),
+    vscode.commands.registerCommand("agentMessenger.searchMessages", () => searchMessages(session, chats)),
     vscode.commands.registerCommand("agentMessenger.openChannel", (channelId: string) => chats.open(channelId)),
     vscode.commands.registerCommand("agentMessenger.addFavourite", (node: Node) => setFavourite(session, node, true)),
     vscode.commands.registerCommand("agentMessenger.removeFavourite", (node: Node) => setFavourite(session, node, false)),

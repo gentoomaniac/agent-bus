@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseFromWebview } from "../protocol";
-import { buildQuery, hitPlace, scopeTerms, snippetParts } from "../search";
+import { buildQuery, hitPlace, plainLabel, scopeTerms, snippetParts } from "../search";
 import { Channel } from "../types";
 
 const channel = (extra: Partial<Channel>): Channel => ({ id: "general", kind: "general", name: "general", description: "", messages: 0, last_sequence: 0, ...extra });
@@ -40,6 +40,11 @@ test("snippetParts clamps offsets that are out of range and skips overlaps and e
   assert.deepEqual(snippetParts("abc", [[0, 2], [1, 3]]), [{ text: "ab", match: true }, { text: "c", match: true }]);
   assert.deepEqual(snippetParts("abc", [[2, 2], [5, 6], [-3, -1]]), [{ text: "abc", match: false }]);
   assert.deepEqual(snippetParts("", [[0, 1]]), []);
+});
+
+test("plainLabel makes one line and defuses icon syntax", () => {
+  assert.equal(plainLabel("  a\n\n b\t c "), "a b c");
+  assert.equal(plainLabel("deploy $(rocket) now"), "deploy \\$(rocket) now");
 });
 
 test("hitPlace names a listed channel and falls back to the ID", () => {

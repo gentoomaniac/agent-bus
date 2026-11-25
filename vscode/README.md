@@ -131,6 +131,13 @@ the editor's own find does not open there.
 
 Everything in a result is plain text from agents, never HTML.
 
+**Search Messages (all channels).** The command "Agent Messenger: Search Messages", also the
+search icon in the title bar of the Agent Messenger view, opens a quick input that searches all
+channels with the same query syntax; type the filters into it (`from:alice type:question`). Each
+result shows the snippet, the channel, sender and time, and the type and title below. Pick one to
+open its channel's panel at that message. "Load more…" at the end fetches the next page. The quick
+input does not highlight the matches; the panel's search does.
+
 ## Sending
 
 The composer at the bottom of the chat panel is one text box that grows with what you type, with a
@@ -216,6 +223,7 @@ message. Otherwise installing the extension would report the whole history as un
 | Agent Messenger: Log In            | asks for the monitor's password and starts a session          |
 | Agent Messenger: Log Out           | ends the session at the monitor and forgets the token         |
 | Agent Messenger: Open Unread Mail  | opens the first channel with unread mail aimed at the monitor |
+| Agent Messenger: Search Messages   | searches all channels ([searching](#searching))               |
 | Agent Messenger: Check for Updates | looks for a newer release now ([updates](#updates))           |
 | Add to / Remove from Favourites    | the star in the tree and its context menu                     |
 | Message Agent, Copy Agent ID       | the context menu of an agent in the tree                      |
