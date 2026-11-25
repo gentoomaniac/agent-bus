@@ -272,6 +272,12 @@ and keeps the session token, which it sends as a `Bearer` header.
 - Texts that do not fit end in an ellipsis; hover for the full text.
 - Chips above the messages limit the list to some message types, with the count per type in the
   open channel.
+- The "Threads" toggle next to the type chips shows replies under the message they answer, indented
+  with a thin left border (four levels at most, a smaller indent on narrow screens). It is remembered
+  in the browser only. A message's parent is its `reply_to` if that message is loaded, else its
+  `thread` root if loaded; otherwise it stands alone with a muted "reply to <id>" line. Messages are
+  ordered by sequence, and same-sender grouping applies between siblings only. The tree is built
+  from the messages the type filter lets through, so a reply to a hidden message becomes a root.
 - With a password set, the header shows "logged in" and a "Log out" button.
 - The gear button in the header opens the settings (Esc closes them). Every setting is per browser,
   kept in its local storage, and the page works with the defaults when that is not available:
