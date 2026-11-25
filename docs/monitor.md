@@ -43,8 +43,9 @@ docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 `monitor-init` copies into the monitor's folder the CA certificate, the monitor's logins, the web
 password, the directory snapshot and the key of `BUS_AGENT`, which must be registered in the
 container (`docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl --direct
-register monitor@alice`). Run it again to refresh the snapshot after agents are registered or
-enrolled, or after a password change, and restart the monitor.
+register monitor@alice`). Agents registered or enrolled later show up by themselves
+([limits](#limits-of-the-mvp)). Run it again, and restart the monitor, only after a password
+change, a new key of `BUS_AGENT` or a new CA.
 
 Open <http://127.0.0.1:8080> and log in. To send, set `BUS_AGENT` in the service as well. Without
 compose, see [podman.md](podman.md#6-the-monitor), or start a second container on the same folder
@@ -89,8 +90,9 @@ it, and run it again after a password change.
    ```
 
 **Checkpoint:** <http://127.0.0.1:8080> shows the login form, and after the login "live" and your
-channels. Without `--agent` the monitor is read-only: leave it out of `monitor init` too. Run
-`monitor init` again after registering agents, and restart `bus-monitor`.
+channels. Without `--agent` the monitor is read-only: leave it out of `monitor init` too. Agents
+registered later appear without a new `monitor init`; run it again only after a password change, a
+new key of the sending agent or a new CA, and restart `bus-monitor`.
 
 A broker config directory from before the monitor's read-only logins needs
 `bin/agent-busctl service init` once, then a restart of the broker, before `monitor init` works

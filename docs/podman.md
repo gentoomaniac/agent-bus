@@ -272,8 +272,9 @@ podman exec -it agent-bus agent-busctl monitor password
 broker's folder read-only: the CA certificate (not its key), the passwords of its two read-only
 logins (it cannot approve a request or write the registry), the web password hash, the directory
 snapshot and the key of the agent it sends as. It never sees `ca.key`, the admin logins or busd's.
-Register the sending identity first, then run `monitor init`; run it again after registering or
-enrolling agents or after changing the password:
+Register the sending identity first, then run `monitor init`. Agents you register or enroll later
+show up by themselves, because the monitor reads the directory through busd. Run it again, and
+restart the monitor, only after you change the web password, the sending identity's key or the CA:
 
 ```sh
 agent-busctl --direct register monitor@alice

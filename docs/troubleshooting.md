@@ -461,7 +461,8 @@ Symptoms of `agent-bus enroll` and `agent-busctl ca`, and what they mean
 | `monitor init` stops with "the monitor has no login monitor-bus here: run `agent-busctl service init`" | the broker's config folder is from before busd. Run `agent-busctl --direct service init`, restart the broker, then `monitor init` again |
 | removing the broker container fails because the monitor depends on it (Podman: "has dependent containers which must be removed before it") | the monitor shares the broker's network. Remove the monitor first, then the broker, then start both again: [procedure below](#removing-the-broker-container-with-a-monitor) |
 | the monitor does not start and the log says it needs the web login password | set it with `agent-busctl monitor password` on the broker, run `monitor init` again and restart the monitor ([monitor.md](monitor.md#login)) |
-| the monitor does not trust the broker after `tls init --force`, or does not know a new agent | its config folder is a copy. Run `monitor init` again and restart `bus-monitor` |
+| the monitor does not trust the broker after `tls init --force` | its config folder holds a copy of the old CA. Run `monitor init` again and restart `bus-monitor` |
+| the monitor does not show a new agent or channel | it learns of them from busd within five seconds, so no `monitor init` is needed. Check `"directory"` in `GET /api/v1/status` for an error ("directory not readable" in the page) and that busd runs: `podman logs agent-bus` or `docker compose logs agent-bus` |
 
 ### Removing the broker container with a monitor
 

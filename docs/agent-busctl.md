@@ -708,8 +708,10 @@ separate folder, never the broker's one). It copies:
 | the `directory/` snapshot | the broker's config |
 | with `--agent` (env `BUS_AGENT`): that registered agent's `key`, `password`, `client.pem` and `client.key` | the broker's config |
 
-It needs `service init` or `admin init` to have run, and no broker. Run it again after agents are
-registered or enrolled, or after a password change, then restart `bus-monitor`.
+It needs `service init` or `admin init` to have run, and no broker. Agents registered or enrolled
+later appear in the monitor without it, because the monitor reads the directory through busd. Run
+it again, then restart `bus-monitor`, only after a password change, a replaced key of the sending
+agent, or a new CA: those are copies.
 
 The monitor's folder is on the host, so the command runs as a one-off container with both
 folders mounted (`$AGENT_BUS_HOME` as in the setup guides; Podman also needs the `$U` option, see

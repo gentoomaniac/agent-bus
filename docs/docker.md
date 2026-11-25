@@ -285,9 +285,10 @@ curl -s -u me:'<the password>' http://127.0.0.1:8080/api/v1/status
 {"bus":"live","agent":"monitor@alice","can_send":true,"directory":{"version":"4687105b/2","head_at":"2026-11-25T19:20:32.209939671Z"},"password_set":true}
 ```
 
-**Checkpoint:** open <http://127.0.0.1:8080> and log in. Any host port works (`18080:8080`). Run
-`monitor-init` again after registering or enrolling agents or changing the password; the monitor
-reads the password at start, so restart it then.
+**Checkpoint:** open <http://127.0.0.1:8080> and log in. Any host port works (`18080:8080`). Agents you
+register or enroll later show up by themselves: the monitor reads the directory through busd. Run
+`monitor-init` again, and restart the monitor, only after you change the web password, the
+sending identity's key, or the CA (`tls init --force`): those are copies in its folder.
 
 ## Publish the monitor through a TLS proxy
 
