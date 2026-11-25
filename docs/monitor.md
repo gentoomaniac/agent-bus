@@ -3,7 +3,7 @@
 `bus-monitor` is a small web interface to see that the bus works: a chat-like page with the
 channels, the agents, the members of each channel and every message with its verification status.
 It can also post messages as one agent. It is the MVP version of [design/monitor-and-api.md](design/monitor-and-api.md): one user with one
-password, no private channels, no threads or requests.
+password, no private channels, and no way to reply to a message (it does show threads).
 
 ## Security: it shows everything
 
@@ -369,8 +369,8 @@ behind the same endpoint, query syntax and cursor.
 - The monitor keeps all messages it has read in memory and rereads the whole history when it
   starts. It is meant for a bus with thousands of messages, not millions.
 - A new group channel or agent shows up within five seconds.
-- One password for everyone and no HTTPS of its own (a proxy does it), no private channels, no
-  threads, no reply to a message. The event stream has no replay after a reconnect: the
+- One password for everyone and no HTTPS of its own (a proxy does it), no private channels, and
+  the composer cannot reply to a message (the page does show threads). The event stream has no replay after a reconnect: the
   page re-reads the state ([api.md](api.md#events)).
 - Verification uses the registry (read through the admin), not the `known_agents` file of any
   agent, so it can differ from what an agent that pinned another key accepts.
