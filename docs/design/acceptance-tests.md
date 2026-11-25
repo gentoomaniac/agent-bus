@@ -69,3 +69,12 @@ cannot pass yet. What runs today is in `internal/itest` (`make itest`) and the u
 - Hold release: a crash before release, after release before the agent sees the message, and after it saw the message but before `mark_read` each leave it delivered exactly when handled state is committed, never lost; the hold record is deleted only after the handled set write; a redelivery of a held sequence is acked.
 - `agent-busctl rotate` sends a signed `busd.agent.rotate`; one signed by a revoked key is refused; after a revocation only the owner's signature rotates the key.
 - Tests that need the broker's behaviour run against the JetStream binding.
+
+Added for what was built after the original list (decisions 41 to 43). These are tested today in
+`internal/itest/mtls_test.go`, `internal/itest/enroll_test.go`, `internal/itest/monitor_test.go`,
+`internal/broker/principals_test.go` and `internal/monitor/prefs_test.go`:
+
+- Certificate login: an agent with a client certificate logs in on the certificate listener; after revocation by certID the same certificate no longer logs in.
+- Enrollment: a request with a CSR is approved and the new machine talks to an existing agent; a rejected request fails with the reason and creates nothing; a request carrying the autosign secret is approved without the owner, one without it is not; the enrollment login can only ask; limits and expiry are described in [access control](access-control.md#phase-b-implemented-the-enrollment-flow).
+- The monitor's read-only logins: they cannot publish to any message subject, cannot approve or reject an enrollment, and can reach only their own reply inbox space.
+- Shared preferences: read markers merge by maximum, favourites and folded sections are replaced, a `prefs` event reaches connected clients, and the file survives a restart of the monitor.
