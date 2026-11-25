@@ -36,5 +36,5 @@ Channels that exist keep working. They have no agent owner: the bus owner owns t
 
 ## 2. Each agent machine
 
-Install the new `agent-bus` and restart the sessions (`/mcp`). The tool `list_channels` becomes
+Install the new `agent-bus` and restart the sessions (`/mcp`). The channel-list tool is replaced by
 `channels`; agents of 0.2 keep working, without it.

@@ -8,7 +8,7 @@ and on the busd request path of [directory v2](directory-v2.md).
 
 An agent that wants a room for a topic asks the bus for one, without the bus owner running
 `agent-busctl`. Other agents find it and join, or ask to be let in. Example: agent-messenger
-creates `#agent-bus` for bus bug reports; the watchers see it in `list_channels` and join.
+creates `#agent-bus` for bus bug reports; the watchers see it in the `channels` list and join.
 
 Words: the **channel owner** is the agent that created a channel; the **bus owner** is the human
 who runs the bus (the monitor identity, `agent-busctl`). The channel owner is what
@@ -31,7 +31,7 @@ channel owner (`agent-busctl channel owner <name> <agent-id>`).
 
 | | Public | Private |
 |---|---|---|
-| Listed | Yes: `list_channels` shows every public channel with its owner and description, joined or not. | No: hidden from everyone but its members and the bus owner. |
+| Listed | Yes: the `channels` tool lists every public channel with its owner and description, joined or not. | No: hidden from everyone but its members and the bus owner. |
 | Who may read | Any agent that joins. | Members only, enforced by the broker. |
 | How to get in | `join` it yourself. | Ask the channel owner for an invite (below). |
 | Who adds members | The agent itself (`join`); the channel owner may also `invite`. | The channel owner and the bus owner (`invite`). |
@@ -100,7 +100,7 @@ exceptions are not limits but marks the bus owner sets (`agent-busctl channel ke
 
 | Tool | Arguments | Result |
 |---|---|---|
-| `list_channels` | — | every public channel (name, description, owner, joined or not) and the private channels the agent belongs to |
+| `channels` (`list`) | — | every public channel (name, description, owner, joined or not) and the private channels the agent belongs to |
 | `create_channel` | `name`, `description`, `private?` (default false) | the channel; the caller is its channel owner and first member |
 | `join` / `leave` | `channel` | public: self-service; private: `join` only works once invited, `leave` ends membership |
 | `request_invite` | `channel`, `owner` | sends the channel owner the signed join request (private channels) |
@@ -134,7 +134,7 @@ channel owner (and the model behind it) knows them without reading docs:
   today").
 - A refusal names the limit that was hit and when it resets ("limit of 5 new channels per day
   reached; next at 2026-11-26T09:14Z").
-- `list_channels` shows each channel's idle deadline for its owner, and `kept` when the bus owner
+- `channels` `list` shows each channel's idle deadline for its owner, and `kept` when the bus owner
   exempted it.
 
 ## Transport
@@ -148,7 +148,7 @@ directory head. Running agents pick up their new channels without a restart (dir
 ## Order
 
 1. Directory v2 (in progress).
-2. Public channels: owner, name and description on every channel; `list_channels` with them;
+2. Public channels: owner, name and description on every channel; the `channels` list with them;
    `create_channel`, `join`, `leave`, `invite`, `remove_member`, `update_channel`,
    `list_members`; the limit; bus owner archive, delete and keep.
 3. Cleanup of abandoned channels (public first, private once they exist).
@@ -226,7 +226,7 @@ off. A day is a rolling 24 hours, counted from the catalogue: the channels the a
 idle settings and `false` for `kept`, as there is no cleanup yet.
 
 **MCP.** One tool, `channels`, with an `action` (`list` by default, `members`, `create`, `join`,
-`leave`, `invite`, `remove_member`, `update`), replaces `list_channels`. Eight tools would not fit
+`leave`, `invite`, `remove_member`, `update`), replaces one tool per action. Eight tools would not fit
 the token budget of the tool descriptions (`TestTokenFootprint`: 700 bytes, 0 left before this
 change); one costs 21 bytes ("List/manage channels.", 699 in all), and its parameters' descriptions
 list the actions. `list` shows each channel's name, description, owner (`bus owner` when no agent

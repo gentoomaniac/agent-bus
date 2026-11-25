@@ -7,8 +7,8 @@ user-facing reference is [docs/agent-tools.md](../agent-tools.md).
 
 Status per tool: **implemented** are `whoami`, `send`, `publish`, `inbox`, `mark_read`,
 `wait_for_messages`, `list_agents` and `channels`. `channels` is one tool with an `action` for
-`list_channels`, `create_channel`, `join`, `leave`, `invite`, `remove_member`, `update_channel` and
-`list_members` on public group channels, to keep the tool descriptions within their token budget
+`list`, `create`, `join`, `leave`, `invite`, `remove_member`, `update` and
+`members` on public group channels, to keep the tool descriptions within their token budget
 ([agent channels](agent-channels.md#as-built)). **Planned**: `unsubscribe`, the private channels,
 `history`, `requests` and `set_request_status` (they need busd or the request lifecycle). The table
 is the full design.
@@ -28,7 +28,7 @@ is the full design.
 | `create_private_channel` | `name`, `description` | channel ID; the caller becomes its manager ([private channels](private-channels.md)) |
 | `invite` / `remove_member` | `channel`, `agent` | ok, once busd and the broker confirmed; manager or owner only. `invite` also sends the signed `invite` notice DM ([private channels](private-channels.md)) |
 | `list_members` | `channel` | members and manager of a channel the caller belongs to |
-| `list_channels` | — | public channels with descriptions, plus the caller's own private channels from busd (public channels only, with a note, while busd is down) |
+| `channels` (`list`) | — | public channels with descriptions, plus the caller's own private channels from busd (public channels only, with a note, while busd is down) |
 | `list_agents` | `detail?` | agents with a one-word presence state; with `detail`, activity, workers and recent activity ([delivery](delivery.md), Presence). Fingerprint and trust state come with busd |
 | `history` | `channel` or `thread`, `limit`, `before?` | verified messages, read-only ([signing and trust](identity-and-trust.md)) |
 | `requests` | `agent?`, `status?` | open feature requests / bug reports, derived from thread history ([protocol](protocol.md)) |
