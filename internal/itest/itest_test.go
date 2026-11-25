@@ -43,6 +43,7 @@ const (
 type harness struct {
 	configDir   string
 	port        int
+	mappedPort  int
 	agentBusctl string
 	address     string
 	monitorURL  string
@@ -63,6 +64,7 @@ func startBus(t *testing.T) *harness {
 	h := &harness{
 		configDir:   configDir,
 		port:        port,
+		mappedPort:  mappedPort,
 		agentBusctl: filepath.Join(t.TempDir(), "agent-busctl"),
 		address:     fmt.Sprintf("localhost:%d", port),
 		monitorURL:  fmt.Sprintf("http://127.0.0.1:%d", monitorPort),
@@ -153,20 +155,22 @@ func (h *harness) register(t *testing.T, agentID string) {
 	h.run(t, h.agentBusctl, "--direct", "register", agentID)
 }
 
+// agentConnection logs in the way the agent's directory says: with its certificate if it has
+// one, else with its password.
 func (h *harness) agentConnection(agentID string) broker.Connection {
-	password, err := creds.ReadPassword(creds.AgentDir(h.configDir, agentID))
+	connection, err := broker.UserConnection(creds.AgentDir(h.configDir, agentID), bus.AgentToken(agentID), h.address, h.mappedPort, h.caCert)
 	if err != nil {
 		panic(err)
 	}
-	return broker.Connection{Address: h.address, CACertPath: h.caCert, User: bus.AgentToken(agentID), Password: password}
+	return connection
 }
 
 func (h *harness) adminConnection(user string) broker.Connection {
-	password, err := creds.ReadPassword(creds.AdminDir(h.configDir, user))
+	connection, err := broker.UserConnection(creds.AdminDir(h.configDir, user), user, h.address, h.mappedPort, h.caCert)
 	if err != nil {
 		panic(err)
 	}
-	return broker.Connection{Address: h.address, CACertPath: h.caCert, User: user, Password: password}
+	return connection
 }
 
 func (h *harness) admin(t *testing.T) bus.Admin {

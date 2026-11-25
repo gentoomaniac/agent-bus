@@ -40,13 +40,14 @@ func requireActiveAgent(ctx context.Context, admin bus.Admin, agentID string) er
 
 type CertIssueCmd struct {
 	AgentID  string        `arg:"" optional:"" name:"agent-id" help:"The registered agent to issue a certificate for."`
-	Admin    bool          `help:"Issue for the two admin users instead of an agent. The web monitor logs in as them."`
+	Admin    bool          `help:"Issue for the two admin users instead of an agent, and switch them to certificate login: the admin tools use the files at once. The web monitor logs in as these users and must be restarted."`
+	Switch   bool          `help:"Also switch the agent to certificate login, as cert switch does. An agent on this machine uses the files at once, so without this it is locked out until the switch."`
 	Validity time.Duration `help:"How long the certificate is valid. Renew by issuing again." default:"8760h"`
 }
 
 // Run creates a key and a certificate for the identity and writes them into its credentials
 // directory (client.pem, client.key), from where the files are copied to the machine that uses
-// them. The broker does not know the certificate until `cert switch` maps it.
+// them. The broker does not know the certificate until it is switched to certificate login.
 func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 	if cmd.Admin == (cmd.AgentID != "") {
 		return errors.New("name an agent ID, or pass --admin, not both and not neither")
@@ -55,21 +56,28 @@ func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 	if err != nil {
 		return err
 	}
+	// Connected before the files are written: a connection prefers the certificate once it exists.
+	admin, err := cli.brokerAdmin()
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
 	if cmd.Admin {
 		for _, user := range adminUsers {
 			if err := issueInto(ca, broker.AdminCertIdentity(user), creds.AdminDir(cli.ConfigDir, user), cmd.Validity); err != nil {
 				return err
 			}
 		}
-		fmt.Printf("issued certificates for %v in their directories under %s\n"+
-			"next: agent-busctl --direct cert switch --admin, then restart bus-monitor\n", adminUsers, cli.ConfigDir)
+		for _, user := range adminUsers { // bus-admin first, see Admin.SetAdminLogin
+			if err := admin.SetAdminLogin(ctx, user, ""); err != nil {
+				return err
+			}
+		}
+		fmt.Printf("the admin users log in with certificates now (%s); restart bus-monitor\n", cli.ConfigDir)
 		return nil
 	}
-	admin, err := cli.adminClient()
-	if err != nil {
-		return err
-	}
-	defer admin.Close()
+
 	if err := requireActiveAgent(ctx, admin, cmd.AgentID); err != nil {
 		return err
 	}
@@ -78,9 +86,16 @@ func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 		return err
 	}
 	certPath, keyPath := creds.ClientCertPaths(dir)
-	fmt.Printf("issued a certificate for %s: %s and %s\n"+
-		"an agent on this machine uses it at once, so switch it right away: agent-busctl --direct cert switch %s\n"+
-		"for another machine, copy both files into its %s directory first\n", cmd.AgentID, certPath, keyPath, cmd.AgentID, cmd.AgentID)
+	fmt.Printf("issued a certificate for %s: %s and %s\n", cmd.AgentID, certPath, keyPath)
+	if cmd.Switch {
+		if err := admin.SetAgentLogin(ctx, cmd.AgentID, ""); err != nil {
+			return err
+		}
+		fmt.Printf("%s logs in with its certificate now; for another machine, copy both files into its %s directory\n", cmd.AgentID, cmd.AgentID)
+		return nil
+	}
+	fmt.Printf("an agent on this machine uses it at once: switch it with `agent-busctl --direct cert switch %s`\n"+
+		"for another machine, copy both files into its %s directory first\n", cmd.AgentID, cmd.AgentID)
 	return nil
 }
 
@@ -134,7 +149,7 @@ func (cmd *CertSignCmd) Run(ctx context.Context, cli *CLI) error {
 
 type CertSwitchCmd struct {
 	AgentID  string `arg:"" optional:"" name:"agent-id" help:"The registered agent to switch."`
-	Admin    bool   `help:"Switch the two admin users instead of an agent."`
+	Admin    bool   `help:"Switch the two admin users back to password login; needs --password. cert issue --admin switches them to certificates."`
 	Password bool   `help:"Switch back to password login (the rollback)."`
 }
 
@@ -143,6 +158,9 @@ type CertSwitchCmd struct {
 func (cmd *CertSwitchCmd) Run(ctx context.Context, cli *CLI) error {
 	if cmd.Admin == (cmd.AgentID != "") {
 		return errors.New("name an agent ID, or pass --admin, not both and not neither")
+	}
+	if cmd.Admin && !cmd.Password {
+		return errors.New("--admin needs --password: `cert issue --admin` is what switches the admin users to certificates, because the admin tools must use the new files at once")
 	}
 	admin, err := cli.brokerAdmin()
 	if err != nil {
@@ -153,9 +171,6 @@ func (cmd *CertSwitchCmd) Run(ctx context.Context, cli *CLI) error {
 	if cmd.Admin {
 		for _, user := range adminUsers { // bus-admin first, see Admin.SetAdminLogin
 			dir := creds.AdminDir(cli.ConfigDir, user)
-			if !cmd.Password && !creds.HasClientCert(dir) {
-				return fmt.Errorf("%s has no certificate in %s: run `agent-busctl --direct cert issue --admin` first, or the admin tools lock themselves out", user, dir)
-			}
 			hash, err := cmd.passwordHash(dir)
 			if err != nil {
 				return err
