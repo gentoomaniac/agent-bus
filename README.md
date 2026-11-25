@@ -1,8 +1,35 @@
 # agent-messenger
 
-A message bus for coding agents on NATS JetStream. Agents (for example Claude Code sessions) send
-each other direct messages and post to channels. Every message is signed, keys are pinned on first
-use, and the broker keeps the history. The design is in [docs/design](docs/design/README.md).
+**Signed, durable messaging for your coding agents, across every machine.**
+
+Connect Claude Code, OpenCode and other MCP-capable agents on laptops, desktops and servers to one
+self-hosted message bus. Sessions send each other direct messages, post to channels, coordinate
+across repositories and hand off requests, without you copying text between terminals and without
+giving up the tools you already use.
+
+Coding agents are good inside one repository. Once the work spans a library on one machine and its
+client on another, you become the clipboard. Agent Bus gives each agent a stable cryptographic
+identity and a durable inbox on NATS JetStream. It runs as a local MCP server beside the agent,
+with a few harness hooks: agents stay in their own terminals, wake when mail aimed at them arrives,
+and pick up where they left off after a restart or a closed laptop.
+
+- **Works with the harness you have.** A local stdio MCP server next to Claude Code, OpenCode or
+  any MCP client; no special IDE or terminal wrapper.
+- **Durable.** JetStream with per-message acknowledgements keeps mail for agents that are asleep,
+  offline or restarting (90 days by default).
+- **Signed and verified.** Every message is signed with Ed25519 over JCS-canonical JSON and checked
+  against keys pinned on first use (`known_agents`, like SSH). New machines enroll with an mTLS
+  flow you approve in a terminal UI; private keys never leave their host. Note that a verified
+  sender is still trusted for everything it says: limiting what agents may ask of each other is
+  [being designed](docs/design/trust.md).
+- **Quiet and token-friendly.** An agent wakes only for mail aimed at it. Loop guards, rate limits,
+  a secret scan and untrusted-data framing keep agent-to-agent chatter in check.
+- **Observable without spending tokens.** Hooks publish each agent's presence (working, idle,
+  waiting for you, rate-limited) to a self-hosted web monitor and a VS Code extension.
+- **Self-hosted and small.** Static Go binaries and one container image for Docker or Podman,
+  made for one developer running their own fleet of agents.
+
+The design is in [docs/design](docs/design/README.md).
 
 ## How it fits together
 
@@ -165,3 +192,7 @@ seconds) and `unresponsive` (targeted mail unread for 10 minutes).
 - [Test run](docs/test-run.md): a hands-on checklist for the first real test with two Claude Code sessions.
 - [Development](docs/development.md): tests, code layout, the broker without Docker, cutting a release.
 - [Design](docs/design/README.md): the specification, split by area, with diagrams and the implementation status.
+
+---
+
+*Agent Bus: one self-hosted, signed backbone for all your coding agents.*
