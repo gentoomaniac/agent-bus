@@ -21,11 +21,13 @@ This design is a brief for an implementing agent. Sections marked **Decision** a
 **Decision: MVP first** (owner, 2026-11-24). The bus runs in a trusted environment, so we build a usable MVP quickly and tighten it later. The rest of this document describes the full system; for now only the MVP below is built, with the simplest version of each rule. Review findings that only harden against a compromised host or rare crash edges are deferred to a later tightening pass.
 
 - **In the MVP:** milestone 1a (done), milestone 2 (adapter core), milestone 4 (MCP tools) and milestone 5 (Claude Code hooks). Agents talk over DMs, `general` and open group channels. Messages are signed and verified, keys are pinned on first use (`--auto-accept-new-keys`, the default), each message is acknowledged on its own, there is one session per identity, and the loop guard, rate limit and secret scan apply. `agent-busctl --direct` creates identities, channels and the agents' consumers.
-- **Deferred until after the MVP:** busd (milestone 3) and with it private channels and their membership checks; the monitor (milestones 8 and 9); the full request lifecycle (milestone 6 beyond plain `feature_request` / `bug_report` messages); holds for unknown or changed keys (`--no-auto-accept-new-keys`); key rotation and revocation; the OpenCode plugin.
+- **Deferred until after the MVP:** busd (milestone 3) and with it private channels and their membership checks; the monitor (milestones 8 and 9); the full request lifecycle (milestone 6 beyond plain `feature_request` / `bug_report` messages); holds for unknown or changed keys (`--no-auto-accept-new-keys`); key rotation and revocation; the OpenCode plugin. Built since: the monitor, the OpenCode plugin and a minimal busd. Still deferred: the rest of busd, private channels, holds, and rotation.
 
 The MVP text above is the plan of 2026-11-24. Since then the monitor, its API, agent presence, the
-OpenCode plugin, agent removal and mTLS phase A were built as well; the status table shows where
-things stand today.
+OpenCode plugin, agent removal and mTLS phase A were built as well, then phase B (enrollment through
+a minimal busd, decision 41), the monitor's own read-only logins and config directory (decision 42),
+shared preferences (decision 43) and the VS Code extension as an API client of the monitor
+(decision 44). The status table shows where things stand today.
 
 ## Goals and non-goals
 
@@ -45,7 +47,7 @@ things stand today.
 - Waking an idle, stopped session by anything but its own harness. **Decision:** mail is delivered while a session is active, when the next one starts, and (Claude Code, OpenCode) by a waiter that wakes an idle session for targeted mail only ([delivery](delivery.md)).
 - Keeping keys from an agent that has shell access as the owner. **Decision:** key storage protects against accidental exposure only ([signing and trust](identity-and-trust.md)).
 - Reaching the broker over the internet. The broker is on the local network; machines outside it need a tunnel or VPN set up by the owner ([bus model](bus-model.md)).
-- Sending messages from the monitor ([monitor](monitor-and-api.md)) is a later milestone, not v1.
+- Sending messages from the monitor as `human@<owner>` ([monitor](monitor-and-api.md)) is a later milestone, not v1. The monitor already sends as one registered agent identity.
 - Hiding private channels from the owner, the monitor or the broker. **Decision:** private means private from other agents only ([private channels](private-channels.md)).
 
 ## Reading order
@@ -57,7 +59,7 @@ things stand today.
 5. [Delivery](delivery.md) and [presence](presence.md): inbox, acks, holds, hooks and waking sessions.
 6. [Safety](safety.md): untrusted content, loop guard, rate limits, secret scan.
 7. [Access control](access-control.md): accounts, grants, mTLS phase A and the enrollment flow.
-8. [Private channels](private-channels.md) and [busd](busd.md): the planned control plane.
+8. [Private channels](private-channels.md) and [busd](busd.md): the control plane (minimal busd built, the rest planned).
 9. [agent-busctl](admin-cli.md), [monitor and API](monitor-and-api.md), [operations](operations.md).
 10. Reference: [MCP tools](mcp-tools.md), [milestones](milestones.md), [acceptance tests](acceptance-tests.md), [decisions log](decisions.md).
 
@@ -79,8 +81,9 @@ things stand today.
 | mTLS enrollment (phase B): enrollment login, `ca` commands and review screen, autosign | [access control](access-control.md) | implemented (decision 41) |
 | Private channels | [private channels](private-channels.md) | planned |
 | busd | [busd](busd.md) | minimal busd built (enrollment, CA key, approvals, local reloads); the rest planned |
-| agent-busctl | [admin CLI](admin-cli.md) | partly: setup, register, channels, removal, directory, certificates, enrollment (`enroll`, `ca`), monitor password |
-| Monitor and API | [monitor and API](monitor-and-api.md) | implemented; own principal and `human@` key planned |
+| agent-busctl | [admin CLI](admin-cli.md) | partly: setup, register, channels, removal, directory, certificates, enrollment (`enroll init`, `enroll autosign`, `ca`), `service init`, `monitor init`, monitor password |
+| Monitor and API | [monitor and API](monitor-and-api.md) | implemented, with its own read-only logins (`monitor-bus`, `monitor-control`) and shared prefs; the `monitor@<owner>` signing identity, a durable consumer made by busd and the `human@` key planned |
+| VS Code extension (`vscode/`) | [monitor and API](monitor-and-api.md) | implemented, API client only (decision 44) |
 | MCP tools | [MCP tools](mcp-tools.md) | partly: 8 of the specified tools |
 | Deployment, reload, releases | [operations](operations.md) | implemented |
 
@@ -91,9 +94,9 @@ Noted while restructuring; neither side was changed.
 - The MVP decision defers the monitor and the OpenCode plugin; both are built.
 - Holds: the text says a changed key or an unknown sender (with `--no-auto-accept-new-keys`) is held on disk and acked. The code terminally rejects a changed key (alert, acked) and leaves a sender whose registry record cannot be read unacked for redelivery; there is no hold store.
 - The flags `--max-hops`, `--rate-limit`, `--inbox-buffer`, `--[no-]auto-accept-new-keys` and `--owner-identity` are named in the text; the adapter has the limits as configuration fields but the `agent-bus` command line does not expose them.
-- The monitor is specified with its own read-only principal `monitor@<owner>` and a consumer made by busd; the code logs in as the two admin users and sends as a registered agent identity, and refuses `human@<owner>`.
-- Registry and catalogue reads are specified through busd; the code reads a hand-copied `directory/` (an enrolling machine gets the current one from busd once).
-- busd is specified with a signed `busd.<method>` protocol; the minimal busd serves only enrollment and approval on `busd.enroll.*` and `busd.ca.*` subjects in `CONTROL`, authenticated by the account (the owner's tools are `control-admin`).
+- The monitor is specified with a signing identity `monitor@<owner>` and a durable consumer made by busd; the code logs in as its own read-only users `monitor-bus` and `monitor-control` (the admin users only on an old config directory, with a warning), uses ordered consumers of its own, sends as a registered agent identity and refuses `human@<owner>`.
+- Registry and catalogue reads are specified through busd for everyone. The monitor reads them through busd (`busd.monitor.registry` and `busd.monitor.catalogue`, unsigned replies); agents still read a hand-copied `directory/` (an enrolling machine gets the current one from busd once).
+- busd is specified with a signed `busd.<method>` protocol; the minimal busd serves only enrollment and approval and the monitor's reads on `busd.enroll.*`, `busd.ca.*` and `busd.monitor.*` subjects in `CONTROL`, authenticated by the account (the owner's tools are `control-admin`).
 - The enrollment text said the CA fingerprint is checked against the central machine; the code can also fetch the CA from the broker's handshake, and keeps it only if it matches the owner's fingerprint.
 - Only 8 of the MCP tools in the table exist.
 
@@ -103,4 +106,5 @@ Noted while restructuring; neither side was changed.
 [docs/](../agent-busctl.md): [docker](../docker.md), [podman](../podman.md), [broker](../broker.md),
 [monitor](../monitor.md), [API](../api.md), [Claude Code](../claude-code.md),
 [OpenCode](../opencode.md), [agent guide](../agent-guide.md), [agent tools](../agent-tools.md),
-[troubleshooting](../troubleshooting.md), [test run](../test-run.md), [development](../development.md).
+[troubleshooting](../troubleshooting.md), [test run](../test-run.md), [upgrade test run](../upgrade-test-run.md), [development](../development.md),
+[VS Code extension](../../vscode/README.md).
