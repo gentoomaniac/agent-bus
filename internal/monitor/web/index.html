@@ -57,6 +57,10 @@
   .cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   li.item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   li.item .unread { flex: none; }
+  li.item.has-unread .label { font-weight: 700; color: var(--side-text); }
+  /* The line above the first message that arrived since the channel was last looked at. */
+  .new-marker { display: flex; align-items: center; gap: 8px; margin: 6px 0; color: var(--mention); font-size: var(--font-xs); font-weight: 700; }
+  .new-marker::before { content: ""; flex: 1; border-top: 1px solid var(--mention); }
   li.item .label.pair { display: flex; flex-direction: column; }
   li.member { padding: var(--row-pad) 12px; cursor: pointer; }
   li.member:hover { background: var(--hover); }
@@ -304,6 +308,7 @@ const MESSAGE_TYPES = ["message", "request", "question", "answer", "feedback", "
 const REFRESH_MS = 5000;
 const PAGE_SIZE = 500;
 const TYPES_KEY = "bus-monitor-types";
+const READ_KEY = "bus-monitor-read";
 const STATUS_LABEL = { verified: "verified", unknown_sender: "unknown sender", rejected: "rejected" };
 
 const state = {
@@ -312,7 +317,9 @@ const state = {
   detailAgent: null,              // agent ID whose recent activity is shown
   selected: null,                 // channel ID
   messages: new Map(),            // channel ID -> messages ordered by sequence, once loaded
-  unread: new Map(),              // channel ID -> count
+  unread: new Map(),              // channel ID -> count of messages that arrived since the page loaded
+  read: loadSetting(READ_KEY, null), // channel ID -> sequence read up to, kept in this browser; null on a first visit
+  marker: null,                   // sequence after which the open channel's "New" line is drawn, or null
   picked: new Set(),              // targets ticked in the composer
   shownTypes: new Set(loadSetting(TYPES_KEY, [])), // message types the list is limited to; none means all
 };
@@ -758,6 +765,38 @@ function insertMessage(list, message) {
   return true;
 }
 
+// ---- read markers ----
+
+function readSequence(channelId) {
+  return (state.read && state.read[channelId]) || 0;
+}
+
+// A message the page has not shown yet, not counting the monitor's own.
+function unseen(channelId, after) {
+  return (state.messages.get(channelId) || []).some((m) => m.sequence > after && m.from !== state.status.agent);
+}
+
+function markRead(channelId, sequence) {
+  const list = state.messages.get(channelId) || [];
+  const last = sequence ?? (list.length ? list[list.length - 1].sequence : 0);
+  if (!state.read) state.read = {};
+  if (last <= readSequence(channelId)) return;
+  state.read[channelId] = last;
+  saveSetting(READ_KEY, state.read);
+}
+
+// On a first visit everything there is counts as read, so the page does not open with every
+// channel unread. Channels that appear later start unread.
+function initReadMarkers() {
+  if (state.read) return;
+  state.read = Object.fromEntries(state.channels.map((c) => [c.id, c.last_sequence || 0]));
+  saveSetting(READ_KEY, state.read);
+}
+
+function looking() {
+  return document.visibilityState === "visible" && document.hasFocus();
+}
+
 async function refresh() {
   if (state.loggedOut) return;
   try {
@@ -799,6 +838,9 @@ async function select(channelId) {
   history.replaceState(null, "", "#" + encodeURIComponent(channelId));
   if (!state.messages.has(channelId)) await loadMessages(channelId);
   await refresh();
+  const readUpTo = readSequence(channelId);
+  state.marker = unseen(channelId, readUpTo) ? readUpTo : null;
+  markRead(channelId);
   pointComposerAt(state.channels.find((c) => c.id === channelId));
   renderMessages(true);
 }
@@ -883,7 +925,8 @@ function renderSidebar() {
   const dmItems = state.channels.filter((c) => c.kind === "dm");
   const item = (channel) => {
     const unread = state.unread.get(channel.id);
-    return el("li", { class: "item" + (channel.id === state.selected ? " selected" : ""), title: describeChannel(channel) + (channel.description ? ": " + channel.description : ""), onclick: () => select(channel.id) },
+    const isNew = channel.id !== state.selected && (unread || (channel.last_sequence || 0) > readSequence(channel.id));
+    return el("li", { class: "item" + (channel.id === state.selected ? " selected" : "") + (isNew ? " has-unread" : ""), title: describeChannel(channel) + (channel.description ? ": " + channel.description : ""), onclick: () => select(channel.id) },
       channel.kind === "dm" ? pairLabel(channel.agents) : el("span", { class: "label" }, describeChannel(channel)), unread ? el("span", { class: "unread" }, String(unread)) : "");
   };
   $("channels").replaceChildren(...channelItems.map(item));
@@ -982,7 +1025,19 @@ function renderMessages(scrollToEnd) {
   renderTypeFilter(list);
   const shown = state.shownTypes.size ? list.filter((m) => state.shownTypes.has(m.type)) : list;
   const none = list.length ? "No message of these types." : "No messages yet.";
-  box.replaceChildren(...(shown.length ? shown.map((m, i) => renderMessage(m, settings.grouping && continues(shown[i - 1], m))) : [el("div", { class: "empty" }, none)]));
+  const markerAt = state.marker === null ? -1 : shown.findIndex((m) => m.sequence > state.marker && m.from !== state.status.agent);
+  const rows = shown.flatMap((m, i) => {
+    const row = renderMessage(m, settings.grouping && i !== markerAt && continues(shown[i - 1], m));
+    return i === markerAt ? [el("div", { class: "new-marker", role: "separator" }, "New"), row] : [row];
+  });
+  box.replaceChildren(...(shown.length ? rows : [el("div", { class: "empty" }, none)]));
+  const marker = box.querySelector(".new-marker");
+  // Opening a channel with more new mail than fits starts at the line instead of the end.
+  const markerTop = marker ? marker.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop : 0;
+  if (scrollToEnd && marker && box.scrollHeight - markerTop > box.clientHeight) {
+    box.scrollTop = markerTop - 40;
+    return;
+  }
   if (atEnd) box.scrollTop = box.scrollHeight;
 }
 
@@ -1154,6 +1209,7 @@ function connectEvents() {
     state.messages.delete(state.selected);
     if (state.selected) await loadMessages(state.selected);
     await refresh();
+    if (state.selected && looking()) markRead(state.selected);
     renderMessages(false);
   };
   source.addEventListener("presence", (event) => {
@@ -1172,20 +1228,39 @@ function connectEvents() {
     const message = JSON.parse(event.data);
     if (!state.channels.some((c) => c.id === message.channel)) await refresh();
     const list = state.messages.get(message.channel); // missing until the channel was opened
+    const own = message.from === state.status.agent;
     if (message.channel === state.selected) {
-      if (list && insertMessage(list, message)) renderMessages(false);
+      if (!list || !insertMessage(list, message)) return;
+      // Not looked at: the line shows where reading stopped, and the channel stays unread.
+      if (looking() || own) markRead(message.channel, message.sequence);
+      else if (state.marker === null) state.marker = readSequence(message.channel);
+      renderMessages(false);
     } else {
       if (list) insertMessage(list, message);
-      state.unread.set(message.channel, (state.unread.get(message.channel) || 0) + 1);
+      if (own) {
+        // Sequences count the whole stream: the channel was read if it was read up to its last one.
+        const channel = state.channels.find((c) => c.id === message.channel);
+        if (!state.unread.get(message.channel) && readSequence(message.channel) >= ((channel && channel.last_sequence) || 0)) markRead(message.channel, message.sequence);
+      } else {
+        state.unread.set(message.channel, (state.unread.get(message.channel) || 0) + 1);
+      }
       renderSidebar();
     }
   });
 }
 
+// Coming back to the page reads the open channel; its "New" line stays until another channel is opened.
+function readOnReturn() {
+  if (state.selected && looking()) { markRead(state.selected); renderSidebar(); }
+}
+document.addEventListener("visibilitychange", readOnReturn);
+window.addEventListener("focus", readOnReturn);
+
 async function start() {
   state.loggedOut = false;
   await refresh();
   if (state.loggedOut) return;
+  initReadMarkers();
   const wanted = decodeURIComponent(location.hash.slice(1));
   await select(state.channels.some((c) => c.id === wanted) ? wanted : "general");
   connectEvents();

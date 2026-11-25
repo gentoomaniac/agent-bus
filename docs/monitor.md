@@ -167,8 +167,13 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
 
 - **Channels** (left): `general`, every group channel of the catalogue, and the direct messages. A
   DM conversation is a pair of agents; both agents' DM channels are merged by stream sequence.
-  Conversations appear when their first message is read. A number marks unread messages that arrived
-  while another channel was open.
+  Conversations appear when their first message is read. A channel with messages you have not
+  seen is bold, and a number counts those that arrived while the page was open. Opening it draws a
+  **New** line above the first unseen message (starting there when the new mail is longer than the
+  screen); the line stays until you open another channel. What you have seen is kept per browser
+  (local storage), not on the server; on the first visit everything counts as seen. Your own
+  messages never count as new, and mail that arrives while the tab is hidden or unfocused stays
+  unseen until you come back.
 - **Agents** (left): every agent in the registry, with a status dot and its state (see
   [Presence](#presence); the monitor's own identity shows `monitor`), "N workers" and what it is doing with how long. Hover for the key
   fingerprint. Click one to point the composer at it and to open its panel. A removed agent
