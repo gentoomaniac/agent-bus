@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { ago, describePresence, recentActivity } from "../presence";
 import { matchTargets, mentionBefore, mentionText } from "../completion";
 import { categorize, describeChannel, destinationOf, dmChannelId } from "../channels";
-import { parseFromWebview } from "../protocol";
+import { parseFromWebview, parsePresenceMarks } from "../protocol";
 import { nextBackoff } from "../events";
 import { continuesGroup, insertMessage, isTargeted, unreadMessages } from "../messages";
 import { SseParser } from "../sse";
@@ -155,4 +155,10 @@ test("mentionBefore finds an @word ending at the caret", () => {
   assert.deepEqual(mentionBefore("hi @lib there", 7), { start: 3, query: "lib" });
   assert.equal(mentionBefore("mail a@b", 8), undefined);
   assert.equal(mentionBefore("hi @lib there", 13), undefined);
+});
+
+test("parsePresenceMarks keeps only well-formed marks", () => {
+  const raw = new Map<unknown, unknown>([["a", { state: "idle", since: "t" }], ["b", { state: "working", since: 3 }], ["c", { state: 1 }], ["d", null], [4, { state: "idle" }]]);
+  assert.deepEqual([...parsePresenceMarks(raw)], [["a", { state: "idle", since: "t" }], ["b", { state: "working" }]]);
+  assert.equal(parsePresenceMarks({ a: { state: "idle" } }).size, 0);
 });

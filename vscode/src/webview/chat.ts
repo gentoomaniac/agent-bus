@@ -1,6 +1,7 @@
 // The chat panel's page. Messages are untrusted: everything goes in with textContent, never as HTML.
 import { matchTargets, mentionBefore, mentionText } from "../completion";
 import { continuesGroup, insertMessage } from "../messages";
+import { parsePresenceMarks } from "../protocol";
 import type { ChatState, FromWebview, ToWebview } from "../protocol";
 import { shortTime } from "../time";
 import { isSeen } from "../viewport";
@@ -272,7 +273,7 @@ function completeMention(): void {
 
 function showState(next: ChatState): void {
   const first = state === undefined || state.title !== next.title;
-  state = next;
+  state = { ...next, presence: parsePresenceMarks(next.presence) };
   if (first || next.dividerAfter !== hostDividerAfter) {
     dividerAfter = next.dividerAfter;
     seen.clear();
@@ -309,6 +310,9 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
   if (data.type === "state") showState(data.state);
   else if (data.type === "focusComposer") textInput.focus();
   else if (data.type === "activated") activate();
+  else if (data.type === "presence") {
+    if (state) state.presence = parsePresenceMarks(data.presence);
+  }
   else if (data.type === "message") {
     // Mail that arrives while nobody looks, with nothing unseen before it, starts a new unseen block.
     const lastBefore = messages.length > 0 ? messages[messages.length - 1].sequence : 0;

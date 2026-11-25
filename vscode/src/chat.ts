@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import { ApiError } from "./api";
 import { describeChannel, destinationOf, dmChannelId } from "./channels";
-import { ChatState, FromWebview, ToWebview, parseFromWebview } from "./protocol";
+import { ChatState, FromWebview, PresenceMark, ToWebview, parseFromWebview } from "./protocol";
 import { Session } from "./session";
 import { ALL, Channel } from "./types";
 
@@ -30,6 +30,7 @@ export class ChatPanels implements vscode.Disposable {
         void chat.panel.webview.postMessage({ type: "message", message } satisfies ToWebview);
         if (chat.panel.visible) session.model.markRead(message.channel);
       }),
+      session.onDidChange(() => this.chats.forEach((chat) => void chat.panel.webview.postMessage({ type: "presence", presence: this.presenceMarks() } satisfies ToWebview))),
       session.onDidRefresh(() => this.chats.forEach((chat, channelId) => void this.show(channelId, chat, chat.panel.visible))),
     ];
   }
@@ -143,6 +144,10 @@ export class ChatPanels implements vscode.Disposable {
     if (chat.panel.visible) model.markRead(channelId);
   }
 
+  private presenceMarks(): Map<string, PresenceMark> {
+    return new Map([...this.session.model.presence].map(([agent, { state, since }]) => [agent, { state, since }]));
+  }
+
   private post(channelId: string, chat: Chat): void {
     const model = this.session.model;
     const channel = this.channelOf(channelId);
@@ -160,6 +165,7 @@ export class ChatPanels implements vscode.Disposable {
       hasOlder: model.hasOlder(channelId),
       members: chat.members,
       threaded: this.context.globalState.get<boolean>(THREADED_KEY, false),
+      presence: this.presenceMarks(),
       defaultTarget: channel.kind === "dm" && destination ? destination.name : ALL,
     };
     void chat.panel.webview.postMessage({ type: "state", state } satisfies ToWebview);
