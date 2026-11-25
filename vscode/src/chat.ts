@@ -177,7 +177,7 @@ export class ChatPanels implements vscode.Disposable {
 <style nonce="${nonce}">
   [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; }
-  body { display: flex; flex-direction: column; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); }
+  body { --time-column: 84px; display: flex; flex-direction: column; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); }
   .muted, #description { color: var(--vscode-descriptionForeground); }
   header { display: flex; align-items: baseline; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   h1 { font-size: 1.1em; margin: 0; white-space: nowrap; }
@@ -192,20 +192,22 @@ export class ChatPanels implements vscode.Disposable {
   .has-new { border-left: 3px solid var(--vscode-focusBorder); }
   #description { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #messages { flex: 1; overflow-y: auto; padding: 4px 0; }
-  .message { padding: 4px 12px; font-family: var(--vscode-editor-font-family, var(--vscode-font-family)); font-size: var(--vscode-editor-font-size, inherit); }
+  .message { position: relative; padding: 4px 12px; font-family: var(--vscode-editor-font-family, var(--vscode-font-family)); font-size: var(--vscode-editor-font-size, inherit); }
   .message:hover { background: var(--vscode-list-hoverBackground); }
   .message.continued { padding-top: 0; }
   .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
   .from { font-weight: bold; }
-  .time { font-size: 0.85em; }
+  .time { flex: none; width: calc(var(--time-column) - 6px); font-size: 0.85em; font-family: var(--vscode-font-family); }
+  .continued > .time { position: absolute; left: 12px; top: 2px; visibility: hidden; }
+  .continued:hover > .time { visibility: visible; }
   .badge { padding: 0 5px; border-radius: 3px; font-size: 0.8em; color: var(--vscode-descriptionForeground); border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); }
   .badge.me { color: var(--vscode-foreground); border-color: var(--vscode-focusBorder); }
   .verified { color: var(--vscode-descriptionForeground); font-size: 0.85em; cursor: default; }
   .warning { color: var(--vscode-editorWarning-foreground); font-size: 0.85em; }
   .warning.rejected { color: var(--vscode-errorForeground); }
-  .title, .text, .message > .warning { margin-left: 1.25em; }
+  .title, .text, .message > .warning { margin-left: var(--time-column); }
   .title { font-weight: bold; }
-  .replies { padding: 0 12px 2px calc(12px + 1.25em); font-size: 0.85em; }
+  .replies { padding: 0 12px 2px calc(12px + var(--time-column)); font-size: 0.85em; }
   .text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .divider { display: flex; align-items: center; gap: 8px; margin: 6px 12px; color: var(--vscode-errorForeground); font-size: 0.85em; }
   .divider::after { content: ""; flex: 1; border-top: 1px solid var(--vscode-errorForeground); }

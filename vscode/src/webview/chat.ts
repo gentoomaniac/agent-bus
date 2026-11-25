@@ -2,6 +2,7 @@
 import { matchTargets, mentionBefore, mentionText } from "../completion";
 import { continuesGroup, insertMessage } from "../messages";
 import type { ChatState, FromWebview, ToWebview } from "../protocol";
+import { shortTime } from "../time";
 import { isSeen } from "../viewport";
 import { ThreadRow, ThreadSummary, summarizeThreads, threadRows } from "../threads";
 import { ALL, DEFAULT_TYPE, MESSAGE_TYPES, Message } from "../types";
@@ -39,21 +40,16 @@ const problem = document.getElementById("problem") as HTMLElement;
 
 for (const type of MESSAGE_TYPES) typeSelect.append(new Option(type, type));
 
-// Today's messages show the time only.
-function formatTime(time: string): string {
-  const date = new Date(time);
-  const today = date.toDateString() === new Date().toDateString();
-  return today ? date.toLocaleTimeString([], { timeStyle: "short" }) : date.toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+// The short time in the narrow column left of the text; the tooltip has the full date and the sequence.
+function renderTime(message: Message): HTMLElement {
+  const time = el("span", "time muted", message.time ? shortTime(message.time, new Date()) : "");
+  if (message.time) time.title = `${new Date(message.time).toLocaleString([], { dateStyle: "full", timeStyle: "medium" })} · #${message.sequence}`;
+  return time;
 }
 
 function renderHeader(message: Message): HTMLElement {
   const header = el("div", "meta");
-  header.append(el("span", "from", message.from || "unknown sender"));
-  if (message.time) {
-    const time = el("span", "time muted", formatTime(message.time));
-    time.title = `${new Date(message.time).toLocaleString()} · #${message.sequence}`;
-    header.append(time);
-  }
+  header.append(renderTime(message), el("span", "from", message.from || "unknown sender"));
   if (message.type && message.type !== DEFAULT_TYPE) header.append(el("span", "badge", message.type));
   for (const target of message.targets ?? []) header.append(el("span", target === state?.self ? "badge me" : "badge", "→ " + target));
   if (message.status === "verified") {
@@ -80,7 +76,7 @@ function renderMessage(row: ThreadRow, continued: boolean, isNew: boolean, highl
     replyTo.title = row.replyTo;
     item.append(replyTo);
   }
-  if (!continued) item.append(renderHeader(message));
+  item.append(continued ? renderTime(message) : renderHeader(message));
   if (!continued && (isNew || highlighted)) item.lastElementChild?.append(el("span", "new", isNew ? "New" : "new"));
   if (message.title) item.append(el("div", "title", message.title));
   if (message.text) item.append(el("div", "text", message.text));
