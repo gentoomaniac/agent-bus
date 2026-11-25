@@ -22,7 +22,7 @@ flowchart LR
     bstream["stream BUS<br/>dm.*, general, topic.*, private.*<br/>infinite retention, file storage"]
     pstream["stream PRESENCE<br/>presence.*, one message per subject"]
     consumers["durable pull consumers per agent<br/>token__dm, token__general, token__g__name, token__p__id"]
-    mcons["consumer bus-monitor"]
+    mcons["consumer bus-monitor<br/>(planned, today ordered consumers)"]
   end
   subgraph control["account CONTROL: busd control connection, control-admin"]
     reg[("KV registry, key = agent token")]
@@ -43,7 +43,7 @@ flowchart LR
 **Two accounts.** NATS delivers JetStream responses to a reply subject the *caller* names, and the permissions only check the request subject. So any user in an account that can call a JetStream read API or pull from a consumer can make the server write a stored payload to any subject of that account, `$KV.*` and `ledger.*` included. Authoritative data therefore lives in a second account, which no agent can reach. (Within one account the redirect writes only JetStream API responses, with the server's payload; a pulled record is delivered but not stored again, as the integration test showed.)
 
 - **`BUS`:** stream `BUS` (every conversation channel), agents, the monitor's read-only user, busd's message connection, and the owner's posting user.
-- **`CONTROL`:** the KV buckets `registry` and `catalogue`, and stream `LEDGER`. Only busd's control connection and the `control-admin` user exist in it. There is no import or export between the accounts.
+- **`CONTROL`:** the KV buckets `registry` and `catalogue`, and stream `LEDGER`. The logins in it are `busd`, `control-admin`, `monitor-control` and the shared `enroll` login. There is no import or export between the accounts.
 
 Agents never touch `CONTROL`: busd serves what they need over request/reply, signed with busd's service key ([busd](busd.md)). Neither account lets an agent create a resource, a consumer included.
 
