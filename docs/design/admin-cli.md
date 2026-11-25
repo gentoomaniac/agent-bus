@@ -14,8 +14,10 @@ they reach the broker, and the recovery path.
 | `agent list`, `agent remove`, `directory export` | implemented (added for the MVP: removal and the copied directory) |
 | `cert issue`, `cert sign`, `cert switch` | implemented (mTLS phase A, [access control](access-control.md)) |
 | `monitor password` | implemented ([monitor](monitor-and-api.md)) |
+| `ca list`, `ca sign`, `ca reject`, `ca fingerprint`, `ca review`, `enroll init`, `enroll autosign` | implemented, through busd as `control-admin` (decision 41) |
+| `service init`, `monitor init` | implemented (decision 42) |
 | `rotate`, `revoke`, `revoke --incident`, `pin`, `known`, `alerts`, `post`, `approve`, `tail`, `thread`, `requests`, `tls reissue`, `register --monitor`, `channel show\|invite\|remove\|manager` | **planned**; alerts go to `<agent-dir>/alerts.log` only |
-| Going through busd (signed requests, master password for `human@<owner>`) | **planned**; every command runs as `--direct` today |
+| Going through busd (signed requests, master password for `human@<owner>`) | **planned**; today every command runs as `--direct`, except `ca ...`, which asks busd; the file-only commands (`tls init`, `admin init`, `service init`, `monitor init`) need no broker |
 
 ## The design
 
