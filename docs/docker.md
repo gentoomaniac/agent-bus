@@ -340,9 +340,11 @@ and trusted proxy. To go back to the plain monitor, delete them and run `$compos
 agent: it appears without reloading the page. If the page only updates after a reload, the proxy is
 buffering `/api/v1/events` (the supplied configs switch that off).
 
-Both nginx and Traefik send the client's `Host` unchanged, set `X-Forwarded-For`, `-Proto` and
-`-Host` themselves (a value from a client never reaches the monitor) and leave the event stream
-open. For a public HTTPS port other than 443, set `BUS_HTTPS_PORT`, put the port in `BUS_PUBLIC_URL`
+Both nginx and Traefik send the client's `Host` unchanged and leave the event stream open. Both set
+`X-Forwarded-Proto` and `-Host` themselves. For `X-Forwarded-For` the two differ: Traefik drops what a
+client sent, while the supplied nginx config appends the client's address to any value the client
+sent. The monitor trusts only the last entry, the one the proxy added, so a forged first entry
+changes nothing. For a public HTTPS port other than 443, set `BUS_HTTPS_PORT`, put the port in `BUS_PUBLIC_URL`
 and see the comments about the HTTP redirect in the configs.
 
 With Traefik's Docker provider (labels) you would translate the router and service of

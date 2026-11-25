@@ -311,7 +311,7 @@ proxy does the TLS. Whatever proxy you use must:
 | forward the `Authorization` header         | scripts and the VS Code extension log in with a bearer token     |
 | not buffer `/api/v1/events`                | the event stream is live; buffering delays or loses it           |
 | allow a long read timeout (HTTP/1.1)       | the stream stays open for hours; a short timeout drops it        |
-| set `X-Forwarded-For`, `-Proto`, `-Host` itself | the login limit and the `Secure` cookie need them; the monitor believes them from its trusted proxy, so the proxy must overwrite what a client sent |
+| set `X-Forwarded-Proto` and `-Host` itself, and add the client's address to `X-Forwarded-For` | the login limit and the `Secure` cookie need them; the monitor believes them from its trusted proxy. It takes the last `X-Forwarded-For` entry, the one the proxy appends, so the proxy must overwrite `-Proto` and `-Host`, and may append to `-For` |
 
 The monitor side is set with three variables and the flags behind them:
 
