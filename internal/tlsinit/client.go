@@ -102,6 +102,20 @@ func (ca *CA) SignCSR(identity string, csrPEM []byte, validity time.Duration) ([
 	return ca.IssueClientCert(identity, request.PublicKey, validity)
 }
 
+// NewClientKeyAndCSR generates a client key and a request to certify it. The request names nothing:
+// the CA decides the identity (SignCSR).
+func NewClientKeyAndCSR() (keyPEM, csrPEM []byte, err error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+	if err != nil {
+		return nil, nil, err
+	}
+	return encodeKey(key), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}), nil
+}
+
 // NewClientKey generates a key for a client certificate, as PEM for a file and as a key to be
 // certified.
 func NewClientKey() (keyPEM []byte, public crypto.PublicKey, err error) {
