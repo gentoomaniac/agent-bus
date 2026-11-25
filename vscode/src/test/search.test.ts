@@ -10,7 +10,7 @@ test("scopeTerms limits to a group by its name and to a DM by both agents", () =
   assert.deepEqual(scopeTerms(channel({})), ["to:#general"]);
   assert.deepEqual(scopeTerms(channel({ id: "group:ops", kind: "group", name: "ops" })), ["to:#ops"]);
   assert.deepEqual(scopeTerms(channel({ id: "group:a b", kind: "group", name: "a b" })), ['to:"#a b"']);
-  assert.deepEqual(scopeTerms(channel({ id: "dm:a@x:b@y", kind: "dm", name: "a@x + b@y", agents: ["a@x", "b@y"] })), ["to:a@x", "to:b@y"]);
+  assert.deepEqual(scopeTerms(channel({ id: "dm:a@x:b@y", kind: "dm", name: "a@x + b@y", agents: ["a@x", "b@y"] })), ["from:a@x", "from:b@y", "to:a@x", "to:b@y"]);
 });
 
 test("buildQuery puts the scope, then the chips, then the typed text, and leaves out what is empty", () => {

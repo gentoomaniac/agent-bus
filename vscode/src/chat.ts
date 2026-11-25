@@ -5,8 +5,9 @@ import { describeChannel, destinationOf, dmChannelId } from "./channels";
 import { ChatState, FromWebview, PresenceMark, ToWebview, parseFromWebview } from "./protocol";
 import { buildQuery, hitPlace, scopeTerms } from "./search";
 import { Session } from "./session";
-import { ALL, Channel } from "./types";
+import { ALL, Channel, SearchHit } from "./types";
 
+const EMPTY_PAGES = 3; // search pages read in a row while the channel filter leaves none of their results
 const HISTORY = 100; // messages loaded when a channel is opened
 const THREADED_KEY = "agentMessenger.threaded"; // UI only: not one of the preferences shared through the monitor
 
@@ -85,11 +86,16 @@ export class ChatPanels implements vscode.Disposable {
     const scope = allChannels || !channel ? [] : scopeTerms(channel);
     let answer: Extract<ToWebview, { type: "searchResults" }>;
     try {
-      const page = await model.api.search(buildQuery(scope, chips, text), cursor);
-      const hits = page.results
-        .filter((hit) => allChannels || hit.channel === channelId)
-        .map((hit) => ({ ...hit, where: hitPlace(model.channels, hit.channel) }));
-      answer = { type: "searchResults", run, hits, next: page.next_cursor };
+      // The channel filter can empty a page that has a next one: look at a few more before giving up.
+      const query = buildQuery(scope, chips, text);
+      const inScope = (hit: SearchHit) => allChannels || hit.channel === channelId;
+      let page = await model.api.search(query, cursor);
+      let hits = page.results.filter(inScope);
+      for (let more = 1; more < EMPTY_PAGES && hits.length === 0 && page.next_cursor; more++) {
+        page = await model.api.search(query, page.next_cursor);
+        hits = page.results.filter(inScope);
+      }
+      answer = { type: "searchResults", run, hits: hits.map((hit) => ({ ...hit, where: hitPlace(model.channels, hit.channel) })), next: page.next_cursor };
     } catch (error) {
       if (error instanceof ApiError && error.unauthenticated) this.session.report(error);
       answer = { type: "searchResults", run, hits: [], error: (error as Error).message };

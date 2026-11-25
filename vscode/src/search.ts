@@ -7,13 +7,14 @@ function term(key: string, value: string): string {
   return /\s/.test(plain) ? `${key}:"${plain}"` : `${key}:${plain}`;
 }
 
-// The `to:` terms that limit a search to one conversation. A group is `to:#name`. `to:` names the
-// recipient of a direct message, so a DM needs both of its agents; the results then hold the
-// agents' other DMs too, and the caller keeps only the results of the channel.
+// The terms that limit a search to one conversation. A group is `to:#name`. `to:` names the
+// recipient of a direct message, so a DM is `from:` and `to:` for both agents: values of one key
+// are alternatives, different keys are ANDed, so only messages between the two match.
 export function scopeTerms(channel: Channel): string[] {
   if (channel.kind === "general") return ["to:#general"];
   if (channel.kind === "group") return [term("to", "#" + channel.name)];
-  return (channel.agents ?? []).map((agent) => term("to", agent));
+  const agents = channel.agents ?? [];
+  return [...agents.map((agent) => term("from", agent)), ...agents.map((agent) => term("to", agent))];
 }
 
 // A filter a click on a tag adds to the search, shown as a removable chip: `from:`, `type:` or `targets:`.

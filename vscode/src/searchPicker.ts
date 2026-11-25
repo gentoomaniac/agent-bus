@@ -45,7 +45,7 @@ export function searchMessages(session: Session, chats: ChatPanels): void {
       next = page.next_cursor;
       const rows: HitItem[] = hits.map((hit) => ({
         label: plainLabel(hit.snippet.text),
-        description: plainLabel(`${hitPlace(session.model.channels, hit.channel)} · ${hit.from ?? ""} · ${hit.time ? shortTime(hit.time, new Date()) : ""}`),
+        description: plainLabel([hitPlace(session.model.channels, hit.channel), hit.from, hit.time && shortTime(hit.time, new Date())].filter(Boolean).join(" · ")),
         detail: plainLabel([hit.type, hit.title].filter(Boolean).join(" · ")) || undefined,
         alwaysShow: true, // the monitor decided what matches, not the picker's filter
         hit,

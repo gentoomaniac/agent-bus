@@ -333,9 +333,10 @@ The search box above the message list (`/` focuses it, Esc clears it) calls
 marks the message. In a message, the sender, the type pill and the target pills are buttons: a
 click adds `from:<agent>`, `type:<type>` or `targets:<agent>` to the search box, after what is
 typed there, and searches. The box holds plain text, so the terms are not chips; edit or delete
-them like the rest of the query. Together they narrow the search (the terms are ANDed). The type-filter chips
-and the thread view are separate from this and work as before. The endpoint scans the messages in memory on every request. A SQLite FTS index
-can replace that scan later behind the same endpoint, query syntax and cursor.
+them like the rest of the query. Together they narrow the search (the terms are ANDed). The
+type-filter chips and the thread view are separate from this and work as before. The endpoint
+scans the messages in memory on every request. A SQLite FTS index can replace that scan later
+behind the same endpoint, query syntax and cursor.
 
 ## Limits of the MVP
 

@@ -525,9 +525,14 @@ searchbar.addEventListener("keydown", (event) => {
     chips.pop();
     renderChips();
     runSearch();
-  } else if (event.key === "Escape") closeSearch();
-  else return;
+  } else return;
   event.preventDefault();
+});
+// On the document, so Esc closes the search from the results too; a key a completion list used is left alone.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !searching || event.defaultPrevented) return;
+  event.preventDefault();
+  closeSearch();
 });
 // Capturing, so the editor's own find does not open: the page owns Ctrl+F (Cmd+F on macOS).
 window.addEventListener("keydown", (event) => {
