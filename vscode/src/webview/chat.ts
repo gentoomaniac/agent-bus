@@ -111,14 +111,24 @@ function paintDots(): void {
 // own agent is left out, as in the side panel. A direct message has none: its two agents are in
 // the title.
 let showMembers = true;
+// The bus owner invites agents at the top of the pane and removes one with the × on its row; busd
+// decides whether the monitor's agent may.
 function renderMembers(): void {
   const members = state && !isDirect() ? state.members.filter((id) => id !== state!.self).sort(byOwner) : [];
-  membersToggle.hidden = members.length === 0;
+  const manage = state?.canManageMembers === true;
+  membersToggle.hidden = members.length === 0 && !manage;
   membersToggle.setAttribute("aria-pressed", String(showMembers));
-  memberPane.hidden = members.length === 0 || !showMembers;
+  memberPane.hidden = membersToggle.hidden || !showMembers;
   memberSplit.hidden = memberPane.hidden;
   if (!memberPane.hidden) memberSplit.setAttribute("aria-valuenow", String(Math.round(memberPane.getBoundingClientRect().width)));
   memberPane.replaceChildren();
+  if (manage) {
+    const invite = el("button", "link invite", "Invite Agent…");
+    invite.type = "button";
+    invite.title = "Pick an agent that reads the channel from now on; it is told so";
+    invite.addEventListener("click", () => host.postMessage({ type: "invite" }));
+    memberPane.append(invite);
+  }
   for (const { key, items } of groupBy(members, ownerOf)) {
     memberPane.append(el("h2", "", key || "no owner"));
     for (const id of items) {
@@ -126,6 +136,14 @@ function renderMembers(): void {
       const mark = presence.get(id);
       row.title = id + (mark ? ": " + mark.state : "");
       row.append(renderDot(id), el("span", "name", shortName(id)), el("span", "state", (mark?.state ?? "offline").replace(/_/g, " ")));
+      if (manage) {
+        const remove = el("button", "link remove", "×");
+        remove.type = "button";
+        remove.title = "Remove from Channel";
+        remove.setAttribute("aria-label", "Remove " + id + " from the channel");
+        remove.addEventListener("click", () => host.postMessage({ type: "removeMember", agent: id }));
+        row.append(remove);
+      }
       memberPane.append(row);
     }
   }

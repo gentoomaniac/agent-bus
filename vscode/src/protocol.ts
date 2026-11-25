@@ -18,6 +18,7 @@ export interface ChatState {
   dividerAfter: number; // the "New" divider goes before the first message after this sequence
   hasOlder: boolean;
   members: string[]; // agents the target picker offers, besides @all
+  canManageMembers: boolean; // the pane offers to invite and remove: a group channel, and the monitor can send
   defaultTarget: string; // @all in a channel, the recipient in a direct message
   subscribed: boolean; // every message of the channel notifies (shared through the monitor)
   groupMessages: boolean; // follow-ups of the same sender share one header (the setting agentMessenger.groupMessages)
@@ -59,7 +60,9 @@ export type FromWebview =
   | { type: "subscribe"; value: boolean } // subscribe the channel or unsubscribe it
   | { type: "raw"; sequence: number } // open the record as stored
   | { type: "search"; run: number; chips: Chip[]; text: string; allChannels: boolean; cursor?: string }
-  | { type: "jump"; channel: string; sequence: number }; // show a search result: load history and open its channel if needed
+  | { type: "jump"; channel: string; sequence: number } // show a search result: load history and open its channel if needed
+  | { type: "invite" } // pick an agent to invite to the channel
+  | { type: "removeMember"; agent: string };
 
 function isChip(raw: unknown): raw is Chip {
   if (typeof raw !== "object" || raw === null) return false;
@@ -72,7 +75,8 @@ function isChip(raw: unknown): raw is Chip {
 export function parseFromWebview(raw: unknown): FromWebview | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
   const message = raw as Record<string, unknown>;
-  if (message.type === "ready" || message.type === "older") return { type: message.type };
+  if (message.type === "ready" || message.type === "older" || message.type === "invite") return { type: message.type };
+  if (message.type === "removeMember") return typeof message.agent === "string" && message.agent !== "" ? { type: "removeMember", agent: message.agent } : undefined;
   if (message.type === "raw") return Number.isSafeInteger(message.sequence) && (message.sequence as number) >= 0 ? { type: "raw", sequence: message.sequence as number } : undefined;
   if (message.type === "search") {
     const { run, chips, text, allChannels, cursor } = message;

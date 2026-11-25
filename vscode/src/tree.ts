@@ -83,6 +83,7 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     const collapsed = this.session.prefs.collapsed.has(node.id);
     const item = new vscode.TreeItem(node.label, collapsed ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded);
     item.id = "category:" + node.id;
+    item.contextValue = "section:" + node.id; // the Channels section offers "Create Channel…"
     return item;
   }
 
@@ -98,8 +99,10 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     item.id = channel.id;
     const favourite = this.session.prefs.favourites.has(channel.id);
     const subscribed = this.session.prefs.subscribed.has(channel.id);
-    // The context value says which of the star and bell actions the menu offers.
-    item.contextValue = subscribed ? (favourite ? "subscribedFavouriteChannel" : "subscribedChannel") : favourite ? "favouriteChannel" : "channel";
+    // The context value says which of the star and bell actions the menu offers, and ".group" that
+    // members can be invited.
+    item.contextValue = (subscribed ? (favourite ? "subscribedFavouriteChannel" : "subscribedChannel") : favourite ? "favouriteChannel" : "channel") +
+      (channel.kind === "group" ? ".group" : "");
     item.description = [unread > 0 ? String(unread) : "", subscribed ? "🔔" : ""].filter(Boolean).join(" ") || undefined;
     item.tooltip = dm ? dmAgents(channel).join(" ↔ ") : channel.description || describeChannel(channel);
     item.iconPath = new vscode.ThemeIcon(channel.kind === "dm" ? "mail" : "comment-discussion");

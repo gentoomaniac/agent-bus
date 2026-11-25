@@ -1,4 +1,4 @@
-import { Agent, Channel, Message, Presence, RawMessage, SearchPage, SendRequest, ServerPrefs, Status } from "./types";
+import { Agent, ChangedChannel, Channel, ChannelAction, ChannelChange, Message, Presence, RawMessage, SearchPage, SendRequest, ServerPrefs, Status } from "./types";
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -64,6 +64,9 @@ export class Api {
   }
   send(request: SendRequest): Promise<{ id: string }> {
     return this.json("/api/v1/send", request);
+  }
+  changeChannel(action: ChannelAction, change: ChannelChange): Promise<ChangedChannel> {
+    return this.json("/api/v1/channels/" + action, change);
   }
   prefs(): Promise<ServerPrefs> {
     return this.json("/api/v1/prefs");

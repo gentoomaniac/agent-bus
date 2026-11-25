@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import { ApiError } from "./api";
+import { inviteAgent, removeMember } from "./channelAdmin";
 import { describeChannel, destinationOf, dmChannelId } from "./channels";
 import { ChatState, FromWebview, PresenceMark, ToWebview, parseFromWebview } from "./protocol";
 import { buildQuery, hitPlace, scopeTerms } from "./search";
@@ -120,6 +121,14 @@ export class ChatPanels implements vscode.Disposable {
     void chat.panel.webview.postMessage(answer satisfies ToWebview);
   }
 
+  // Shows a channel's new members in its open panel, after an invite or a removal.
+  showMembers(channelId: string, members: string[]): void {
+    const chat = this.chats.get(channelId);
+    if (!chat) return;
+    chat.members = members;
+    this.post(channelId, chat);
+  }
+
   // A conversation the monitor lists, or an empty direct message opened here.
   private channelOf(channelId: string): Channel | undefined {
     return this.session.model.channels.find((channel) => channel.id === channelId) ?? this.emptyDirects.get(channelId);
@@ -193,6 +202,10 @@ export class ChatPanels implements vscode.Disposable {
       this.chats.forEach((other, otherId) => this.post(otherId, other));
     } else if (message.type === "shownTypes") {
       await this.setShownTypes(message.value);
+    } else if (message.type === "invite") {
+      await inviteAgent(this.session, this, channelId);
+    } else if (message.type === "removeMember") {
+      await removeMember(this.session, this, channelId, message.agent);
     } else {
       const { type, targets, title, text } = message.draft;
       let error: string | undefined;
@@ -273,6 +286,7 @@ export class ChatPanels implements vscode.Disposable {
       dividerAfter: chat.dividerAfter,
       hasOlder: model.hasOlder(channelId),
       members: chat.members,
+      canManageMembers: model.status.can_send && channel.kind === "group",
       subscribed: chat.subscribed,
       groupMessages: vscode.workspace.getConfiguration("agentMessenger").get<boolean>("groupMessages", true),
       timeFormat: vscode.workspace.getConfiguration("agentMessenger").get<string>("timeFormat") === "relative" ? "relative" : "absolute",
@@ -319,6 +333,9 @@ export class ChatPanels implements vscode.Disposable {
   .member { display: flex; align-items: center; gap: 4px; padding: 1px 10px; white-space: nowrap; }
   .member .name { overflow: hidden; text-overflow: ellipsis; }
   .member .state { margin-left: auto; padding-left: 6px; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
+  #members .invite { margin: 4px 10px; }
+  .member .remove { visibility: hidden; padding: 0 2px; }
+  .member:hover .remove, .member .remove:focus-visible { visibility: visible; }
   @media (max-width: 520px) { #members, #memberSplit, #membersToggle { display: none; } }
   #searchbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
   #searchField { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px; padding: 2px 6px; }

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { createChannel, inviteAgent } from "./channelAdmin";
 import { ChatPanels } from "./chat";
 import { Session } from "./session";
 import { searchMessages } from "./searchPicker";
@@ -33,6 +34,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("agentMessenger.unsubscribe", (node: Node) => setSubscribed(session, node, false)),
     vscode.commands.registerCommand("agentMessenger.messageAgent", (node: Node) => node.kind === "agent" && chats.openDirect(node.agent.id)),
     vscode.commands.registerCommand("agentMessenger.copyAgentId", (node: Node) => node.kind === "agent" && vscode.env.clipboard.writeText(node.agent.id)),
+    vscode.commands.registerCommand("agentMessenger.inviteAgent", (node: Node) => node.kind === "channel" && inviteAgent(session, chats, node.channel.id)),
+    vscode.commands.registerCommand("agentMessenger.createChannel", () => createChannel(session, chats)),
     vscode.commands.registerCommand("agentMessenger.checkForUpdates", () => updates.check(true)),
     vscode.commands.registerCommand("agentMessenger.logout", () => session.logout()),
     vscode.workspace.onDidChangeConfiguration((change) => {

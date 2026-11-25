@@ -7,6 +7,7 @@ export interface Channel {
   kind: ChannelKind;
   name: string; // a DM's name is "<agent> + <agent>"
   description: string;
+  owner?: string; // the agent that owns a group channel; missing: the bus owner's
   agents?: string[]; // DM only
   messages: number;
   last_sequence: number;
@@ -88,6 +89,23 @@ export interface SearchPage {
 export const MESSAGE_TYPES = ["message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"];
 export const ALL = "@all";
 export const DEFAULT_TYPE = "message";
+
+// A change to a group channel as the bus owner (docs/api.md, channel changes).
+export type ChannelAction = "create" | "invite" | "remove_member" | "update";
+
+export interface ChannelChange {
+  channel: string; // the name, without "group:"
+  description?: string; // create, update
+  agent?: string; // invite, remove_member
+}
+
+export interface ChangedChannel {
+  name: string;
+  description: string;
+  owner?: string;
+  members: string[];
+  warning?: string; // why an invited agent was not told
+}
 
 export interface SendRequest {
   to: { kind: "agent" | "group"; name: string };

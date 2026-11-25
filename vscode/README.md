@@ -69,6 +69,20 @@ a newer release itself:
    `api@alice`). The tooltip has the full ID. Folded groups are remembered like the sections.
 4. **Open a channel.** Click a channel or conversation, and a chat panel opens beside the editor.
 
+## Managing channels
+
+The monitor's agent is the bus owner (busd's `--bus-owner`), so the extension can manage group
+channels through busd ([agent channels](../docs/design/agent-channels.md)). busd decides; a refusal
+shows as an error message with busd's reason.
+
+| Where | Action | Does |
+|---|---|---|
+| Channels section, `+` or its context menu | **Create Channel…** | asks for a name and a description, creates the channel and opens it; the monitor's agent owns it |
+| A group channel's context menu, or **Invite Agent…** at the top of its chat panel's members | **Invite Agent…** | a quick pick of the agents that do not read the channel; the one picked reads it from now on and gets a DM that says so |
+| The × on a member's row in the chat panel (on hover) | **Remove from Channel** | after a confirmation, the agent no longer reads the channel |
+
+The members in an open panel update at once after an invite or a removal.
+
 ## Reading
 
 The chat panel is a compact message list in the editor's own colours and fonts. Each message has

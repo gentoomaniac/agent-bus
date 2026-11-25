@@ -1,4 +1,4 @@
-import { Channel, SendRequest } from "./types";
+import { Agent, Channel, SendRequest } from "./types";
 
 // How the web page names a channel.
 export function describeChannel(channel: Channel): string {
@@ -18,6 +18,24 @@ export function destinationOf(channel: Channel, self: string): SendRequest["to"]
   const agents = channel.agents ?? [];
   if (!agents.includes(self)) return undefined;
   return { kind: "agent", name: agents.find((id) => id !== self) ?? self };
+}
+
+// The name of a group channel's ID ("group:<name>"); general and direct messages have no members
+// to manage.
+export function groupName(channelId: string): string | undefined {
+  return channelId.startsWith("group:") ? channelId.slice("group:".length) : undefined;
+}
+
+// The agents an invite may name: not removed, not the monitor's own, not reading the channel yet.
+export function invitableAgents(agents: Agent[], members: string[], self: string): string[] {
+  return agents.filter((agent) => !agent.removed && agent.id !== self && !members.includes(agent.id)).map((agent) => agent.id);
+}
+
+// What busd takes for a channel name (bus.ValidateGroupName): an error to show, or undefined.
+export function channelNameProblem(name: string): string | undefined {
+  if (!/^[a-z0-9-]{1,64}$/.test(name)) return "lowercase letters, digits and -, at most 64";
+  if (name === "general") return "general is the default channel";
+  return undefined;
 }
 
 export interface ChannelCategories {

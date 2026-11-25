@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ago, describePresence, presenceClass, recentActivity } from "../presence";
 import { matchTargets, mentionBefore, mentionText, resolveTarget } from "../completion";
-import { categorize, describeChannel, destinationOf, dmChannelId } from "../channels";
+import { categorize, channelNameProblem, describeChannel, destinationOf, dmChannelId, groupName, invitableAgents } from "../channels";
 import { byOwner, dmAgents, dmByOwner, dmOwners, groupBy, ownerOf, shortName } from "../names";
 import { parseFromWebview, parsePresenceMarks } from "../protocol";
 import { nextBackoff } from "../events";
@@ -221,4 +221,32 @@ test("presenceClass groups the states like the tree", () => {
   assert.equal(presenceClass("error:auth"), "error");
   assert.equal(presenceClass("offline"), "offline");
   assert.equal(presenceClass(undefined), "offline");
+});
+
+test("invitableAgents leaves out members, removed agents and the monitor's own", () => {
+  const agents = [
+    { id: "a@x", fingerprint: "", removed: false },
+    { id: "b@x", fingerprint: "", removed: false },
+    { id: "gone@x", fingerprint: "", removed: true },
+    { id: "monitor@x", fingerprint: "", removed: false },
+  ];
+  assert.deepEqual(invitableAgents(agents, ["a@x"], "monitor@x"), ["b@x"]);
+});
+
+test("groupName is the name of a group channel only", () => {
+  assert.equal(groupName("group:agent-bus"), "agent-bus");
+  assert.equal(groupName("general"), undefined);
+  assert.equal(groupName("dm:a@x:b@x"), undefined);
+});
+
+test("channelNameProblem takes the names busd takes", () => {
+  assert.equal(channelNameProblem("agent-bus"), undefined);
+  for (const name of ["", "Agent", "a b", "general", "x".repeat(65)]) assert.notEqual(channelNameProblem(name), undefined, name);
+});
+
+test("parseFromWebview reads the member actions", () => {
+  assert.deepEqual(parseFromWebview({ type: "invite" }), { type: "invite" });
+  assert.deepEqual(parseFromWebview({ type: "removeMember", agent: "a@x" }), { type: "removeMember", agent: "a@x" });
+  assert.equal(parseFromWebview({ type: "removeMember", agent: "" }), undefined);
+  assert.equal(parseFromWebview({ type: "removeMember" }), undefined);
 });
