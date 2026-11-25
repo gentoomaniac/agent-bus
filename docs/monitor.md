@@ -278,7 +278,16 @@ channel it offers an "Aimed at" input to aim the message: typing `@` lists `@all
 members whose ID starts with what is typed (case-insensitive; the ID is the name followed by
 `@host`, so the name matches too). Arrow keys move the highlight, Tab or Enter completes it, Esc
 closes the list. A completed target becomes a chip; the chips are the targets sent. Remove one with
-its x button or with Backspace in the empty input. Text left in the input that is not exactly an
+its x button or with Backspace in the empty input.
+
+The composer rests as just the title and message fields. Focusing either one (not only typing: Tab
+can then reach the controls after it, and a phone's keyboard opens together with them) shows the
+type selector, the "Aimed at" input with its chips and the Send button. It closes again after a
+send and when focus leaves it while it is empty; Esc in an empty composer leaves it. It stays open
+while it holds text, a target or an error such as "Unknown target". At rest it still shows its
+note when the note matters: the error, "Sent." after a send, why it is read-only, and, in a DM,
+whom it sends to.
+ Text left in the input that is not exactly an
 `@all` or member name is refused with "Unknown target". Typing `@` in the message text offers the
 same completion. If no chip is set, the `@<agent-id>` and `@all` mentions in the text are used;
 failing that a request or question goes to `@all` and anything else is refused ("name a target or

@@ -196,6 +196,10 @@
   textarea { width: 100%; resize: vertical; min-height: 56px; }
   button { background: var(--accent); color: var(--accent-text); border-color: var(--accent); cursor: pointer; }
   button:disabled, select:disabled, input:disabled, textarea:disabled { opacity: .55; cursor: not-allowed; }
+  /* At rest the composer is the title and the message. Focus inside it, or something in it, opens the rest;
+     the note stays for what the writer must see: an error, "Sent.", and why it cannot send or whom it sends to. */
+  #composer:not(:focus-within, .filled) :is(select[name=type], #targets, #send-row button) { display: none; }
+  #composer:not(:focus-within, .filled, .notice) #send-row { display: none; }
   #send-note { font-size: var(--font-s); color: var(--muted); }
   #send-note.error { color: var(--bad); }
   [hidden] { display: none !important; }
@@ -351,7 +355,7 @@
       </div>
       <ul id="completions" role="listbox" aria-label="Completions" hidden></ul>
       <textarea name="text" placeholder="Message (@ completes an agent)" aria-label="Message"></textarea>
-      <div class="row"><button type="submit">Send</button><span id="send-note"></span></div>
+      <div class="row" id="send-row"><button type="submit">Send</button><span id="send-note"></span></div>
     </form>
   </main>
   <div class="handle" id="members-handle" role="separator" aria-orientation="vertical" aria-label="Resize the members panel" tabindex="0" title="Drag to resize, double-click to reset"></div>
@@ -1636,11 +1640,24 @@ function renderComposer() {
   for (const field of form.elements) field.disabled = !canSend || (field.id === "target-input" && to?.kind === "agent");
   const note = $("send-note");
   if (!note.classList.contains("error")) {
+    note.classList.remove("done");
     if (!state.status.can_send) note.textContent = state.status.note;
     else if (!state.selected) note.textContent = "Open a channel to send.";
     else if (!to) note.textContent = "Read-only: this conversation is between other agents.";
-    else note.textContent = "Sending as " + state.status.agent;
+    else note.textContent = "Sending as " + state.status.agent + (to.kind === "agent" ? " to " + to.name : "");
   }
+  form.classList.toggle("fixed", !canSend || to.kind === "agent");
+  syncComposer();
+}
+
+// Tells the stylesheet whether the composer holds something (text, targets or an error: it stays
+// open) and whether its note must show at rest (an error, "Sent.", or a read-only or fixed-target state).
+function syncComposer() {
+  const form = document.forms.composer;
+  const note = $("send-note");
+  const failed = note.classList.contains("error");
+  form.classList.toggle("filled", failed || Boolean(form.title.value || form.text.value || $("target-input").value || state.picked.size));
+  form.classList.toggle("notice", failed || note.classList.contains("done") || form.classList.contains("fixed"));
 }
 
 // The chips are the message's targets. The input completes the open channel's members and @all.
@@ -1666,6 +1683,7 @@ function renderTargets() {
     el("span", { class: "target-chip", title: id },
       el("span", {}, id),
       el("button", { type: "button", "aria-label": "Remove " + id, onclick: () => { state.picked.delete(id); renderTargets(); input.focus(); } }, "\u00d7"))));
+  syncComposer();
 }
 
 // The choices whose ID starts with query (the ID is the name followed by @host, so this covers
@@ -1793,6 +1811,13 @@ Object.assign(document.forms.composer.text, {
 });
 document.forms.composer.text.addEventListener("keydown", (event) => completionKey(event.target, event));
 
+// Focus opens the composer rather than typing, so Tab can reach the controls after the message and a
+// phone's keyboard opens together with the controls. Escape in an empty composer leaves it, which closes it.
+document.forms.composer.addEventListener("input", syncComposer);
+document.forms.composer.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !event.defaultPrevented && !event.currentTarget.classList.contains("filled")) event.target.blur();
+});
+
 // ---- search ----
 
 const SEARCH_DELAY_MS = 250;
@@ -1905,6 +1930,7 @@ function showSendError(message) {
   const note = $("send-note");
   note.classList.add("error");
   note.textContent = message;
+  syncComposer();
   setTimeout(() => { note.classList.remove("error"); renderComposer(); }, 8000);
 }
 
@@ -1913,6 +1939,7 @@ document.forms.composer.addEventListener("submit", async (event) => {
   const form = event.target;
   const to = composerDestination();
   $("send-note").classList.remove("error");
+  syncComposer();
   try {
     if (to.kind !== "agent") resolveTargetInput();
     await api("/api/v1/send", {
@@ -1923,6 +1950,10 @@ document.forms.composer.addEventListener("submit", async (event) => {
     state.picked.clear();
     renderTargets();
     $("send-note").textContent = "Sent.";
+    $("send-note").classList.add("done");
+    syncComposer();
+    // Focus inside the form would keep it open.
+    if (form.contains(document.activeElement)) document.activeElement.blur();
   } catch (error) {
     showSendError(error.message);
   }
