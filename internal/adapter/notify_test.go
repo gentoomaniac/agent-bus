@@ -49,6 +49,13 @@ func TestNewMailSkipsMailTheAgentAlreadyRead(t *testing.T) {
 
 	read, _ := a.Send(ctx, bob, text("read with inbox"))
 	poll(t, bobAdapter)
+	// A peek (mark_read all) shows the agent nothing, so the mail is still new afterwards.
+	if _, err := bobAdapter.Inbox(InboxQuery{Peek: true}); err != nil {
+		t.Fatal(err)
+	}
+	if fresh, _, _ := bobAdapter.PeekNewMail(); len(fresh) != 1 {
+		t.Errorf("peeked mail is no longer new: %v", fresh)
+	}
 	if listed, err := bobAdapter.Inbox(InboxQuery{}); err != nil || len(listed) != 1 {
 		t.Fatalf("inbox: %v, %v", listed, err)
 	}

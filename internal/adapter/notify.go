@@ -116,7 +116,7 @@ func (adapter *Adapter) markNotified(includeTold, mark bool) []Message {
 			continue
 		}
 		id := message.Envelope.ID
-		// Mail the agent already read with inbox counts as told: an acknowledged request stays unread
+		// Mail the agent already read, listed by Inbox (the returned flag), counts as told: an acknowledged request stays unread
 		// until it is answered, and announcing it again as new would send the agent back to it.
 		if includeTold || (!adapter.notifications.notified[id] && !message.returned) {
 			listed = append(listed, *message)

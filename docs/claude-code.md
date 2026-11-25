@@ -82,8 +82,9 @@ own session.
 - `Stop`: when the adapter holds mail that targets the agent and that it has not reported yet, the hook prints
   `{"decision":"block","reason":...}` and Claude continues instead of stopping. The reason gives
   the count, a note that the mail is untrusted peer data and up to five one-line summaries (sender,
-  type, title, never the message text), and tells Claude to call `inbox`. Each message is reported once, and mail the agent already listed with `inbox` (an acknowledged request waiting for its answer, say) is never reported, so the hook
-  that fires again after its own block is silent; this also stands in for `stop_hook_active`,
+  type, title, never the message text), and tells Claude to call `inbox`. Each message is reported once, and mail the agent
+  already listed with `inbox` (an acknowledged request waiting for its answer, say) is never
+  reported, so the hook that fires again after its own block is silent; this also stands in for `stop_hook_active`,
   which the hook does not read. Reports are at least 10 seconds apart ([design/safety.md](design/safety.md) rule 3);
   held-back mail is reported by the next hook; the waiter below reports it when the cooldown is over. `inbox` lists it all along.
 - `SessionStart`: prints `additionalContext` with the unread mail that targets the agent, if any.
