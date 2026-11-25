@@ -1,0 +1,212 @@
+# Directory v2: versioned, announced, diff-only
+
+Status: proposed (2026-11-25). Replaces the once-a-minute full fetch over the enrollment login
+(commits 80c500a..8be64cd). Based on a design review by GPT 6.1 sol, with the owner's decisions
+below.
+
+## Problem
+
+Agents check senders and recipients against a local copy of the directory
+(`~/.config/agent-bus/directory/`). The merged fix fetches the whole directory from busd every
+minute and on a miss, over the shared enrollment login. The owner wants:
+
+1. Updates noticed much sooner than once a minute, but a fetch only when something changed, and
+   only the diff.
+2. The protocol announces new agents.
+3. No extra traffic just to check; piggyback on what is already sent.
+
+## Decisions
+
+| Question | Decision |
+|---|---|
+| Transport | The agents' own mTLS login in the BUS account. busd already has a BUS connection (`cmd/busd/main.go`, `bus-admin`). No enrollment login and no password file on agents. No account export/import. |
+| Signalling | busd pushes a signed **head** (current version) on a subject agents subscribe to. Not presence: presence is fire-and-forget into a stream busd never reads, and beats only every 30 s. |
+| Versioning | A version busd counts itself, not the registry KV revision. |
+| Announcements | Net changes between versions, not every event. An agent that joins and leaves between two observations is never announced. |
+| Recovery | A new epoch signed by the CA is accepted; all pins and revocations are kept and logged loudly. |
+| Fallback | The one-minute check stays, as a conditional sync (normally "unchanged"), not a full download. |
+
+## Version
+
+```text
+Version = { epoch, revision, state_hash }
+```
+
+- `epoch`: identifies this directory's lineage; new only after busd's state is lost or restored.
+- `revision`: persistent, strictly increasing; advances only when the published content changes.
+- `state_hash`: hash of a deterministic serialisation of the whole directory (records, tombstones,
+  catalogue, readership).
+- Timestamps are informational only, never used for rollback protection.
+
+Why not the registry KV revision: catalogue changes live in another bucket, group readership comes
+from BUS consumers (`internal/trust/directory.go`, `internal/broker/admin.go`), and a recreated or
+restored bucket resets revisions. One published projection with its own counter avoids a version
+vector.
+
+busd persists the current projection and version together. A restart keeps both.
+
+## Subjects and permissions (BUS account)
+
+| Subject | Who | Purpose |
+|---|---|---|
+| `directory.head` | busd publishes; agents and the monitor subscribe | Signed current version plus change hints |
+| `busd.directory.sync` | agents and the monitor publish (request); busd subscribes | Conditional sync: unchanged, diff or full |
+
+- Agents: publish `busd.directory.sync`, subscribe `directory.head` and their existing
+  `_INBOX.<token>.>`. No KV write, no new JetStream API grants.
+- busd: subscribe `busd.directory.sync`, publish `directory.head` and replies to approved inbox
+  prefixes only (no wildcards, no empty tokens, no reply outside the caller's inbox prefix).
+- Sync is a public read: no authorisation on a claimed caller identity.
+
+## Messages
+
+All signed payloads use the merged `{payload, signature}` envelope: the CA key signs the exact
+payload bytes, with a separate domain prefix per kind (`agent-bus/directory-head/v1\n`,
+`agent-bus/directory-sync/v1\n`).
+
+**Head** (busd → all, right after a change and then every 5 s):
+
+```json
+{
+  "epoch": "…", "revision": 42, "state_hash": "…",
+  "changes": [{"agent_id": "worker@owner", "kind": "joined"}]
+}
+```
+
+`changes` are hints (joined, removed, rekeyed, channels), bounded and possibly truncated. Agents
+never install records from a head.
+
+**Sync request** (agent → busd):
+
+```json
+{ "challenge": "<random>", "since": {"epoch": "…", "revision": 39, "state_hash": "…"} }
+```
+
+**Sync response** (signed):
+
+```json
+{
+  "request_hash": "…", "kind": "diff",
+  "epoch": "…", "from": 39, "base_hash": "…", "to": 42, "state_hash": "…",
+  "records": ["complete changed AgentRecords"],
+  "catalogue": {"team": ["worker@owner"]}
+}
+```
+
+- `kind`: `unchanged`, `diff`, `full` or `error` (errors signed too; transport errors stay
+  transport errors).
+- `request_hash` binds the reply to this request and its challenge: no replay of old snapshots,
+  no clock dependence.
+- `catalogue` absent = unchanged; present and empty = empty.
+
+## Diff semantics
+
+- Coalesced state change from `from` to `to`: complete current records for every agent that
+  changed, the whole catalogue if it changed. Intermediate revisions are skipped.
+- Removals are permanent tombstone records, including revoked-key history. Absence never means
+  removal.
+- busd keeps a bounded cache of earlier projections to compute diffs. If the exact
+  `(epoch, from, base_hash)` is not cached, it answers `full`. Losing the cache on restart only
+  costs one full fetch.
+- An agent applies a diff only onto its exact base; otherwise it asks for a full sync.
+
+## busd
+
+1. **Recover**: load the persisted projection and version. One busd is the only writer.
+2. **Reconcile**: under the existing mutation lock, build a coherent directory from registry,
+   catalogue and readership.
+3. **Commit**: if the content changed, advance `revision` and persist projection and version.
+4. **Publish**: announce the head; retry on failure and on reconnect. Re-announce the cached head
+   every 5 s.
+5. **Serve**: answer sync requests from the committed projection only.
+
+Reconcile after each successful mutation, on registry and catalogue watches, and every 5 s as a
+backup (CLI changes and consumer-based membership must not slip through). Announce "joined" only
+after enrollment has finished (record, cursors, auth reload), not right after the registry write.
+
+## Agent
+
+1. Load the committed local snapshot and checkpoint.
+2. Subscribe to `directory.head`, flush, then sync. Again after every reconnect.
+3. On a valid head newer than the checkpoint: schedule one sync; further heads only raise the
+   wanted version.
+4. Fetch outside the adapter and trust locks.
+5. Verify signature, request binding, epoch, base, increasing revision, record validity, and the
+   resulting `state_hash`.
+6. Commit snapshot and checkpoint atomically; install revocations into the trust store before any
+   further message is verified.
+7. Emit local directory notices; retry held unknown-sender deliveries.
+
+Also: sync at start, on reconnect, on SIGHUP, on a miss (rate-limited), and every minute as the
+fallback. Duplicate or reordered heads are harmless. Same epoch and revision with a different hash
+is a fault: log it and do a full sync.
+
+**New epoch**: accept it if CA-signed, do a full sync, keep every pin and revocation, log loudly.
+A restore can never un-revoke a key or replace a pinned key.
+
+## Local storage
+
+- One snapshot file holding records, catalogue and checkpoint, replaced atomically (temp file,
+  fsync, rename). The per-agent `.json` files become exports written from it.
+- Several identities share `<config>/directory`: commit under a cross-process lock (flock) and
+  recheck the base under it.
+- Pins and remembered revocations are untouched by a sync; a signed new key does not replace a
+  pin.
+
+## Announcements to the model and the monitor
+
+- After a verified apply, the agent queues a local system notice such as "Directory updated:
+  worker@owner joined; old@owner removed". It is shown in `inbox` and `wait_for_messages`
+  separately from peer messages, goes through the delivery hooks, is deduplicated per version,
+  and invites no reply.
+- The first sync summarises the directory; it does not announce every existing agent as new.
+- "Registered" is not "online": presence stays separate.
+- The monitor uses heads to refresh its agent list and catalogue at once, keeps its 5 s discovery
+  as backup, and shows sync failures separately from presence.
+
+## What it fixes in the merged code
+
+| Finding | Where | Fixed by |
+|---|---|---|
+| Approval reply's directory is unsigned and its IDs unchecked (path traversal) | `internal/enrollclient/enrollclient.go` `writeDirectory` | ID validation in `FileDirectory.Write` (small-fixes branch); v2 then syncs right after enrollment |
+| A fetch on a miss doesn't install revocations | `internal/adapter/adapter.go` | Agent step 6 |
+| Snapshot and checkpoint not atomic, not serialised across processes | `cmd/agent-bus/main.go`, `internal/enrollclient/directory.go` | Local storage |
+| `issued_at` is a weak freshness and version check | `internal/enroll/signed.go` | Version plus challenge |
+| Signed directory is not a coherent cut | `internal/busd/service.go`, `internal/trust/directory.go` | busd steps 2–3 |
+| Network fetch while holding the adapter lock | `internal/adapter/adapter.go` | Agent step 4 |
+| A running agent added to a group doesn't read it until restart | `internal/adapter/adapter.go` | Apply catalogue changes to subscriptions after a sync |
+
+## Migration
+
+- Nothing from the v1 fetch has been released, so v1 (`busd.directory` on the enrollment login,
+  the password file on agents) is removed rather than kept for compatibility.
+- busd and agents must both run v2. An older agent keeps working with its local directory but
+  needs the manual `directory export` copy to learn new agents.
+- The broker auth files must be regenerated for the new BUS grants.
+
+## Risks and open points
+
+- **Revocation delay while busd is down**: agents keep their cached directory, so a revocation
+  reaches them only when busd is back. A maximum staleness policy is not defined.
+- **Metadata in BUS**: heads expose revision numbers and join, leave and rekey events to every BUS
+  reader. Keep hostnames, pending approvals and private group membership out of the hints.
+- **Abuse**: signatures stop forgery, not flooding. Bound message sizes, signature checks and
+  pending syncs; rate-limit busd per connection; jitter retries.
+- **Scale**: large snapshots may later need paging with a signed manifest; never apply part of
+  one.
+- **Key separation**: the CA key signs directories for now. A dedicated directory key, certified
+  by the CA, is a later hardening.
+- **Single busd**: active/active busd would need shared fencing for version allocation.
+
+## Commit plan
+
+1. Version and projection in busd: reconcile, commit, persist; tests.
+2. `busd.directory.sync` on BUS with signed unchanged/diff/full replies; grants; tests.
+3. `directory.head` announcements, every 5 s and on change; tests.
+4. Agent: snapshot file with cross-process lock, verify and apply, revocations installed;
+   subscribe to heads, sync on start, reconnect, miss and fallback; remove v1 and the password
+   file.
+5. Group subscriptions follow catalogue changes without restart.
+6. Directory notices in `inbox`, `wait_for_messages` and hooks.
+7. Monitor: refresh on heads; sync status shown.
+8. Docs: access-control, agent-busctl, claude-code, troubleshooting, upgrade notes.
