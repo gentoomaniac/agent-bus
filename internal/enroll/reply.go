@@ -13,6 +13,9 @@ const (
 	StatusPending  Status = "pending"
 	StatusApproved Status = "approved"
 	StatusRejected Status = "rejected"
+	// StatusBusy refuses for now (a rate limit, a full queue, a registry that cannot be read);
+	// the client may ask again.
+	StatusBusy Status = "busy"
 	// StatusUnknown is the answer for a request busd has no record of (expired, or lost with a state
 	// file): the client sends it again.
 	StatusUnknown Status = "unknown"

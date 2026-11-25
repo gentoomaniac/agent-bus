@@ -12,17 +12,9 @@ import (
 // adapters learn the channels and their members (docs/design/jetstream-binding.md). The broker is the source, so the
 // snapshot is complete however often it is rewritten.
 func writeCatalogue(ctx context.Context, admin bus.Admin, dir trust.FileDirectory) error {
-	groups, err := admin.GroupChannels(ctx)
+	catalogue, err := trust.BuildCatalogue(ctx, admin)
 	if err != nil {
 		return err
-	}
-	catalogue := trust.Catalogue{}
-	for _, group := range groups {
-		readers, err := admin.ReadCursorHolders(ctx, bus.GroupChannel(group.Name))
-		if err != nil {
-			return err
-		}
-		catalogue[group.Name] = readers
 	}
 	return dir.WriteCatalogue(catalogue)
 }

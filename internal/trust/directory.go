@@ -79,6 +79,31 @@ type Catalogue map[string][]string
 
 const catalogueFile = "channels"
 
+// CatalogueSource is what BuildCatalogue reads: the broker's catalogue and the holders of the
+// read cursors of each group channel.
+type CatalogueSource interface {
+	GroupChannels(ctx context.Context) ([]bus.TopicRecord, error)
+	ReadCursorHolders(ctx context.Context, channel bus.Channel) ([]string, error)
+}
+
+// BuildCatalogue snapshots the group channels and who reads each. The broker is the source, so the
+// snapshot is complete however often it is made.
+func BuildCatalogue(ctx context.Context, source CatalogueSource) (Catalogue, error) {
+	groups, err := source.GroupChannels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	catalogue := Catalogue{}
+	for _, group := range groups {
+		readers, err := source.ReadCursorHolders(ctx, bus.GroupChannel(group.Name))
+		if err != nil {
+			return nil, err
+		}
+		catalogue[group.Name] = readers
+	}
+	return catalogue, nil
+}
+
 // Catalogue reads the snapshot; a directory without one has an empty catalogue.
 func (dir FileDirectory) Catalogue() (Catalogue, error) {
 	data, err := os.ReadFile(filepath.Join(string(dir), catalogueFile))
