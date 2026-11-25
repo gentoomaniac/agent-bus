@@ -68,8 +68,9 @@ One tool with an `action`, to keep the tool descriptions within their token budg
 - **Planned:** the private-channel tools, `history`, `requests` and the registry and catalogue reads
   go through busd ([busd](busd.md)). The adapter signs the request with its identity key, checks
   busd's signed reply and reports busd's errors as they are, including "busd is not reachable".
-- **Built:** `channels` and the directory sync already go through busd, with their own signed
-  request and reply ([agent channels](agent-channels.md), [directory v2](directory-v2.md)).
+- **Built:** `channels` and the directory sync already go through busd. Channel requests and
+  replies are both signed. A directory sync request is unsigned JSON with a challenge; only its
+  reply is signed ([agent channels](agent-channels.md), [directory v2](directory-v2.md)).
 - Sending, receiving and acking talk to the broker only.
 
 The adapter fills in `id`, `ts`, `from`, `hops`, `key_fp`, and the signature; agents never construct
