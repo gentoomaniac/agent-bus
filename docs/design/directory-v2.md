@@ -360,6 +360,8 @@ Where the build refined or departed from the text above.
   restart of busd keeps it. busd writes its own machine's lookup file only after the account too.
 - The first attempt to approve a request records where the agent's read cursors start (in
   `enroll/state.json`); a repeated approval, after a restart too, starts them there and not at
-  the then end of the log, so nothing sent in between is skipped. An existing cursor always kept
+  the then end of the log, so nothing sent in between is skipped. The position is written to disk
+  (synced, and an error stops the approval) before the registry or any cursor changes, so a crash
+  between the two cursors cannot start the second one later either. An existing cursor always kept
   its position (the broker refuses to change it), so this was already true when the first
   attempt got as far as creating it.

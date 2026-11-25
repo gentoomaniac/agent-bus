@@ -38,6 +38,8 @@ type fakeRegistry struct {
 	down     error
 	// cursorErr fails the next CreateReadCursor, once.
 	cursorErr error
+	// onCursor runs at each CreateReadCursor, before it does anything.
+	onCursor func()
 }
 
 func (fake *fakeRegistry) Agents(context.Context) ([]bus.AgentRecord, error) {
@@ -52,6 +54,9 @@ func (fake *fakeRegistry) PutAgentRecord(_ context.Context, record bus.AgentReco
 	return nil
 }
 func (fake *fakeRegistry) CreateReadCursor(_ context.Context, agentID string, channel bus.Channel, afterSequence uint64) error {
+	if fake.onCursor != nil {
+		fake.onCursor()
+	}
 	if err := fake.cursorErr; err != nil {
 		fake.cursorErr = nil
 		return err

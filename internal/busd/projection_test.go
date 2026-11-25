@@ -344,3 +344,40 @@ func TestEachAgentIsLimitedOnItsOwnBeneathBusdsLimit(t *testing.T) {
 		t.Error("an agent within its own limit was answered past busd's")
 	}
 }
+
+func TestTheCursorsStartIsOnDiskBeforeTheFirstCursorExists(t *testing.T) {
+	f := newFixture(t)
+	f.registry.last = 42
+	reply := f.submit("new@x", f.newKey(), "")
+	var onDisk []string
+	f.registry.onCursor = func() {
+		data, _ := os.ReadFile(filepath.Join(f.dir, enrollDir, stateFile))
+		onDisk = append(onDisk, string(data))
+	}
+
+	if result := f.sign(reply.Code, false); result.Error != "" {
+		t.Fatal(result.Error)
+	}
+
+	if len(onDisk) != 2 || !strings.Contains(onDisk[0], `"cursors_after":42`) {
+		t.Errorf("when the first cursor was made, the state on disk was %q", onDisk)
+	}
+}
+
+func TestAnApprovalWhoseCursorStartCannotBeSavedChangesNothing(t *testing.T) {
+	f := newFixture(t)
+	reply := f.submit("new@x", f.newKey(), "")
+	if err := os.RemoveAll(filepath.Join(f.dir, enrollDir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.dir, enrollDir), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if result := f.sign(reply.Code, false); !strings.Contains(result.Error, "saving where the read cursors start") {
+		t.Errorf("sign = %q, want the save's error", result.Error)
+	}
+	if len(f.registry.cursors) != 0 || len(f.registry.records) != 0 || len(f.registry.accounts) != 0 {
+		t.Errorf("the broker changed: %v, %v, %v", f.registry.cursors, f.registry.records, f.registry.accounts)
+	}
+}

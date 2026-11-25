@@ -155,7 +155,7 @@ func (service *Service) HandleRequest(ctx context.Context, data []byte) enroll.R
 			service.directoryChanged()
 		}
 	}
-	service.save()
+	service.saveOrLog()
 	return service.reply(added)
 }
 
@@ -232,7 +232,7 @@ func (service *Service) Sign(ctx context.Context, command enroll.SignCommand) en
 		return enroll.CommandReply{Error: err.Error()}
 	}
 	message, err := service.approve(ctx, request, command.Replace, "approved by the owner")
-	service.save()
+	service.saveOrLog()
 	if err != nil {
 		return enroll.CommandReply{Error: err.Error()}
 	}
@@ -256,7 +256,7 @@ func (service *Service) Reject(command enroll.RejectCommand) enroll.CommandReply
 		return enroll.CommandReply{Error: err.Error()}
 	}
 	request.decide(enroll.StatusRejected, cleanReason(command.Reason), service.config.Now())
-	service.save()
+	service.saveOrLog()
 	log.Printf("busd: rejected enrollment request %s for %s: %s", request.code(), request.Request.AgentID, request.Message)
 	return enroll.CommandReply{Message: fmt.Sprintf("rejected %s (%s)", request.Request.AgentID, request.code())}
 }
@@ -437,6 +437,21 @@ func (service *Service) approve(ctx context.Context, request *entry, replace boo
 	if err != nil {
 		return "", err
 	}
+	// A new agent starts at the end of the log, not in the history of `general`, at the end as the
+	// first attempt found it. That position is on disk before anything changes: a crash between the
+	// two cursors must not start the second one later and skip what was sent in between. An agent
+	// that enrolls again keeps its cursors, and with them its position.
+	if request.CursorsAfter == nil {
+		last, err := registry.LastSequence(ctx)
+		if err != nil {
+			return "", err
+		}
+		request.CursorsAfter = &last
+		if err := service.save(); err != nil {
+			request.CursorsAfter = nil
+			return "", fmt.Errorf("saving where the read cursors start: %w", err)
+		}
+	}
 	var record bus.AgentRecord
 	if identity == enroll.IdentitySameKey {
 		index := slices.IndexFunc(records, func(existing bus.AgentRecord) bool { return existing.AgentID == agentID })
@@ -449,16 +464,6 @@ func (service *Service) approve(ctx context.Context, request *entry, replace boo
 		if err := registry.PutAgentRecord(ctx, record); err != nil {
 			return "", err
 		}
-	}
-	// A new agent starts at the end of the log, not in the history of `general`, at the end as the
-	// first attempt found it. An agent that enrolls again keeps its cursors, and with them its
-	// position.
-	if request.CursorsAfter == nil {
-		last, err := registry.LastSequence(ctx)
-		if err != nil {
-			return "", err
-		}
-		request.CursorsAfter = &last
 	}
 	for _, channel := range []bus.Channel{bus.DMChannel(agentID), bus.GeneralChannel()} {
 		if err := registry.CreateReadCursor(ctx, agentID, channel, *request.CursorsAfter); err != nil {
@@ -561,37 +566,24 @@ func (service *Service) load() error {
 }
 
 // save writes the state file: public data only (no secret, no private key), mode 0600, replaced
-// atomically. A failure is logged: the answer in hand is still right, only a restart would lose it.
-func (service *Service) save() {
+// atomically and synced to disk.
+func (service *Service) save() error {
 	stored := make([]*entry, 0, len(service.entries))
 	for _, request := range service.entries {
 		stored = append(stored, request)
 	}
 	slices.SortFunc(stored, func(a, b *entry) int { return a.SubmittedAt.Compare(b.SubmittedAt) })
 	data, err := json.Marshal(stored)
-	if err == nil {
-		err = writeAtomically(service.path(stateFile), data)
-	}
 	if err != nil {
-		log.Printf("busd: saving the enrollment state: %v", err)
+		return err
 	}
+	return files.Write(service.path(stateFile), data, files.SecretMode, true)
 }
 
-func writeAtomically(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), files.DirMode); err != nil {
-		return err
+// saveOrLog saves after an answer is decided. A failure is logged: the answer in hand is still
+// right, only a restart would lose it.
+func (service *Service) saveOrLog() {
+	if err := service.save(); err != nil {
+		log.Printf("busd: saving the enrollment state: %v", err)
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp") // mode 0600
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temporary.Name())
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temporary.Name(), path)
 }
