@@ -149,7 +149,7 @@ func TestRenewBrokerNeverOutlivesTheCA(t *testing.T) {
 	if err := Create(opts); err != nil {
 		t.Fatal(err)
 	}
-	opts.BrokerValidity = 100 * caValidity
+	opts.BrokerValidity = 2 * caValidity
 	if err := RenewBroker(opts); err != nil {
 		t.Fatal(err)
 	}
