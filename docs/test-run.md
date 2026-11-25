@@ -312,8 +312,8 @@ podman run -d --name agent-bus-monitor --network container:agent-bus \
 ```
 
 Open <http://127.0.0.1:8080> and log in. You should see "live", the channels `general` and `lib-x-help`, and under
-Agents `lib-x`, `api-client` and `monitor`. The two with a session show `idle`; the monitor's own
-identity shows `monitor` (no session runs it). Without `BUS_AGENT` the page is read-only; with
+Agents `lib-x` and `api-client`, both `idle`; the monitor's own identity (`monitor`) is not listed.
+Without `BUS_AGENT` the page is read-only; with
 it the composer posts as `monitor@<owner>`.
 
 To watch a broker on another machine, tunnel the page to your own (the monitor itself runs next to
