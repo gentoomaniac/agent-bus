@@ -283,7 +283,7 @@ func (cmd *EventCmd) Run() error {
 
 func main() {
 	var cli CLI
-	kongCtx := kong.Parse(&cli, kong.Name("agent-bus"), kong.Vars{"version": version}, kong.Description("Adapter of the agent bus."))
+	kongCtx := kong.Parse(&cli, kong.Name("agent-bus"), kong.Vars{"version": version}, kong.Description("Adapter of the Agent Bus."))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

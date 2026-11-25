@@ -1,7 +1,7 @@
 {
   "name": "agent-messenger",
-  "displayName": "Agent Messenger",
-  "description": "Read and send agent-messenger messages from VS Code, through the bus monitor's HTTP API",
+  "displayName": "Agent Bus",
+  "description": "Read and send Agent Bus messages from VS Code, through the bus monitor's HTTP API",
   "version": "0.1.0",
   "publisher": "gentoomaniac",
   "icon": "media/logo.png",
@@ -19,7 +19,7 @@
   "activationEvents": ["onStartupFinished"],
   "contributes": {
     "configuration": {
-      "title": "Agent Messenger",
+      "title": "Agent Bus",
       "properties": {
         "agentMessenger.url": {
           "type": "string",
@@ -55,17 +55,17 @@
         "agentMessenger.checkForUpdates": {
           "type": "boolean",
           "default": true,
-          "description": "Check GitHub for a newer version of this extension when the editor starts, and then every 24 hours. The command Agent Messenger: Check for Updates always works."
+          "description": "Check GitHub for a newer version of this extension when the editor starts, and then every 24 hours. The command Agent Bus: Check for Updates always works."
         }
       }
     },
     "commands": [
-      { "command": "agentMessenger.login", "title": "Log In", "category": "Agent Messenger" },
-      { "command": "agentMessenger.logout", "title": "Log Out", "category": "Agent Messenger" },
-      { "command": "agentMessenger.openChannel", "title": "Open Channel", "category": "Agent Messenger" },
-      { "command": "agentMessenger.openUnreadMail", "title": "Open Unread Mail", "category": "Agent Messenger" },
-      { "command": "agentMessenger.searchMessages", "title": "Search Messages", "category": "Agent Messenger", "icon": "$(search)" },
-      { "command": "agentMessenger.checkForUpdates", "title": "Check for Updates", "category": "Agent Messenger" },
+      { "command": "agentMessenger.login", "title": "Log In", "category": "Agent Bus" },
+      { "command": "agentMessenger.logout", "title": "Log Out", "category": "Agent Bus" },
+      { "command": "agentMessenger.openChannel", "title": "Open Channel", "category": "Agent Bus" },
+      { "command": "agentMessenger.openUnreadMail", "title": "Open Unread Mail", "category": "Agent Bus" },
+      { "command": "agentMessenger.searchMessages", "title": "Search Messages", "category": "Agent Bus", "icon": "$(search)" },
+      { "command": "agentMessenger.checkForUpdates", "title": "Check for Updates", "category": "Agent Bus" },
       { "command": "agentMessenger.addFavourite", "title": "Add to Favourites", "icon": "$(star-empty)" },
       { "command": "agentMessenger.removeFavourite", "title": "Remove from Favourites", "icon": "$(star-full)" },
       { "command": "agentMessenger.subscribe", "title": "Subscribe to Notifications", "icon": "$(bell)" },
@@ -73,7 +73,7 @@
       { "command": "agentMessenger.messageAgent", "title": "Message Agent" },
       { "command": "agentMessenger.copyAgentId", "title": "Copy Agent ID" },
       { "command": "agentMessenger.inviteAgent", "title": "Invite Agent…" },
-      { "command": "agentMessenger.createChannel", "title": "Create Channel…", "category": "Agent Messenger", "icon": "$(add)" }
+      { "command": "agentMessenger.createChannel", "title": "Create Channel…", "category": "Agent Bus", "icon": "$(add)" }
     ],
     "menus": {
       "commandPalette": [
@@ -106,10 +106,10 @@
       ]
     },
     "viewsContainers": {
-      "activitybar": [{ "id": "agentMessenger", "title": "Agent Messenger", "icon": "media/icon.svg" }]
+      "activitybar": [{ "id": "agentMessenger", "title": "Agent Bus", "icon": "media/icon.svg" }]
     },
     "views": {
-      "agentMessenger": [{ "id": "agentMessenger.tree", "name": "Agent Messenger" }]
+      "agentMessenger": [{ "id": "agentMessenger.tree", "name": "Agent Bus" }]
     },
     "viewsWelcome": [
       {

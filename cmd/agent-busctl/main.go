@@ -137,7 +137,7 @@ func (cli *CLI) brokerAdmin() (*broker.Admin, error) {
 
 func main() {
 	var cli CLI
-	kongCtx := kong.Parse(&cli, kong.Name("agent-busctl"), kong.Vars{"version": version}, kong.Description("Admin CLI of the agent bus."))
+	kongCtx := kong.Parse(&cli, kong.Name("agent-busctl"), kong.Vars{"version": version}, kong.Description("Admin CLI of the Agent Bus."))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

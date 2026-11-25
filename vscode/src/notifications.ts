@@ -23,7 +23,7 @@ async function notify(session: Session, chats: ChatPanels, batch: Message[]): Pr
   const channel = session.model.channels.find((candidate) => candidate.id === first.channel);
   const label = channel ? describeChannel(channel) : first.channel;
   if (batch.length > 1) {
-    const choice = await vscode.window.showInformationMessage(`Agent Messenger: ${batch.length} new messages`, "Open");
+    const choice = await vscode.window.showInformationMessage(`Agent Bus: ${batch.length} new messages`, "Open");
     if (choice) await chats.jumpTo(first.channel, first.sequence);
     return;
   }

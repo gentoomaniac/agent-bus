@@ -22,7 +22,7 @@ export class Session implements vscode.Disposable {
   private generation = 0; // counts starts; work of an older start is dropped
   private hasToken = false;
   loginRequired = false; // the monitor refused our token (or we have none): no connection to show
-  readonly log = vscode.window.createOutputChannel("Agent Messenger");
+  readonly log = vscode.window.createOutputChannel("Agent Bus");
 
   readonly onDidChange = this.changeEmitter.event;
   readonly onDidReceiveMessage = this.messageEmitter.event;
@@ -127,7 +127,7 @@ export class Session implements vscode.Disposable {
     this.changeEmitter.fire();
     await vscode.commands.executeCommand("setContext", "agentMessenger.loginRequired", true);
     if (!this.hasToken) return;
-    const choice = await vscode.window.showWarningMessage("Agent Messenger: the session ended. Log in again.", "Log In");
+    const choice = await vscode.window.showWarningMessage("Agent Bus: the session ended. Log in again.", "Log In");
     if (choice) await vscode.commands.executeCommand("agentMessenger.login");
   }
 
@@ -143,7 +143,7 @@ export class Session implements vscode.Disposable {
       if (error instanceof ApiError && error.code === "no_password_set") {
         void vscode.window.showInformationMessage("This monitor has no password; no login is needed.");
       } else {
-        void vscode.window.showErrorMessage("Agent Messenger: login failed: " + (error as Error).message);
+        void vscode.window.showErrorMessage("Agent Bus: login failed: " + (error as Error).message);
         return;
       }
     }

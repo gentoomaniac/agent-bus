@@ -209,6 +209,6 @@ func (cli *CLI) openSender(caCert string, caPEM []byte) (sender monitor.Sender, 
 
 func main() {
 	var cli CLI
-	kongCtx := kong.Parse(&cli, kong.Name("bus-monitor"), kong.Vars{"version": version}, kong.Description("Web interface of the agent bus."))
+	kongCtx := kong.Parse(&cli, kong.Name("bus-monitor"), kong.Vars{"version": version}, kong.Description("Web interface of the Agent Bus."))
 	kongCtx.FatalIfErrorf(kongCtx.Run())
 }

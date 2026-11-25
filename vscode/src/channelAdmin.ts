@@ -14,7 +14,7 @@ const LISTED_PAUSE_MS = 500;
 
 function failed(session: Session, error: unknown): void {
   if (error instanceof ApiError && error.unauthenticated) session.report(error);
-  else void vscode.window.showErrorMessage("Agent Messenger: " + (error as Error).message);
+  else void vscode.window.showErrorMessage("Agent Bus: " + (error as Error).message);
 }
 
 // Asks for an agent that does not read the channel yet and invites it; the agent is told by a DM.
@@ -35,7 +35,7 @@ export async function inviteAgent(session: Session, chats: ChatPanels, channelId
     if (!picked) return;
     const changed = await model.api.changeChannel("invite", { channel: name, agent: picked.id });
     chats.showMembers(channelId, changed.members);
-    if (changed.warning) void vscode.window.showWarningMessage("Agent Messenger: " + changed.warning);
+    if (changed.warning) void vscode.window.showWarningMessage("Agent Bus: " + changed.warning);
   } catch (error) {
     failed(session, error);
   }

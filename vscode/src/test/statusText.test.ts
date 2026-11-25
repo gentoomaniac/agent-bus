@@ -23,8 +23,8 @@ test("statusBarText is empty when all is well and there is no mail", () => {
   const down = { ok: false, text: "reconnecting" };
   assert.equal(statusBarText(live, 0, 0), "");
   assert.equal(statusBarText(live, 3, 0), "$(mail) 3");
-  assert.equal(statusBarText(down, 0, 0), "$(debug-disconnect) Agent bus: reconnecting");
-  assert.equal(statusBarText(down, 2, 1), "$(debug-disconnect) Agent bus: reconnecting  $(mail) 2  $(person-add) 1");
+  assert.equal(statusBarText(down, 0, 0), "$(debug-disconnect) Agent Bus: reconnecting");
+  assert.equal(statusBarText(down, 2, 1), "$(debug-disconnect) Agent Bus: reconnecting  $(mail) 2  $(person-add) 1");
 });
 
 test("describePending counts the agents waiting for approval, and says nothing for none or an older monitor", () => {

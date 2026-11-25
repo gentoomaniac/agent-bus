@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Agent bus monitor API
+  title: Agent Bus monitor API
   version: 1.0.0
   description: |
     The JSON API of the web monitor (docs/api.md). One user, one password. Without a password the

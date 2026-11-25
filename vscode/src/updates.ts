@@ -49,16 +49,16 @@ export class UpdateChecker implements vscode.Disposable {
       release = await this.fetchLatestRelease();
     } catch (error) {
       this.log.appendLine(`update check: ${(error as Error).message}`);
-      if (manual) void vscode.window.showErrorMessage(`Agent Messenger: the update check failed (${(error as Error).message}).`);
+      if (manual) void vscode.window.showErrorMessage(`Agent Bus: the update check failed (${(error as Error).message}).`);
       return;
     }
     if (!release) {
       this.log.appendLine("update check: the answer is no usable release");
-      if (manual) void vscode.window.showErrorMessage("Agent Messenger: couldn't read the latest release.");
+      if (manual) void vscode.window.showErrorMessage("Agent Bus: couldn't read the latest release.");
       return;
     }
     if (!isNewer(release.version, this.currentVersion)) {
-      if (manual) void vscode.window.showInformationMessage(`Agent Messenger: you have the latest version (${this.currentVersion}).`);
+      if (manual) void vscode.window.showInformationMessage(`Agent Bus: you have the latest version (${this.currentVersion}).`);
       return;
     }
     if (!manual && (this.offered.has(release.version) || this.context.globalState.get<string>(SKIPPED_KEY) === release.version)) return;
@@ -79,7 +79,7 @@ export class UpdateChecker implements vscode.Disposable {
   private async offer(release: Release): Promise<void> {
     const buttons = [...(release.vsixUrl ? [INSTALL] : []), ...(release.url ? [RELEASE_NOTES] : []), SKIP];
     const choice = await vscode.window.showInformationMessage(
-      `Agent Messenger ${release.version} is available (you have ${this.currentVersion}).`,
+      `Agent Bus ${release.version} is available (you have ${this.currentVersion}).`,
       ...buttons,
     );
     if (choice === INSTALL && release.vsixUrl) await this.install(release.version, release.vsixUrl);
@@ -91,7 +91,7 @@ export class UpdateChecker implements vscode.Disposable {
     const file = vscode.Uri.joinPath(this.context.globalStorageUri, `agent-messenger-${version}.vsix`);
     try {
       await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `Installing Agent Messenger ${version}` },
+        { location: vscode.ProgressLocation.Notification, title: `Installing Agent Bus ${version}` },
         async () => {
           const response = await fetchFromGithub(vsixUrl, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
           if (!response.ok) throw new Error(`the download answered HTTP ${response.status}`);
@@ -102,13 +102,13 @@ export class UpdateChecker implements vscode.Disposable {
       );
     } catch (error) {
       this.log.appendLine(`install ${version}: ${(error as Error).message}`);
-      void vscode.window.showErrorMessage("Agent Messenger: the update could not be installed. See the Agent Messenger output for details.");
+      void vscode.window.showErrorMessage("Agent Bus: the update could not be installed. See the Agent Bus output for details.");
       return;
     } finally {
       await fs.rm(file.fsPath, { force: true });
     }
     const reload = "Reload Window";
-    if ((await vscode.window.showInformationMessage(`Agent Messenger ${version} is installed.`, reload)) === reload) {
+    if ((await vscode.window.showInformationMessage(`Agent Bus ${version} is installed.`, reload)) === reload) {
       await vscode.commands.executeCommand("workbench.action.reloadWindow");
     }
   }

@@ -247,6 +247,6 @@ func directoryReconciler(ctx context.Context, published *busd.Directory, admin *
 
 func main() {
 	var cli CLI
-	kongCtx := kong.Parse(&cli, kong.Name("busd"), kong.Vars{"version": version}, kong.Description("Control service of the agent bus."))
+	kongCtx := kong.Parse(&cli, kong.Name("busd"), kong.Vars{"version": version}, kong.Description("Control service of the Agent Bus."))
 	kongCtx.FatalIfErrorf(cli.Run())
 }

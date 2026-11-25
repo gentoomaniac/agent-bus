@@ -20,7 +20,7 @@ export function showUnreadIndicators(session: Session, tree: vscode.TreeView<unk
     const text = statusBarText(connection, mail, pending ? model.status?.pending_enrollments ?? 0 : 0);
     item.text = text;
     item.tooltip = [
-      session.loginRequired ? "" : `Agent bus: ${connection.text}`,
+      session.loginRequired ? "" : `Agent Bus: ${connection.text}`,
       mail > 0 ? `${mail} unread message${mail === 1 ? "" : "s"} for ${model.self}` : "",
       pending ? `${pending}. ${APPROVE_HINT}` : "",
     ].filter(Boolean).join("\n");

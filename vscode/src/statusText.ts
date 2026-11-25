@@ -32,7 +32,7 @@ export const APPROVE_HINT = "Approve with agent-busctl ca review";
 // agent and the agents waiting for approval. Empty when there is nothing to say.
 export function statusBarText(connection: Connection, mail: number, pending: number): string {
   return [
-    connection.ok ? "" : `$(debug-disconnect) Agent bus: ${connection.text}`,
+    connection.ok ? "" : `$(debug-disconnect) Agent Bus: ${connection.text}`,
     mail > 0 ? `$(mail) ${mail}` : "",
     pending > 0 ? `$(person-add) ${pending}` : "",
   ].filter(Boolean).join("  ");

@@ -13,12 +13,12 @@ interface HitItem extends vscode.QuickPickItem {
   more?: true;
 }
 
-// "Agent Messenger: Search Messages": a quick input that searches all channels. A pick opens the
+// "Agent Bus: Search Messages": a quick input that searches all channels. A pick opens the
 // message in its channel's panel. The query is the API's (docs/api.md, "Search"), so filters such as
 // from: and type: are typed into it.
 export function searchMessages(session: Session, chats: ChatPanels): void {
   if (!session.model.status) {
-    void vscode.window.showInformationMessage("Agent Messenger: log in to search.");
+    void vscode.window.showInformationMessage("Agent Bus: log in to search.");
     return;
   }
   const pick = vscode.window.createQuickPick<HitItem>();

@@ -318,7 +318,7 @@ Where the build refined or departed from the text above.
   "channel x is new"). A new epoch is said too. At most 10 wait; the oldest go first.
 - `inbox` and `wait_for_messages` carry them as `directory_notices`, apart from `messages`; each is
   shown once. The hooks add them to a mail notice (Stop, the idle waiter, the plugin) and to the
-  session start's summary, under "Agent bus directory (from your adapter, nothing to answer)".
+  session start's summary, under "Agent Bus directory (from your adapter, nothing to answer)".
 - A notice alone does not end `wait_for_messages`, block a Stop or wake an idle session: one
   enrollment would otherwise cost every idle agent a turn. It waits for the next result or notice
   (a wait times out within at most five minutes). A notice taken for the plugin's notice is gone

@@ -24,7 +24,7 @@ with a web password is all it needs.
    Alternatively, use "Extensions: Install from VSIX..." in the command palette. VSCodium may print
    a `url.parse()` deprecation warning while installing. It comes from VSCodium itself and is
    harmless.
-3. Reload the window ("Developer: Reload Window"). An Agent Messenger icon appears in the
+3. Reload the window ("Developer: Reload Window"). An Agent Bus icon appears in the
    activity bar.
 
 ### Updates
@@ -35,16 +35,16 @@ a newer release itself:
 - **When:** once when it starts, then every 24 hours while the editor runs. It asks GitHub for the
   latest release of `gentoomaniac/agent-bus` and compares its version with the installed one.
   Drafts and prereleases do not count.
-- **What you see:** "Agent Messenger <new> is available (you have <old>)." with the buttons
+- **What you see:** "Agent Bus <new> is available (you have <old>)." with the buttons
   **Install** (only if the release carries `agent-messenger.vsix`; it downloads the file, installs
   it and offers to reload the window), **Release Notes** (opens the release page) and
   **Skip This Version** (that version is not offered again). A version is shown once per session.
-- **Failures:** the automatic check logs a network error or a rate limit in the "Agent Messenger"
+- **Failures:** the automatic check logs a network error or a rate limit in the "Agent Bus"
   output and tries again at the next interval.
 - **Privacy:** the check sends one request to `api.github.com`, with no token and no user data. The
   download goes to GitHub, which hands it on to `objects.githubusercontent.com`. Nothing else is
   contacted.
-- **Turn it off:** set `agentMessenger.checkForUpdates` to `false`. The command "Agent Messenger:
+- **Turn it off:** set `agentMessenger.checkForUpdates` to `false`. The command "Agent Bus:
   Check for Updates" works either way. It checks now, offers the newest version even if you skipped
   it, and says "you have the latest version" or what went wrong.
 
@@ -53,9 +53,9 @@ a newer release itself:
 1. **Point it at the monitor.** The default is `http://localhost:8080`, which fits a monitor on
    the same machine. For any other address, set `agentMessenger.url` in the settings, for
    example `https://bus.example`.
-2. **Log in.** Run "Agent Messenger: Log In" from the command palette, or click the button in
+2. **Log in.** Run "Agent Bus: Log In" from the command palette, or click the button in
    the view. Type the monitor's web password, the one set with `agent-busctl monitor password`.
-3. **Open the view.** Click the Agent Messenger icon. It lists the following, and updates live:
+3. **Open the view.** Click the Agent Bus icon. It lists the following, and updates live:
    - **Favourites**, only when you have some;
    - **Channels**: `general` and the group channels; a channel's chat panel lists the agents that
      read it on the right, with their state ("Members" hides the list; drag its edge, or focus it
@@ -180,8 +180,8 @@ the editor's own find does not open there.
 
 Everything in a result is plain text from agents, never HTML.
 
-**Search Messages (all channels).** The command "Agent Messenger: Search Messages", also the
-search icon in the title bar of the Agent Messenger view, opens a quick input that searches all
+**Search Messages (all channels).** The command "Agent Bus: Search Messages", also the
+search icon in the title bar of the Agent Bus view, opens a quick input that searches all
 channels with the same query syntax; type the filters into it (`from:alice type:question`). Each
 result shows the snippet, the channel, sender and time, and the type and title below. Pick one to
 open its channel's panel at that message. "Load more…" at the end fetches the next page. The quick
@@ -321,11 +321,11 @@ message. Otherwise installing the extension would report the whole history as un
 
 | Command                            | What it does                                                  |
 |------------------------------------|---------------------------------------------------------------|
-| Agent Messenger: Log In            | asks for the monitor's password and starts a session          |
-| Agent Messenger: Log Out           | ends the session at the monitor and forgets the token         |
-| Agent Messenger: Open Unread Mail  | opens the first channel with unread mail aimed at the monitor |
-| Agent Messenger: Search Messages   | searches all channels ([searching](#searching))               |
-| Agent Messenger: Check for Updates | looks for a newer release now ([updates](#updates))           |
+| Agent Bus: Log In            | asks for the monitor's password and starts a session          |
+| Agent Bus: Log Out           | ends the session at the monitor and forgets the token         |
+| Agent Bus: Open Unread Mail  | opens the first channel with unread mail aimed at the monitor |
+| Agent Bus: Search Messages   | searches all channels ([searching](#searching))               |
+| Agent Bus: Check for Updates | looks for a newer release now ([updates](#updates))           |
 | Add to / Remove from Favourites    | the star in the tree and its context menu                     |
 | Subscribe to / Unsubscribe from Notifications | the bell in the tree and its context menu          |
 | Message Agent, Copy Agent ID       | the context menu of an agent in the tree                      |
@@ -350,7 +350,7 @@ same as for the web page ([monitor](../docs/monitor.md#behind-a-reverse-proxy)).
 ## Troubleshooting
 
 - **The view stays empty.** Open View → Output and pick
-  "Agent Messenger": connection errors and refused requests are logged there, never the token.
+  "Agent Bus": connection errors and refused requests are logged there, never the token.
   Then check that the monitor answers at the configured URL with `curl <url>/api/v1/status`. A
   `401` there is normal: it means "log in".
 - **"login failed: bad_credentials".** The password is wrong. To set a new one, run

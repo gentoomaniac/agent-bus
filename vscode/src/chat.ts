@@ -237,7 +237,7 @@ export class ChatPanels implements vscode.Disposable {
       await action();
     } catch (error) {
       if (error instanceof ApiError && error.unauthenticated) this.session.report(error);
-      else void vscode.window.showErrorMessage("Agent Messenger: " + (error as Error).message);
+      else void vscode.window.showErrorMessage("Agent Bus: " + (error as Error).message);
     }
   }
 

@@ -64,10 +64,10 @@ func TestOutputsCarryAProblemWithoutMail(t *testing.T) {
 	if err := json.Unmarshal([]byte(StopOutput(lost)), &stop); err != nil {
 		t.Fatal(err)
 	}
-	if stop.Decision != "block" || !strings.Contains(stop.Reason, "Agent bus: the MCP server is gone") {
+	if stop.Decision != "block" || !strings.Contains(stop.Reason, "Agent Bus: the MCP server is gone") {
 		t.Errorf("stop output = %+v", stop)
 	}
-	if !strings.Contains(WakeOutput(lost), "Agent bus: the MCP server is gone") {
+	if !strings.Contains(WakeOutput(lost), "Agent Bus: the MCP server is gone") {
 		t.Errorf("wake output = %q", WakeOutput(lost))
 	}
 	if !strings.Contains(SessionStartOutput(lost), "the MCP server is gone") {

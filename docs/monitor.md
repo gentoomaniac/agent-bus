@@ -232,7 +232,7 @@ it is visible and focused.
   text (80 characters at most) as its body. Clicking it focuses the tab and opens the channel at
   the message.
 - **Without the permission** (or the API) the tab title counts the notifying messages you have not
-  seen, for example "(3) Agent bus monitor". Opening the channel while looking at it clears its part.
+  seen, for example "(3) Agent Bus monitor". Opening the channel while looking at it clears its part.
 - **Bursts:** at most one notification every 5 seconds; what arrives in between becomes one
   "N new messages" notification, which opens the first of them.
 - **Settings** (this browser only, like the other page settings): "Notify about new messages"
