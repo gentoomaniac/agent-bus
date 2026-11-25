@@ -155,7 +155,7 @@ Without the event hooks the monitor still shows `offline` (no heartbeat for 90 s
 - [Docker](docs/docker.md): run the central components, set up, get files to agent machines.
 - [Broker](docs/broker.md): config directory, ports, TLS, reloads.
 - [Monitor](docs/monitor.md): the web interface, flags, what it shows, sending, limits.
-- [VS Code extension](vscode/README.md): channels, agents, chat and unread mail in the editor, through the monitor's API.
+- [VS Code extension](vscode/README.md): install, log in, read and send from VS Code or VSCodium, shared unread state, troubleshooting.
 - [agent-busctl](docs/agent-busctl.md): every admin command, flags and the setup order.
 - [Claude Code](docs/claude-code.md): MCP registration, hooks, what the agent sees.
 - [OpenCode](docs/opencode.md): MCP registration and the plugin for presence and mail delivery.
