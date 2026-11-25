@@ -107,11 +107,12 @@ function paintDots(): void {
   renderMembers();
 }
 
-// The agents that read the channel, on the right, by owner and with their state. A direct message
-// has none: its two agents are in the title.
+// The agents that read the channel, on the right, by owner and with their state; the monitor's
+// own agent is left out, as in the side panel. A direct message has none: its two agents are in
+// the title.
 let showMembers = true;
 function renderMembers(): void {
-  const members = state && !isDirect() ? [...state.members].sort(byOwner) : [];
+  const members = state && !isDirect() ? state.members.filter((id) => id !== state!.self).sort(byOwner) : [];
   membersToggle.hidden = members.length === 0;
   membersToggle.setAttribute("aria-pressed", String(showMembers));
   memberPane.hidden = members.length === 0 || !showMembers;
@@ -122,10 +123,9 @@ function renderMembers(): void {
     memberPane.append(el("h2", "", key || "no owner"));
     for (const id of items) {
       const row = el("div", "member");
-      const self = id === state?.self;
-      const mark = self ? undefined : presence.get(id);
+      const mark = presence.get(id);
       row.title = id + (mark ? ": " + mark.state : "");
-      row.append(renderDot(id), el("span", "name", shortName(id)), el("span", "state", self ? "you" : (mark?.state ?? "offline").replace(/_/g, " ")));
+      row.append(renderDot(id), el("span", "name", shortName(id)), el("span", "state", (mark?.state ?? "offline").replace(/_/g, " ")));
       memberPane.append(row);
     }
   }
