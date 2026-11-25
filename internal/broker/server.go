@@ -39,8 +39,8 @@ type Server struct {
 }
 
 // WriteAdminAuth writes both authorization files with the admin users' password hashes, under the
-// same lock as UpdateAuth. An existing auth.conf keeps its agents and their grants. It does not
-// reload a running server.
+// same lock as UpdateAuth. An existing auth.conf is kept as it is except for the bus-admin entry,
+// so the agents keep their grants, group channels included. It does not reload a running server.
 func (server Server) WriteAdminAuth(busAdminHash, controlAdminHash string) error {
 	unlock, err := server.lock()
 	if err != nil {
@@ -48,17 +48,15 @@ func (server Server) WriteAdminAuth(busAdminHash, controlAdminHash string) error
 	}
 	defer unlock()
 
-	var table userTable
-	generation := 0
+	body, generation := "users = [\n]\n", 0
 	if current, err := os.ReadFile(server.path(authFile)); err == nil {
-		currentBody, currentGeneration := splitGeneration(string(current))
-		if table, err = parseUserTable(currentBody); err != nil {
-			return err
-		}
-		generation = currentGeneration
+		body, generation = splitGeneration(string(current))
 	}
-	table.set(authUser{role: roleAdmin, name: BusAdminUser, mode: modePassword, passwordHash: busAdminHash})
-	if err := writeAuthFile(server.path(authFile), generation+1, table.render(nil)); err != nil {
+	body, err = replaceUserEntry(body, authUser{role: roleAdmin, name: BusAdminUser, mode: modePassword, passwordHash: busAdminHash})
+	if err != nil {
+		return err
+	}
+	if err := writeAuthFile(server.path(authFile), generation+1, body); err != nil {
 		return err
 	}
 	controlTable := userTable{{role: roleAdmin, name: ControlAdminUser, mode: modePassword, passwordHash: controlAdminHash}}

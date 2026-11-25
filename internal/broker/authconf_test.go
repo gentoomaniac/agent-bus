@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -155,7 +156,9 @@ func TestWriteAdminAuthKeepsCertificateAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 	table.set(authUser{role: roleAgent, name: "lib-x_bob", mode: modeCert})
-	if err := writeAuthFile(server.path(authFile), 5, table.render(nil)); err != nil {
+	table.set(authUser{role: roleAgent, name: "lib-x_carol", mode: modePassword, passwordHash: "$2a$10$carol"})
+	rendered := table.render([]string{"team"}) // the agents' grants include the group consumer
+	if err := writeAuthFile(server.path(authFile), 5, rendered); err != nil {
 		t.Fatal(err)
 	}
 
@@ -164,7 +167,7 @@ func TestWriteAdminAuthKeepsCertificateAgents(t *testing.T) {
 	}
 	body, generation := splitGeneration(readFile(t, server.path(authFile)))
 	table, err = parseUserTable(body)
-	if err != nil || generation != 6 || len(table) != 2 {
+	if err != nil || generation != 6 || len(table) != 3 {
 		t.Fatalf("after the second init: %+v, generation %d, %v", table, generation, err)
 	}
 	if index, _ := table.find(roleAdmin, BusAdminUser); table[index].passwordHash != "$2a$10$three" {
@@ -172,6 +175,14 @@ func TestWriteAdminAuthKeepsCertificateAgents(t *testing.T) {
 	}
 	if _, found := table.find(roleAgent, "lib-x_bob"); !found {
 		t.Error("the certificate agent was lost")
+	}
+	for _, line := range strings.Split(rendered, "\n") {
+		if strings.Contains(line, "lib-x_") && !strings.Contains(body, line) {
+			t.Errorf("an agent's entry changed, group grants lost?\n%s", line)
+		}
+	}
+	if !strings.Contains(body, consumerName("lib-x_carol", bus.GroupChannel("team"))) {
+		t.Error("carol lost her group consumer")
 	}
 }
 

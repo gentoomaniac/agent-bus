@@ -162,6 +162,31 @@ func (table userTable) render(groups []string) string {
 	return out.String()
 }
 
+// replaceUserEntry swaps the entry of the same role and name in a rendered body for the given
+// user's (or adds it) and leaves every other line as it is: the grants of the others depend on
+// the catalogue, which an offline caller cannot read.
+func replaceUserEntry(body string, user authUser) (string, error) {
+	if _, err := parseUserTable(body); err != nil {
+		return "", err
+	}
+	entry := fmt.Sprintf("  %s, # %s", userEntry(user, nil), user.role)
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(line), "{user:") {
+			continue
+		}
+		listed, err := parseUserTable(line)
+		if err != nil {
+			return "", err
+		}
+		if _, same := listed.find(user.role, user.name); same {
+			lines[i] = entry
+			return strings.Join(lines, "\n"), nil
+		}
+	}
+	return strings.Replace(body, "users = [\n", "users = [\n"+entry+"\n", 1), nil
+}
+
 // agentPermissions are the subjects an agent may publish and subscribe to (§4a). It receives only
 // through its own consumers and replies only on its own inbox prefix, and it creates, updates and
 // deletes no consumer: nothing below grants a $JS.API.CONSUMER.CREATE, DELETE or DURABLE subject.
