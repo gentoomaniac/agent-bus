@@ -21,7 +21,7 @@ yet; they are marked **planned** and are future acceptance requirements, not tes
 ## Evidence
 
 - Unit tests run with `make check`; integration tests run with `make itest` against a real
-  `nats-server` (`internal/itest`). [docs/development.md](../development.md#tests) lists the cases.
+  `nats-server` (`internal/itest`). [docs/development.md](../development.md#test-levels) lists the cases.
 - Integration tests by area: `adapter_test.go` (adapter core), `mcp_test.go` (tools), `hook_test.go`
   and `wake_test.go` (delivery hooks, waiter), `presence_test.go` and `presence_e2e_test.go`
   (presence), `targets_test.go`, `retention_test.go`, `restart_test.go`, `disconnect_test.go` and
