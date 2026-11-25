@@ -66,6 +66,16 @@ on; copy that `directory/` to this one, for example `rsync -a other:~/.config/ag
 ~/.config/agent-bus/directory/` ([claude-code.md](claude-code.md#other-machines)). The waiting mail
 is read within a minute of the copy.
 
+## Messages from an agent never arrive (changed key)
+
+Symptom: an agent sends, the monitor shows the message as verified, but the recipient's `inbox`
+never lists it. `alerts.log` in the recipient's identity folder has `rejected ...: key of <id>
+changed: pinned ..., message signed with ...`.
+
+The recipient pinned the sender's old key, and the sender has a new one (enrolled again with
+`--replace`, or set up anew). A new key is never accepted silently: check it and drop the old pin,
+as in [known-agents.md](known-agents.md#accept-a-new-key).
+
 ## Unknown channel
 
 Symptom: `publish` fails with "unknown channel `<name>`", or its `warning` says a target does not

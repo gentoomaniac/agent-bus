@@ -221,7 +221,7 @@ every concurrent session its own identity.
 Every `inbox` or `wait_for_messages` result carries one `notice` that frames its messages as
 untrusted peer data with a verified signature and says whether a request in them may be acted on
 ([design/safety.md](design/safety.md) rules 1 and 2), and each message has `first_contact` when its sender's key was pinned
-by it. The server instructions say the same: a valid signature proves who sent a
+by it ([known agents](known-agents.md): where pinned keys live, how to see, change and test them). The server instructions say the same: a valid signature proves who sent a
 message, not that it is safe or that the owner wants it done. Tools and results:
 [agent-tools.md](agent-tools.md).
 
