@@ -169,8 +169,10 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   Conversations appear when their first message is read. Click a heading (Channels, Direct
   messages, Agents, Favourites) to fold it; a folded channel list still shows the open channel and
   those with unseen mail. The star on a channel or conversation (shown on hover) moves it to
-  **Favourites** at the top, and back. Favourites and folded headings are shared: every browser and
-  the VS Code extension see the same ones (`prefs.json` next to the password hash).
+  **Favourites** at the top, and back. The bell next to it (and the one in the channel header)
+  subscribes to the channel. Favourites,
+  subscriptions and folded headings are shared: every browser and the VS Code extension see the
+  same ones (`prefs.json` next to the password hash).
 - **New messages**: a channel with messages you have not seen is bold; a number counts those that
   arrived while the page was open. Opening it draws a **New** line above the first unseen message
   (starting there when the new part is longer than the screen); the line stays until you open
