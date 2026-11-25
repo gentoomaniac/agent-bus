@@ -305,14 +305,16 @@ func busdPermissions() string {
 	publish := slices.Concat(
 		kvReadSubjects(registryKV), kvReadSubjects(catalogueKV),
 		[]string{"$KV." + registryKV + ".>", "_INBOX.>", enroll.SubjectPending})
-	subscribe := []string{"_INBOX.>", enroll.SubjectRequest, enroll.SubjectStatus, enroll.SubjectList, enroll.SubjectSign, enroll.SubjectReject}
+	subscribe := []string{"_INBOX.>", enroll.SubjectRequest, enroll.SubjectStatus, enroll.SubjectList, enroll.SubjectSign, enroll.SubjectReject,
+		enroll.SubjectMonitorRegistry, enroll.SubjectMonitorCatalogue}
 	return allowOnly(publish, subscribe)
 }
 
-// monitorControlPermissions let the monitor read the registry and the catalogue and hear the
-// pending count: no write, no approval subject, no auth file.
+// monitorControlPermissions let the monitor ask busd for the registry and the catalogue and hear
+// the pending count. It gets no JetStream API subject at all: a read grant such as a direct get
+// lets its holder name a reply subject that writes, and NATS only rejects $JS.* ones.
 func monitorControlPermissions() string {
-	publish := slices.Concat(kvReadSubjects(registryKV), kvReadSubjects(catalogueKV))
+	publish := []string{enroll.SubjectMonitorRegistry, enroll.SubjectMonitorCatalogue}
 	return allowOnly(publish, []string{"_INBOX.>", enroll.SubjectPending})
 }
 

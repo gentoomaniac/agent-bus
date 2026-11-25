@@ -194,6 +194,24 @@ func (service *Service) List(ctx context.Context) enroll.ListReply {
 	return reply
 }
 
+// Agents is the registry, for the monitor: its login cannot read CONTROL's JetStream itself.
+func (service *Service) Agents(ctx context.Context) enroll.RegistryReply {
+	agents, err := service.config.Registry.Agents(ctx)
+	if err != nil {
+		return enroll.RegistryReply{Error: err.Error()}
+	}
+	return enroll.RegistryReply{Agents: agents}
+}
+
+// Groups is the catalogue of group channels, for the monitor.
+func (service *Service) Groups(ctx context.Context) enroll.CatalogueReply {
+	groups, err := service.config.Registry.GroupChannels(ctx)
+	if err != nil {
+		return enroll.CatalogueReply{Error: err.Error()}
+	}
+	return enroll.CatalogueReply{Groups: groups}
+}
+
 // Sign approves one pending request, named by ID, code or agent ID. A request that would replace
 // an identity with another key needs command.Replace.
 func (service *Service) Sign(ctx context.Context, command enroll.SignCommand) enroll.CommandReply {

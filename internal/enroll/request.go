@@ -32,7 +32,8 @@ import (
 
 // The subjects of busd's enrollment and approval API, all in the CONTROL account. The first two
 // are what the enrollment login may publish; the rest need an admin login. busd publishes the
-// number of pending requests on SubjectPending, for the monitor.
+// number of pending requests on SubjectPending, for the monitor, which reads the registry and the
+// catalogue with requests on the last two: its login has no JetStream access in CONTROL.
 const (
 	SubjectRequest = "busd.enroll.request"
 	SubjectStatus  = "busd.enroll.status"
@@ -40,16 +41,20 @@ const (
 	SubjectList    = "busd.ca.list"
 	SubjectSign    = "busd.ca.sign"
 	SubjectReject  = "busd.ca.reject"
+
+	SubjectMonitorRegistry  = "busd.monitor.registry"
+	SubjectMonitorCatalogue = "busd.monitor.catalogue"
 )
 
 // EnrollUser is the shared login of the enrollment listener; InboxPrefix is the only subject
 // space it may subscribe to, with one random sub-prefix per client. AdminInboxPrefix is where the
-// owner's tool (agent-busctl) hears busd's answers. busd answers a request only below the prefix
+// owner's tool (agent-busctl) and MonitorInboxPrefix the monitor hear busd's answers. busd answers a request only below the prefix
 // of its endpoint, because the sender names the reply subject.
 const (
-	EnrollUser       = "enroll"
-	InboxPrefix      = "_INBOX.enroll"
-	AdminInboxPrefix = "_INBOX.agent-busctl"
+	EnrollUser         = "enroll"
+	InboxPrefix        = "_INBOX.enroll"
+	AdminInboxPrefix   = "_INBOX.agent-busctl"
+	MonitorInboxPrefix = "_INBOX.bus-monitor"
 )
 
 // Bounds on what busd accepts from the shared login.

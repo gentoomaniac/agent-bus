@@ -47,6 +47,7 @@ func goBuild(t *testing.T, command string) string {
 // URL of a test server, which the helpers of monitor_test.go read from.
 func (h *harness) startMonitor(t *testing.T, busMonitor string) *httptest.Server {
 	t.Helper()
+	h.startBusdForMonitor(t)
 	address := fmt.Sprintf("127.0.0.1:%d", freePort(t))
 	cmd := exec.Command(busMonitor, "--listen", address)
 	cmd.Env = h.env

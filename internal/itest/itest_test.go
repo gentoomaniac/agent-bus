@@ -1059,20 +1059,34 @@ func (h *harness) transportOnAdmin(t *testing.T) bus.Transport {
 	return transport
 }
 
-// monitorReads is what the monitor reads with: its own two read-only logins, not the admin's.
+// startBusdForMonitor runs busd, which serves the monitor the registry and the catalogue.
+func (h *harness) startBusdForMonitor(t *testing.T) {
+	t.Helper()
+	h.run(t, h.agentBusctl, "enroll", "init")
+	h.startBusd(t)
+}
+
+// monitorReads is what the monitor reads with: its own two read-only logins, not the admin's. The
+// registry and the catalogue come through busd, which it starts.
 func (h *harness) monitorReads(t *testing.T) (bus.Admin, bus.Transport) {
 	t.Helper()
+	h.startBusdForMonitor(t)
 	admin, err := broker.NewAdmin(h.adminConnection(broker.MonitorBusUser), h.adminConnection(broker.MonitorControlUser), broker.Server{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(admin.Close)
+	registry, err := broker.NewBusdReader(admin, h.adminConnection(broker.MonitorControlUser))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(registry.Close)
 	history, err := broker.NewTransport(h.adminConnection(broker.MonitorBusUser), broker.MonitorBusUser)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(history.Close)
-	return admin, history
+	return registry, history
 }
 
 // configLoadTime is what the server's monitoring endpoint says about its last configuration load.

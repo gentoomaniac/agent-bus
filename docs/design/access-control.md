@@ -52,7 +52,7 @@ flowchart LR
 | | never | consumer create, delete or update; any `$JS.API.DIRECT.GET` except the one for stream `PRESENCE`, subject `presence.*` (granted as `$JS.API.DIRECT.GET.PRESENCE.presence.*`, so `list_agents` can read others' presence; never a direct get on stream `BUS`); any wildcard consumer, `MSG.NEXT` or ack grant; any `$KV.*` or `ledger.*` subject; the owner-only busd methods |
 | Owner `human_<owner>` (`BUS`, used by agent-busctl) | post, and the agent's busd calls | as an agent for DMs, `general` and groups; `private.<id>` where busd granted it ([private channels](private-channels.md)); no consumers |
 | | owner-only busd methods | publish `busd.nonce`, `busd.agent.register`, `busd.agent.revoke`, `busd.agent.rotate`, `busd.channel.manager`, `busd.channel.create_group` |
-| Monitor logins `monitor-bus` (`BUS`) and `monitor-control` (`CONTROL`), **as built**: read-only, passwords | its own ordered consumers, consumer and stream info, presence; the registry and catalogue reads of busd; the pending count | no publish to any message, KV or `busd.ca.*` subject, no consumer create-durable, no auth-file or approval right |
+| Monitor logins `monitor-bus` (`BUS`) and `monitor-control` (`CONTROL`), **as built**: read-only, passwords | its own ordered consumers, consumer and stream info, presence; requests to busd for the registry and the catalogue (`busd.monitor.registry`, `busd.monitor.catalogue`); the pending count. `monitor-control` holds no `$JS.API` subject | no publish to any message, KV or `busd.ca.*` subject, no consumer create-durable, no auth-file or approval right |
 | Monitor `monitor_<owner>` (`BUS`; also used by `agent-busctl` read commands), **planned** | read, from the consumer busd made | `$JS.API.CONSUMER.MSG.NEXT.BUS.bus-monitor`, `$JS.API.CONSUMER.INFO.BUS.bus-monitor`, `$JS.ACK.BUS.bus-monitor.>`, subscribe `_INBOX.monitor.>` |
 | | read-only busd methods | publish `busd.nonce`, `busd.history`, `busd.registry.get`, `busd.registry.changes`, `busd.catalogue.list`, `busd.channel.list`, `busd.channel.membership` (`busd.channel.membership` for all channels, with signed watermarks; `busd.channel.list` returns the private catalogue of all channels to this identity) |
 | | never | any consumer create, update or delete; any publish on a message subject, any stream, KV or `CONTROL` subject; any other busd method |
@@ -107,8 +107,11 @@ copies them to the agent's machine; no request or approval flow. What differs fr
   `control-admin` (`>`), `busd` (CONTROL: read the registry and the catalogue, write registry
   records, `_INBOX.>`, the pending count; no stream delete or purge, no catalogue or ledger write),
   `monitor-bus` (BUS: its own ordered consumers, consumer and stream info, presence; publishes no
-  message) and `monitor-control` (CONTROL: read the registry and the catalogue, hear the pending
-  count; no approval subject). They log in with passwords. `agent-busctl admin init` creates all of
+  message) and `monitor-control` (CONTROL: ask busd for the registry and the catalogue, hear the
+  pending count; no approval subject and no JetStream subject, because a direct-get grant lets its
+  holder name a `$KV.registry.<token>` reply subject that writes: NATS only rejects `$JS.*` ones.
+  busd's own raw reads are safe from that, since it replies only into the caller's inbox prefix
+  and serves no raw JetStream to anyone). They log in with passwords. `agent-busctl admin init` creates all of
   them; on a setup older than this, `agent-busctl service init` adds the three. Until then busd
   and the monitor fall back to the admin logins and say so in their log.
 - *busd answers into inbox space only.* The sender of a request names its reply subject, and busd

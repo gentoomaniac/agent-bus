@@ -265,11 +265,21 @@ func TestMonitor(t *testing.T) {
 			control.denySubscribe(t, subject)
 		}
 		control.expectNoViolation(t, "reading the registry and the pending count", func() {
-			if _, err := control.conn.Request("$JS.API.STREAM.INFO.KV_registry", nil, 2*time.Second); err != nil {
-				t.Error(err)
-			}
 			control.conn.SubscribeSync(enroll.SubjectPending)
 		})
+
+		// A raw JetStream read that names a writing reply subject was the attack a direct-get
+		// grant allowed: the answer would land on a registry key. Every one is refused.
+		writingReply := "$KV.registry." + bus.AgentToken(alice)
+		for _, subject := range []string{
+			"$JS.API.DIRECT.GET.KV_registry", "$JS.API.DIRECT.GET.KV_registry." + writingReply,
+			"$JS.API.STREAM.INFO.KV_registry", "$JS.API.STREAM.INFO.KV_catalogue",
+			"$JS.API.CONSUMER.CREATE.KV_registry", "$JS.API.STREAM.MSG.GET.KV_registry",
+		} {
+			control.expectViolation(t, subject, func() {
+				_ = control.conn.PublishRequest(subject, writingReply, []byte(`{"last_by_subj":"`+writingReply+`"}`))
+			})
+		}
 
 		messages := h.rawAdmin(t, broker.MonitorBusUser)
 		for _, subject := range []string{

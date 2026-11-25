@@ -118,6 +118,15 @@ func (cli *CLI) Run() error {
 		return err
 	}
 	defer admin.Close()
+	var registry bus.Admin = admin
+	if controlUser == broker.MonitorControlUser {
+		busdReader, err := broker.NewBusdReader(admin, controlConn)
+		if err != nil {
+			return err
+		}
+		defer busdReader.Close()
+		registry = busdReader
+	}
 	history, err := broker.NewTransport(busConn, busUser)
 	if err != nil {
 		return err
@@ -130,7 +139,7 @@ func (cli *CLI) Run() error {
 	}
 	defer closeSender()
 
-	web := monitor.New(monitor.Config{Admin: admin, History: history, Sender: sender, ReadOnlyNote: readOnlyNote, Report: func(err error) { log.Print(err) }})
+	web := monitor.New(monitor.Config{Admin: registry, History: history, Sender: sender, ReadOnlyNote: readOnlyNote, Report: func(err error) { log.Print(err) }})
 	go web.Run(ctx)
 
 	handler, err := web.Handler(access)

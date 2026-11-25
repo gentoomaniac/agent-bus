@@ -32,6 +32,9 @@ func TestServicePrincipalsHaveNarrowGrants(t *testing.T) {
 	if !strings.Contains(entries[MonitorControlUser], `subscribe: {allow: ["_INBOX.>", "busd.enroll.pending"]}`) {
 		t.Errorf("the control monitor hears more than the pending count: %s", entries[MonitorControlUser])
 	}
+	if strings.Contains(entries[MonitorControlUser], "$JS") {
+		t.Errorf("the control monitor has raw JetStream access: %s", entries[MonitorControlUser])
+	}
 	if unknown := entry(roleMonitor, "legacy"); !strings.Contains(unknown, `publish: {deny: [">"]}`) {
 		t.Errorf("an unknown monitor entry has access: %s", unknown)
 	}

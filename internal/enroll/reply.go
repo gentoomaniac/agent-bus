@@ -75,6 +75,18 @@ type ListReply struct {
 	Error   string    `json:"error,omitempty"`
 }
 
+// RegistryReply is busd's answer to SubjectMonitorRegistry.
+type RegistryReply struct {
+	Agents []bus.AgentRecord `json:"agents"`
+	Error  string            `json:"error,omitempty"`
+}
+
+// CatalogueReply is busd's answer to SubjectMonitorCatalogue.
+type CatalogueReply struct {
+	Groups []bus.TopicRecord `json:"groups"`
+	Error  string            `json:"error,omitempty"`
+}
+
 // SignCommand approves a pending request, named by request ID, approval code or agent ID. Replace
 // confirms that an existing identity with another key may be replaced.
 type SignCommand struct {
