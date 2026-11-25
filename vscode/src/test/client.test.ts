@@ -67,6 +67,7 @@ test("followEvents reconnects, calls onOpen each time and delivers the events", 
     },
     onUnauthenticated: () => assert.fail("logged in"),
     onDisconnect: () => {},
+    onError: (error) => assert.fail(String(error)),
   }, controller.signal, { minDelayMs: 5, maxDelayMs: 20, silenceMs: 1000 });
   assert.equal(opens, 2);
   assert.deepEqual(events.map((e) => e.id), ["general#1", "general#2"]);
@@ -79,6 +80,7 @@ test("followEvents stops and reports a login that is no longer valid", async () 
     onEvent: () => assert.fail("no events"),
     onUnauthenticated: () => { unauthenticated++; },
     onDisconnect: () => {},
+    onError: (error) => assert.fail(String(error)),
   }, new AbortController().signal, { minDelayMs: 5, maxDelayMs: 20, silenceMs: 1000 });
   assert.equal(unauthenticated, 1);
 });

@@ -7,6 +7,7 @@ export interface EventHandlers {
   onEvent(event: SseEvent): void;
   onUnauthenticated(): void;
   onDisconnect(): void;
+  onError(error: unknown): void;
 }
 
 export interface EventOptions {
@@ -35,6 +36,7 @@ export async function followEvents(api: Api, handlers: EventHandlers, signal: Ab
         handlers.onUnauthenticated();
         return;
       }
+      handlers.onError(error);
     }
     if (signal.aborted) return;
     handlers.onDisconnect();
@@ -56,8 +58,8 @@ async function readStream(api: Api, handlers: EventHandlers, signal: AbortSignal
     feed();
     const response = await api.fetch("/api/v1/events", { headers: { Accept: "text/event-stream" }, signal: attempt.signal });
     if (!response.body) throw new Error("the event stream has no body");
-    opened();
     await handlers.onOpen();
+    opened(); // a refresh that keeps failing must keep backing off
     const parser = new SseParser();
     const decoder = new TextDecoder();
     for await (const chunk of response.body) {

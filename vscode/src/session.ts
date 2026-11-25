@@ -13,6 +13,9 @@ export class Session implements vscode.Disposable {
   private readonly refreshEmitter = new vscode.EventEmitter<void>();
   private modelSubscription: { dispose(): void } | undefined;
   private stream: AbortController | undefined;
+  private generation = 0; // counts starts; work of an older start is dropped
+  private hasToken = false;
+  private readonly log = vscode.window.createOutputChannel("Agent Messenger");
 
   readonly onDidChange = this.changeEmitter.event;
   readonly onDidReceiveMessage = this.messageEmitter.event;
@@ -45,9 +48,12 @@ export class Session implements vscode.Disposable {
   }
 
   async start(): Promise<void> {
+    const generation = ++this.generation;
     this.stop();
     const url = this.url;
     const token = await this.context.secrets.get(this.tokenKey(url));
+    if (generation !== this.generation) return; // a newer start took over while the token was read
+    this.hasToken = token !== undefined;
     const model = (this.model = this.newModel(url, token));
     const stream = (this.stream = new AbortController());
     await vscode.commands.executeCommand("setContext", "agentMessenger.loginRequired", false);
@@ -60,12 +66,13 @@ export class Session implements vscode.Disposable {
       },
       onEvent: (event) => {
         model.apply(event).then(
-          (message) => message && this.messageEmitter.fire(message),
-          (error) => console.error("agent-messenger: cannot apply an event:", error),
+          (message) => message && generation === this.generation && this.messageEmitter.fire(message),
+          (error) => this.report(error),
         );
       },
-      onUnauthenticated: () => void this.requireLogin(token !== undefined),
+      onUnauthenticated: () => void this.requireLogin(),
       onDisconnect: () => model.setLive(false),
+      onError: (error) => this.log.appendLine(`event stream: ${(error as Error).message}`),
     }, stream.signal);
   }
 
@@ -74,13 +81,22 @@ export class Session implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.generation++;
     this.stop();
     this.modelSubscription?.dispose();
+    this.log.dispose();
   }
 
-  private async requireLogin(sessionEnded: boolean): Promise<void> {
+  // Handles a failed API call: a login that is no longer valid asks for a new one, anything else
+  // goes to the log.
+  report(error: unknown): void {
+    if (error instanceof ApiError && error.unauthenticated) void this.requireLogin();
+    else this.log.appendLine((error as Error).message);
+  }
+
+  private async requireLogin(): Promise<void> {
     await vscode.commands.executeCommand("setContext", "agentMessenger.loginRequired", true);
-    if (!sessionEnded) return;
+    if (!this.hasToken) return;
     const choice = await vscode.window.showWarningMessage("Agent Messenger: the session ended. Log in again.", "Log In");
     if (choice) await vscode.commands.executeCommand("agentMessenger.login");
   }

@@ -8,6 +8,9 @@ const host = acquireVsCodeApi();
 
 const STATUS_LABEL: Record<string, string> = { verified: "verified", unknown_sender: "unknown sender", rejected: "rejected" };
 
+// Only these become class names; the status comes from the wire.
+const KNOWN_STATUSES: string[] = Object.keys(STATUS_LABEL);
+
 let state: ChatState | undefined;
 const messages: Message[] = [];
 
@@ -37,7 +40,7 @@ function renderMessage(message: Message): HTMLElement {
   if (message.to) header.append(el("span", "muted", "→ " + (isDirect ? message.to : "#" + message.to)));
   if (message.time) header.append(el("span", "muted", new Date(message.time).toLocaleString()));
   if (message.type) header.append(el("span", "pill", message.type));
-  header.append(el("span", "badge " + message.status, STATUS_LABEL[message.status] || message.status));
+  header.append(el("span", "badge " + (KNOWN_STATUSES.includes(message.status) ? message.status : "unknown"), STATUS_LABEL[message.status] ?? "unknown status"));
   header.append(el("span", "muted", "#" + message.sequence));
 
   const item = el("div", "message");

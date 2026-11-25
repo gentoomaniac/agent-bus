@@ -80,3 +80,16 @@ test("loadHistory walks back through older messages until there are enough", asy
   assert.deepEqual(model.messagesOf("general").map((m) => m.sequence), [1, 2, 3, 900, 1400].slice(0, 5));
   assert.equal(model.hasOlder("general"), false);
 });
+
+test("a channel that appears after the first refresh starts unread, its message targeted", async () => {
+  const store = [message("general", 1)];
+  const api = new FakeApi(store);
+  const model = new Model(api as unknown as Api, memoryStore());
+  await model.refresh();
+  store.push(message("group:new", 2, { targets: [SELF] }));
+  api.channelList = new FakeApi(store).channelList;
+  await model.refresh();
+  assert.equal(model.unreadCount("group:new"), 1);
+  assert.equal(model.targetedUnreadCount(), 1);
+  assert.equal(model.unreadCount("general"), 0);
+});

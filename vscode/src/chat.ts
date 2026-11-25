@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
+import { ApiError } from "./api";
 import { describeChannel, destinationOf, parseTargets } from "./channels";
 import { ChatState, FromWebview, ToWebview } from "./protocol";
 import { Session } from "./session";
@@ -24,7 +25,7 @@ export class ChatPanels implements vscode.Disposable {
         void chat.panel.webview.postMessage({ type: "message", message } satisfies ToWebview);
         if (chat.panel.visible) session.model.markRead(message.channel);
       }),
-      session.onDidRefresh(() => this.chats.forEach((chat, channelId) => void this.show(channelId, chat))),
+      session.onDidRefresh(() => this.chats.forEach((chat, channelId) => void this.show(channelId, chat, chat.panel.visible))),
     ];
   }
 
@@ -62,14 +63,16 @@ export class ChatPanels implements vscode.Disposable {
       await this.guarded(() => model.loadOlder(channelId));
       this.post(channelId, chat);
     } else {
-      const destination = destinationOf(model.channels.find((c) => c.id === channelId)!, model.self);
       const { type, targets, title, text } = message.draft;
       let error: string | undefined;
       try {
+        const channel = model.channels.find((c) => c.id === channelId);
+        const destination = channel && destinationOf(channel, model.self);
         if (!destination) throw new Error("this conversation is read-only");
         await model.api.send({ to: destination, type, targets: parseTargets(targets), title: title.trim() || undefined, text });
       } catch (caught) {
         error = (caught as Error).message;
+        this.session.report(caught);
       }
       void chat.panel.webview.postMessage({ type: "sendResult", error } satisfies ToWebview);
     }
@@ -79,15 +82,17 @@ export class ChatPanels implements vscode.Disposable {
     try {
       await action();
     } catch (error) {
-      void vscode.window.showErrorMessage("Agent Messenger: " + (error as Error).message);
+      if (error instanceof ApiError && error.unauthenticated) this.session.report(error);
+      else void vscode.window.showErrorMessage("Agent Messenger: " + (error as Error).message);
     }
   }
 
   // Loads the history, remembers where the "New" divider goes, shows the channel and marks it read.
-  private async show(channelId: string, chat: Chat): Promise<void> {
+  // A visible panel keeps its divider across a reconnect: its messages were read already.
+  private async show(channelId: string, chat: Chat, keepDivider = false): Promise<void> {
     const model = this.session.model;
     await this.guarded(() => model.loadHistory(channelId, HISTORY));
-    chat.dividerAfter = model.lastRead(channelId);
+    if (!keepDivider) chat.dividerAfter = model.lastRead(channelId);
     this.post(channelId, chat);
     if (chat.panel.visible) model.markRead(channelId);
   }

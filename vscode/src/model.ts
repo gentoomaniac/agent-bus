@@ -20,6 +20,7 @@ export class Model {
   agents: Agent[] = [];
   presence = new Map<string, Presence>();
   live = false; // the event stream is open
+  private seen = false; // the first refresh succeeded
   private messages = new Map<string, Message[]>();
   private covered = new Map<string, number>(); // channel -> every message after this sequence is loaded
   private listeners = new Set<() => void>();
@@ -71,8 +72,9 @@ export class Model {
     return result;
   }
 
-  // Reads the whole state again. A channel seen for the first time counts as read up to now, so
-  // the first start does not report the whole history as unread. Then every channel's messages
+  // Reads the whole state again. At the first refresh a channel without a stored last-read
+  // sequence counts as read up to now, so the first start does not report the whole history as
+  // unread. A channel that appears later starts unread: its first message is news. Then every channel's messages
   // are brought up to its last sequence.
   async refresh(): Promise<void> {
     const [status, channels, agents, presence] = await Promise.all([this.api.status(), this.api.channels(), this.api.agents(), this.api.presence()]);
@@ -81,10 +83,11 @@ export class Model {
     this.agents = agents ?? [];
     this.presence = new Map((presence ?? []).map((view) => [view.agent, view]));
     for (const channel of this.channels) {
-      if (this.lastReads.get(channel.id) === undefined) this.lastReads.set(channel.id, channel.last_sequence);
+      if (!this.seen && this.lastReads.get(channel.id) === undefined) this.lastReads.set(channel.id, channel.last_sequence);
       if (!this.covered.has(channel.id)) this.covered.set(channel.id, this.lastRead(channel.id));
     }
     await Promise.all(this.channels.map((channel) => this.loadNewer(channel)));
+    this.seen = true;
     this.changed();
   }
 
