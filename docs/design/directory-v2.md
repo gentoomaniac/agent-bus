@@ -341,3 +341,6 @@ Where the build refined or departed from the text above.
 - A diff that does not apply (wrong base or a state hash that does not check) is not asked for
   again from the same base: the agent asks once for the whole directory (`since` empty) and
   takes that in. Asked from the same base, the same diff would fail every round.
+- A replaced file (busd's state, an agent's snapshot and its exports) is synced, renamed, and
+  then its directory is synced too, so the rename is on disk before busd announces the revision
+  or an agent acts on its snapshot. A failure to sync is the write's failure.

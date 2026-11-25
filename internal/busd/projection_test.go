@@ -219,3 +219,28 @@ func TestTheHeadAnnouncesTheCurrentVersionWithTheLastChanges(t *testing.T) {
 		t.Errorf("after a restart the head is %+v, %v; want the same version without hints", restarted, err)
 	}
 }
+
+func TestARevisionThatCannotBeSavedIsNotAnnounced(t *testing.T) {
+	f := newFixture(t)
+	published := f.directory()
+	ctx := context.Background()
+	if _, err := published.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	before, head := published.Version(), published.Head()
+	f.register("alice@x", f.newKey())
+	// A file stands where the state's directory was: nothing can be written there.
+	if err := os.RemoveAll(filepath.Join(f.dir, enrollDir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.dir, enrollDir), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := published.Reconcile(ctx); err == nil {
+		t.Fatal("a revision that could not be saved was taken")
+	}
+	if published.Version() != before || string(published.Head()) != string(head) {
+		t.Errorf("the version moved to %+v without being saved", published.Version())
+	}
+}

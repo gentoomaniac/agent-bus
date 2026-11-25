@@ -51,7 +51,8 @@ func Write(path string, data []byte, mode os.FileMode, overwrite bool) error {
 // replace writes a temporary file next to path and renames it over path, so a reader (the
 // directory of agents is read while two fetches may write it) sees the old content or the new,
 // never a truncated file. It is synced before the rename, so a crash cannot leave the new name
-// on empty content.
+// on empty content, and the directory after it, so that the rename itself is on disk when this
+// returns: busd announces a directory revision, and an agent acts on a snapshot, only after that.
 func replace(path string, data []byte, mode os.FileMode) error {
 	temporary, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
@@ -71,7 +72,19 @@ func replace(path string, data []byte, mode os.FileMode) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	return os.Rename(temporary.Name(), path)
+	if err := os.Rename(temporary.Name(), path); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
+}
+
+// syncDirectory flushes a directory's entries to disk. A variable, so that a test can make it fail.
+var syncDirectory = func(dir string) error {
+	directory, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	return errors.Join(directory.Sync(), directory.Close())
 }
 
 // Lock takes an exclusive lock on the file at path, creating it (and its directories) if needed. It

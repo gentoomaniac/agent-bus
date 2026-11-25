@@ -1,6 +1,7 @@
 package files
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -57,5 +58,19 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 	}
 	if got := info.Mode().Perm(); got != want {
 		t.Errorf("%s mode = %o, want %o", path, got, want)
+	}
+}
+
+func TestAnOverwriteFailsWhenTheDirectoryCannotBeSynced(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "f")
+	var synced []string
+	defer func(original func(string) error) { syncDirectory = original }(syncDirectory)
+	syncDirectory = func(dir string) error { synced = append(synced, dir); return errors.New("disk gone") }
+
+	if err := Write(path, []byte("x"), PublicMode, true); err == nil || err.Error() != "disk gone" {
+		t.Errorf("Write = %v, want the directory's sync error", err)
+	}
+	if len(synced) != 1 || synced[0] != filepath.Dir(path) {
+		t.Errorf("synced %v, want the file's directory", synced)
 	}
 }
