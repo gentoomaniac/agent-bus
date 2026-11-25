@@ -66,6 +66,10 @@ func (admin *Admin) ReleaseOnClose(release func()) { admin.release = release }
 // Setup applies the retention to BUS, the one stream of conversations. The membership ledger is
 // not a log of messages and keeps everything.
 func (admin *Admin) Setup(ctx context.Context, retention bus.Retention) error {
+	// NATS refuses a max age below the dedupe window with an error that names neither; say which.
+	if retention.MaxAge < 0 || retention.MaxAge > 0 && retention.MaxAge < duplicateWindow {
+		return fmt.Errorf("max age %s: use 0 (keep forever) or at least the %s dedupe window", retention.MaxAge, duplicateWindow)
+	}
 	_, err := admin.bus.stream.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:       busStream,
 		Subjects:   busSubjects,

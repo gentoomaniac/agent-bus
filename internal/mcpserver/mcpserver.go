@@ -399,10 +399,11 @@ func (t tools) framed(unread []adapter.Message, full bool) messagesOut {
 			}
 		}
 		env := delivered.Envelope
+		messageAge := delivered.Age(now)
 		compact := message{
 			ID: env.ID, Seq: delivered.Sequence, From: env.From, Type: env.Type, Title: env.Body.Title, Text: env.Body.Text, Refs: env.Body.Refs,
 			TargetsMe: delivered.TargetsMe, Acked: delivered.Acked, Thread: env.Thread, Time: env.TS.UTC().Format("2006-01-02T15:04Z"),
-			FirstContact: delivered.FirstContact, Age: age(delivered.Age(now)), Stale: delivered.Age(now) > adapter.StaleAfter,
+			FirstContact: delivered.FirstContact, Age: age(messageAge), Stale: messageAge > adapter.StaleAfter,
 		}
 		if delivered.Channel.Kind != bus.DM {
 			compact.Channel = delivered.Channel.String()
