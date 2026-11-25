@@ -1,0 +1,454 @@
+//go:build integration
+
+package itest
+
+import (
+	"bytes"
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"testing"
+	"time"
+
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/identity"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
+	"github.com/nats-io/nats.go"
+)
+
+const carol = "newcomer@carol"
+
+type lockedBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
+}
+
+// startBusd runs busd against the harness's broker, as the broker container does, and waits until
+// it answers.
+func (h *harness) startBusd(t *testing.T) {
+	t.Helper()
+	binary := filepath.Join(t.TempDir(), "busd")
+	h.run(t, "go", "build", "-o", binary, "../../cmd/busd")
+	output := &lockedBuffer{}
+	cmd := exec.Command(binary)
+	cmd.Env = h.env
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+	t.Cleanup(func() {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-exited:
+		case <-time.After(5 * time.Second):
+			_ = cmd.Process.Kill()
+			<-exited
+		}
+		if t.Failed() {
+			t.Logf("busd said:\n%s", output)
+		}
+	})
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if _, err := h.tryRun(h.agentBusctl, "ca", "list"); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("busd never answered; it said:\n%s", output)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// enrollee is an `agent-bus enroll` run on another machine: a fresh config directory.
+type enrollee struct {
+	configDir string
+	output    *lockedBuffer
+	done      chan error
+}
+
+func (h *harness) buildAgentBus(t *testing.T) string {
+	t.Helper()
+	binary := filepath.Join(t.TempDir(), "agent-bus")
+	h.run(t, "go", "build", "-o", binary, "../../cmd/agent-bus")
+	return binary
+}
+
+func (h *harness) startEnrollee(t *testing.T, agentBus, agentID string, args ...string) *enrollee {
+	t.Helper()
+	password, err := creds.ReadPassword(filepath.Join(h.configDir, "enroll"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := &enrollee{configDir: t.TempDir(), output: &lockedBuffer{}, done: make(chan error, 1)}
+	args = append([]string{"enroll", "--agent", agentID, "--enroll-password", password}, args...)
+	cmd := exec.Command(agentBus, args...)
+	cmd.Env = append(h.env, "BUS_CONFIG_DIR="+e.configDir)
+	cmd.Stdout, cmd.Stderr = e.output, e.output
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { e.done <- cmd.Wait() }()
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	return e
+}
+
+// wait returns how the run ended.
+func (e *enrollee) wait(t *testing.T) error {
+	t.Helper()
+	select {
+	case err := <-e.done:
+		return err
+	case <-time.After(30 * time.Second):
+		t.Fatalf("agent-bus enroll did not finish; it said:\n%s", e.output)
+		return nil
+	}
+}
+
+// pendingCode waits until `ca list` shows a request for the agent and returns its code.
+func (h *harness) pendingCode(t *testing.T, agentID string) string {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		list := h.run(t, h.agentBusctl, "ca", "list")
+		for _, line := range strings.Split(list, "\n") {
+			if fields := strings.Fields(line); len(fields) > 2 && fields[1] == agentID {
+				return fields[0]
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no pending request for %s:\n%s", agentID, list)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func (h *harness) caFingerprint(t *testing.T) string {
+	return strings.TrimSpace(h.run(t, h.agentBusctl, "ca", "fingerprint"))
+}
+
+// agentAt runs the adapter of an enrolled agent on its own machine's config directory.
+func (h *harness) agentAt(t *testing.T, configDir, agentID string) *adapter.Adapter {
+	t.Helper()
+	connection, err := broker.UserConnection(creds.AgentDir(configDir, agentID), bus.AgentToken(agentID), h.address, h.mappedPort, filepath.Join(configDir, "ca.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, err := broker.NewTransport(connection, agentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := adapter.Open(adapter.Config{AgentID: agentID, Dir: creds.AgentDir(configDir, agentID), Transport: transport, Directory: trust.DirectoryPath(configDir)})
+	if err != nil {
+		transport.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { session.Close(); transport.Close() })
+	return session
+}
+
+func certURIs(t *testing.T, certPath string) []string {
+	t.Helper()
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(data)
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var uris []string
+	for _, uri := range cert.URIs {
+		uris = append(uris, uri.String())
+	}
+	return uris
+}
+
+func TestEnrollment(t *testing.T) {
+	h := startBus(t)
+	h.run(t, h.agentBusctl, "enroll", "init")
+	h.startBusd(t)
+	agentBus := h.buildAgentBus(t)
+	password, _ := creds.ReadPassword(filepath.Join(h.configDir, "enroll"))
+
+	t.Run("a new machine enrolls with the owner's CA fingerprint, is approved and talks to an existing agent", func(t *testing.T) {
+		e := h.startEnrollee(t, agentBus, carol, "--waitforcert", "--ca-fingerprint", h.caFingerprint(t))
+		code := h.pendingCode(t, carol)
+		if !strings.Contains(e.output.String(), code) {
+			t.Errorf("the machine printed no approval code %s:\n%s", code, e.output)
+		}
+		if has, _ := creds.HasClientCert(creds.AgentDir(e.configDir, carol)); has {
+			t.Error("a certificate exists before approval")
+		}
+		h.run(t, h.agentBusctl, "ca", "sign", code)
+		if err := e.wait(t); err != nil {
+			t.Fatalf("enroll failed: %v\n%s", err, e.output)
+		}
+
+		agentDir := creds.AgentDir(e.configDir, carol)
+		certPath, keyPath := creds.ClientCertPaths(agentDir)
+		if uris := certURIs(t, certPath); len(uris) != 1 || uris[0] != "agentbus:agent/newcomer_carol" {
+			t.Errorf("the certificate names %v", uris)
+		}
+		if err := creds.ValidateClientCert(certPath, keyPath, broker.AgentCertIdentity(carol)); err != nil {
+			t.Error(err)
+		}
+		caPEM, _ := os.ReadFile(filepath.Join(e.configDir, "ca.pem"))
+		wantCA, _ := os.ReadFile(h.caCert)
+		if !bytes.Equal(caPEM, wantCA) {
+			t.Error("the CA fetched by fingerprint differs from the owner's")
+		}
+		if _, err := identity.ReadPrivateKey(agentDir); err != nil {
+			t.Errorf("no signing key: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(agentDir, "enroll-pending.json")); err == nil {
+			t.Error("the pending request file is left behind")
+		}
+
+		carolSession := h.agentAt(t, e.configDir, carol)
+		aliceSession, _ := h.startAdapter(t, alice)
+		if _, err := aliceSession.Send(timeout(t), carol, say("welcome, newcomer")); err != nil {
+			t.Fatal(err)
+		}
+		if got := pollUntil(t, carolSession, 1); got[0].Envelope.Body.Text != "welcome, newcomer" {
+			t.Errorf("the newcomer got %v", summaries(got))
+		}
+		if _, err := carolSession.Send(timeout(t), alice, say("glad to be here")); err != nil {
+			t.Fatal(err)
+		}
+		if got := pollUntil(t, aliceSession, 1); got[0].Envelope.Body.Text != "glad to be here" {
+			t.Errorf("alice got %v", summaries(got))
+		}
+		// The agent has no password login: it exists only as a certificate account.
+		if has, _ := creds.HasClientCert(creds.AgentDir(h.configDir, carol)); has {
+			t.Error("busd left a certificate in its own config directory")
+		}
+		list := h.run(t, h.agentBusctl, "--direct", "agent", "list")
+		if !strings.Contains(list, carol) {
+			t.Errorf("the registry lacks the enrolled agent:\n%s", list)
+		}
+	})
+
+	t.Run("a rejected request fails cleanly with the reason and creates nothing", func(t *testing.T) {
+		const rejected = "rejected@carol"
+		e := h.startEnrollee(t, agentBus, rejected, "--waitforcert", "--ca-fingerprint", h.caFingerprint(t))
+		code := h.pendingCode(t, rejected)
+		h.run(t, h.agentBusctl, "ca", "reject", code, "--reason", "unknown laptop")
+		err := e.wait(t)
+		if err == nil || !strings.Contains(e.output.String(), "unknown laptop") {
+			t.Fatalf("a rejected enrollment: %v\n%s", err, e.output)
+		}
+		if has, _ := creds.HasClientCert(creds.AgentDir(e.configDir, rejected)); has {
+			t.Error("a certificate was installed after a rejection")
+		}
+		if exists, err := h.admin(t).AccountExists(timeout(t), rejected); err != nil || exists {
+			t.Errorf("an account exists for the rejected ID: %v, %v", exists, err)
+		}
+		if list := h.run(t, h.agentBusctl, "ca", "list"); strings.Contains(list, rejected) {
+			t.Errorf("the rejected request is still pending:\n%s", list)
+		}
+	})
+
+	t.Run("a machine without the CA or a fingerprint trusts nothing the broker says", func(t *testing.T) {
+		e := h.startEnrollee(t, agentBus, "nofp@carol")
+		if err := e.wait(t); err == nil || !strings.Contains(e.output.String(), "--ca-fingerprint") {
+			t.Errorf("enroll without a CA: %v\n%s", err, e.output)
+		}
+		wrong := h.startEnrollee(t, agentBus, "wrongfp@carol", "--ca-fingerprint", strings.Repeat("ab", 32))
+		if err := wrong.wait(t); err == nil || !strings.Contains(wrong.output.String(), "fingerprint") {
+			t.Errorf("enroll with the wrong fingerprint: %v\n%s", err, wrong.output)
+		}
+		if _, err := os.Stat(filepath.Join(wrong.configDir, "ca.pem")); err == nil {
+			t.Error("a CA that does not match the fingerprint was saved")
+		}
+		if list := h.run(t, h.agentBusctl, "ca", "list"); strings.Contains(list, "wrongfp") || strings.Contains(list, "nofp") {
+			t.Errorf("a request was sent without a trusted CA:\n%s", list)
+		}
+	})
+
+	t.Run("autosign approves a request with the secret and logs it, and nothing without it", func(t *testing.T) {
+		out := h.run(t, h.agentBusctl, "enroll", "autosign")
+		secret := strings.TrimSpace(strings.Split(strings.Split(out, "\n\n")[1], "\n")[0])
+		auto := h.startEnrollee(t, agentBus, "auto@carol", "--waitforcert", "--ca-fingerprint", h.caFingerprint(t), "--secret", secret)
+		if err := auto.wait(t); err != nil {
+			t.Fatalf("autosigned enroll failed: %v\n%s", err, auto.output)
+		}
+		if has, _ := creds.HasClientCert(creds.AgentDir(auto.configDir, "auto@carol")); !has {
+			t.Error("no certificate after autosign")
+		}
+		wrong := h.startEnrollee(t, agentBus, "guess@carol", "--ca-fingerprint", h.caFingerprint(t), "--secret", "not the secret")
+		if err := wrong.wait(t); err != nil {
+			t.Fatalf("%v\n%s", err, wrong.output)
+		}
+		h.pendingCode(t, "guess@carol") // still waiting for the owner
+		h.run(t, h.agentBusctl, "enroll", "autosign", "--off")
+		off := h.startEnrollee(t, agentBus, "later@carol", "--ca-fingerprint", h.caFingerprint(t), "--secret", secret)
+		if err := off.wait(t); err != nil {
+			t.Fatalf("%v\n%s", err, off.output)
+		}
+		h.pendingCode(t, "later@carol") // the secret no longer counts
+	})
+
+	t.Run("a request for an ID that has another key waits for an explicit replace", func(t *testing.T) {
+		e := h.startEnrollee(t, agentBus, bob, "--waitforcert", "--ca-fingerprint", h.caFingerprint(t))
+		code := h.pendingCode(t, bob)
+		if list := h.run(t, h.agentBusctl, "ca", "list"); !strings.Contains(list, enroll.IdentityReplaces) {
+			t.Errorf("the list does not flag the replacement:\n%s", list)
+		}
+		if output, err := h.tryRun(h.agentBusctl, "ca", "sign", code); err == nil || !strings.Contains(output, "--replace") {
+			t.Fatalf("signing a replacement without confirmation: %v\n%s", err, output)
+		}
+		h.run(t, h.agentBusctl, "ca", "sign", code, "--replace")
+		if err := e.wait(t); err != nil {
+			t.Fatalf("%v\n%s", err, e.output)
+		}
+		records, err := h.admin(t).Agents(timeout(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, record := range records {
+			if record.AgentID == bob && (len(record.Keys) != 2 || !record.Keys[0].Revoked) {
+				t.Errorf("bob's key history after replacement: %+v", record.Keys)
+			}
+		}
+	})
+
+	t.Run("an enrollee never receives a certificate for an ID the owner did not approve for it", func(t *testing.T) {
+		spy := h.connectRaw(t, broker.Connection{User: enroll.EnrollUser, Password: password}, enroll.InboxPrefix+".spy")
+		overheard := make(chan *nats.Msg, 64)
+		if _, err := spy.conn.ChanSubscribe(enroll.InboxPrefix+".>", overheard); err != nil {
+			t.Fatal(err)
+		}
+		spy.conn.Flush()
+
+		mallory := h.startEnrollee(t, agentBus, "mallory@carol", "--waitforcert", "--ca-fingerprint", h.caFingerprint(t))
+		victim := h.startEnrollee(t, agentBus, "victim@carol", "--waitforcert", "--ca-fingerprint", h.caFingerprint(t))
+		malloryCode := h.pendingCode(t, "mallory@carol")
+		victimCode := h.pendingCode(t, "victim@carol")
+		h.run(t, h.agentBusctl, "ca", "sign", victimCode)
+		if err := victim.wait(t); err != nil {
+			t.Fatalf("%v\n%s", err, victim.output)
+		}
+		if has, _ := creds.HasClientCert(creds.AgentDir(mallory.configDir, "mallory@carol")); has {
+			t.Error("mallory got a certificate that the owner never approved")
+		}
+		// Everything the shared login could overhear is public and names only the approved agent.
+		deadline := time.After(time.Second)
+	listening:
+		for {
+			select {
+			case message := <-overheard:
+				if strings.Contains(string(message.Data), "PRIVATE KEY") {
+					t.Errorf("a reply carries a private key: %s", message.Data)
+				}
+				if strings.Contains(string(message.Data), "mallory") && strings.Contains(string(message.Data), `"status":"approved"`) {
+					t.Errorf("a reply approves mallory: %s", message.Data)
+				}
+			case <-deadline:
+				break listening
+			}
+		}
+		h.run(t, h.agentBusctl, "ca", "reject", malloryCode)
+		if err := mallory.wait(t); err == nil {
+			t.Error("mallory's enrollment succeeded")
+		}
+		victimCert, _ := creds.ClientCertPaths(creds.AgentDir(victim.configDir, "victim@carol"))
+		if uris := certURIs(t, victimCert); len(uris) != 1 || uris[0] != "agentbus:agent/victim_carol" {
+			t.Errorf("the victim's certificate names %v", uris)
+		}
+	})
+
+	t.Run("the enrollment login can only ask, and sees nothing of the bus", func(t *testing.T) {
+		c := h.connectRaw(t, broker.Connection{User: enroll.EnrollUser, Password: password}, enroll.InboxPrefix+".t")
+		for _, subject := range []string{
+			"dm." + bus.AgentToken(alice), "general", "topic.lib-x", "presence." + bus.AgentToken(alice),
+			enroll.SubjectList, enroll.SubjectSign, enroll.SubjectReject, enroll.SubjectPending,
+			"busd.agent.register", "$KV.registry.x", "ledger.x",
+		} {
+			c.denyPublish(t, subject)
+		}
+		for _, subject := range []string{">", "dm.>", "general", "_INBOX.>", "_INBOX." + bus.AgentToken(alice) + ".>", "busd.>", enroll.SubjectPending, "$JS.API.>", "$KV.>"} {
+			c.denySubscribe(t, subject)
+		}
+		c.denyRequest(t, "$JS.API.STREAM.INFO.BUS", "")
+		c.denyRequest(t, "$JS.API.CONSUMER.MSG.NEXT.BUS."+bus.AgentToken(alice)+"__dm", `{"batch":1}`)
+		c.expectNoViolation(t, "an enrollment status question", func() {
+			if _, err := c.conn.Request(enroll.SubjectStatus, []byte(`{"request_id":"none"}`), 2*time.Second); err != nil {
+				t.Errorf("busd did not answer a status question: %v", err)
+			}
+		})
+	})
+
+	t.Run("an agent of the bus cannot reach busd's approval API", func(t *testing.T) {
+		c := h.rawAgent(t, alice)
+		for _, subject := range []string{enroll.SubjectSign, enroll.SubjectList, enroll.SubjectReject, enroll.SubjectRequest, enroll.SubjectPending} {
+			c.denyPublish(t, subject)
+		}
+	})
+
+	t.Run("busd answers only requests: a bare publication on its subjects does nothing", func(t *testing.T) {
+		before := h.run(t, h.agentBusctl, "ca", "list")
+		admin := h.rawAdmin(t, broker.ControlAdminUser)
+		if err := admin.conn.Publish(enroll.SubjectSign, []byte(fmt.Sprintf(`{"ref":%q}`, "later@carol"))); err != nil {
+			t.Fatal(err)
+		}
+		admin.conn.Flush()
+		time.Sleep(300 * time.Millisecond)
+		if after := h.run(t, h.agentBusctl, "ca", "list"); !strings.Contains(after, "later@carol") || !strings.Contains(before, "later@carol") {
+			t.Errorf("a publication without a reply subject approved a request:\n%s", after)
+		}
+	})
+
+	t.Run("the monitor's admin login reads the pending count and nothing more", func(t *testing.T) {
+		counts := make(chan int, 16)
+		stop, err := h.admin(t).(*broker.Admin).WatchPendingEnrollments(func(count int) { counts <- count })
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stop()
+		select {
+		case count := <-counts:
+			if count < 1 { // guess@carol and later@carol wait
+				t.Errorf("busd announced %d pending", count)
+			}
+		case <-time.After(15 * time.Second):
+			t.Fatal("busd never announced the pending count")
+		}
+	})
+
+	t.Run("the CA key stays in the config directory of busd", func(t *testing.T) {
+		info, err := os.Stat(filepath.Join(h.configDir, "ca.key"))
+		if err != nil || info.Mode().Perm() != 0o600 {
+			t.Errorf("ca.key: %v, %v", info, err)
+		}
+		if _, err := tlsinit.LoadCA(h.caCert, filepath.Join(h.configDir, "ca.key")); err != nil {
+			t.Error(err)
+		}
+	})
+}
