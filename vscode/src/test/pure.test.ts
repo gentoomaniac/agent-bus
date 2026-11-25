@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ago, describePresence, presenceClass, recentActivity } from "../presence";
-import { matchTargets, mentionBefore, mentionText } from "../completion";
+import { matchTargets, mentionBefore, mentionText, resolveTarget } from "../completion";
 import { categorize, describeChannel, destinationOf, dmChannelId } from "../channels";
 import { parseFromWebview, parsePresenceMarks } from "../protocol";
 import { nextBackoff } from "../events";
@@ -141,6 +141,16 @@ test("matchTargets matches by prefix on the whole ID or the name, ignoring case 
   assert.deepEqual(matchTargets(all, "LIB-x@al"), ["lib-x@alice"]);
   assert.deepEqual(matchTargets(all, "alice"), []);
   assert.deepEqual(matchTargets(all, "lib", ["lib-x@alice"]), ["Lib-Y@bob"]);
+});
+
+test("resolveTarget finds the one candidate that is typed in full", () => {
+  const all = ["@all", "lib-x@alice", "Lib-Y@bob"];
+  assert.equal(resolveTarget(all, "all"), "@all");
+  assert.equal(resolveTarget(all, " @ALL "), "@all");
+  assert.equal(resolveTarget(all, "lib-y@bob"), "Lib-Y@bob");
+  assert.equal(resolveTarget(all, "@lib-x@alice"), "lib-x@alice");
+  assert.equal(resolveTarget(all, "lib"), undefined); // a prefix is not a name
+  assert.equal(resolveTarget(all, ""), undefined);
 });
 
 test("parseFromWebview accepts well-formed messages only", () => {

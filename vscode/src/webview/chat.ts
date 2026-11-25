@@ -1,5 +1,5 @@
 // The chat panel's page. Messages are untrusted: everything goes in with textContent, never as HTML.
-import { matchTargets, mentionBefore, mentionText } from "../completion";
+import { matchTargets, mentionBefore, mentionText, resolveTarget } from "../completion";
 import { continuesGroup, insertMessage } from "../messages";
 import { parsePresenceMarks } from "../protocol";
 import { Chip, chipTerm, snippetParts, withChip } from "../search";
@@ -372,7 +372,16 @@ function addTarget(id: string): void {
   targetInput.value = "";
   closeCompletion();
   renderTargets();
-  targetInput.focus();
+}
+
+// Text left in the target input counts when it names a candidate exactly; any other text is an
+// unknown target and refuses the send, as on the web page. In a direct message the input is hidden.
+function resolveTargetInput(): void {
+  const typed = targetInput.value.trim();
+  if (!typed || isDirect()) return;
+  const id = resolveTarget(candidates(), typed);
+  if (!id) throw new Error("Unknown target: " + typed);
+  addTarget(id);
 }
 
 function completeTarget(): void {
@@ -630,7 +639,14 @@ document.addEventListener("visibilitychange", activate);
 
 composer.addEventListener("submit", (event) => {
   event.preventDefault();
-  if (sending || !textInput.value.trim()) return; // Enter again while a send is under way posts nothing
+  if (sending) return; // Enter again while a send is under way posts nothing
+  try {
+    resolveTargetInput();
+  } catch (error) {
+    problem.textContent = (error as Error).message;
+    return;
+  }
+  if (!textInput.value.trim()) return;
   sending = true;
   updateSend();
   problem.textContent = "";

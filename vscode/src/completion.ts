@@ -13,6 +13,12 @@ export function matchTargets(candidates: string[], query: string, exclude: strin
   });
 }
 
+// The candidate that exactly the typed text names, ignoring case and a leading "@", as on the web page.
+export function resolveTarget(candidates: string[], typed: string): string | undefined {
+  const wanted = typed.trim().replace(/^@?/, "@").toLowerCase();
+  return candidates.find((id) => id.replace(/^@?/, "@").toLowerCase() === wanted);
+}
+
 // The "@word" that ends right before the caret, if the "@" starts the text or follows whitespace.
 // `start` is where the "@" is; `query` is the word after it.
 export function mentionBefore(text: string, caret: number): { start: number; query: string } | undefined {

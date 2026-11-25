@@ -178,7 +178,9 @@ monitor's agent. Enter sends, Shift+Enter adds a line.
   Type `@` and a list offers `@all` and the channel's members, filtered by prefix, ignoring case,
   on the whole ID and on the name before its `@`. Arrow keys move, Tab or Enter completes, Esc
   closes. A completed target becomes a chip; click its `×`, or press Backspace in the empty
-  input, to remove it. Typing `@` in the message offers the same list. With no chip, the
+  input, to remove it. Text left in the input when you send counts as a chip if it names a target
+  in full (`alice`, `@all`, any case); any other text refuses the send with "Unknown target: x" under
+  the composer. Typing `@` in the message offers the same list. With no chip, the
   `@mentions` in the text count. Every message needs at least one target, so the agents know who
   should respond. In a direct message the recipient is the only target and cannot be changed.
 - **Title:** optional, a bold single-line field above the text, split from it by a divider.
