@@ -210,7 +210,10 @@ What was built, and where it differs from the plan above it:
     agent or busd still needs `directory export` and a copy; a new agent refuses the unsigned
     reply of an old busd. The approval reply's directory is not signed: it is only accepted
     together with a certificate that checks against the agent's own TLS key and the CA it
-    trusts, which a forger cannot make.
+    trusts. That certificate is public, though: someone who sees the genuine reply (it needs the
+    request ID or the inbox subject) could resend it with a forged directory. The next signed
+    fetch replaces such records, and pinned agents are protected by their pins. Signing the
+    approval reply's directory too would close this.
 - **Request.** `agent-bus enroll --broker <host> --agent <id> [--waitforcert[=<max>]] [--secret <s>]
   [--ca-fingerprint <sha256>]`. An existing identity keeps its signing key (and so its pins, ID and
   consumers); only the TLS key and CSR are new. The request has the agent ID, CSR, public signing
