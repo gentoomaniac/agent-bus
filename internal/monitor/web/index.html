@@ -1132,7 +1132,9 @@ function renderSidebar() {
   fillSection("channels", others.filter((c) => c.kind !== "dm"));
   // "none yet" only while there is no conversation at all, not when all of them are favourites.
   fillSection("dms", others.filter((c) => c.kind === "dm"), state.channels.some((c) => c.kind === "dm") ? "" : "none yet");
-  $("agents").replaceChildren(...(state.agents.length ? state.agents.map((agent) => {
+  // The monitor's own identity is us: listing it says nothing.
+  const agents = state.agents.filter((a) => a.id !== state.status.agent);
+  $("agents").replaceChildren(...(agents.length ? agents.map((agent) => {
     if (agent.removed) {
       return el("li", { class: "item removed", title: agent.fingerprint },
         el("div", {}, el("span", { class: "agent-line", title: agent.id + " (removed)" }, el("span", { class: "dot" }), el("span", { class: "label" }, agent.id), el("span", { class: "muted state" }, "removed"))));
@@ -1146,7 +1148,8 @@ function renderSidebar() {
 }
 
 function renderMembers() {
-  $("members").replaceChildren(...(state.members.length ? state.members.map((id) =>
+  const members = state.members.filter((id) => id !== state.status.agent);
+  $("members").replaceChildren(...(members.length ? members.map((id) =>
     el("li", { class: "member", onclick: () => showDetail(id) }, agentLine(id, presenceOf(id)))) : [el("li", { class: "empty" }, "none")]));
 }
 

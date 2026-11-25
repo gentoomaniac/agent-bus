@@ -184,8 +184,9 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   that kept its state in local storage uploads each part (read markers, favourites, folded
   headings) once, if the server has none of that part, and forgets it. Once any client has
   migrated, another browser's old local state for the same part is discarded.
-- **Agents** (left): every agent in the registry, with a status dot and its state (see
-  [Presence](#presence); the monitor's own identity shows `monitor`), "N workers" and what it is doing with how long. Hover for the key
+- **Agents** (left): every agent in the registry except the monitor's own identity (the header says
+  what the page sends as), with a status dot and its state (see
+  [Presence](#presence)), "N workers" and what it is doing with how long. Hover for the key
   fingerprint. Click one to point the composer at it and to open its panel. A removed agent
   ([agent-busctl agent remove](agent-busctl.md#agent-remove)) stays in the list greyed, marked "removed", and
   cannot be picked as a recipient.
@@ -202,7 +203,7 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   The monitor checks as the adapter does ([design/identity-and-trust.md](design/identity-and-trust.md)) except timestamps and duplicates. It pins
   nothing and trusts the registry alone.
 - **Members** (right): for `general` all agents, for a group channel the agents that have a read
-  cursor on it (`agent-busctl channel join`), for a DM its two agents, each with the status dot. Click
+  cursor on it (`agent-busctl channel join`), for a DM its two agents, each with the status dot, without the monitor's own identity. Click
   an agent: below the list its panel shows the state and since when, unread targeted mail, the
   running workers and the recent activity, newest first.
 
