@@ -124,6 +124,8 @@
   .message[data-depth="2"] { margin-left: calc(var(--thread-indent) * 2); }
   .message[data-depth="3"] { margin-left: calc(var(--thread-indent) * 3); }
   .message[data-depth="4"] { margin-left: calc(var(--thread-indent) * 4); }
+  .message.fresh-thread { box-shadow: inset 3px 0 0 var(--mention); }
+  .pill.new-thread { background: var(--mention); color: var(--mention-text); border-color: var(--mention); font-weight: 600; }
   .reply-to { font-size: var(--font-xs); color: var(--muted); }
   #messages { flex: 1; overflow-y: auto; padding: 0 16px; min-height: 0; }
   .message { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 10px; padding: var(--message-pad) 0; border-top: 1px solid var(--border); }
@@ -1210,7 +1212,21 @@ function threadOrder(messages) {
   return entries;
 }
 
-function renderMessage(message, grouped, depth, orphanOf) {
+// The root messages of threadOrder entries whose thread holds an unseen message after the marker
+// (not the monitor's own agent's). A root is the entry of depth 0; the entries after it down to the
+// next root are its replies.
+function threadsWithUnseen(entries, marker, agent) {
+  const roots = new Set();
+  if (marker === null) return roots;
+  let root = null;
+  for (const { message, depth } of entries) {
+    if (depth === 0) root = message;
+    if (message.sequence > marker && message.from !== agent) roots.add(root);
+  }
+  return roots;
+}
+
+function renderMessage(message, grouped, depth, orphanOf, freshThread) {
   const sequence = el("span", { class: "muted seq" }, "#" + message.sequence);
   const header = grouped
     ? el("div", { class: "meta slim" }, timeSpan(message.time), sequence)
@@ -1225,7 +1241,8 @@ function renderMessage(message, grouped, depth, orphanOf) {
     const mine = target === state.status.agent;
     return el("span", { class: "pill " + (target === ALL ? "all" : mine ? "me" : "target"), title: target }, target);
   });
-  const attributes = { class: "message" + (grouped ? " grouped" : ""), "data-sequence": String(message.sequence) };
+  if (freshThread) header.append(el("span", { class: "pill new-thread" }, "new"));
+  const attributes = { class: "message" + (grouped ? " grouped" : "") + (freshThread ? " fresh-thread" : ""), "data-sequence": String(message.sequence) };
   if (depth > 0) attributes["data-depth"] = String(depth);
   return el("div", attributes,
     grouped ? el("span", { class: "avatar-gap" }) : avatarFor(message.from),
@@ -1295,11 +1312,12 @@ function renderMessages(scrollToEnd) {
   // A type filter that hides every unseen message hides the line too.
   // In thread mode a reply to a hidden message becomes a root: the tree is built from what is shown.
   const entries = state.threads ? threadOrder(shown) : shown.map((message) => ({ message, depth: 0, orphanOf: null, parent: null }));
+  const freshThreads = state.threads ? threadsWithUnseen(entries, state.marker, state.status.agent) : new Set();
   const markerAt = state.marker === null ? -1 : entries.findIndex(({ message: m }) => m.sequence > state.marker && m.from !== state.status.agent);
   const rows = entries.flatMap(({ message, depth, orphanOf, parent }, i) => {
     const previous = entries[i - 1];
     const grouped = settings.grouping && i !== markerAt && previous && previous.parent === parent && continues(previous.message, message);
-    const row = renderMessage(message, grouped, depth, orphanOf);
+    const row = renderMessage(message, grouped, depth, orphanOf, freshThreads.has(message));
     return i === markerAt ? [el("div", { class: "new-marker", role: "separator" }, "New"), row] : [row];
   });
   box.replaceChildren(...(shown.length ? rows : [el("div", { class: "empty" }, none)]));

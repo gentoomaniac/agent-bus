@@ -287,7 +287,8 @@ and keeps the session token, which it sends as a `Bearer` header.
   (the first 8 characters of the ID, the full ID in the tooltip). Messages are ordered by
   sequence, and same-sender grouping applies between siblings only. The tree is built from the
   messages the type filter lets through, so a reply to a hidden message becomes a root. The "New"
-  line comes before the first unseen message in display order.
+  line comes before the first unseen message in display order. A root whose thread holds an unseen
+  message gets a left accent bar in the mention color and a "new" badge; both go with the line.
 - With a password set, the header shows "logged in" and a "Log out" button.
 - The gear button in the header opens the settings (Esc closes them). Every setting is per browser,
   kept in its local storage, and the page works with the defaults when that is not available:
