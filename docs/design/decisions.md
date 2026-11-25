@@ -392,7 +392,7 @@ configuration plus the start script are the only runtime-specific files
 - Key rotation is `busd.agent.rotate`, signed by the old key.
 - busd runs supervised, with a table of what works while it is down and no HA.
 
-The grants matrix lists full subjects ([JetStream binding](jetstream-binding.md),
+The grants list full subjects ([JetStream binding](jetstream-binding.md),
 [private channels](private-channels.md), [signing and trust](identity-and-trust.md),
 [busd](busd.md)).
 

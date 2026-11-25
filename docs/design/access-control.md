@@ -2,7 +2,7 @@
 
 [Design index](README.md) | previous: [safety](safety.md) | next: [private channels](private-channels.md)
 
-Who may connect to the broker and what each account may do: accounts and TLS, the grants matrix per
+Who may connect to the broker and what each account may do: accounts and TLS, the grants per
 role, and how agents authenticate (passwords, client certificates in phase A, a Puppet-style
 enrollment flow in phase B).
 
@@ -12,13 +12,22 @@ enrollment flow in phase B).
 | Roles `agent`, `admin`, `enrollment`, `busd`, `monitor` | implemented; busd serves CONTROL as its own login (`busd`), the monitor has two read-only logins (`monitor-bus`, `monitor-control`), `agent-busctl service init` creates them on an older setup |
 | mTLS phase A: certificate login on a second listener (`cert issue`, `cert sign`, `cert switch`) | implemented |
 | mTLS phase B: enrollment flow, `ca list\|sign\|reject\|fingerprint\|review`, autosigning, CA key in a minimal busd (decision 41) | implemented (see below) |
-| The busd and monitor columns of the grants matrix | **partly built**: busd's CONTROL login and the monitor's two logins have the narrow grants listed below; busd's BUS connection is still `bus-admin`, and the signed `busd.<method>` API and `monitor@<owner>` roles are planned |
+| [Grants](#grants) | **split**: current grants are built; private-channel grants, the signed `busd.<method>` API, the `human_<owner>` and `monitor@<owner>` roles and the ledger are planned. busd's BUS connection is still `bus-admin` |
 
 ## Accounts and access
 
-- Every client has its own broker account. An agent's account may: read and acknowledge under its own name, read its own DM channel, write any DM channel, read and write `general` and every group channel, read the registry and the public catalogue (through busd, **planned**: the agents hold the publish grants, but nothing answers them yet; today they use the copied `directory/`), and publish idempotently, so its own retries are not written twice within the broker's window. It gets access to a private channel only when busd grants it ([private channels](private-channels.md)).
+- Every client has its own broker account. An agent's account may:
+  - read and acknowledge under its own name, and read its own DM channel;
+  - write any DM channel, and read and write `general` and every group channel;
+  - ask busd for the directory (`busd.directory.sync.<token>`) and for channel changes
+    (`busd.channel.<token>`), and hear `directory.head`;
+  - publish idempotently, so its own retries are not written twice within the broker's window.
+- Planned: access to a private channel only when busd grants it
+  ([private channels](private-channels.md)). Planned: reads of the registry and the catalogue
+  through busd's signed API; today agents read the directory busd syncs to them
+  ([directory v2](directory-v2.md)).
 - Only the admin principal writes the registry and the public catalogue and creates channels. Agents hold no admin rights and cannot choose broker resource names. They cannot create or delete their own read cursors either: busd provisions them (on registration, `join` and invitation) and removes them when access ends ([JetStream binding](jetstream-binding.md), [busd](busd.md)).
-- The monitor's account reads every channel. Planned: through its own durable consumer `bus-monitor`, which busd creates, so the monitor creates none. Today it makes ordered consumers of its own (a known limit; they need `CONSUMER.CREATE` on its own subjects), and it never touches an agent's consumer ([JetStream binding](jetstream-binding.md), [monitor](monitor-and-api.md)).
+- The monitor's account reads every channel through ordered consumers of its own (a known limit: they need `CONSUMER.CREATE`), and it never touches an agent's consumer. Planned: a durable consumer `bus-monitor` made by busd ([JetStream binding](jetstream-binding.md), [monitor](monitor-and-api.md)).
 - **Decision: encrypted connection to the broker.** Every client (`agent-bus`, `agent-busctl`, `busd`, `bus-monitor`) connects over TLS; the broker has no plaintext listener. The broker is assumed to be on the local network. If a machine is elsewhere, the owner sets up a secure tunnel or VPN to reach it; the bus does not provide one. agent-busctl creates a private CA and the broker's certificate during setup (`agent-busctl tls init`). Clients trust that CA only, given by a `--ca-cert` flag (default `~/.config/agent-bus/ca.pem`). No public CA is needed on a LAN.
 
 Note that broker access and message signatures do different jobs: access rules control who can reach what on the broker; signatures prove authorship end-to-end and survive replication, export, and a compromised broker.
@@ -38,36 +47,87 @@ flowchart LR
   l2 -.-> san["One URI SAN, agentbus:role/name, is matched to the user name"]
 ```
 
-## Grants matrix
+## Grants
 
-**Accounts and permissions.** Every client is a static user with a password (stored bcrypt-hashed) and its own permissions. Credentials sit with the adapter's key, never in a project directory. NATS authentication identifies the account; the Ed25519 signature ([signing and trust](identity-and-trust.md), [busd](busd.md)) is the identity. A publisher can name any reply subject, so busd's responses go where the caller says; that is harmless because they are signed and inbox tokens are random. A request can also arrive by redirection; busd authorises from its signed content, not from the subject ([busd](busd.md)).
+Every client is a static user with a password (stored bcrypt-hashed) or a client certificate, and
+its own permissions. Credentials sit with the adapter's key, never in a project directory. NATS
+authentication identifies the account; the Ed25519 signature
+([signing and trust](identity-and-trust.md), [busd](busd.md)) is the identity.
+
+A publisher can name any reply subject, so busd's responses go where the caller says. That is
+harmless because they are signed or inbox tokens are random. A request can also arrive by
+redirection; busd authorises from its signed content, not from the subject ([busd](busd.md)).
+
+### Current grants (built)
+
+Generated by `internal/broker/authconf.go`; the per-channel part is rewritten by reload.
 
 | Role (account) | Operation | Subjects |
 |---|---|---|
-| Agent `<t>` (`BUS`) | send and publish | `dm.*`, `general`, `topic.*`, and `private.<id>` for each private channel it belongs to |
-| | receive, per own consumer `<c>` | `$JS.API.CONSUMER.MSG.NEXT.BUS.<c>`, `$JS.API.CONSUMER.INFO.BUS.<c>` (to notice a lost consumer), `$JS.ACK.BUS.<c>.>`; the consumers are `<t>__dm`, `<t>__general`, `<t>__g__<name>` for every catalogued group and `<t>__p__<id>` for each private channel it belongs to |
-| | replies | subscribe `_INBOX.<t>.>` (the client uses `nats.CustomInboxPrefix("_INBOX.<t>")`) |
-| | presence | publish `presence.<t>` (own record only); direct get `$JS.API.DIRECT.GET.PRESENCE.presence.*` (stream `PRESENCE` only) |
-| | directory, **as built** | publish `busd.directory.sync.<t>` (its own only, so busd knows who asks): a public read, answered in `_INBOX.<t>.>`; subscribe `directory.head`, busd's signed announcement of the version ([directory v2](directory-v2.md)) |
-| | channels, **as built** | publish `busd.channel.<t>` (its own only): signed requests to list, create, join and leave channels, and as channel owner to invite, remove and describe, answered in `_INBOX.<t>.>` ([agent channels](agent-channels.md)) |
-| | call busd | publish `busd.nonce`, `busd.history`, `busd.registry.get`, `busd.registry.changes`, `busd.catalogue.list`, `busd.agent.rotate` (planned; nothing answers them yet) |
-| | never | consumer create, delete or update; any `$JS.API.DIRECT.GET` except the one for stream `PRESENCE`, subject `presence.*` (granted as `$JS.API.DIRECT.GET.PRESENCE.presence.*`, so `list_agents` can read others' presence; never a direct get on stream `BUS`); any wildcard consumer, `MSG.NEXT` or ack grant; any `$KV.*` or `ledger.*` subject; the owner-only busd methods |
-| Owner `human_<owner>` (`BUS`, used by agent-busctl) | post, and the agent's busd calls | as an agent for DMs, `general` and groups; `private.<id>` where busd granted it ([private channels](private-channels.md)); no consumers |
-| | owner-only busd methods | publish `busd.nonce`, `busd.agent.register`, `busd.agent.revoke`, `busd.agent.rotate`, `busd.channel.manager`, `busd.channel.create_group` |
-| Monitor logins `monitor-bus` (`BUS`) and `monitor-control` (`CONTROL`), **as built**: read-only, passwords | its own ordered consumers, consumer and stream info, presence, busd's `directory.head` (subscribe); requests to busd for the registry and the catalogue (`busd.monitor.registry`, `busd.monitor.catalogue`); the pending count. `monitor-control` holds no `$JS.API` subject | no publish to any message, KV or `busd.ca.*` subject, no consumer create-durable, no auth-file or approval right |
-| Monitor `monitor_<owner>` (`BUS`; also used by `agent-busctl` read commands), **planned** | read, from the consumer busd made | `$JS.API.CONSUMER.MSG.NEXT.BUS.bus-monitor`, `$JS.API.CONSUMER.INFO.BUS.bus-monitor`, `$JS.ACK.BUS.bus-monitor.>`, subscribe `_INBOX.monitor.>` |
-| | read-only busd methods | publish `busd.nonce`, `busd.history`, `busd.registry.get`, `busd.registry.changes`, `busd.catalogue.list`, `busd.channel.list`, `busd.channel.membership` (`busd.channel.membership` for all channels, with signed watermarks; `busd.channel.list` returns the private catalogue of all channels to this identity) |
-| | never | any consumer create, update or delete; any publish on a message subject, any stream, KV or `CONTROL` subject; any other busd method |
-| busd, message connection (`BUS`) | consumers (agents' and the monitor's), history, stream info | `$JS.API.>` |
-| | the directory, **as built** (as `bus-admin`) | publish `directory.head`; subscribe `busd.directory.sync.*`; it answers a request on `busd.directory.sync.<t>` only on a literal subject `_INBOX.<t>.<token>...`, the inbox of the agent the subject names, and limits each agent on its own ([directory v2](directory-v2.md)) |
-| | channels, **as built** (as `bus-admin`) | subscribe `busd.channel.*`, answered like the sync; creates and deletes the agents' group read cursors after its checks ([agent channels](agent-channels.md)) |
-| | its API | subscribe `busd.>`, subscribe `_INBOX.busd.>`, publish `_INBOX.>` (replies) |
-| | acks | none for ordered consumers; a durable consumer of its own needs `$JS.ACK.BUS.<name>.>` |
-| busd, control connection (`CONTROL`) | registry, catalogue, ledger | **as built** (login `busd`): the JetStream read API of `KV_registry` and `KV_catalogue`, publish `$KV.registry.>`, `$KV.catalogue.>` (channels agents create), `_INBOX.>` and `busd.enroll.pending`; subscribe `_INBOX.>` and its seven `busd.enroll.*`, `busd.ca.*` and `busd.monitor.*` subjects (`busd.monitor.registry` and `busd.monitor.catalogue` are the monitor's). **Planned**, with the ledger: `ledger.>`, `$JS.ACK.<stream>.<name>.>` for a durable consumer of its own |
-| Enrollment login `enroll` (`CONTROL`, shared, password listener) | ask for a certificate | publish `busd.enroll.request` and `busd.enroll.status`; subscribe `_INBOX.enroll.>`; never any stream, JetStream API, `BUS` or `busd.ca.*` subject ([phase B](#phase-b-implemented-the-enrollment-flow)) |
-| `bus-admin` (`BUS`) and `control-admin` (`CONTROL`), used by `agent-busctl --direct` over two connections | everything in its own account | publish and subscribe `>`; NATS usernames are server-wide, so the two are distinct users with separate passwords, which live only in the owner's config ([admin CLI](admin-cli.md)) |
+| Agent `<t>` (`BUS`) | send and publish | `dm.*`, `general`, `topic.*` |
+| | receive, per own consumer `<c>` | `$JS.API.CONSUMER.MSG.NEXT.BUS.<c>`, `$JS.API.CONSUMER.INFO.BUS.<c>`, `$JS.ACK.BUS.<c>.>` |
+| | replies | subscribe `_INBOX.<t>.>` |
+| | presence | publish `presence.<t>`; direct get `$JS.API.DIRECT.GET.PRESENCE.presence.*` |
+| | directory | publish `busd.directory.sync.<t>`; subscribe `directory.head` ([directory v2](directory-v2.md)) |
+| | channels | publish `busd.channel.<t>` ([agent channels](agent-channels.md)) |
+| | placeholders | publish `busd.nonce`, `busd.history`, `busd.registry.get`, `busd.registry.changes`, `busd.catalogue.list`, `busd.agent.rotate`: granted, nothing answers them yet |
+| Monitor `monitor-bus` (`BUS`) | read-only | its own ordered consumers, consumer and stream info, presence; subscribe `directory.head`; no publish to any message subject |
+| Monitor `monitor-control` (`CONTROL`) | read-only | requests to busd for `busd.monitor.registry` and `busd.monitor.catalogue`; its own reply inbox; the pending count; no `$JS.API` subject |
+| busd (`BUS` connection, as `bus-admin`) | provisioning and directory | `$JS.API.>`; publish `directory.head`; subscribe `busd.directory.sync.*` and `busd.channel.*` |
+| busd (`CONTROL`, login `busd`) | registry, catalogue, enrollment | JetStream read API of `KV_registry` and `KV_catalogue`; publish `$KV.registry.>`, `$KV.catalogue.>`, `_INBOX.>`, `busd.enroll.pending`; subscribe `_INBOX.>` and its seven `busd.enroll.*`, `busd.ca.*` and `busd.monitor.*` subjects |
+| Enrollment login `enroll` (`CONTROL`, shared, password listener) | ask for a certificate | publish `busd.enroll.request` and `busd.enroll.status`; subscribe `_INBOX.enroll.>` ([phase B](#phase-b-implemented-the-enrollment-flow)) |
+| `bus-admin` (`BUS`) and `control-admin` (`CONTROL`), used by `agent-busctl --direct` | everything in their own account | publish and subscribe `>`. NATS usernames are server-wide, so the two are distinct users with separate passwords, which live only in the owner's config ([admin CLI](admin-cli.md)) |
 
-**Planned:** the monitor gets its own narrow signing identity, `monitor@<owner>`, with its own Ed25519 key registered with the role `monitor`: busd lets it call only the read-only methods above. It never uses the owner's key. busd, not the monitor, creates the monitor's consumer, so the monitor needs no create grant. Today the monitor reads with its two logins and ordered consumers. Read-only still has a limit: any raw JetStream reader, the monitor included, can make the server deliver a payload it can read to any subject of `BUS` it can name. That cannot be closed by grants within one account. The receiver checks ([private channels](private-channels.md), [signing and trust](identity-and-trust.md)) are what make it harmless. The grants for the busd methods and the consumers are generated; the per-channel part is rewritten by reload (below).
+The agents' consumers are `<t>__dm`, `<t>__general` and `<t>__g__<name>` for every catalogued
+group.
+
+### Subject details (built)
+
+- **Agent "never".** An agent holds no consumer create, delete or update grant; no
+  `$JS.API.DIRECT.GET` except the one for stream `PRESENCE` subject `presence.*` (so `list_agents`
+  can read others' presence; never a direct get on stream `BUS`); no wildcard consumer, `MSG.NEXT`
+  or ack grant; no `$KV.*` or `ledger.*` subject.
+- **Directory.** busd answers a request on `busd.directory.sync.<t>` only on a literal subject
+  `_INBOX.<t>.<token>...`, the inbox of the agent the subject names, and limits each agent on its
+  own. Channel requests are answered the same way.
+- **Replies.** The client uses `nats.CustomInboxPrefix("_INBOX.<t>")`, so its replies fall inside
+  its grant.
+- **busd's acks.** None for ordered consumers; a durable consumer of its own would need
+  `$JS.ACK.BUS.<name>.>`.
+- **busd and the redirection.** busd's own raw reads are safe from reply-subject redirection,
+  since it replies only into the caller's inbox prefix and serves no raw JetStream to anyone.
+
+### Planned grants (not built)
+
+| Role (account) | Operation | Subjects |
+|---|---|---|
+| Agent `<t>` (`BUS`) | private channels | send and publish `private.<id>` for each private channel it belongs to; consumers `<t>__p__<id>` |
+| | call busd | the signed `busd.<method>` API, answered in `_INBOX.<t>.>` (today only the placeholders above are granted) |
+| Owner `human_<owner>` (`BUS`, used by agent-busctl) | post, and the agent's busd calls | as an agent for DMs, `general` and groups; `private.<id>` where busd granted it; no consumers |
+| | owner-only busd methods | publish `busd.nonce`, `busd.agent.register`, `busd.agent.revoke`, `busd.agent.rotate`, `busd.channel.manager`, `busd.channel.create_group` |
+| Monitor `monitor_<owner>` (`BUS`; also used by `agent-busctl` read commands) | read, from the consumer busd made | `$JS.API.CONSUMER.MSG.NEXT.BUS.bus-monitor`, `$JS.API.CONSUMER.INFO.BUS.bus-monitor`, `$JS.ACK.BUS.bus-monitor.>`; subscribe `_INBOX.monitor.>` |
+| | read-only busd methods | publish `busd.nonce`, `busd.history`, `busd.registry.get`, `busd.registry.changes`, `busd.catalogue.list`, `busd.channel.list`, `busd.channel.membership` |
+| busd (`BUS`) | its API | subscribe `busd.>` and `_INBOX.busd.>`; publish `_INBOX.>` for replies |
+| busd (`CONTROL`) | ledger | `ledger.>`, and `$JS.ACK.<stream>.<name>.>` for a durable consumer of its own |
+
+### Subject details (planned)
+
+- **Monitor identity.** The monitor gets its own narrow signing identity, `monitor@<owner>`, with
+  its own Ed25519 key registered with the role `monitor`. busd lets it call only the read-only
+  methods above; it never uses the owner's key. Today the monitor signs, when it sends, as an
+  ordinary registered agent identity.
+- **Monitor consumer.** busd, not the monitor, creates `bus-monitor`, so the monitor needs no
+  create grant. Today the monitor reads with its two logins and ordered consumers of its own
+  (see [Known limits](#known-limits)). It never touches an agent's consumer.
+- **Membership.** `busd.channel.membership` returns all channels with signed watermarks;
+  `busd.channel.list` returns the private catalogue of all channels to this identity.
+- **Never, for the monitor.** Any consumer create, update or delete; any publish on a message
+  subject, any stream, KV or `CONTROL` subject; any other busd method.
+- **Residual limit.** Read-only still has a limit: any raw JetStream reader, the monitor included,
+  can make the server deliver a payload it can read to any subject of `BUS` it can name. Grants
+  within one account cannot close that. The receiver checks
+  ([private channels](private-channels.md), [signing and trust](identity-and-trust.md)) are what
+  make it harmless.
 
 ## Known limits
 
@@ -161,7 +221,7 @@ sequenceDiagram
   Busd->>Busd: build the certificate from the approved ID, one URI SAN
   Busd->>Broker: registry record, read cursors, certificate account, confirmed reload
   Agent->>Busd: busd.enroll.status, polling with a backoff (--waitforcert)
-  Busd-->>Agent: certificate, CA certificate, directory
+  Busd-->>Agent: certificate and CA certificate
   Agent->>Broker: log in with the client certificate on the mapped listener
 ```
 
@@ -219,7 +279,7 @@ What was built, and where it differs from the plan above it:
   registered *with another key* is flagged `replaces` and needs an explicit confirmation (`ca sign
   --replace`, a yes in the screen); then its current key is revoked and the new one added. Steps: the
   registry record, the read cursors of DM and `general`, the account in certificate mode (one confirmed
-  reload), `<config>/directory` updated; each repeatable, so a failed approval stays pending. An
+  reload), busd's own machine's lookup file `<config>/directory` updated last; each repeatable, so a failed approval stays pending. An
   approval holds the config directory's `nats/mutations.lock` (flock) from the check of the registry
   to the last step, and so does every `agent-busctl --direct` command for its whole run, so a
   removal and an approval, which are separate processes, never interleave: an approval that
@@ -235,7 +295,7 @@ What was built, and where it differs from the plan above it:
   of busd). Renewal is still `cert issue`, or enrolling again from the machine; either replaces the earlier
   certificate of the ID (revocation, above).
 - **Removal** is as before (`agent remove`: mapping dropped with the account, ID tombstoned, never
-  reused). Other agents learn of the removal through the directory fetch above (an older agent still
+  reused). Other agents learn of the removal through the directory sync ([directory v2](directory-v2.md); an older agent still
   needs `directory export`); an enrolled machine starts with the directory busd returns.
 
 Not built from the earlier plan: busd's signed `busd.<method>` API for agents (only the enrollment
