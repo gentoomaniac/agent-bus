@@ -74,14 +74,18 @@ func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 		for _, user := range adminUsers { // bus-admin first, see Admin.SetAdminLogin
 			dir := creds.AdminDir(cli.ConfigDir, user)
 			certPEM, keyPEM, err := newClientCert(ca, broker.AdminCertIdentity(user), cmd.Validity)
+			identity := broker.AdminCertIdentity(user)
 			if err == nil {
 				err = creds.StageClientCert(dir, certPEM, keyPEM)
+			}
+			if err == nil {
+				err = creds.ValidateStagedClientCert(dir, identity) // before the server stops accepting the password
 			}
 			if err == nil {
 				err = admin.SetAdminLogin(ctx, user, "")
 			}
 			if err == nil {
-				err = creds.ActivateStagedClientCert(dir)
+				err = creds.ActivateStagedClientCert(dir, identity)
 			}
 			if err != nil {
 				return fmt.Errorf("%s was not switched to its certificate: %w\n"+
@@ -133,7 +137,11 @@ func newClientCert(ca *tlsinit.CA, identity string, validity time.Duration) (cer
 func (cli *CLI) activateStagedAdminCerts() error {
 	for _, user := range adminUsers {
 		dir := creds.AdminDir(cli.ConfigDir, user)
-		if !creds.HasStagedClientCert(dir) {
+		staged, err := creds.HasStagedClientCert(dir)
+		if err != nil {
+			return err
+		}
+		if !staged {
 			continue
 		}
 		usesCert, err := cli.server().AdminUsesCert(user)
@@ -141,7 +149,7 @@ func (cli *CLI) activateStagedAdminCerts() error {
 			return err
 		}
 		if usesCert {
-			if err := creds.ActivateStagedClientCert(dir); err != nil {
+			if err := creds.ActivateStagedClientCert(dir, broker.AdminCertIdentity(user)); err != nil {
 				return err
 			}
 		}

@@ -2,8 +2,10 @@ package broker
 
 import (
 	"testing"
+	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/testcert"
 )
 
 func TestMappedAddressKeepsTheHost(t *testing.T) {
@@ -30,11 +32,20 @@ func TestUserConnectionPrefersTheCertificate(t *testing.T) {
 		t.Errorf("without certificate files: %+v, %v", conn, err)
 	}
 
-	if err := creds.WriteClientCert(dir, []byte("c"), []byte("k")); err != nil {
+	certPEM, keyPEM := testcert.Pair(t, certIdentity(roleAgent, "lib-x_bob"), time.Hour)
+	if err := creds.WriteClientCert(dir, certPEM, keyPEM); err != nil {
 		t.Fatal(err)
 	}
 	conn, err = UserConnection(dir, "lib-x_bob", "bus.lan:4222", 4223, "ca.pem")
 	if err != nil || conn.Password != "" || conn.ClientCertPath == "" || conn.Address != "wss://bus.lan:4223" {
 		t.Errorf("with certificate files: %+v, %v", conn, err)
+	}
+
+	otherPEM, otherKey := testcert.Pair(t, certIdentity(roleAgent, "lib-x_carol"), time.Hour)
+	if err := creds.WriteClientCert(dir, otherPEM, otherKey); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UserConnection(dir, "lib-x_bob", "bus.lan:4222", 4223, "ca.pem"); err == nil {
+		t.Error("another agent's certificate was used")
 	}
 }

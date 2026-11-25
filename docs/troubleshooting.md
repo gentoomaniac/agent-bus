@@ -141,6 +141,14 @@ as `bad certificate`, on a machine whose agent folder has `client.pem` and `clie
 - A removed agent's certificate never works again.
 - After `cert switch <agent-id> --password` (rollback) the password is back, but a machine that
   still has `client.pem` and `client.key` keeps trying the certificate: delete both files.
+- A client refuses to start with an error naming `client.pem` and `client.key` when they are not a
+  pair, are for another identity or have expired. It never falls back to the password; issue again
+  or delete both files.
+- If an admin migration (`cert issue --admin`) or rollback fails midway and a retry does not help
+  (for example the reload is not confirmed), the escape hatch is offline: `agent-busctl admin init
+  --force`, then restart the broker. It resets the admin users to passwords, retires the admin
+  certificates (`*.retired`) and keeps the agents' grants. Automatic recovery of interrupted
+  migrations is later hardening.
 - The password port (`4222`) refuses a certificate agent, and the certificate port refuses
   everything without a client certificate; that is intended.
 

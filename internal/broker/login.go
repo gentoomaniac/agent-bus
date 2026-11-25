@@ -22,6 +22,14 @@ func MappedAddress(brokerAddress string, mappedPort int) (string, error) {
 	return "wss://" + net.JoinHostPort(host, strconv.Itoa(mappedPort)), nil
 }
 
+// userCertIdentity is the certificate identity of a password login's user name.
+func userCertIdentity(user string) string {
+	if user == BusAdminUser || user == ControlAdminUser {
+		return AdminCertIdentity(user)
+	}
+	return certIdentity(roleAgent, user)
+}
+
 // UserConnection is how to connect as the user whose credentials are in dir: with the client
 // certificate if dir has one, else with its password. user is the password login's name.
 func UserConnection(dir, user, brokerAddress string, mappedPort int, caCertPath string) (Connection, error) {
@@ -35,6 +43,9 @@ func UserConnection(dir, user, brokerAddress string, mappedPort int, caCertPath 
 			return Connection{}, err
 		}
 		certPath, keyPath := creds.ClientCertPaths(dir)
+		if err := creds.ValidateClientCert(certPath, keyPath, userCertIdentity(user)); err != nil {
+			return Connection{}, err
+		}
 		return Connection{Address: address, CACertPath: caCertPath, User: user, ClientCertPath: certPath, ClientKeyPath: keyPath}, nil
 	}
 	password, err := creds.ReadPassword(dir)

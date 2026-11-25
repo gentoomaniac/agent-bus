@@ -232,7 +232,15 @@ the error names the admin and the tools keep the login that worked until then (t
 the same command again to resume; the next `cert issue --admin` or `cert switch --admin
 --password` first activates a staged pair of an admin whom `nats/auth.conf` already maps to a
 certificate. If the server did not confirm a reload, restart it (or run the command again) so it
-reads the file.
+reads the file. A staged pair is only activated, and a client only uses a certificate, after it is
+checked: the files form a pair, the certificate is for that identity and it is valid now. A broken
+pair is an error naming the files, never a silent fall back to the password.
+
+**Escape hatch.** If an admin migration or rollback fails midway and retrying does not help (for
+example the reload is never confirmed), the always-working way out is the offline `agent-busctl
+admin init --force`, then a restart of the broker. It resets both admin users to new passwords,
+retires the admin certificates and keeps every agent's grants. Automatic recovery of interrupted
+migrations is later hardening.
 
 The `agent-bus` and `bus-monitor` of this machine, and `agent-busctl`, use `client.pem` and
 `client.key` as soon as the identity's directory has them, and the password otherwise. So an agent

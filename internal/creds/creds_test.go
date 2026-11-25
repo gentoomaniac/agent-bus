@@ -6,8 +6,11 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/testcert"
 )
 
 func TestNewPasswordIsRandomAndShellSafe(t *testing.T) {
@@ -67,18 +70,26 @@ func TestHalfAClientCertPairIsAnError(t *testing.T) {
 }
 
 func TestStagedClientCertDoesNotCountUntilActivated(t *testing.T) {
+	const identity = "agentbus:admin/bus-admin"
 	dir := t.TempDir()
-	if err := StageClientCert(dir, []byte("cert"), []byte("key")); err != nil {
+	certPEM, keyPEM := testcert.Pair(t, identity, time.Hour)
+	if err := StageClientCert(dir, certPEM, keyPEM); err != nil {
 		t.Fatal(err)
 	}
-	if has, err := HasClientCert(dir); has || err != nil || !HasStagedClientCert(dir) {
-		t.Fatalf("staged: has %v, err %v, staged %v", has, err, HasStagedClientCert(dir))
+	if staged, _ := HasStagedClientCert(dir); !staged {
+		t.Fatal("the staged pair is not found")
 	}
-	if err := ActivateStagedClientCert(dir); err != nil {
+	if has, err := HasClientCert(dir); has || err != nil {
+		t.Fatalf("staged pair counts as login: %v, %v", has, err)
+	}
+	if err := ActivateStagedClientCert(dir, identity); err != nil {
 		t.Fatal(err)
 	}
-	if has, err := HasClientCert(dir); !has || err != nil || HasStagedClientCert(dir) {
-		t.Fatalf("activated: has %v, err %v, staged %v", has, err, HasStagedClientCert(dir))
+	if has, err := HasClientCert(dir); !has || err != nil {
+		t.Fatalf("activated: has %v, err %v", has, err)
+	}
+	if staged, _ := HasStagedClientCert(dir); staged {
+		t.Error("the staged files are still there")
 	}
 	if err := RetireClientCert(dir); err != nil {
 		t.Fatal(err)
@@ -88,6 +99,45 @@ func TestStagedClientCertDoesNotCountUntilActivated(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "client.key.retired")); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestBrokenStagedPairIsNeverPromoted(t *testing.T) {
+	const identity = "agentbus:agent/lib-x_bob"
+	dir := t.TempDir()
+	working, workingKey := testcert.Pair(t, identity, time.Hour)
+	if err := WriteClientCert(dir, working, workingKey); err != nil {
+		t.Fatal(err)
+	}
+	expired, expiredKey := testcert.Pair(t, identity, time.Millisecond)
+	other, otherKey := testcert.Pair(t, "agentbus:agent/lib-x_carol", time.Hour)
+	_, strangerKey := testcert.Pair(t, identity, time.Hour)
+	time.Sleep(10 * time.Millisecond)
+	for name, pair := range map[string][2][]byte{
+		"expired":        {expired, expiredKey},
+		"another agent":  {other, otherKey},
+		"mismatched key": {working, strangerKey},
+	} {
+		if err := StageClientCert(dir, pair[0], pair[1]); err != nil {
+			t.Fatal(err)
+		}
+		if err := ActivateStagedClientCert(dir, identity); err == nil {
+			t.Errorf("%s pair was activated", name)
+		}
+		certPath, _ := ClientCertPaths(dir)
+		if got, _ := os.ReadFile(certPath); string(got) != string(working) {
+			t.Errorf("%s pair replaced the working one", name)
+		}
+	}
+}
+
+func TestHasClientCertReportsFilesThatCannotBeExamined(t *testing.T) {
+	notADir := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(notADir, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := HasClientCert(notADir); has || err == nil {
+		t.Errorf("HasClientCert = %v, %v, want the stat error", has, err)
 	}
 }
 

@@ -4,9 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/testcert"
 )
 
 // A staged admin pair becomes the login only once the server's file maps the certificate, so an
@@ -17,14 +19,17 @@ func TestStagedAdminCertIsActivatedOnlyWhenTheServerMapsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := creds.AdminDir(cli.ConfigDir, broker.BusAdminUser)
-	if err := creds.StageClientCert(dir, []byte("c"), []byte("k")); err != nil {
+	certPEM, keyPEM := testcert.Pair(t, broker.AdminCertIdentity(broker.BusAdminUser), time.Hour)
+	if err := creds.StageClientCert(dir, certPEM, keyPEM); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := cli.activateStagedAdminCerts(); err != nil {
 		t.Fatal(err)
 	}
-	if has, _ := creds.HasClientCert(dir); has || !creds.HasStagedClientCert(dir) {
+	has, _ := creds.HasClientCert(dir)
+	staged, _ := creds.HasStagedClientCert(dir)
+	if has || !staged {
 		t.Fatal("the pair was activated although the server still wants the password")
 	}
 
@@ -38,7 +43,9 @@ func TestStagedAdminCertIsActivatedOnlyWhenTheServerMapsIt(t *testing.T) {
 	if err := cli.activateStagedAdminCerts(); err != nil {
 		t.Fatal(err)
 	}
-	if has, err := creds.HasClientCert(dir); !has || err != nil || creds.HasStagedClientCert(dir) {
-		t.Errorf("after the server maps it: has %v, err %v", has, err)
+	has, err := creds.HasClientCert(dir)
+	staged, _ = creds.HasStagedClientCert(dir)
+	if !has || err != nil || staged {
+		t.Errorf("after the server maps it: has %v, err %v, staged %v", has, err, staged)
 	}
 }

@@ -5,6 +5,8 @@ package creds
 
 import (
 	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -56,20 +59,62 @@ func ClientCertPaths(dir string) (certPath, keyPath string) {
 }
 
 // HasClientCert says whether dir holds a certificate login, which clients prefer to a password.
-// Half a pair is an error: falling back to the password would hide a broken login.
+// Half a pair, or a file that cannot be examined, is an error: falling back to the password would
+// hide a broken login.
 func HasClientCert(dir string) (bool, error) {
 	certPath, keyPath := ClientCertPaths(dir)
-	_, certErr := os.Stat(certPath)
-	_, keyErr := os.Stat(keyPath)
-	switch {
-	case certErr == nil && keyErr == nil:
-		return true, nil
-	case certErr == nil:
-		return false, fmt.Errorf("%s without %s in %s", clientCertFile, clientKeyFile, dir)
-	case keyErr == nil:
-		return false, fmt.Errorf("%s without %s in %s", clientKeyFile, clientCertFile, dir)
+	return hasPair(certPath, keyPath)
+}
+
+func hasPair(certPath, keyPath string) (bool, error) {
+	hasCert, err := exists(certPath)
+	if err != nil {
+		return false, err
 	}
-	return false, nil
+	hasKey, err := exists(keyPath)
+	if err != nil {
+		return false, err
+	}
+	switch {
+	case hasCert && !hasKey:
+		return false, fmt.Errorf("%s without %s in %s", filepath.Base(certPath), filepath.Base(keyPath), filepath.Dir(certPath))
+	case hasKey && !hasCert:
+		return false, fmt.Errorf("%s without %s in %s", filepath.Base(keyPath), filepath.Base(certPath), filepath.Dir(certPath))
+	}
+	return hasCert, nil
+}
+
+func exists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// ValidateClientCert checks that the pair loads, that the certificate is for identity (its one
+// URI SAN) and that it is valid now. A client must not start with a pair that cannot log in as
+// that identity: it would fail at the server with a message that names nothing.
+func ValidateClientCert(certPath, keyPath, identity string) error {
+	fail := func(reason string) error {
+		return fmt.Errorf("the client certificate %s and %s %s; issue it again with `agent-busctl --direct cert issue`, "+
+			"or delete both files to log in with the password if the server still allows it", certPath, keyPath, reason)
+	}
+	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return fail("do not form a pair (" + err.Error() + ")")
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return fail("cannot be read (" + err.Error() + ")")
+	}
+	if len(leaf.URIs) != 1 || leaf.URIs[0].String() != identity {
+		return fail("is not for " + identity)
+	}
+	if now := time.Now(); now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
+		return fail("is not valid now (" + leaf.NotBefore.Format(time.DateOnly) + " to " + leaf.NotAfter.Format(time.DateOnly) + ")")
+	}
+	return nil
 }
 
 func stagedClientCertPaths(dir string) (certPath, keyPath string) {
@@ -87,16 +132,28 @@ func StageClientCert(dir string, certPEM, keyPEM []byte) error {
 	return files.Write(certPath, certPEM, files.PublicMode, true)
 }
 
-// HasStagedClientCert says whether a complete staged pair waits in dir.
-func HasStagedClientCert(dir string) bool {
-	certPath, keyPath := stagedClientCertPaths(dir)
-	_, certErr := os.Stat(certPath)
-	_, keyErr := os.Stat(keyPath)
-	return certErr == nil && keyErr == nil
+// HasStagedClientCert says whether a staged pair waits in dir.
+func HasStagedClientCert(dir string) (bool, error) {
+	return hasPair(stagedClientCertPaths(dir))
 }
 
-// ActivateStagedClientCert renames the staged pair over the certificate login, key first.
-func ActivateStagedClientCert(dir string) error {
+// ValidateStagedClientCert is ValidateClientCert for the staged pair.
+func ValidateStagedClientCert(dir, identity string) error {
+	stagedCert, stagedKey := stagedClientCertPaths(dir)
+	return ValidateClientCert(stagedCert, stagedKey, identity)
+}
+
+// ActivateStagedClientCert makes the staged pair the certificate login, but only if it is valid
+// for identity: a broken pair is never promoted over a working one.
+func ActivateStagedClientCert(dir, identity string) error {
+	if err := ValidateStagedClientCert(dir, identity); err != nil {
+		return err
+	}
+	return activateStaged(dir)
+}
+
+// activateStaged renames the staged pair over the certificate login, key first.
+func activateStaged(dir string) error {
 	stagedCert, stagedKey := stagedClientCertPaths(dir)
 	certPath, keyPath := ClientCertPaths(dir)
 	if err := os.Rename(stagedKey, keyPath); err != nil {
@@ -111,7 +168,7 @@ func WriteClientCert(dir string, certPEM, keyPEM []byte) error {
 	if err := StageClientCert(dir, certPEM, keyPEM); err != nil {
 		return err
 	}
-	return ActivateStagedClientCert(dir)
+	return activateStaged(dir)
 }
 
 // RemoveClientCert deletes the certificate login of dir, staged files included, so clients use
