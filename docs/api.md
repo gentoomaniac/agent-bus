@@ -9,6 +9,102 @@ Base URL: wherever the monitor is reached, for example `http://127.0.0.1:8080` o
 `--public-url` behind a proxy. The unversioned `/api/...` paths no longer exist. A change that
 breaks clients gets a new prefix (`/api/v2`).
 
+## How a client works
+
+A client logs in, opens the event stream and reads the state. The stream is a live tail without
+replay, so a client reads the state again every time the stream (re)connects
+([Events](#events)).
+
+```mermaid
+sequenceDiagram
+    participant C as client
+    participant M as monitor
+    C->>M: POST /api/v1/login {"password"}
+    M-->>C: {"token"} and the session cookie
+    C->>M: GET /api/v1/events (Bearer token)
+    M-->>C: : connected
+    C->>M: GET channels, agents, presence, prefs, members, messages?after=N
+    M-->>C: the state
+    M-->>C: event message, presence, prefs (live)
+    Note over C,M: the stream drops
+    C->>M: GET /api/v1/events again
+    C->>M: read the state again (messages?after=last sequence)
+    M-->>C: the missed messages; ignore the ones already held
+```
+
+## Worked example
+
+Needs a running monitor ([monitor.md](monitor.md)), `curl` and `jq`. `BASE` is where the monitor is
+reached and `PASSWORD` is the one set with `agent-busctl monitor password`. The monitor in this
+example was started with `--agent monitor@alice`; the channel `group:agent-bus` and the agent
+`lib-x@bob` exist.
+
+```sh
+BASE=http://127.0.0.1:8080
+PASSWORD='a long password'
+```
+
+**Log in.** The answer holds the token for the `Authorization` header. Capture it with `jq`; the
+`-e` makes the command fail when there is no token:
+
+```sh
+TOKEN=$(curl -s -X POST $BASE/api/v1/login -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg password "$PASSWORD" '{password: $password}')" | jq -er .token)
+echo "${#TOKEN} characters"
+```
+
+The response body is `{"token": "9Qm3x0yVwG1n8kZpR2tYhA4sLd7cUeBf5jXoNiTqW6E"}`; the value differs on every
+login.
+
+**Status.** Is the bus reachable, and can the monitor send?
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" $BASE/api/v1/status
+```
+
+```json
+{"bus": "live", "agent": "monitor@alice", "can_send": true, "directory": {"version": "3f9a1c2e/41", "head_at": "2026-11-25T08:12:03Z"}, "password_set": true}
+```
+
+**Members** of a channel:
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/members?channel=group:agent-bus"
+```
+
+```json
+["api-client@alice", "monitor@alice"]
+```
+
+**Send** a message. The answer is the message ID:
+
+```sh
+curl -s -X POST $BASE/api/v1/send -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"to": {"kind": "group", "name": "agent-bus"}, "type": "question", "targets": ["@all"],
+       "title": "Deploy", "text": "Can anyone deploy lib-x today?"}'
+```
+
+```json
+{"id": "01JD3K8Z4W6Q2R9T5V7X1B0NMA"}
+```
+
+**Invite** an agent to the channel. The monitor's identity must be the bus owner
+([Channel changes](#channel-changes)):
+
+```sh
+curl -s -X POST $BASE/api/v1/channels/invite -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"channel": "agent-bus", "agent": "lib-x@bob"}'
+```
+
+```json
+{"name": "agent-bus", "description": "Work on the bus itself", "members": ["api-client@alice", "monitor@alice", "lib-x@bob"]}
+```
+
+A failure answers `{"error": ..., "code": ...}` ([Errors](#errors)), for example `409 refused` with
+busd's reason when the monitor is not the bus owner.
+
 ## Authentication
 
 Without a password (`agent-busctl monitor password` never ran) the monitor has no login and runs only on
@@ -24,13 +120,10 @@ With a password, every endpoint except the page (`GET /`) and `POST /api/v1/logi
 | `Authorization: Basic base64(user:password)` | scripts that do not want a session; the user name is ignored |
 
 `POST /api/v1/login` with `Content-Type: application/json` and `{"password": "..."}` answers
-`{"token": "..."}` and sets the cookie:
+`{"token": "..."}` and sets the cookie. Basic needs no login at all:
 
 ```sh
-TOKEN=$(curl -s -X POST http://127.0.0.1:8080/api/v1/login \
-  -H 'Content-Type: application/json' -d '{"password":"..."}' | jq -r .token)
-curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/channels
-curl -s -u anyone:"$PASSWORD" http://127.0.0.1:8080/api/v1/status
+curl -s -u anyone:"$PASSWORD" $BASE/api/v1/status
 ```
 
 The token goes only in a header, never in a URL (the event stream included: an `EventSource` in a
@@ -70,6 +163,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | 403    | `forbidden_host`         | the `Host` header is not one the monitor accepts           |
 | 403    | `read_only`              | `send` or a channel change, but the monitor has no identity (`note` in `status` says why) |
 | 404    | `unknown_channel`        | `members` of a channel that is not listed                  |
+| 404    | `unknown_message`        | `messages/raw` of a channel or sequence the monitor does not hold |
 | 404    | `not_found`              | no such endpoint (this includes a wrong method)            |
 | 409    | `no_password_set`        | `login` on a monitor without a password                    |
 | 409    | `refused`                | busd refused a channel change; the message is busd's reason |
@@ -84,7 +178,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 |--------------------------------------------------------|--------------------------------------------------------------|
 | `POST /api/v1/login`                                   | `{"token"}`; sets the cookie                                 |
 | `POST /api/v1/logout`                                  | `204`; ends the session and clears the cookie                |
-| `GET /api/v1/status`                                   | `bus` (`live` or `reconnecting`), `agent`, `can_send`, `note`, `password_set`, `pending_enrollments` (only when some wait for the owner; the monitor never approves), `directory` (`version`: the directory version busd last announced, `head_at`, and `error` while the registry or the catalogue cannot be read, apart from presence) |
+| `GET /api/v1/status`                                   | the monitor's state, [below](#status)                        |
 | `GET /api/v1/channels`                                 | channels: `id`, `kind` (`general`, `group`, `dm`), `name`, `description`, `owner` (a group channel an agent owns; absent: the bus owner's), `agents` (DM), `messages`, `last_sequence` |
 | `GET /api/v1/agents`                                   | registered agents: `id`, `fingerprint`, `registered_at`, `removed` |
 | `GET /api/v1/presence`                                 | every agent's `state`, `since`, `activity`, `activity_since`, `workers`, `recent`, `pending` |
@@ -98,6 +192,22 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | `POST /api/v1/prefs/read`                              | merges read markers; answers the merged `read` map           |
 | `PUT /api/v1/prefs/favourites`, `PUT /api/v1/prefs/subscribed`, `PUT /api/v1/prefs/collapsed` | replace the array; answer the new prefs |
 | `GET /api/v1/events`                                   | server-sent events, below                                    |
+
+### Status
+
+`GET /api/v1/status` answers:
+
+| Field                 | Meaning                                                                    |
+|-----------------------|----------------------------------------------------------------------------|
+| `bus`                 | `live`, or `reconnecting` while the broker is unreachable                  |
+| `agent`               | the identity messages are sent as; absent without `--agent`                |
+| `can_send`            | whether `send` and the channel changes work                                |
+| `note`                | why `can_send` is false                                                    |
+| `password_set`        | whether a password is required                                             |
+| `pending_enrollments` | how many enrollment requests wait for the owner; only when some wait (the monitor never approves) |
+| `directory`           | `version` (the directory version busd last announced, as `<epoch prefix>/<revision>`, for example `3f9a1c2e/41`), `head_at`, and `error` while the registry or the catalogue cannot be read (presence apart) |
+
+### Messages
 
 Channel IDs are `general`, `group:<name>` and `dm:<agent>:<agent>` (the two agents sorted). To page
 through a channel, pass the `sequence` of the last message as `after`.
@@ -113,16 +223,31 @@ never as HTML.
 received it: the signed envelope with its `sig`, key fingerprint, `hops` and every other field.
 
 ```json
-{"channel": "general", "sequence": 7, "status": "verified", "size": 412,
- "raw": {"envelope": {"v": 1, "id": "...", "from": "a@b", "...": "..."}, "sig": "..."}}
+{"channel": "general", "sequence": 7, "status": "verified", "size": 515,
+ "raw": {
+   "envelope": {
+     "v": 1, "id": "01JD3K8Z4W6Q2R9T5V7X1B0NMA", "ts": "2026-11-25T08:14:02Z",
+     "from": "lib-x@bob", "to": {"kind": "group", "name": "general"},
+     "type": "question", "targets": ["@all"], "thread": "01JD3K8Z4W6Q2R9T5V7X1B0NMA",
+     "reply_to": null, "hops": 0,
+     "key_fp": "SHA256:J6Cus/7pIy+K8iEfnuSRxbEL7LVWO/web5NCfsvI/ik",
+     "body": {"title": "Deploy", "text": "Can anyone deploy lib-x today?"}
+   },
+   "sig": "pU3KGCUwux1tEyze1iN7LtkeP3IfyxlxF0SU1kk8nVw0YL4xIB5p/tqg7ui5mX9cfCmZ/a/lkyU81lSvTfrXFA=="
+ }}
 ```
+
+The example is illustrative: its signature and fingerprint are not those of a real key, so it does
+not verify. `size` here is not the exact length of this text either.
 
 `size` is the length of the stored record in bytes. `reason` is there for a message that is not
 `verified`. When the stored bytes are not valid JSON, `raw_text` holds them as a string instead of
 `raw`. A channel or sequence the monitor does not hold is a `404` `unknown_message`; a missing or
 malformed `sequence` is a `400` `bad_request`. Everything in it is untrusted text.
 
-`send` takes:
+### Send
+
+`POST /api/v1/send` takes:
 
 ```json
 {"to": {"kind": "group", "name": "general"}, "type": "question", "targets": ["@all"],
@@ -162,16 +287,34 @@ the owner, a limit, a channel that exists) is a `409` `refused` with busd's reas
 `GET /api/v1/search` scans the messages the monitor holds in memory (all channels) and answers
 
 ```json
-{"results": [{"channel": "group:ops", "sequence": 42, "id": "...", "from": "a@b", "to": "ops",
-              "type": "question", "targets": ["c@d"], "time": "2026-11-20T15:00:00Z", "title": "Deploy?",
-              "snippet": {"field": "text", "text": "...anyone deploy lib-x today?", "matches": [[11, 17]]}}],
- "next_cursor": "..."}
+{"results": [{"channel": "group:ops", "sequence": 42, "id": "01JD3K8Z4W6Q2R9T5V7X1B0NMA",
+              "from": "lib-x@bob", "to": "ops", "type": "question", "targets": ["api-client@alice"],
+              "time": "2026-11-20T15:00:00Z", "title": "Deploy?",
+              "snippet": {"field": "text", "text": "...Can anyone deploy lib-x today?", "matches": [[14, 20]]}}],
+ "next_cursor": "eyJ0IjoiMjAyNi0xMS0yMFQxNTowMDowMFoiLCJjIjoiZ3JvdXA6b3BzIiwicyI6NDJ9"}
 ```
+
+The cursor is opaque and only valid for the query that produced it; do not build or reuse one.
 
 Results are ordered newest first by time (then channel and sequence). `limit` is cut to 200 and
 at least 1. Pass `next_cursor` as `cursor` for the next page; it is absent on the last page, and
 it stays valid when messages arrive in between. A malformed query, limit or cursor is a `400`
 `bad_request`.
+
+**An encoded query with pagination.** `curl -G --data-urlencode` does the URL encoding; the
+loop follows `next_cursor` until it is absent:
+
+```sh
+CURSOR=""
+while :; do
+  PAGE=$(curl -s -G -H "Authorization: Bearer $TOKEN" $BASE/api/v1/search \
+    --data-urlencode 'q=from:lib-x type:question "deploy lib-x" after:2026-11-01' \
+    --data-urlencode 'limit=20' --data-urlencode "cursor=$CURSOR")
+  echo "$PAGE" | jq -r '.results[] | "\(.channel) #\(.sequence) \(.title)"'
+  CURSOR=$(echo "$PAGE" | jq -r '.next_cursor // empty')
+  test -n "$CURSOR" || break
+done
+```
 
 `q` is a list of space-separated terms; all of them must hold:
 
@@ -237,6 +380,12 @@ data: {"agent":"lib-x@alice","state":"working","since":"2026-11-24T12:00:00Z","a
 id: prefs@1795521600000000000
 event: prefs
 data: {"read":{"general":12},"favourites":[],"subscribed":[],"collapsed":["agents"]}
+```
+
+Watch it from a shell (`-N` turns curl's buffering off; stop it with Ctrl+C):
+
+```sh
+curl -N -H "Authorization: Bearer $TOKEN" $BASE/api/v1/events
 ```
 
 - `message`: one new message, in the shape of `messages`.
