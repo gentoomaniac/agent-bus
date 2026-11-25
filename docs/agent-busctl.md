@@ -40,9 +40,9 @@ Run these once, in this order:
 
 | Kind | Commands | Broker must run? | Needs |
 |---|---|---|---|
-| File only | `tls init`, `tls broker`, `admin init`, `service init`, `monitor init`, `monitor password`, `ca fingerprint` | no | the config folder |
+| File only | `tls init`, `tls broker`, `admin init`, `service init`, `monitor init`, `monitor password`, `ca fingerprint`, `enroll autosign` | no | the config folder |
 | Direct to the broker | everything that needs admin rights: `init`, `register`, `agent ...`, `channel ...`, `directory export`, `cert ...` | yes | `--direct`, and the broker's host, because access changes rewrite `nats/auth.conf` |
-| Direct, without the flag | `enroll init`, `enroll autosign` | yes | the broker's container, like the direct commands |
+| Direct, without the flag | `enroll init` | yes | the broker's container, like the direct commands |
 | Request to busd | `ca list`, `ca sign`, `ca reject`, `ca review` | yes, and busd (the broker container starts it) | no `--direct`; fails with "busd is not running" when busd is down |
 
 `--direct` connects to `--broker` as `bus-admin` and `control-admin` (two connections), trusting
@@ -494,11 +494,19 @@ openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
   -keyout client.key -out client.csr -subj /CN=x
 ```
 
-On the broker, with the request copied over:
+On the broker, the container reads the request from standard input and the certificate comes
+back on standard output, so nothing has to be copied into the container. Docker (`-T` keeps the
+pipe free of a terminal) and Podman:
 
 ```sh
-agent-busctl --direct cert sign api-client@alice --csr client.csr --out client.pem [--switch]
+docker compose -f deploy/docker-compose.yaml exec -T agent-bus \
+  agent-busctl --direct cert sign api-client@alice --csr /dev/stdin < client.csr > client.pem
+podman exec -i agent-bus \
+  agent-busctl --direct cert sign api-client@alice --csr /dev/stdin < client.csr > client.pem
 ```
+
+Add `--switch` to switch the agent at once. Then copy `client.pem` to the agent's machine, next to
+its `client.key`.
 
 The request's signature is checked and only its public key is used: names, usages and CA rights in
 it are ignored. The certificate goes to standard output or `--out`; put it into the agent's folder
@@ -549,7 +557,7 @@ section is the reference for the commands and the rules around them.
 | Command | Broker | Does |
 |---|---|---|
 | [`enroll init`](#enroll-init) | `exec`, once | turns enrollment on; prints the shared password and the CA fingerprint |
-| [`enroll autosign`](#enroll-autosign) | `exec` | approves requests that carry a secret, without you |
+| [`enroll autosign`](#enroll-autosign) | files (`exec`) | approves requests that carry a secret, without you |
 | [`ca list`](#ca-list), [`ca review`](#ca-review) | asks busd | shows the pending requests |
 | [`ca sign`](#ca-sign), [`ca reject`](#ca-reject) | asks busd | decides a request |
 | [`ca fingerprint`](#ca-fingerprint) | files | prints the CA's SHA-256 fingerprint |
@@ -703,8 +711,14 @@ separate folder, never the broker's one). It copies:
 It needs `service init` or `admin init` to have run, and no broker. Run it again after agents are
 registered or enrolled, or after a password change, then restart `bus-monitor`.
 
+The monitor's folder is on the host, so the command runs as a one-off container with both
+folders mounted (`$AGENT_BUS_HOME` as in the setup guides; Podman also needs the `$U` option, see
+[podman.md](podman.md#the-monitor)), not through the alias:
+
 ```sh
-agent-busctl monitor init /monitor-config --agent monitor@alice
+docker compose -f deploy/docker-compose.yaml run --rm monitor-init     # with BUS_AGENT exported
+podman run --rm $U -v $AGENT_BUS_HOME/config:/config:ro -v $AGENT_BUS_HOME/monitor-config:/monitor-config \
+  --entrypoint agent-busctl $IMG monitor init /monitor-config --agent monitor@alice
 ```
 
 ```text
@@ -720,8 +734,10 @@ no broker. Restart `bus-monitor` afterwards: it reads the hash at start, and a r
 login session.
 
 ```sh
-agent-busctl monitor password                               # prompts
-printf '%s\n' "$PASSWORD" | agent-busctl monitor password   # from a script
+agent-busctl monitor password       # prompts (the alias gives it a terminal)
+# from a script, with standard input kept open:
+printf '%s\n' "$PASSWORD" | docker compose -f deploy/docker-compose.yaml exec -T agent-bus agent-busctl monitor password
+printf '%s\n' "$PASSWORD" | podman exec -i agent-bus agent-busctl monitor password
 ```
 
 ```text
