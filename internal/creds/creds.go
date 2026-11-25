@@ -35,13 +35,18 @@ const (
 	MinMonitorPasswordBytes = 8
 )
 
-// NewPassword returns a random password that is safe in URLs, shell words and `user:password` pairs.
+// NewPassword returns a random password that is safe in URLs, shell words and `user:password` pairs,
+// and never starts with '-', which a command line would take for a flag.
 func NewPassword() string {
-	raw := make([]byte, passwordBytes)
-	if _, err := rand.Read(raw); err != nil {
-		panic(err) // the system's random source is broken
+	for {
+		raw := make([]byte, passwordBytes)
+		if _, err := rand.Read(raw); err != nil {
+			panic(err) // the system's random source is broken
+		}
+		if password := base64.RawURLEncoding.EncodeToString(raw); password[0] != '-' {
+			return password
+		}
 	}
-	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
 // AdminDir holds the credentials of one admin user (bus-admin or control-admin).

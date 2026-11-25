@@ -23,6 +23,14 @@ func TestNewPasswordIsRandomAndShellSafe(t *testing.T) {
 	}
 }
 
+func TestNewPasswordNeverLooksLikeAFlag(t *testing.T) {
+	for range 2000 { // one in 64 would start with '-' without the check
+		if NewPassword()[0] == '-' {
+			t.Fatal("a password starts with '-'")
+		}
+	}
+}
+
 func TestClientCertFilesAreWrittenReplacedAndRemoved(t *testing.T) {
 	dir := t.TempDir()
 	if has, err := HasClientCert(dir); has || err != nil {
