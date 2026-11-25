@@ -199,7 +199,7 @@ optional steps, for a broker folder made by an older version:
 | Step | When | Command |
 |---|---|---|
 | Logins of their own for busd and the monitor | busd logs a warning until then | `podman run --rm $U -v $AGENT_BUS_HOME/config:/config --entrypoint agent-busctl $IMG service init`, then `podman restart agent-bus` |
-| The CA after the broker certificate | `--ca-fingerprint` needs it; otherwise copy `ca.pem` to the new machine | `podman exec agent-bus sh -c 'grep -c BEGIN /config/broker.pem; cat /config/ca.pem >> /config/broker.pem'`, then `podman restart agent-bus`; the first line must print `1`, or the CA is already there |
+| The CA after the broker certificate | `--ca-fingerprint` needs it; otherwise copy `ca.pem` to the new machine | `podman exec agent-bus sh -c '[ "$(grep -c BEGIN /config/broker.pem)" = 1 ] && cat /config/ca.pem >> /config/broker.pem'`, then `podman restart agent-bus`; it appends only when the file holds one certificate, so the CA is not added twice |
 
 Password logins, certificate logins and the monitor go on as they were; a monitor that mounts the
 broker's whole folder keeps its admin login until it gets a config of its own
@@ -354,13 +354,13 @@ For day-to-day starts, three scripts in `deploy/podman/` do the `podman run` of 
 
 | Script | Does | Settings |
 |---|---|---|
-| `start.sh` | the broker (step 3) and its `init` (step 4) | `IMG`, `MONITOR_AGENT` (the bus owner), `PROXY_PORT` |
+| `start.sh` | the broker (step 3) and its `init` (step 4) | `IMG`, `MONITOR_AGENT` (the bus owner), `PROXY_PORT`, `BUS_MAX_AGE`, `BUS_MAX_BYTES` |
 | `monitor.sh` | `monitor init` and the monitor's `run` | `IMG`, `MONITOR_AGENT`, `PUBLIC_URL` |
-| `proxy.sh` | the proxy | `PROXY` (`nginx` or `traefik`), `AGENT_BUS_HOME` |
+| `proxy.sh` | the proxy | `PROXY` (`nginx` or `traefik`), `PROXY_CONFIGS` |
 
 Copy them into the folder that holds `config/`, `data/` and `monitor-config/` (`$AGENT_BUS_HOME`);
-they use the folder they are in, or `AGENT_BUS_HOME`. Settings come from the environment or from an
-optional file `env` next to them, in shell syntax; the environment wins. `IMG` defaults to
+they use the folder they are in, or `AGENT_BUS_HOME`. All three read the same optional file `env`
+next to them, in shell syntax; a variable in the environment wins over the file. `IMG` defaults to
 `agent-messenger:dev`, so set it, and `MONITOR_AGENT` defaults to `monitor@$USER`:
 
 ```sh
@@ -370,16 +370,29 @@ $AGENT_BUS_HOME/start.sh
 $AGENT_BUS_HOME/monitor.sh
 ```
 
-`proxy.sh` reads the configs from `deploy/proxy/` of the repository; from a copy of the script, set
-`PROXY_CONFIGS` to that folder, as in the proxy section. All three replace a container of the same name, so they
-recreate: use them after an upgrade or a changed option.
+**Retention.** `start.sh` runs `init`, which applies the message log's limits, 90 days and 1 GiB
+unless you say otherwise. To keep other limits, put them in `env` (`-1` is no size limit); the
+script passes them to `init` every time it recreates the broker:
+
+```sh
+printf '%s\n' 'BUS_MAX_AGE=720h' 'BUS_MAX_BYTES=536870912' >> $AGENT_BUS_HOME/env
+```
+
+**Proxy.** `PROXY_PORT=8443` (publishes the proxy's 443), `PUBLIC_URL=https://bus.example.com:8443`
+and `PROXY=traefik` for Traefik belong in `env` too. `proxy.sh` reads the configs from
+`deploy/proxy/` of the repository; from a copy of the script, set `PROXY_CONFIGS` to that folder,
+for example `PROXY_CONFIGS=/path/to/checkout/deploy/proxy` in `env`.
+
+All three replace a container of the same name, so they recreate: use them after an upgrade or a
+changed option. `start.sh` removes the broker with `podman rm --depend`, which also removes the
+monitor and the proxy that share its network, so run `monitor.sh` and `proxy.sh` again after it.
 
 ## Day to day
 
 | Task | Command |
 |---|---|
 | Restart, same image and options (reloads changed files in the folders) | `podman restart agent-bus` |
-| Recreate: new image, changed ports or environment; also applies the message log's limits | `podman pull $IMG`, then `$AGENT_BUS_HOME/start.sh` (and `monitor.sh`, `proxy.sh`) |
+| Recreate: new image, changed ports or environment; also applies the message log's limits (the ones in `env`) | `podman pull $IMG`, then `start.sh`, `monitor.sh` and `proxy.sh` of `$AGENT_BUS_HOME`, in this order |
 | Broker log | `podman logs -f agent-bus` |
 | Stop | `podman stop agent-bus-proxy agent-bus-monitor agent-bus` |
 | Remove the broker and what shares its network (the folders keep all state) | `podman rm -f --depend agent-bus` |
@@ -389,31 +402,33 @@ their own after either.
 
 ## Backup and restore
 
-The state is three folders. One copy of all three, taken while the containers are stopped, is a
-consistent backup of everything:
+The state is three folders, plus your settings and, with a proxy, its certificate and configs. One
+copy taken while the containers are stopped is a consistent backup of everything:
 
-| Folder | What you lose without it |
-|---|---|
-| `config/` | the CA, every identity and login, the registry: the bus is gone |
-| `data/` | the messages (JetStream storage) |
-| `monitor-config/` | the monitor's logins, its web password hash and `monitor-web/prefs.json` (favourites, subscriptions, folded headings) |
+| What | Where | What you lose without it |
+|---|---|---|
+| `config/` | `$AGENT_BUS_HOME` | the CA, every identity and login, the registry: the bus is gone |
+| `data/` | `$AGENT_BUS_HOME` | the messages (JetStream storage) |
+| `monitor-config/` | `$AGENT_BUS_HOME` | the monitor's logins, its web password hash and `monitor-web/prefs.json` (favourites, subscriptions, folded headings) |
+| `env` and the three scripts | `$AGENT_BUS_HOME` | your settings: image, retention, proxy port and URL |
+| `tls/`, `proxy/` | `$AGENT_BUS_HOME` | the proxy's certificate and key, and the copies of its configs |
 
-The backup holds `ca.key` and every agent's key and password. Keep it as private as the folders
-(mode 0600, an encrypted disk or `age`/`gpg`). `$AGENT_BUS_HOME/tls/` holds the proxy's key; add it
-if you use a proxy.
+The backup holds `ca.key`, every agent's key and password and the proxy's key. The commands below
+create the archive readable by you only (`umask 077`); keep it that way, and store it encrypted off
+the machine.
 
 **Back up.** The brief stop lets agents reconnect on their own afterwards:
 
 ```sh
 podman stop agent-bus-proxy agent-bus-monitor agent-bus
-tar -C $AGENT_BUS_HOME -czf ~/agent-bus-$(date +%F).tar.gz config data monitor-config
-chmod 600 ~/agent-bus-*.tar.gz
+( umask 077; cd $AGENT_BUS_HOME && tar -cz $(ls -d config data monitor-config env tls proxy *.sh 2>/dev/null) \
+    | cat > ~/agent-bus-$(date +%F).tar.gz )
 podman start agent-bus agent-bus-monitor      # and agent-bus-proxy
 ```
 
-**Restore** onto an empty setup (a new machine, or after losing the folders). Copy the start scripts
-there first ([The start scripts](#the-start-scripts)). Containers that are left over keep their old
-mounts, so remove them first:
+**Restore** onto an empty setup (a new machine, or after losing the folders). The archive brings
+the scripts and `env` with it. Containers that are left over keep their old mounts, so remove them
+first. The scripts pass the retention of `env` to `init`, so the restored bus keeps its limits:
 
 ```sh
 podman rm -f --depend agent-bus
@@ -422,6 +437,7 @@ tar -C $AGENT_BUS_HOME -xzf ~/agent-bus-2026-11-25.tar.gz
 rm -f $AGENT_BUS_HOME/config/enroll/directory.json    # busd rebuilds it; see below
 $AGENT_BUS_HOME/start.sh
 $AGENT_BUS_HOME/monitor.sh
+$AGENT_BUS_HOME/proxy.sh                               # if you use a proxy
 ```
 
 ```text
@@ -431,25 +447,45 @@ monitor@alice     active  SHA256:3QoowDXNm0f536tTYbUqDMqUv9lXggTiecWKuysP4cQ
 ```
 
 **Checkpoint:** `agent-busctl --direct agent list` (the output above) shows the agents of the backup,
-and agents reconnect without changes. Messages sent after the backup are not in it.
+the monitor answers through the proxy, and agents reconnect without changes. Messages sent after
+the backup are not in it.
 
 - **`enroll/directory.json`** is busd's copy of the directory with its revision. Restoring an older
   copy makes agents refuse it as a rollback ([troubleshooting](troubleshooting.md#unknown-agent)),
   so delete it as above.
 - **`nats/auth.conf.confirmed`** is the last `auth.conf` the server confirmed loading; restore it
   together with the rest of `nats/`, or delete it and `auth.conf` is used.
-- **An older backup** misses agents enrolled since. They fail to log in until you enroll them again.
 - **Agent machines** hold their own keys and certificates; back those up separately if you want to
-  keep an identity across a lost disk. Enrolling the ID again with a new key is the other way: you
-  approve it with `ca sign <code> --replace`, which revokes the old key.
+  keep an identity across a lost disk.
+
+### Restoring an older backup
+
+A backup brings back the state of its day, including credentials you have since taken away.
+Reconcile before agents reconnect: publish the ports on `127.0.0.1` only while you do it (edit the
+`-p` options in your copy of `start.sh`), or use a firewall, and open them afterwards.
+
+| Since the backup | Effect of the restore | What to do |
+|---|---|---|
+| an agent was removed | it is `active` again, with a working account and key | `agent-busctl --direct agent remove <agent-id>` again; agents that learned the revocation keep refusing its key, new ones do not |
+| a key was replaced (`ca sign --replace`) | the old, revoked key works again; the machine with the new key cannot log in | enroll the machine again and approve it with `ca sign <code> --replace` |
+| a certificate was renewed or switched | the old certificate works again; the one on the machine does not | `cert issue <agent-id> --switch` and copy the new pair, or enroll again |
+| an agent was enrolled | it is missing and cannot log in | enroll it again |
+| a channel was created or joined | it is missing | create or join it again |
+
+`agent-busctl --direct agent list` against your own record of removals and replacements is the
+check.
 
 ## Upgrade
 
-Take a [backup](#backup-and-restore), pull the new image and recreate the containers with the
-scripts ([Day to day](#day-to-day)). Their `start.sh` also runs `init`, which applies the message
-log's limits (90 days and 1 GiB by default; [agent-busctl.md](agent-busctl.md#init)): messages beyond
-a new limit are deleted at once. Steps that only one release needs are in
-[upgrade-0.2.md](upgrade-0.2.md) (from 0.1.0) and [upgrade-0.3.md](upgrade-0.3.md) (from 0.2).
+1. Take a [backup](#backup-and-restore).
+2. Set the retention you want in `env` (`BUS_MAX_AGE`, `BUS_MAX_BYTES`; see
+   [the start scripts](#the-start-scripts)). `start.sh` runs `init`, and without them messages
+   older than 90 days or beyond 1 GiB are deleted at once ([agent-busctl.md](agent-busctl.md#init)).
+3. `podman pull $IMG`, then recreate: `start.sh`, `monitor.sh`, `proxy.sh`.
+
+**Checkpoint:** `podman logs agent-bus` ends in `Server is ready`, and the page loads through the
+proxy. Steps that only one release needs are in [upgrade-0.2.md](upgrade-0.2.md) (from 0.1.0) and
+[upgrade-0.3.md](upgrade-0.3.md) (from 0.2).
 
 ## Build locally
 
