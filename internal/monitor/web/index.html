@@ -148,17 +148,22 @@
   .pill.me { background: var(--mention); color: var(--mention-text); border-color: var(--mention); font-weight: 600; }
   .pill.all { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); font-weight: 600; }
   .targets-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+  #composer { position: relative; }
   #targets { flex-wrap: wrap; align-items: center; font-size: var(--font-s); }
-  #targets label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; max-width: 30ch; }
-  #targets label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #targets input { padding: 0; }
+  #targets input { flex: 1 1 14ch; }
+  .target-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 30ch; font-size: var(--font-xs); border: 1px solid var(--accent); border-radius: 9px; padding: 0 2px 0 7px; color: var(--accent); }
+  .target-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .target-chip button { padding: 0 4px; border: 0; background: none; color: inherit; line-height: 1; }
+  #completions { position: absolute; left: 16px; bottom: 100%; z-index: 5; margin: 0; padding: 2px; list-style: none; max-width: calc(100% - 32px); max-height: 12em; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
+  #completions li { padding: 2px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-s); }
+  #completions li[aria-selected=true] { background: var(--accent); color: var(--accent-text); }
   .avatar, .avatar-gap { width: var(--avatar); height: var(--avatar); }
   .avatar { display: inline-grid; place-items: center; flex: none; border-radius: 6px; font-weight: 700; font-size: calc(var(--avatar) * .4); line-height: 1; user-select: none; }
   .avatar.small { width: 18px; height: 18px; margin-right: 6px; border-radius: 4px; font-size: 9px; }
   :root[data-avatars=off] .avatar, :root[data-avatars=off] .avatar-gap { display: none; }
   :root[data-timestamps=off] .time, :root[data-badge=off] .badge, :root[data-sequence=off] .seq { display: none; }
   /* Long names wrap instead of ending in an ellipsis; the tooltips stay. */
-  :root[data-names=wrap] :is(.cut, .label, .agent-sub, .pill, #targets label span) { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+  :root[data-names=wrap] :is(.cut, .label, .agent-sub, .pill, #targets .target-chip span) { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
   :root[data-names=wrap] .meta > * { white-space: normal; }
   :root[data-names=wrap] .pill { display: inline; }
   .badge { font-size: var(--font-xs); border-radius: 9px; padding: 0 7px; font-weight: 600; }
@@ -260,8 +265,13 @@
         <select name="type" aria-label="Type"></select>
         <input name="title" placeholder="Title (optional)" aria-label="Title">
       </div>
-      <div class="row" id="targets"></div>
-      <textarea name="text" placeholder="Message" aria-label="Message"></textarea>
+      <div class="row" id="targets">
+        <span class="muted">Aimed at:</span>
+        <span id="target-chips" class="row"></span>
+        <input id="target-input" autocomplete="off" aria-label="Aim the message at (type @ for completions)">
+      </div>
+      <ul id="completions" role="listbox" aria-label="Completions" hidden></ul>
+      <textarea name="text" placeholder="Message (@ completes an agent)" aria-label="Message"></textarea>
       <div class="row"><button type="submit">Send</button><span id="send-note"></span></div>
     </form>
   </main>
@@ -353,7 +363,7 @@ const state = {
   collapsed: new Set(),           // sidebar sections that are folded
   prefsOnline: false,             // false when the server has no prefs (an old one): the state stays in memory
   marker: null,                   // sequence after which the open channel's "New" line is drawn, or null
-  picked: new Set(),              // targets ticked in the composer
+  picked: new Set(),              // targets chosen as chips in the composer
   shownTypes: new Set(loadSetting(TYPES_KEY, [])), // message types the list is limited to; none means all
   threads: loadSetting(THREADS_KEY, false),        // show replies under their parent instead of a flat list
 };
@@ -1299,27 +1309,157 @@ function renderComposer() {
 
   renderTargets();
   const canSend = state.status.can_send;
-  for (const field of form.elements) field.disabled = !canSend || (field.type === "checkbox" && form.target.value.startsWith("agent:"));
+  for (const field of form.elements) field.disabled = !canSend || (field.id === "target-input" && form.target.value.startsWith("agent:"));
   const note = $("send-note");
   if (!note.classList.contains("error")) {
     note.textContent = canSend ? "Sending as " + state.status.agent : state.status.note;
   }
 }
 
-// The picker offers the members of the open channel and @all. A direct message needs none: it
-// targets its recipient. Mentions typed in the text are read by the monitor when none is ticked.
+// The chips are the message's targets. The input completes the open channel's members and @all.
+// A direct message needs none: it targets its recipient. Mentions typed in the text are read by
+// the monitor when no chip is set.
+function targetChoices() {
+  return [ALL, ...state.members.filter((id) => id !== state.status.agent)];
+}
+
 function renderTargets() {
   const form = document.forms.composer;
   const isDM = form.target.value.startsWith("agent:");
-  const choices = [ALL, ...state.members.filter((id) => id !== state.status.agent)];
-  state.picked = new Set([...state.picked].filter((id) => choices.includes(id)));
-  $("targets").replaceChildren(el("span", { class: "muted" }, "Aimed at:"), ...choices.map((id) => {
-    const box = el("input", { type: "checkbox", value: id, ...(isDM ? { disabled: "" } : {}) });
-    box.checked = state.picked.has(id);
-    box.addEventListener("change", () => (box.checked ? state.picked.add(id) : state.picked.delete(id)));
-    return el("label", { title: id }, box, el("span", {}, id));
-  }));
+  const choices = targetChoices();
+  state.picked = new Set(isDM ? [] : [...state.picked].filter((id) => choices.includes(id)));
+  const input = $("target-input");
+  input.placeholder = isDM ? "\u2192 " + form.target.value.slice("agent:".length) : "@name";
+  $("target-chips").replaceChildren(...[...state.picked].map((id) =>
+    el("span", { class: "target-chip", title: id },
+      el("span", {}, id),
+      el("button", { type: "button", "aria-label": "Remove " + id, onclick: () => { state.picked.delete(id); renderTargets(); input.focus(); } }, "\u00d7"))));
 }
+
+// The choices whose ID starts with query (the ID is the name followed by @host, so this covers
+// the name too), in order, without the ones already chosen.
+function completionsFor(query) {
+  const prefix = query.toLowerCase();
+  return targetChoices().filter((id) => !state.picked.has(id) && id.replace(/^@/, "").toLowerCase().startsWith(prefix));
+}
+
+// One listbox serves both fields. field.complete(token) says what the caret is on, or null;
+// field.pick(id, token) takes the choice.
+const completion = { field: null, ids: [], active: 0 };
+
+function closeCompletion() {
+  const { field } = completion;
+  completion.field = null;
+  $("completions").hidden = true;
+  if (field) {
+    field.setAttribute("aria-expanded", "false");
+    field.removeAttribute("aria-activedescendant");
+  }
+}
+
+function highlightCompletion(index) {
+  completion.active = (index + completion.ids.length) % completion.ids.length;
+  [...$("completions").children].forEach((item, i) => item.setAttribute("aria-selected", String(i === completion.active)));
+  completion.field.setAttribute("aria-activedescendant", "completion-" + completion.active);
+  $("completions").children[completion.active].scrollIntoView({ block: "nearest" });
+}
+
+function pickCompletion(index) {
+  const { field, ids } = completion;
+  const token = field.tokenAtCaret();
+  closeCompletion();
+  field.pick(ids[index], token);
+}
+
+function updateCompletion(field) {
+  const token = field.tokenAtCaret();
+  const ids = token === null ? [] : completionsFor(token.query);
+  if (!ids.length) { closeCompletion(); return; }
+  completion.field = field;
+  completion.ids = ids;
+  $("completions").replaceChildren(...ids.map((id, i) =>
+    // mousedown, not click: the field keeps its focus.
+    el("li", { id: "completion-" + i, role: "option", onmousedown: (event) => { event.preventDefault(); pickCompletion(i); } }, id)));
+  $("completions").hidden = false;
+  field.setAttribute("aria-expanded", "true");
+  highlightCompletion(0);
+}
+
+// Returns true when the key was a completion key and has been handled.
+function completionKey(field, event) {
+  if (completion.field !== field) return false;
+  const moves = { ArrowDown: 1, ArrowUp: -1 };
+  if (event.key in moves) highlightCompletion(completion.active + moves[event.key]);
+  else if (event.key === "Tab" || event.key === "Enter") pickCompletion(completion.active);
+  else if (event.key === "Escape") closeCompletion();
+  else return false;
+  event.preventDefault();
+  return true;
+}
+
+function addTarget(id) {
+  state.picked.add(id);
+  renderTargets();
+}
+
+for (const field of [$("target-input"), document.forms.composer.text]) {
+  field.setAttribute("role", "combobox");
+  field.setAttribute("aria-autocomplete", "list");
+  field.setAttribute("aria-controls", "completions");
+  field.setAttribute("aria-expanded", "false");
+  field.addEventListener("input", () => updateCompletion(field));
+  field.addEventListener("blur", closeCompletion);
+}
+
+// The target input completes its whole content, the message text the "@word" before the caret.
+Object.assign($("target-input"), {
+  tokenAtCaret() {
+    const query = this.value.replace(/^@/, "");
+    return this.value ? { query } : null;
+  },
+  pick(id) {
+    this.value = "";
+    addTarget(id);
+  },
+});
+$("target-input").addEventListener("keydown", (event) => {
+  const input = event.target;
+  if (completionKey(input, event)) return;
+  if (event.key === "Enter") {
+    event.preventDefault();
+    try { resolveTargetInput(); } catch (error) { showSendError(error.message); }
+  } else if (event.key === "Backspace" && !input.value && state.picked.size) {
+    state.picked.delete([...state.picked].pop());
+    renderTargets();
+  }
+});
+
+// A typed name that was not completed counts when it is exactly a choice; any other text is an
+// unknown name and the composer refuses to send it.
+function resolveTargetInput() {
+  const input = $("target-input");
+  const typed = input.value.trim();
+  if (!typed) return;
+  const wanted = (typed.startsWith("@") ? typed : "@" + typed).toLowerCase();
+  const id = targetChoices().find((choice) => (choice.startsWith("@") ? choice : "@" + choice).toLowerCase() === wanted);
+  if (!id) throw new Error("Unknown target: " + typed);
+  input.value = "";
+  closeCompletion();
+  addTarget(id);
+}
+
+Object.assign(document.forms.composer.text, {
+  tokenAtCaret() {
+    const before = this.value.slice(0, this.selectionStart);
+    const match = /(^|\s)@(\S*)$/.exec(before);
+    return match ? { query: match[2], start: before.length - match[2].length - 1 } : null;
+  },
+  pick(id, token) {
+    const mention = (id.startsWith("@") ? id : "@" + id) + " ";
+    this.setRangeText(mention, token.start, this.selectionStart, "end");
+  },
+});
+document.forms.composer.text.addEventListener("keydown", (event) => completionKey(event.target, event));
 
 // ---- search ----
 
@@ -1413,14 +1553,21 @@ document.addEventListener("keydown", (event) => {
 
 // ---- sending ----
 
+function showSendError(message) {
+  const note = $("send-note");
+  note.classList.add("error");
+  note.textContent = message;
+  setTimeout(() => { note.classList.remove("error"); renderComposer(); }, 8000);
+}
+
 document.forms.composer.target.addEventListener("change", renderTargets);
 document.forms.composer.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.target;
   const [kind, ...nameParts] = form.target.value.split(":");
-  const note = $("send-note");
-  note.classList.remove("error");
+  $("send-note").classList.remove("error");
   try {
+    resolveTargetInput();
     await api("/api/v1/send", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to: { kind, name: nameParts.join(":") }, type: form.type.value, targets: form.target.value.startsWith("agent:") ? [] : [...state.picked], title: form.title.value, text: form.text.value }),
@@ -1428,11 +1575,9 @@ document.forms.composer.addEventListener("submit", async (event) => {
     form.title.value = form.text.value = "";
     state.picked.clear();
     renderTargets();
-    note.textContent = "Sent.";
+    $("send-note").textContent = "Sent.";
   } catch (error) {
-    note.classList.add("error");
-    note.textContent = error.message;
-    setTimeout(() => { note.classList.remove("error"); renderComposer(); }, 8000);
+    showSendError(error.message);
   }
 });
 
