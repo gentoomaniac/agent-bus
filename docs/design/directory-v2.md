@@ -335,3 +335,9 @@ Where the build refined or departed from the text above.
 - `GET /api/v1/status` has `directory`: the version busd last announced, when, and the error of
   the last registry or catalogue read, apart from presence; the page shows "directory not
   readable" while that error is set.
+
+**After review.**
+
+- A diff that does not apply (wrong base or a state hash that does not check) is not asked for
+  again from the same base: the agent asks once for the whole directory (`since` empty) and
+  takes that in. Asked from the same base, the same diff would fail every round.

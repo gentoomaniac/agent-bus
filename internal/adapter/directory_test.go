@@ -28,6 +28,7 @@ type fakeBusd struct {
 	earlier    map[directory.Version]directory.Projection
 	kinds      []string // of the replies given
 	down       error
+	badDiffs   bool // diffs carry a state hash they do not hash to
 	onHead     func([]byte)
 }
 
@@ -99,6 +100,9 @@ func (busd *fakeBusd) RequestDirectory(_ context.Context, request []byte) ([]byt
 	}
 	reply := directory.Answer(parsed.Since, busd.version, busd.projection, base)
 	reply.RequestHash = directory.RequestHash(request)
+	if busd.badDiffs && reply.Kind == directory.Diff {
+		reply.StateHash = "not the hash of this diff"
+	}
 	busd.kinds = append(busd.kinds, reply.Kind)
 	return directory.SignSyncReply(busd.ca, reply)
 }
@@ -469,5 +473,31 @@ func TestAMessageFromAnAgentEnrolledLaterIsHandedBackAfterASync(t *testing.T) {
 	}
 	if senders, _ := bobAdapter.UnknownSenders(); len(senders) != 0 {
 		t.Errorf("unknown senders %v after the sync", senders)
+	}
+}
+
+func TestADiffThatDoesNotApplyIsReplacedByTheWholeDirectory(t *testing.T) {
+	b := newTestBus(t)
+	b.register(bob)
+	busd := newFakeBusd(t, trust.DirectoryPath(b.configDir))
+	own := trust.DirectoryPath(t.TempDir())
+	bobAdapter := b.syncing(bob, busd, own)
+	ctx := context.Background()
+	if err := bobAdapter.SyncDirectory(ctx); err != nil {
+		t.Fatal(err)
+	}
+	b.register(alice)
+	busd.publish()
+	busd.badDiffs = true
+
+	if err := bobAdapter.SyncDirectory(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if want := []string{directory.Full, directory.Diff, directory.Full}; fmt.Sprint(busd.kinds) != fmt.Sprint(want) {
+		t.Errorf("busd answered %v, want %v", busd.kinds, want)
+	}
+	if _, err := own.Lookup(ctx, alice); err != nil {
+		t.Errorf("the full directory did not bring alice: %v", err)
 	}
 }

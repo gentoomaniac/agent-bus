@@ -59,12 +59,17 @@ func (adapter *Adapter) SyncDirectory(ctx context.Context) error {
 	defer adapter.syncMu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, syncTimeout)
 	defer cancel()
+	askFull := false
 	for range commitAttempts {
 		local, err := store.Load()
 		if err != nil {
 			return err
 		}
-		request := directory.NewSyncRequest(local.Version)
+		since := local.Version
+		if askFull {
+			since = directory.Version{}
+		}
+		request := directory.NewSyncRequest(since)
 		answer, err := adapter.config.DirectoryLink.RequestDirectory(ctx, request)
 		if err != nil {
 			return err
@@ -74,6 +79,13 @@ func (adapter *Adapter) SyncDirectory(ctx context.Context) error {
 			return err
 		}
 		projection, err := directory.Apply(local.Version, local.Projection, reply)
+		if err != nil && reply.Kind == directory.Diff && !askFull {
+			// Asked again from the same base, a diff that does not fit (a local snapshot changed
+			// by hand, a fault in busd) would fail forever; the whole directory replaces it.
+			adapter.config.Log("busd's diff does not apply to the local directory (%v): asking for the whole directory", err)
+			askFull = true
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("refusing busd's directory: %w", err)
 		}
