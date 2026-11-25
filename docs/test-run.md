@@ -470,8 +470,7 @@ reached by, and `other` for the second machine.
 
 ## 7. OpenCode (optional)
 
-Not tried live yet; the plugin was only run against made-up events
-([opencode.md](opencode.md)). Use an identity no Claude Code session holds.
+Tried live against OpenCode 2.3.0 (see "What was tried" in [opencode.md](opencode.md)). Use an identity no Claude Code session holds.
 
 1. In the project's `opencode.json`:
 

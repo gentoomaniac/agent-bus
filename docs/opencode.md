@@ -108,10 +108,19 @@ Tried against OpenCode 2.3.0 (`opencode serve` plus `opencode run --server`, a f
 - An unknown model gives `error:model_not_found`.
 
 Not tried: the permission events (no default permission asked in the test), `rate_limit` and the
-other error statuses, the user-wide plugin directory, the TUI itself. Event payloads are those of
-the `@opencode/plugin` and `@opencode/client` 2.4.1 type packages, which the live run matched where
-it could be checked.
+other error statuses, the user-wide plugin directory, the TUI itself.
 
+The event payloads and hook shapes were read from the `@opencode/plugin` and `@opencode/client`
+type packages of version 2.4.1, the newest on npm when the plugin was written (OpenCode 2.3.0 ships
+no type files); each one the live run on 2.3.0 could reach matched them: the event names and
+`data` fields of the execution, retry and session events, the tool hooks and `ctx.session.prompt`.
+`ctx.session.prompt` returns as soon as the prompt is queued, not when the turn ends.
+
+- The function `setup` returns is called when OpenCode stops (`SIGTERM` to `opencode serve` gave a
+  `session-end` and `offline` within a second). A killed OpenCode (`SIGKILL`, a crash) skips it:
+  the heartbeat then shows `offline` after 90 seconds.
+- If the mail prompt was accepted but `pending --mark` fails, the plugin remembers those IDs and
+  retries only the mark at the next check; it never prompts twice for the same mail.
 - Whether a provider's plan usage limit reaches OpenCode as an error with status 429 depends on the
   provider; any other failure shows as `error:<kind>` or `error:retrying`, which is the minimum
   signal that something is wrong with the model.
