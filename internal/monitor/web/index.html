@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Agent bus monitor</title>
 <style>
   /* The light palette is the default; the script sets data-base to "dark" for dark themes and for a dark system. */
@@ -244,6 +244,62 @@
   #settings-json { font: var(--font-s)/1.4 ui-monospace, monospace; min-height: 90px; margin-top: 6px; }
   #settings-note { font-size: var(--font-s); min-height: 1.4em; margin-top: 4px; }
   .settings-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+  /* Phones: one pane at a time. The channel list is a drawer and the members panel and an agent's
+     details are full-screen overlays, all opened from the header; the resize handles are gone. */
+  .phone-only, #scrim { display: none; }
+  @media (max-width: 700px) {
+    .phone-only { display: inline-block; }
+    .handle { display: none; }
+    #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100dvh; }
+    main { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+    #sidebar { position: fixed; z-index: 20; inset: 0 auto 0 0; width: min(320px, 86vw); visibility: hidden; transform: translateX(-100%);
+      padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left); transition: transform .2s, visibility 0s .2s; }
+    #sidebar:focus { outline: none; }
+    #app.drawer-open #sidebar { visibility: visible; transform: none; transition-delay: 0s; box-shadow: 0 0 24px rgb(0 0 0 / .4); }
+    #app.drawer-open #scrim { display: block; position: fixed; inset: 0; z-index: 19; background: rgb(0 0 0 / .5); }
+    /* No transform on the members panel: a transformed parent would turn the agent details inside it from fixed to local. */
+    #members-panel, #agent-detail:not(:empty) { position: fixed; z-index: 21; inset: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+    #members-panel { visibility: hidden; }
+    #app.members-open #members-panel { visibility: visible; }
+    #agent-detail:not(:empty) { z-index: 22; visibility: visible; overflow-y: auto; background: var(--panel); border-top: 0; }
+    #agent-detail > .phone-only { margin: 8px 12px 0; }
+    .panel-head { display: flex; align-items: center; gap: 8px; padding-left: 12px; }
+    .panel-head h2 { margin: 16px 0 6px; }
+    .panel-head .toggle { margin-top: 8px; }
+    /* Tap targets of 40px, and 16px inputs so iOS does not zoom in on focus. */
+    button:not(.tag, .raw-button), select, input:not([type=checkbox], [type=radio], [type=color]), li.item, li.member, .choices label, .swatch { min-height: 40px; }
+    select, input, textarea { font-size: max(16px, var(--font)); }
+    button.section, button.star, button.bell { min-height: 40px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
+    button.section { justify-content: flex-start; }
+    .chip { flex: none; min-width: 40px; }
+    #type-filter { flex-wrap: nowrap; overflow-x: auto; }
+    li.item > .label { flex: 1 1 auto; }
+    /* The sender, target and type buttons in a message keep their look and get their 40px by a hit area that reaches past them. */
+    button.tag { position: relative; }
+    button.tag::after { content: ""; position: absolute; inset: -11px -4px; }
+    header { flex-wrap: wrap; align-items: center; padding: 4px 8px; }
+    header .right { flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+    #identity { display: none; }
+    #search-bar, #type-filter, form { padding-left: 8px; padding-right: 8px; }
+    #messages, #results { padding-left: 8px; padding-right: 8px; }
+    :root { --time-col: 56px; }
+    /* A message's action shows when it is tapped; the button's column is kept free so it never covers text. */
+    .message .body { padding-right: 40px; }
+    button.raw-button { top: 0; min-width: 40px; min-height: 40px; display: grid; place-items: center; opacity: 0; pointer-events: none; }
+    .message.tapped button.raw-button, .message:hover button.raw-button, .message:focus-within button.raw-button { opacity: 1; pointer-events: auto; }
+    /* No tooltips on touch: names wrap, as with the "Long names: wrap" setting. */
+    #messages :is(.cut, .pill) { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+    #messages .meta > * { white-space: normal; }
+    #messages .pill { display: inline; }
+    #settings-dialog, #raw-dialog { width: 100vw; max-width: none; height: 100dvh; max-height: none; border: 0; border-radius: 0; }
+    #settings-dialog .settings-box, #raw-dialog .settings-box { padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+    #raw-dialog .settings-box { height: 100%; max-height: none; }
+    .choices label { max-width: 100%; }
+    #settings-dialog select { min-width: 0; max-width: 100%; }
+  }
+  @media (hover: none) { .meta.slim { opacity: .6; } }
+  @media (max-width: 700px) and (prefers-reduced-motion: reduce) { #sidebar { transition: none; } }
 </style>
 </head>
 <body>
@@ -256,7 +312,8 @@
   </form>
 </div>
 <div id="app">
-  <aside id="sidebar">
+  <div id="scrim" aria-hidden="true"></div>
+  <aside id="sidebar" tabindex="-1">
     <h1>Agent bus monitor</h1>
     <div id="favourites-section" hidden><h2><button class="section" type="button" data-section="favourites" aria-expanded="true">Favourites</button></h2><ul id="favourites"></ul></div>
     <h2><button class="section" type="button" data-section="channels" aria-expanded="true">Channels</button></h2><ul id="channels"></ul>
@@ -298,8 +355,8 @@
     </form>
   </main>
   <div class="handle" id="members-handle" role="separator" aria-orientation="vertical" aria-label="Resize the members panel" tabindex="0" title="Drag to resize, double-click to reset"></div>
-  <aside id="members-panel">
-    <h2>Members</h2><ul id="members"></ul>
+  <aside id="members-panel" tabindex="-1">
+    <div class="panel-head"><button class="phone-only toggle" id="close-members" type="button">Back</button><h2>Members</h2></div><ul id="members"></ul>
     <div id="agent-detail"></div>
   </aside>
 </div>
@@ -467,13 +524,37 @@ function isHidden(name) {
   return layout[name + "Hidden"] ?? innerWidth < PANELS[name].hideBelowPx;
 }
 
+// On a phone (the stylesheet's breakpoint) the panels are overlays: the header buttons open them and
+// the layout's widths and hidden flags do not apply.
+const phone = matchMedia("(max-width: 700px)");
+const OVERLAY_CLASS = { sidebar: "drawer-open", members: "members-open" };
+
+function isOpen(name) {
+  return phone.matches ? $("app").classList.contains(OVERLAY_CLASS[name]) : !isHidden(name);
+}
+
+function setOverlay(name, open) {
+  $("app").classList.toggle(OVERLAY_CLASS[name], open);
+  $("toggle-" + name).setAttribute("aria-pressed", String(open));
+  if (open) $(name === "sidebar" ? "sidebar" : "close-members").focus();
+}
+
+// Closes what is in front: an agent's details, else the members panel, else the drawer.
+function closeTopOverlay() {
+  if (state.detailAgent) { state.detailAgent = null; renderDetail(); }
+  else if (isOpen("members")) setOverlay("members", false);
+  else if (isOpen("sidebar")) setOverlay("sidebar", false);
+  else return false;
+  return true;
+}
+
 function applyLayout() {
   const app = $("app");
   for (const name of Object.keys(PANELS)) {
     const hidden = isHidden(name);
     app.style.setProperty("--" + name + "-w", hidden ? "0px" : clampWidth(name, layout[name]) + "px");
     $(name + "-handle").classList.toggle("collapsed", hidden);
-    $("toggle-" + name).setAttribute("aria-pressed", String(!hidden));
+    $("toggle-" + name).setAttribute("aria-pressed", String(isOpen(name)));
   }
   saveSetting(LAYOUT_KEY, layout);
 }
@@ -512,10 +593,34 @@ for (const [name, panel] of Object.entries(PANELS)) {
     const step = { ArrowLeft: -16, ArrowRight: 16 }[event.key];
     if (step) { event.preventDefault(); resize(layout[name] + panel.side * step); }
   });
-  $("toggle-" + name).addEventListener("click", () => { layout[name + "Hidden"] = !isHidden(name); applyLayout(); });
+  $("toggle-" + name).addEventListener("click", () => {
+    if (phone.matches) setOverlay(name, !isOpen(name));
+    else { layout[name + "Hidden"] = !isHidden(name); applyLayout(); }
+  });
 }
 addEventListener("resize", applyLayout);
 applyLayout();
+
+$("scrim").addEventListener("click", () => setOverlay("sidebar", false));
+$("close-members").addEventListener("click", () => setOverlay("members", false));
+// Picking a channel or an agent closes the drawer; the stars and bells stop their click.
+$("sidebar").addEventListener("click", (event) => { if (event.target.closest("li.item")) setOverlay("sidebar", false); });
+phone.addEventListener("change", () => {
+  for (const name of Object.keys(OVERLAY_CLASS)) $("app").classList.remove(OVERLAY_CLASS[name]);
+  applyLayout();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !event.defaultPrevented && phone.matches && !document.querySelector("dialog[open]")) closeTopOverlay();
+});
+
+// A tap on a message shows its action button, which has no hover on a phone.
+$("messages").addEventListener("click", (event) => {
+  const row = event.target.closest(".message");
+  if (!row || event.target.closest("button")) return;
+  const wasTapped = row.classList.contains("tapped");
+  $("messages").querySelector(".message.tapped")?.classList.remove("tapped");
+  row.classList.toggle("tapped", !wasTapped);
+});
 
 // ---- appearance ----
 
@@ -1152,6 +1257,7 @@ function renderDetail() {
   const workers = (view.workers || []).map((w) => el("div", { class: "entry" }, w.description + " (" + ago(w.since) + ")"));
   const recent = (view.recent || []).slice().reverse().map((e) => el("div", { class: "entry" }, el("span", { class: "muted" }, ago(e.at) + " ago "), e.text));
   box.replaceChildren(
+    el("button", { class: "phone-only toggle", type: "button", onclick: closeTopOverlay }, "Back"),
     el("h2", { class: "cut", title: state.detailAgent }, state.detailAgent),
     el("div", { class: "entry" }, el("span", { class: "dot " + stateClass(view.state) }), view.state + since),
     ...(view.pending ? [el("div", { class: "entry" }, view.pending + " unread targeted")] : []),

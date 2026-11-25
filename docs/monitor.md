@@ -307,6 +307,14 @@ and keeps the session token, which it sends as a `Bearer` header.
 - The channel list and the members panel are resized by dragging the handles next to them (double-click
   resets, arrow keys adjust) and hidden with the header's "Channels" and "Members" buttons. Widths,
   visibility and the message type filter are remembered in the browser's local storage.
+- On a phone (a window up to 700 px wide) the page shows one pane at a time and nothing scrolls
+  sideways. The channel list is a drawer that the header's "Channels" button opens; picking a
+  channel or an agent, tapping outside it or Esc closes it. The members panel and an agent's
+  details are full-screen overlays with a "Back" button (Esc closes the one in front). The resize
+  handles are gone, the settings and raw message dialogs fill the screen, buttons and rows are at
+  least 40 px high, and the page is as tall as the visible screen (`100dvh`), so the composer stays
+  above the keyboard. Without hover, a tap on a message shows its `{ }` button, and names and
+  types wrap instead of ending in an ellipsis. Above 700 px nothing changes.
 - A message's header starts with a short time in a narrow muted column, in local time: `14:05`
   today, `Mon 14:05` within the last 7 days, `24 Nov` earlier this year, `24 Nov 2025` before.
   Hover it for the full date and time. The title and text are set in under the sender, as in Slack.
