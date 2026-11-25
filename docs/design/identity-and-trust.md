@@ -8,9 +8,9 @@ agent ID (trust on first use, like SSH `known_hosts`), and how keys rotate and a
 | Part | Status |
 |---|---|
 | Identity format, one session per identity (`flock` lock), Ed25519 keys, fingerprints, JCS signing | implemented |
-| `known_agents` pins, trust on first use, `revoked_keys`, refusal of a changed key | implemented; the registry record is read from the **local directory copy**, not through busd (MVP) |
-| Revocation by removal: `agent-busctl agent remove` and `directory export`, refreshed by adapters | implemented for the MVP (revokes the key, deletes the account, the ID is never reused) |
-| Holds for unknown or changed keys, `--no-auto-accept-new-keys`, `agent-busctl pin` | **planned** (the code refuses a changed key and alerts instead of holding, see the index note on contradictions) |
+| `known_agents` pins, trust on first use, `revoked_keys`, refusal of a changed key | implemented; the registry record is read from the local directory, which busd keeps current by signed sync ([directory v2](directory-v2.md)) |
+| Revocation by removal: `agent-busctl agent remove` and the directory sync | implemented (revokes the key, deletes the account, the ID is never reused) |
+| Holds for unknown or changed keys, `--no-auto-accept-new-keys`, `agent-busctl pin` | **planned**: today a changed key is rejected and alerted, and an unknown sender is left unacked until the directory has it |
 | Key rotation chains, `agent-busctl rotate` and `revoke`, `busd.agent.rotate` | **planned** (needs busd) |
 
 ## Identity
@@ -19,8 +19,8 @@ agent ID (trust on first use, like SSH `known_hosts`), and how keys rotate and a
 - **Decision: the bus knows identities, not projects.** The name is chosen at registration and is often a project's name, but nothing ties an identity to a repository. If two identities happen to work on the same code, that doesn't matter to the bus.
 - An identity is stable across sessions. The key pair belongs to the identity, not to a session, and lives on one machine ([signing and trust](identity-and-trust.md), key storage).
 - **Decision: identities are per machine; the adapter is a sidecar proxy.** Like Istio's Envoy sidecar in Kubernetes, each adapter instance fronts exactly one session and holds exactly one identity; the session never touches the key or the broker directly. A key is never copied between machines: the same project worked on from two machines gets two identities. Names are unique bus-wide, so the owner picks distinct names, e.g. `api-client-laptop@alice` and `api-client-desktop@alice`. A second session that needs to be on the bus at the same time gets its own adapter instance with its own identity.
-- A special identity `human@<owner>` stands for the owner. agent-busctl uses it to post and approve ([admin CLI](admin-cli.md)); the bus monitor uses it only once sending is added ([monitor](monitor-and-api.md), milestone 9).
-- Registration (via agent-busctl, through busd, [admin CLI](admin-cli.md)) creates the agent's DM channel, its broker account and access, and publishes its public key to the registry.
+- **Planned:** a special identity `human@<owner>` stands for the owner. agent-busctl would use it to post and approve ([admin CLI](admin-cli.md)); the bus monitor, once sending as the owner is added ([monitor](monitor-and-api.md), milestone 9). Today `register` refuses `human@` IDs.
+- Registration creates the agent's DM channel, its broker account and access, and publishes its public key to the registry. Today it is `agent-busctl register` (run `--direct`) or an enrollment approved through busd ([admin CLI](admin-cli.md), [access control](access-control.md)).
 
 **Decision: one session per identity at a time.** The adapter (the MCP server) holds the identity through its key. Any new session on the same machine can pick up an existing identity by starting the adapter for it, but only one session may hold it at a time:
 
@@ -61,49 +61,93 @@ A pin stores the public key, not only the fingerprint, so a message can be verif
 
 ## Verification on receive
 
-The checks run in order; any failure rejects. The flow around step 3, the trust decision:
+The checks run in order; any failure rejects. The flow around step 3, the trust decision. Boxes
+marked "planned" are not built:
 
 ```mermaid
 flowchart TD
   start["Record consumed from a channel"] --> early["Steps 0 to 2: size, parse and version, to matches the channel"]
   early --> known{"from in known_agents?"}
   known -->|"no"| auto{"auto-accept-new-keys?"}
-  auto -->|"on, the default"| tofu["Fetch registry record, key_fp names a non-revoked key, verify, pin as tofu, flag first contact"]
-  auto -->|"off"| holdunknown["Hold and alert until agent-busctl pin (planned)"]
+  auto -->|"on, the default"| tofu["Look up the sender in the directory, key_fp names a non-revoked key, verify, pin as tofu, flag first contact"]
+  tofu -->|"sender not in the directory yet"| unacked["Leave unacked, ask for a directory sync, redelivered after it"]
+  auto -->|"off (planned)"| holdunknown["Hold and alert until agent-busctl pin (planned)"]
   known -->|"yes, fingerprint matches"| verify["Verify the signature"]
-  known -->|"yes, fingerprint differs"| chain{"Rotation chain from the pinned key to this key?"}
-  chain -->|"yes"| repin["Update the pin, verify (planned)"]
-  chain -->|"no"| holdchanged["Hold, alert loudly, never auto-accept (planned as a hold)"]
-  tofu --> late["Steps 4 to 6: dedupe, timestamp, private-channel membership"]
+  known -->|"yes, fingerprint differs"| chain{"Rotation chain from the pinned key to this key? (planned)"}
+  chain -->|"yes (planned)"| repin["Update the pin, verify (planned)"]
+  chain -->|"no, today always"| rejectchanged["Reject, alert loudly, ack: never auto-accept (a hold is planned)"]
+  tofu --> late["Steps 4 to 6: dedupe, timestamp, private-channel membership (planned)"]
   verify --> late
   repin --> late
 ```
 
-**Verification on receive** (in order; any failure → reject):
+0. **Size.** Reject a record over 96 KB before anything else ([protocol](protocol.md)).
+1. **Parse.** `v` is supported.
+2. **Channel.** `to` matches the channel the record was consumed from.
+3. **Sender.** Look up `from` in `known_agents` (cases below).
+4. **Dedupe**, for a message whose signature verified: skip if the key (destination, verified
+   sender, `id`) is in the adapter's handled set or already pending in its buffer or hold store.
+5. **Timestamp.** Reject if `ts` is more than 5 minutes in the future. Do **not** reject old
+   timestamps: offline agents legitimately read backlog.
+6. **Membership (planned).** On a private channel, check that the delivery's stream sequence lies
+   inside one of `from`'s membership intervals ([private channels](private-channels.md)); the pinned
+   `human@<owner>` always passes. A message outside them is rejected; if the intervals cannot be had
+   (sequence above the cached watermark and busd unreachable), hold the message.
 
-0. Size: reject a record over 96 KB before anything else ([protocol](protocol.md)).
-1. Parse; `v` is supported.
-2. `to` matches the channel the record was consumed from.
-3. Look up `from` in `known_agents`:
-   - **Unknown, `--auto-accept-new-keys` on (default):** fetch its record from the registry; check that `key_fp` names a key in it that is not revoked; verify the signature; pin it (`source=tofu`) and flag the message to the agent as "first contact". A revoked key is never a TOFU candidate.
-   - **Unknown, `--no-auto-accept-new-keys`:** hold the message (quarantine) and raise an alert. It is held: written to the hold store on disk, then acked on the broker; it is not handled. The owner pins the key with `agent-busctl pin` first. The adapter re-reads `known_agents` when it re-checks held messages (at each hook and `inbox` call; no file watch), then releases the held message (see Holds below) and accepts the sender's later ones. Held messages are stored on disk in the identity directory and do not count against the inbox buffer ([delivery](delivery.md)). `agent-busctl pin <agent-id> <fingerprint>` writes to the `known_agents` of every identity on the current machine, or of one with `--for <agent-id>`.
-   - **Known, fingerprint matches a pinned key that is not in `revoked_keys`:** verify signature.
-   - **Known, fingerprint differs:** look for a rotation chain in the registry (see key rotation). If the chain leads from the pinned key to this key, update the pin. Otherwise hold the message like an unknown sender's (released once the owner pins the key), log loudly, and notify the human (agent-busctl shows it). **Never auto-accept a changed key.** Same behaviour as SSH's host-key warning.
-4. Dedupe, for a message whose signature verified: skip if the key (destination, verified sender, `id`) is in the adapter's handled set (persisted locally, e.g. SQLite) or already pending in its buffer or hold store. A key enters the handled set only when the message is handled ([bus model](bus-model.md)), not when first seen, and the entry keeps a digest of the signed envelope (SHA-256 of its canonical form, never of the transport bytes, so reformatted JSON or an unsigned addition to the record is not a collision): the same key with a different payload is alerted as an ID collision and not delivered. This stops replay of an old signed message into the same channel. Deliveries that did not verify never reach this step; they are tracked by stream sequence only ([JetStream binding](jetstream-binding.md)).
-5. Reject if `ts` is more than 5 minutes in the future. Do **not** reject old timestamps: offline agents legitimately read backlog.
-6. On a private channel, check that the delivery's stream sequence lies inside one of `from`'s membership intervals ([private channels](private-channels.md)); the pinned `human@<owner>` always passes. A message outside them is rejected; if the intervals cannot be had (sequence above the cached watermark and busd unreachable), hold the message.
+### Step 3: the sender
+
+| Case | Built today | Planned |
+|---|---|---|
+| **Unknown, `--auto-accept-new-keys` on (default)** | Look up the record in the directory; check that `key_fp` names a key in it that is not revoked; verify the signature; pin it (`source=tofu`); flag the message as "first contact". A revoked key is never a TOFU candidate. If the directory has no record, leave the message unacked and ask for a sync ([directory v2](directory-v2.md)). | The same lookup through busd's registry reads. |
+| **Unknown, `--no-auto-accept-new-keys`** | Not available: the flag is not exposed on the command line. | Hold the message (written to the hold store on disk, then acked on the broker) and raise an alert. The owner pins the key with `agent-busctl pin <agent-id> <fingerprint>` (for every identity on the machine, or `--for <agent-id>`); the adapter re-reads `known_agents` at each hook and `inbox` call, releases the held message and accepts the sender's later ones. Held messages do not count against the inbox buffer ([delivery](delivery.md)). |
+| **Known, fingerprint matches a pinned key not in `revoked_keys`** | Verify the signature. | Same. |
+| **Known, fingerprint differs** | Reject terminally, log loudly, alert (`alerts.log`) and ack. **Never auto-accept a changed key**, as with SSH's host-key warning. | Look for a rotation chain in the registry. If it leads from the pinned key to this key, update the pin. Otherwise hold the message like an unknown sender's, released once the owner pins the key. |
+
+Step 4 in detail: a key enters the handled set only when the message is handled
+([bus model](bus-model.md)), not when first seen. The entry keeps a digest of the signed envelope
+(SHA-256 of its canonical form, never of the transport bytes, so reformatted JSON or an unsigned
+addition to the record is not a collision). The same key with a different payload is alerted as an ID
+collision and not delivered (planned: the alert is not built). This stops replay of an old signed
+message into the same channel. Deliveries that did not verify never reach this step; they are
+tracked by stream sequence only ([JetStream binding](jetstream-binding.md)).
 
 ### Terminal rejection and retryable cases
 
-**Terminal rejection** (oversized record, unsupported version, malformed envelope ([protocol](protocol.md) schema), bad signature, wrong `to`, revoked key, failed request-transition check, future timestamp, stream sequence outside the sender's membership intervals on a private channel) is logged and alerted, and counts as handled: its stream sequence (never its envelope ID) is recorded and it is acked. Rejected messages are recorded locally with the reason and are not shown to the agent except as a count. A failed lookup is never an authoritative rejection: when a verification dependency is unavailable (busd unreachable for a first-contact registry lookup, a rotation-chain or revocation check, thread history or membership), the message is held, not rejected. The retryable cases, all held, are: (1) an unknown sender under `--no-auto-accept-new-keys` and (2) a changed key (both step 3, released after `agent-busctl pin`), (3) a status message whose thread history for the transition check is missing ([protocol](protocol.md)), (4) a private-channel message whose membership cannot be checked because it lies above the cached watermark and busd is unreachable (step 6), and (5) a message whose sender's key, rotation chain or revocation state cannot be looked up because busd is unreachable. A held message is stored on disk and then acked on the broker, so it never blocks later mail and a crash loses nothing; later messages are delivered and acked as usual, and the handled set skips those already handled.
+Two outcomes for a message that fails a check:
 
-## History is a read-only path
+| Outcome | Applies to | What happens |
+|---|---|---|
+| **Terminal rejection** | Oversized record, unsupported version, malformed envelope ([protocol](protocol.md) schema), bad signature, wrong `to`, revoked key, changed key (today), future timestamp; planned: failed request-transition check, stream sequence outside the sender's membership intervals | Logged and alerted, counts as handled: its stream sequence (never its envelope ID) is recorded and it is acked. Rejected messages are recorded locally with the reason and shown to the agent only as a count. |
+| **Retryable (left unacked, built)** | A sender whose record is not in the directory yet | The message stays unacked; a sync is requested; the broker redelivers it ([directory v2](directory-v2.md)). |
+| **Retryable (held, planned)** | See the list below | Stored on disk, then acked on the broker, so it never blocks later mail and a crash loses nothing. Later messages are delivered and acked as usual, and the handled set skips those already handled. |
 
-**History is a read-only path.** `history` and `join(from="earliest")` ([MCP tools](mcp-tools.md)) read through a separate reader with no cursor of its own. It verifies signatures and applies the membership rule of [private channels](private-channels.md) on private channels. It never moves a cursor, changes pins, applies statuses or rotations, or touches the handled set. History results are marked as such and are not new mail. A sender not in the registry is shown as "unknown sender, unverified".
+A failed lookup is never an authoritative rejection: when a verification dependency is unavailable,
+the message is held (planned) or left unacked (built), not rejected.
 
-## Key rotation
+The retryable cases that become holds:
 
-Planned (needs busd). Sequence of a normal rotation, run on the agent's machine:
+1. An unknown sender under `--no-auto-accept-new-keys`.
+2. A changed key (both step 3, released after `agent-busctl pin`).
+3. A status message whose thread history for the transition check is missing ([protocol](protocol.md)).
+4. A private-channel message whose membership cannot be checked because it lies above the cached
+   watermark and busd is unreachable (step 6).
+5. A message whose sender's key, rotation chain or revocation state cannot be looked up because busd
+   is unreachable.
+
+## History is a read-only path (planned)
+
+`history` and `join(from="earliest")` ([MCP tools](mcp-tools.md)) will read through a separate reader
+with no cursor of its own. Not built: there is no `history` tool today.
+
+- It verifies signatures and applies the membership rule of [private channels](private-channels.md) on
+  private channels.
+- It never moves a cursor, changes pins, applies statuses or rotations, or touches the handled set.
+- Its results are marked as such and are not new mail. A sender not in the registry is shown as
+  "unknown sender, unverified".
+
+## Key rotation (planned)
+
+Not built (needs busd). Sequence of a normal rotation, run on the agent's machine:
 
 ```mermaid
 sequenceDiagram
@@ -118,13 +162,61 @@ sequenceDiagram
   Peer->>Peer: pin the keys along the chain
 ```
 
-**Key rotation:** the agent's registry record (keyed by agent ID; the latest record wins) holds its full key history. `agent-busctl rotate <agent-id>`, run on the agent's machine, sends `busd.agent.rotate` ([busd](busd.md)), signed by the agent's current key, with the new key and the previous key's signature over it (the rotation link); busd appends the entry. After a revocation the old key is not accepted, so the owner sends `busd.agent.rotate` instead, signed by `human@<owner>`, with no link (see revocation), and the agent also posts an informational `key_rotation` notice. An adapter that sees a key it has not pinned walks the chain in the registry from its pinned key, checking each link's signature, and ends with the current key; it then pins the keys along the way. An adapter that was offline through several rotations catches up the same way. A chain that does not start at the pinned key is a changed key (step 3). Adapters keep former keys so they can verify backlog signed before a rotation. The monitor verifies each message against the key whose fingerprint is `key_fp`, taken from the record's history, so old messages still verify.
+**How it would work** (all planned):
+
+- The agent's registry record (keyed by agent ID; the latest record wins) holds its full key history.
+- `agent-busctl rotate <agent-id>`, run on the agent's machine, sends `busd.agent.rotate`
+  ([busd](busd.md)), signed by the agent's current key, with the new key and the previous key's
+  signature over it (the rotation link). busd appends the entry.
+- After a revocation the old key is not accepted, so the owner sends `busd.agent.rotate` instead,
+  signed by `human@<owner>`, with no link (see revocation). The agent also posts an informational
+  `key_rotation` notice.
+- An adapter that sees a key it has not pinned walks the chain in the registry from its pinned key,
+  checking each link's signature, ends with the current key and pins the keys along the way. An
+  adapter that was offline through several rotations catches up the same way.
+- A chain that does not start at the pinned key is a changed key (step 3).
+- Adapters keep former keys so they can verify backlog signed before a rotation. The monitor
+  verifies each message against the key whose fingerprint is `key_fp`, taken from the record's
+  history, so old messages still verify.
+
+### Signing key versus TLS certificate
+
+Two credentials, renewed separately:
+
+| | Signing key | Client certificate |
+|---|---|---|
+| What it is | The agent's Ed25519 identity key | The mTLS login credential |
+| What it proves | Authorship of messages | Which broker account may log in |
+| Renewed by | Rotation (**planned**); a new key is a changed key to receivers | `cert issue`, or enrolling again from the machine ([access control](access-control.md)) |
+| Effect on pins | Receivers see a changed key unless a rotation chain links it | None: an existing identity keeps its signing key and so its pins, ID and consumers |
 
 ## Revocation
 
-**Revocation:** agent-busctl marks the key `revoked` in the agent's registry record. The entry is never deleted and there are no tombstones, so an offline adapter still sees it. Adapters consume the registry continuously, independent of first contact, and persist the fingerprints of revoked keys in `revoked_keys`. Dropping a pin does not forget a revocation, and a revoked key is never treated as a new TOFU candidate. `agent-busctl revoke` marks the identity's current key revoked. To keep using the identity, run `agent-busctl rotate` on its machine (it asks for the master password, because the revoked key can no longer sign the call). The new entry has no rotation link, because a link signed by a revoked key proves nothing, so receivers that know the agent see a changed key (step 3): its messages are held until the owner pins it with `agent-busctl pin`, even with `--auto-accept-new-keys` on. A receiver that never pinned the agent treats the new key as a first contact (TOFU). Messages signed with a key before its revocation but read afterwards are rejected on purpose. The monitor shows a message signed by a key revoked later with a warning.
+**Built.** `agent-busctl agent remove` revokes the removed agent's key, deletes its account and
+tombstones the ID ([admin CLI](admin-cli.md)). The directory sync carries the revocation to adapters,
+which keep every revoked fingerprint in `revoked_keys` and in the directory snapshot ([directory
+v2](directory-v2.md)). Dropping a pin does not forget a revocation, and a revoked key is never treated
+as a new TOFU candidate.
 
-**Revoking a key does not revoke broker access.** The agent's broker account can still read and write what it was granted. For a compromised agent, `agent-busctl revoke --incident` ([admin CLI](admin-cli.md)) revokes the key, revokes the agent's access and deletes its account, and removes the agent's busd authority and private-channel memberships. Revoking the key alone also stops the agent's busd requests (they are checked against the current non-revoked key, [busd](busd.md)), but not its broker traffic.
+**Planned: revocation by key.**
+
+- `agent-busctl revoke` marks the identity's current key `revoked` in the agent's registry record.
+  The entry is never deleted and there are no tombstones, so an offline adapter still sees it.
+- To keep using the identity, run `agent-busctl rotate` on its machine (it asks for the master
+  password, because the revoked key can no longer sign the call).
+- The new entry has no rotation link, because a link signed by a revoked key proves nothing. Receivers
+  that know the agent see a changed key (step 3): its messages are held until the owner pins it with
+  `agent-busctl pin`, even with `--auto-accept-new-keys` on. A receiver that never pinned the agent
+  treats the new key as a first contact (TOFU).
+- Messages signed with a key before its revocation but read afterwards are rejected on purpose. The
+  monitor shows a message signed by a key revoked later with a warning.
+
+**Revoking a key does not revoke broker access.** The agent's broker account can still read and
+write what it was granted. For a compromised agent, `agent-busctl revoke --incident` (planned,
+[admin CLI](admin-cli.md)) revokes the key, revokes the agent's access and deletes its account, and
+removes the agent's busd authority and private-channel memberships. Revoking the key alone would also
+stop the agent's busd requests (they are checked against the current non-revoked key,
+[busd](busd.md)), but not its broker traffic.
 
 ## Weak spot
 
