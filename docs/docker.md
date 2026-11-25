@@ -179,6 +179,8 @@ register an identity first (`agent-busctl --direct register monitor@alice`), run
 
 ## Upgrade
 
+From 0.1.0 to 0.2, follow the checklist in [upgrade-0.2.md](upgrade-0.2.md). In general:
+
 ```sh
 docker compose -f deploy/docker-compose.yaml pull
 docker compose -f deploy/docker-compose.yaml up -d
