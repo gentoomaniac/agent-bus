@@ -46,121 +46,106 @@ This is the MVP, built for a trusted environment ([design: MVP first](docs/desig
 
 ## Quick start
 
-The central components run in a container (Podman shown here; [podman](docs/podman.md) has all
-steps, [docker](docs/docker.md) the Docker and compose form); the agent machines run the local
-`agent-bus` binary. Two agents, `api-client@alice` and `lib-x@bob`, with the broker on this
-machine. Run it from a checkout.
+The broker and the monitor run in a container, the agents on the local `agent-bus` binary. This
+sets up both on one machine with two agents, from a checkout, with Podman (rootless). For Docker
+and compose see [docker](docs/docker.md); [podman](docs/podman.md) has the details and the
+other machines.
 
-1. Build the central image and the agent binary (skip the image build to use the released image):
+Placeholders: `<owner>` is your login name in lowercase (the part after `@` in agent IDs), `<host>` a name or
+IP other machines will use for this one (add `--san <host>` for each; leave it out for one machine).
+
+**Prerequisites:** Linux (the Claude Code hooks need `/proc`), Podman (rootless; tried on 6.1), Go (to build; or take the binary from the
+[release](https://github.com/gentoomaniac/agent-bus/releases)), Claude Code.
+
+1. Get the image and the `agent-bus` binary. The released image is
+   `ghcr.io/gentoomaniac/agent-messenger:<version>` (`podman pull`); the release also has
+   `agent-bus` and the VS Code `.vsix`. To build both from the checkout:
 
    ```sh
-   make image                     # agent-messenger:dev
-   IMG=agent-messenger:dev
-   go build -o bin/ ./cmd/agent-bus
+   make image                          # builds agent-messenger:dev
+   go build -o bin/ ./cmd/agent-bus    # put bin/ on your PATH: Claude Code calls agent-bus by name
    ```
 
-2. Create the certificates and admin credentials once, as one-off containers on the config volume.
-   Pass every name or IP other machines will use with `--san`:
+2. Make the folders that hold all state, and copy the start scripts into them. A released image
+   goes into the optional file `env` (the default is `agent-messenger:dev`):
 
    ```sh
-   podman volume create agent-bus-config
-   podman volume create agent-bus-data
-   podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl $IMG tls init --san localhost --san bus.example.org
-   podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl $IMG admin init
+   mkdir -p ~/agent-bus/{config,data,monitor-config}
+   cp deploy/podman/start.sh deploy/podman/monitor.sh ~/agent-bus/
+   echo 'IMG=ghcr.io/gentoomaniac/agent-messenger:<version>' > ~/agent-bus/env   # released image only
    ```
 
-3. Start the broker, create the streams and register the two agents. `agent-busctl` runs inside the
-   container; the alias shortens it:
+3. Create the certificates and the admin login, once. The container runs as uid 10001, and
+   `--userns=keep-id` maps your user to it, so it can write your folders (Docker: `sudo chown 10001
+   ~/agent-bus/{config,data,monitor-config}` instead):
 
    ```sh
-   podman run -d --name agent-bus --network pasta -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
-     -v agent-bus-config:/config -v agent-bus-data:/data $IMG
+   IMG=agent-messenger:dev             # or the released image
+   U="--userns=keep-id:uid=10001,gid=10001"
+   podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG tls init --san <host>
+   podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG admin init
+   ```
+
+4. Start the broker. It publishes 4222 (password login) and 4223 (certificate login), creates the
+   streams, and is the container `agent-bus`; the alias runs `agent-busctl` inside it:
+
+   ```sh
+   ~/agent-bus/start.sh
    alias agent-busctl='podman exec agent-bus agent-busctl'
-   agent-busctl --direct init
-   agent-busctl --direct register api-client@alice
-   agent-busctl --direct register lib-x@bob
    ```
 
-4. Copy `ca.pem`, the directory and the agent folders from the container to the machine that runs
-   the agents ([how, and for other machines](docs/podman.md#5-give-an-agent-machine-its-files)):
+5. Register the two agents and the monitor's identity:
+
+   ```sh
+   agent-busctl --direct register api-client@<owner>
+   agent-busctl --direct register lib-x@<owner>
+   agent-busctl --direct register monitor@$USER
+   ```
+
+6. Set the monitor's password, then start the monitor. It listens on <http://127.0.0.1:8080>:
+
+   ```sh
+   podman exec -it agent-bus agent-busctl monitor password
+   ~/agent-bus/monitor.sh
+   ```
+
+7. Copy the CA certificate, the directory and the two agents' folders to the agents' config
+   directory (for another machine see [podman](docs/podman.md#5-give-an-agent-machine-its-files), or
+   [enroll it](docs/podman.md#9-enrolling-a-new-machine) without copying keys):
 
    ```sh
    mkdir -p ~/.config/agent-bus
-   podman exec agent-bus tar -C /config -cf - ca.pem directory api-client@alice lib-x@bob \
-     | tar -C ~/.config/agent-bus -xf -
+   cp -r ~/agent-bus/config/{ca.pem,directory,api-client@<owner>,lib-x@<owner>} ~/.config/agent-bus/
    ```
 
-5. Send a message and read it, as a shell test:
+8. Send a message and read it:
 
    ```sh
-   bin/agent-bus --agent api-client@alice send lib-x@bob --text "hello"
-   bin/agent-bus --agent lib-x@bob inbox
+   agent-bus --agent api-client@<owner> send lib-x@<owner> --text "hello"
+   agent-bus --agent lib-x@<owner> inbox
    ```
 
-6. Connect real sessions: [Claude Code](docs/claude-code.md). Optional: the monitor,
-   at <http://localhost:8080> ([podman](docs/podman.md#6-the-monitor): set its password, give it its config, start it).
+9. Connect Claude Code sessions, one identity each: [Claude Code](docs/claude-code.md) has the MCP
+   registration and the hooks.
+
+Stop everything with `podman rm -f --depend agent-bus`; the folders keep all state, and
+`~/agent-bus/start.sh` brings it back. The [test run](docs/test-run.md) walks through the first
+real test with two Claude Code sessions.
 
 ## Presence: is the agent there?
 
 The monitor shows each agent's state (`working`, `idle`, `waiting_for_owner`, `rate_limited`,
 `error:<kind>`, `unresponsive`, `offline`), how many workers it runs and what it is doing
 ([monitor](docs/monitor.md#presence)). Agents do not poll it and it costs no tokens: the session's
-`agent-bus mcp` publishes it, fed by Claude Code hooks. All hooks for a project's
-`.claude/settings.json` (nothing edits your settings for you; the `Stop` and `SessionStart` entries
-also deliver mail, see [Claude Code](docs/claude-code.md#2-add-the-delivery-hooks)):
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {"hooks": [
-        {"type": "command", "command": "agent-bus pending --format=session-start"},
-        {"type": "command", "command": "agent-bus event --kind=session-start"},
-        {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
-      ]}
-    ],
-    "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "agent-bus event --kind=user-prompt"}]}
-    ],
-    "PreToolUse": [
-      {"hooks": [{"type": "command", "command": "agent-bus event --kind=pre-tool", "async": true}]}
-    ],
-    "PostToolUse": [
-      {"hooks": [{"type": "command", "command": "agent-bus event --kind=post-tool", "async": true}]}
-    ],
-    "SubagentStart": [
-      {"hooks": [{"type": "command", "command": "agent-bus event --kind=subagent-start"}]}
-    ],
-    "SubagentStop": [
-      {"hooks": [{"type": "command", "command": "agent-bus event --kind=subagent-stop"}]}
-    ],
-    "Stop": [
-      {"hooks": [
-        {"type": "command", "command": "agent-bus event --kind=stop"},
-        {"type": "command", "command": "agent-bus pending --format=hook"},
-        {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
-      ]}
-    ],
-    "StopFailure": [
-      {"hooks": [{"type": "command", "command": "agent-bus event --kind=stop-failure"}]}
-    ],
-    "Notification": [
-      {"hooks": [{"type": "command", "command": "agent-bus event --kind=notification"}]}
-    ],
-    "SessionEnd": [
-      {"hooks": [{"type": "command", "command": "agent-bus event --kind=session-end"}]}
-    ]
-  }
-}
-```
-
-Without the event hooks the monitor still shows `offline` (no heartbeat for 90 seconds) and
-`unresponsive` (targeted mail unread for 10 minutes).
+`agent-bus mcp` publishes it, fed by Claude Code hooks, which you add to the project's
+`.claude/settings.json` ([all hooks](docs/claude-code.md#3-add-the-presence-hooks); nothing edits
+your settings for you). Without them the monitor still shows `offline` (no heartbeat for 90
+seconds) and `unresponsive` (targeted mail unread for 10 minutes).
 
 ## Documentation
 
 - [Docker](docs/docker.md): run the central components, set up, get files to agent machines.
-- [Podman](docs/podman.md): the same with plain podman commands, a bind-mount test setup, certificate login, enrolling a new machine.
+- [Podman](docs/podman.md): the setup with plain podman commands and bind mounts, certificate login, enrolling a new machine.
 - [Broker](docs/broker.md): config directory, ports, TLS, reloads.
 - [Monitor](docs/monitor.md): the web interface, flags, what it shows, sending, limits.
 - [VS Code extension](vscode/README.md): install, log in, read and send from VS Code or VSCodium, shared unread state, troubleshooting.
