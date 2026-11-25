@@ -26,7 +26,24 @@
           "description": "Base URL of the bus monitor, for example http://localhost:8080 or its public URL behind a proxy."
         }
       }
-    }
+    },
+    "commands": [
+      { "command": "agentMessenger.login", "title": "Log In", "category": "Agent Messenger" },
+      { "command": "agentMessenger.logout", "title": "Log Out", "category": "Agent Messenger" }
+    ],
+    "viewsContainers": {
+      "activitybar": [{ "id": "agentMessenger", "title": "Agent Messenger", "icon": "media/icon.svg" }]
+    },
+    "views": {
+      "agentMessenger": [{ "id": "agentMessenger.tree", "name": "Agent Messenger" }]
+    },
+    "viewsWelcome": [
+      {
+        "view": "agentMessenger.tree",
+        "contents": "Log in to the bus monitor to see channels and agents.\n[Log In](command:agentMessenger.login)",
+        "when": "agentMessenger.loginRequired"
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",
