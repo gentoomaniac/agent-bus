@@ -84,6 +84,26 @@ func (server Server) hasAgent(agentToken string) (bool, error) {
 	return listed, nil
 }
 
+// AdminUsesCert says whether the authorization file lets the admin user in with a certificate.
+// It reads the file, not the running server: a reload that did not take is still to be finished.
+func (server Server) AdminUsesCert(adminUser string) (bool, error) {
+	name := authFile
+	if adminUser == ControlAdminUser {
+		name = controlAuthFile
+	}
+	current, err := os.ReadFile(server.path(name))
+	if err != nil {
+		return false, fmt.Errorf("reading the authorization file (has `agent-busctl admin init` run?): %w", err)
+	}
+	body, _ := splitGeneration(string(current))
+	table, err := parseUserTable(body)
+	if err != nil {
+		return false, err
+	}
+	index, found := table.find(roleAdmin, adminUser)
+	return found && table[index].mode == modeCert, nil
+}
+
 // UpdateAuth changes auth.conf as one serialised operation: lock, let edit produce the new file
 // body from the current one, test the new configuration, replace the file atomically, reload the
 // server and wait until its monitoring endpoint reports a newer config load time. Only then is

@@ -111,7 +111,8 @@ the `podman run` of step 3). The image reads `ca.pem` from the config volume at 
 
 **Rollback:** `agent-busctl --direct cert switch lib-x@<owner> --password`, delete
 `client.pem` and `client.key` in the agent's folder on its machine, restart it. For the admin
-users: `agent-busctl --direct cert switch --admin --password` and restart the monitor.
+users: `agent-busctl --direct cert switch --admin --password` and restart the monitor. This works
+from any half-finished `cert issue --admin` as well; that command can also simply be run again.
 
 Every command that changes access runs in the broker container, as in this guide (`podman exec
 agent-bus`). The monitor container only reads the volume and is never asked to reload

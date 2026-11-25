@@ -56,6 +56,11 @@ func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 	if err != nil {
 		return err
 	}
+	if cmd.Admin {
+		if err := cli.activateStagedAdminCerts(); err != nil {
+			return err
+		}
+	}
 	// Connected before the files are written: a connection prefers the certificate once it exists.
 	admin, err := cli.brokerAdmin()
 	if err != nil {
@@ -64,14 +69,24 @@ func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 	defer admin.Close()
 
 	if cmd.Admin {
-		for _, user := range adminUsers {
-			if err := issueInto(ca, broker.AdminCertIdentity(user), creds.AdminDir(cli.ConfigDir, user), cmd.Validity); err != nil {
-				return err
-			}
-		}
+		// Per admin: stage the pair, switch the server and confirm the reload, only then use the
+		// pair. Until then the admin tools keep the login that works.
 		for _, user := range adminUsers { // bus-admin first, see Admin.SetAdminLogin
-			if err := admin.SetAdminLogin(ctx, user, ""); err != nil {
-				return err
+			dir := creds.AdminDir(cli.ConfigDir, user)
+			certPEM, keyPEM, err := newClientCert(ca, broker.AdminCertIdentity(user), cmd.Validity)
+			if err == nil {
+				err = creds.StageClientCert(dir, certPEM, keyPEM)
+			}
+			if err == nil {
+				err = admin.SetAdminLogin(ctx, user, "")
+			}
+			if err == nil {
+				err = creds.ActivateStagedClientCert(dir)
+			}
+			if err != nil {
+				return fmt.Errorf("%s was not switched to its certificate: %w\n"+
+					"the admin tools keep their working login; run the command again to retry (it resumes), "+
+					"or `agent-busctl --direct cert switch --admin --password` to go back to passwords", user, err)
 			}
 		}
 		fmt.Printf("the admin users log in with certificates now (%s); restart bus-monitor\n", cli.ConfigDir)
@@ -82,7 +97,11 @@ func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 		return err
 	}
 	dir := creds.AgentDir(cli.ConfigDir, cmd.AgentID)
-	if err := issueInto(ca, broker.AgentCertIdentity(cmd.AgentID), dir, cmd.Validity); err != nil {
+	certPEM, keyPEM, err := newClientCert(ca, broker.AgentCertIdentity(cmd.AgentID), cmd.Validity)
+	if err != nil {
+		return err
+	}
+	if err := creds.WriteClientCert(dir, certPEM, keyPEM); err != nil {
 		return err
 	}
 	certPath, keyPath := creds.ClientCertPaths(dir)
@@ -99,16 +118,35 @@ func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 	return nil
 }
 
-func issueInto(ca *tlsinit.CA, identity, dir string, validity time.Duration) error {
+func newClientCert(ca *tlsinit.CA, identity string, validity time.Duration) (certPEM, keyPEM []byte, err error) {
 	keyPEM, public, err := tlsinit.NewClientKey()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	certPEM, err := ca.IssueClientCert(identity, public, validity)
-	if err != nil {
-		return err
+	certPEM, err = ca.IssueClientCert(identity, public, validity)
+	return certPEM, keyPEM, err
+}
+
+// activateStagedAdminCerts finishes what an interrupted `cert issue --admin` left: a staged pair
+// of an admin whom the server already lets in with a certificate is the only login that works, so
+// it is made the login before anything connects.
+func (cli *CLI) activateStagedAdminCerts() error {
+	for _, user := range adminUsers {
+		dir := creds.AdminDir(cli.ConfigDir, user)
+		if !creds.HasStagedClientCert(dir) {
+			continue
+		}
+		usesCert, err := cli.server().AdminUsesCert(user)
+		if err != nil {
+			return err
+		}
+		if usesCert {
+			if err := creds.ActivateStagedClientCert(dir); err != nil {
+				return err
+			}
+		}
 	}
-	return creds.WriteClientCert(dir, certPEM, keyPEM)
+	return nil
 }
 
 type CertSignCmd struct {
@@ -161,6 +199,11 @@ func (cmd *CertSwitchCmd) Run(ctx context.Context, cli *CLI) error {
 	}
 	if cmd.Admin && !cmd.Password {
 		return errors.New("--admin needs --password: `cert issue --admin` is what switches the admin users to certificates, because the admin tools must use the new files at once")
+	}
+	if cmd.Admin { // the rollback must work after an interrupted `cert issue --admin`, too
+		if err := cli.activateStagedAdminCerts(); err != nil {
+			return err
+		}
 	}
 	admin, err := cli.brokerAdmin()
 	if err != nil {

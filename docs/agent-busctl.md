@@ -225,6 +225,15 @@ silent fall back to the password.
 | `--admin`    | instead of an agent: issue for `bus-admin` and `control-admin` and switch both at once. The tools in this config directory log in with the new files from then on; restart `bus-monitor`, which logs in as these users |
 | `--validity` | how long the certificate is valid, default `8760h`; must be positive and is cut off at the CA's expiry, and a CA that is not valid now issues nothing |
 
+`cert issue --admin` never locks the admin tools out. For each admin (`bus-admin` first) it writes
+the pair as `client.pem.new` and `client.key.new`, switches the server entry and waits for the
+confirmed reload, and only then renames the pair to `client.pem` and `client.key`. If a step fails,
+the error names the admin and the tools keep the login that worked until then (the password). Run
+the same command again to resume; the next `cert issue --admin` or `cert switch --admin
+--password` first activates a staged pair of an admin whom `nats/auth.conf` already maps to a
+certificate. If the server did not confirm a reload, restart it (or run the command again) so it
+reads the file.
+
 The `agent-bus` and `bus-monitor` of this machine, and `agent-busctl`, use `client.pem` and
 `client.key` as soon as the identity's directory has them, and the password otherwise. So an agent
 running on this machine must be switched right after the issue (`--switch`); for an agent on
