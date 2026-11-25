@@ -127,7 +127,7 @@ func New(session *adapter.Adapter) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "agent-bus", Version: "0.1.0"}, &mcp.ServerOptions{Instructions: instructionsFor(session)})
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "whoami",
-		Description: "Your agent ID, fingerprint, channels and auto_accept.",
+		Description: "Your agent ID, fingerprint, channels, auto_accept, broker, connected.",
 	}, t.whoami)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "send",
@@ -193,6 +193,14 @@ type whoamiOut struct {
 	Fingerprint string   `json:"fingerprint"`
 	Channels    []string `json:"channels"`
 	AutoAccept  bool     `json:"auto_accept"`
+	// Broker is the address this session connects to, Connected whether that connection is up
+	// now, and ConnectionProblem why not. Tool calls that never touch the broker work either way,
+	// so a session on the wrong broker looks fine without these.
+	Broker            string `json:"broker"`
+	Connected         bool   `json:"connected"`
+	ConnectionProblem string `json:"connection_problem,omitempty"`
+	// BrokerNote is set when the broker was a guess (the default, for an identity with a certificate).
+	BrokerNote string `json:"broker_note,omitempty"`
 	// UnknownSenders is set while messages wait for a sender that has no directory record.
 	UnknownSenders string `json:"unknown_senders,omitempty"`
 }
@@ -201,7 +209,14 @@ func (t tools) whoami(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.Cal
 	if err := t.session.Ready(); err != nil {
 		return nil, whoamiOut{}, err
 	}
-	return nil, whoamiOut{AgentID: t.session.AgentID(), Fingerprint: t.session.Fingerprint(), Channels: t.channelNames(), AutoAccept: t.session.AutoAccept(), UnknownSenders: t.unknownSenders()}, nil
+	out := whoamiOut{
+		AgentID: t.session.AgentID(), Fingerprint: t.session.Fingerprint(), Channels: t.channelNames(), AutoAccept: t.session.AutoAccept(),
+		Broker: t.session.BrokerAddress(), BrokerNote: t.session.BrokerNote(), Connected: true, UnknownSenders: t.unknownSenders(),
+	}
+	if err := t.session.BusUnavailable(); err != nil {
+		out.Connected, out.ConnectionProblem = false, err.Error()
+	}
+	return nil, out, nil
 }
 
 type channelsOut struct {

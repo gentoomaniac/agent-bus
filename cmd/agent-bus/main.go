@@ -39,7 +39,7 @@ type CLI struct {
 
 	Agent      string        `help:"The identity to act as, <name>@<owner>. Required except for pending." aliases:"identity" env:"BUS_AGENT"`
 	ConfigDir  string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
-	Broker     string        `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
+	Broker     string        `help:"NATS server address (host:port); the host must be in the broker certificate. Default: the broker this machine enrolled at, else localhost:4222." env:"BUS_BROKER"`
 	MappedPort int           `help:"Port of the broker's certificate listener, on the host of --broker. Used instead of --broker's port when the identity directory has client.pem and client.key." default:"4223" env:"BUS_MAPPED_PORT"`
 	CACert     string        `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
 	Groups     []string      `help:"Group channels to read besides the DM channel, general and the groups that agent-busctl channel join recorded in the directory." env:"BUS_GROUPS"`
@@ -309,6 +309,36 @@ func (cli *CLI) directoryFetcher(caCert string, longRunning bool) func(context.C
 	}
 }
 
+// defaultBroker is the broker of a machine that runs the whole bus itself and never enrolled.
+const defaultBroker = "localhost:4222"
+
+// chooseBroker sets cli.Broker when neither --broker nor BUS_BROKER did: to the broker the identity
+// enrolled at, else to defaultBroker. A silent localhost is what let a session run for two hours
+// against a retired test broker, so an identity that has a client certificate (it was enrolled, or
+// its files were copied) but no recorded broker gets a note saying where it is dialing and why.
+// source says where the broker came from, for the log.
+func (cli *CLI) chooseBroker(identityDir string) (source, note string, err error) {
+	if cli.Broker != "" {
+		return "--broker or BUS_BROKER", "", nil
+	}
+	enrolled, err := enrollclient.EnrolledBroker(cli.ConfigDir, cli.Agent)
+	if err != nil {
+		return "", "", err
+	}
+	if enrolled != "" {
+		cli.Broker = enrolled
+		return "enrolled, from " + enrollclient.BrokerPath(cli.ConfigDir, cli.Agent), "", nil
+	}
+	cli.Broker = defaultBroker
+	source = "the default: no --broker and no recorded broker"
+	if enrolled, _ := creds.HasClientCert(identityDir); enrolled {
+		note = fmt.Sprintf("%s has a client certificate but no broker is recorded (%s), so this session dials %s. "+
+			"If that is not your broker, pass --broker or set BUS_BROKER, or run agent-bus enroll again.",
+			cli.Agent, enrollclient.BrokerPath(cli.ConfigDir, cli.Agent), defaultBroker)
+	}
+	return source, note, nil
+}
+
 // open connects as the agent and takes the identity. closeSession releases both. A long-running
 // session keeps reconnecting when the broker is down, also at start; a command fails at once.
 func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession func(), err error) {
@@ -323,11 +353,19 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 	if caCert == "" {
 		caCert = filepath.Join(cli.ConfigDir, "ca.pem")
 	}
+	brokerSource, brokerNote, err := cli.chooseBroker(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if brokerNote != "" {
+		log.Printf("agent-bus: WARNING: %s", brokerNote)
+	}
 	connection, err := broker.UserConnection(dir, bus.AgentToken(cli.Agent), cli.Broker, cli.MappedPort, caCert)
 	if err != nil {
 		return nil, nil, err
 	}
 	if longRunning {
+		log.Printf("agent-bus: connecting to %s as %s (broker from %s)", connection.Address, cli.Agent, brokerSource)
 		connection.Reconnect = &broker.Backoff{Initial: cli.ReconnectInitial, Max: cli.ReconnectMax}
 		connection.Log = func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) }
 	}
@@ -336,7 +374,7 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 		return nil, nil, err
 	}
 	session, err = adapter.Open(adapter.Config{
-		AgentID: cli.Agent, Dir: dir, Transport: transport, Directory: trust.DirectoryPath(cli.ConfigDir), FetchDirectory: cli.directoryFetcher(caCert, longRunning),
+		AgentID: cli.Agent, Dir: dir, Transport: transport, BrokerAddress: connection.Address, BrokerNote: brokerNote, Directory: trust.DirectoryPath(cli.ConfigDir), FetchDirectory: cli.directoryFetcher(caCert, longRunning),
 		Groups: cli.Groups, Deliver: cli.Deliver, AutoAccept: cli.AutoAccept,
 	})
 	if err != nil {

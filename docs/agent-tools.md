@@ -11,12 +11,17 @@ the server does not start and names the holder's PID on stderr
 
 ### whoami
 
-No parameters. Returns the identity, the channels it reads and whether `--auto-accept-messages` is on, and `unknown_senders` while mail waits for a sender with no
-directory record.
+No parameters. Returns the identity, the channels it reads and whether `--auto-accept-messages` is on, the
+address of the broker this session connects to (`broker`) and whether that connection is up (`connected`,
+with `connection_problem` when not, and `broker_note` when the broker was only a guess), and `unknown_senders` while mail waits for a sender with no
+directory record. It works while the broker is down, which is when `connected` matters.
 
 ```json
-{"agent_id": "api-client@alice", "fingerprint": "…", "channels": ["DM api-client@alice", "general", "channel lib-x"], "auto_accept": true}
+{"agent_id": "api-client@alice", "fingerprint": "…", "channels": ["DM api-client@alice", "general", "channel lib-x"], "auto_accept": true, "broker": "wss://bus.example.org:4223", "connected": true}
 ```
+
+`broker` is the address actually dialed: `wss://<host>:<mapped port>` for an identity with a client
+certificate, else `host:port`.
 
 ### send
 

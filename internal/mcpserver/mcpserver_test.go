@@ -35,6 +35,7 @@ type fakeBroker struct {
 	acked    map[string]bool   // agent|sequence
 	failAck  bool              // the broker does not confirm acks
 	presence map[string][]byte // last record by agent ID
+	down     error             // what Unavailable returns
 }
 
 type fakeTransport struct {
@@ -97,7 +98,11 @@ func (transport fakeTransport) Presence(_ context.Context, agentID string) ([]by
 
 func (fakeTransport) Close() {}
 
-func (fakeTransport) Unavailable() error { return nil }
+func (transport fakeTransport) Unavailable() error {
+	transport.broker.mu.Lock()
+	defer transport.broker.mu.Unlock()
+	return transport.broker.down
+}
 
 type testBus struct {
 	t         *testing.T
@@ -106,6 +111,7 @@ type testBus struct {
 	// clockOffset moves the clock of the agents connected after it is set, so that messages
 	// sent meanwhile look old to them.
 	clockOffset time.Duration // read when an agent connects
+	brokerNote  string        // what whoami says about how the broker was chosen
 }
 
 func newTestBus(t *testing.T, agents ...string) *testBus {
@@ -136,7 +142,7 @@ func (b *testBus) connectWith(agentID string, autoAccept bool) *mcp.ClientSessio
 	clockOffset := b.clockOffset
 	session, err := adapter.Open(adapter.Config{
 		AgentID: agentID, Dir: filepath.Join(b.configDir, agentID), Transport: fakeTransport{b.broker, agentID},
-		Directory: trust.DirectoryPath(b.configDir), AutoAccept: autoAccept,
+		BrokerAddress: testBrokerAddress, BrokerNote: b.brokerNote, Directory: trust.DirectoryPath(b.configDir), AutoAccept: autoAccept,
 		Now: func() time.Time { return time.Now().Add(clockOffset) },
 	})
 	if err != nil {
@@ -198,6 +204,36 @@ func errorText(result *mcp.CallToolResult) string {
 }
 
 func hello(text string) map[string]any { return map[string]any{"body": map[string]any{"text": text}} }
+
+const testBrokerAddress = "wss://bus.example.org:4223"
+
+func TestWhoamiSaysWhichBrokerAndWhetherItIsReachable(t *testing.T) {
+	b := newTestBus(t, alice)
+	client := b.connect(alice)
+
+	who := decode[whoamiOut](t, call(t, client, "whoami", nil))
+	if who.Broker != testBrokerAddress || !who.Connected || who.ConnectionProblem != "" {
+		t.Errorf("whoami = %+v, want the broker and a live connection", who)
+	}
+
+	b.broker.mu.Lock()
+	b.broker.down = bus.ErrUnavailable
+	b.broker.mu.Unlock()
+	who = decode[whoamiOut](t, call(t, client, "whoami", nil))
+	if who.Broker != testBrokerAddress || who.Connected || !strings.Contains(who.ConnectionProblem, "unavailable") {
+		t.Errorf("whoami while down = %+v, want the broker, not connected and the reason", who)
+	}
+}
+
+func TestWhoamiRepeatsTheNoteAboutAGuessedBroker(t *testing.T) {
+	b := newTestBus(t, alice)
+	b.brokerNote = "alice has a certificate but no broker is recorded"
+	client := b.connect(alice)
+
+	if who := decode[whoamiOut](t, call(t, client, "whoami", nil)); who.BrokerNote != b.brokerNote {
+		t.Errorf("broker_note = %q, want %q", who.BrokerNote, b.brokerNote)
+	}
+}
 
 func TestToolsExchangeAMessageFramedAsUntrusted(t *testing.T) {
 	b := newTestBus(t, alice, bob)

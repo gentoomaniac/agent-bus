@@ -319,6 +319,9 @@ func (e *enrolment) finish(request enroll.Request, tlsKeyPEM string, reply enrol
 	if err := creds.WritePassword(filepath.Join(e.opts.ConfigDir, passwordDir), e.opts.EnrollPassword, true); err != nil {
 		return err
 	}
+	if err := writeBroker(e.opts.ConfigDir, e.opts.AgentID, e.opts.Broker); err != nil {
+		return err
+	}
 	_ = os.Remove(e.pendingPath())
 	certPath, keyPath := creds.ClientCertPaths(e.dir)
 	fmt.Fprintf(e.opts.Out, "enrolled %s: certificate %s, key %s, directory of %d agents\n", e.opts.AgentID, certPath, keyPath, records)

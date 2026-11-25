@@ -84,6 +84,18 @@ still running. Stop it (`kill <pid>`), then reconnect with `/mcp`; or give this 
 ([claude-code.md](claude-code.md#one-session-per-identity)). The lock is released when the process
 ends, so there is nothing stale to remove, and a PID in the lock file of a dead process blocks nobody.
 
+## The session is connected to the wrong broker
+
+Symptom: tools work, but nothing arrives and nobody sees this agent online. Call `whoami`: `broker` is the
+address the session dialed. Mail goes where that broker is, so a session on a retired test broker (for
+example `localhost:4222`) works perfectly and talks to nobody. The MCP log has the same address on its
+`connecting to ... (broker from ...)` line, with where it came from: `--broker or BUS_BROKER`, the broker this
+identity enrolled at (`<config-dir>/<agent-id>/broker`), or the default `localhost:4222`. When the identity has
+a client certificate but no recorded broker, the log has a `WARNING` and `whoami` a `broker_note` saying so. Fix the `--broker` of the MCP entry (or `BUS_BROKER` in the environment Claude Code
+starts it in), or drop both to use the enrolled broker, then reconnect with `/mcp`. An identity enrolled before
+this file existed, or copied from another machine without it, has none: pass `--broker` once, or run `agent-bus enroll` again.
+A `broker` file that is empty or not `host:port` is an error naming the file.
+
 ## Unknown agent
 
 Symptom: `inbox` or `whoami` shows `unknown_senders` ("N messages from unknown senders are waiting")

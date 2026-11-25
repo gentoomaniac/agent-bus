@@ -34,6 +34,64 @@ func TestEventCommandIsSilentAndSucceedsOnBadInput(t *testing.T) {
 	}
 }
 
+func TestBrokerIsTheFlagThenTheEnrolledOneThenTheDefault(t *testing.T) {
+	configDir := t.TempDir()
+	const agent = "lib-x@bob"
+	dir := filepath.Join(configDir, agent)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	cli := CLI{ConfigDir: configDir, Agent: agent}
+	if _, note, err := cli.chooseBroker(dir); err != nil || cli.Broker != defaultBroker || note != "" {
+		t.Errorf("no broker, no certificate: broker %q, note %q, %v, want the default without a warning", cli.Broker, note, err)
+	}
+
+	if err := os.WriteFile(enrollclient.BrokerPath(configDir, agent), []byte("bus.example.org:4222\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cli = CLI{ConfigDir: configDir, Agent: agent}
+	if source, note, err := cli.chooseBroker(dir); err != nil || cli.Broker != "bus.example.org:4222" || note != "" || !strings.Contains(source, "enrolled") {
+		t.Errorf("recorded: broker %q (%s), note %q, %v", cli.Broker, source, note, err)
+	}
+
+	cli = CLI{ConfigDir: configDir, Agent: "other@bob"}
+	if _, _, err := cli.chooseBroker(filepath.Join(configDir, "other@bob")); err != nil || cli.Broker != defaultBroker {
+		t.Errorf("another identity must not take lib-x's broker: %q, %v", cli.Broker, err)
+	}
+
+	cli = CLI{ConfigDir: configDir, Agent: agent, Broker: "other:4222"}
+	if _, _, err := cli.chooseBroker(dir); err != nil || cli.Broker != "other:4222" {
+		t.Errorf("--broker: broker %q, %v, want it kept", cli.Broker, err)
+	}
+}
+
+func TestAnEnrolledIdentityWithoutARecordedBrokerWarnsThatItDialsLocalhost(t *testing.T) {
+	configDir := t.TempDir()
+	const agent = "lib-x@bob"
+	dir := filepath.Join(configDir, agent)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"client.pem", "client.key"} {
+		if err := os.WriteFile(filepath.Join(dir, file), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cli := CLI{ConfigDir: configDir, Agent: agent}
+
+	_, note, err := cli.chooseBroker(dir)
+
+	for _, want := range []string{agent, defaultBroker, "--broker", "BUS_BROKER", "enroll"} {
+		if err != nil || !strings.Contains(note, want) {
+			t.Errorf("note %q (%v) lacks %q", note, err, want)
+		}
+	}
+	if strings.Contains(note, "never enrolled") {
+		t.Errorf("note %q claims the identity never enrolled", note)
+	}
+}
+
 func TestWaitForCertTakesAnOptionalDuration(t *testing.T) {
 	for args, want := range map[string]time.Duration{
 		"":                          0,

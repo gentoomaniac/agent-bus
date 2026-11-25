@@ -136,7 +136,9 @@ docker compose -f deploy/docker-compose.yaml exec -T agent-bus \
 For another machine, run that with `ssh other 'tar -C ~/.config/agent-bus -xf -'` as the second
 tar. `docker compose cp agent-bus:/config/ca.pem .` works for single files, and
 `tar -C ~/agent-bus/config -cf - ca.pem directory` works on the host (the folder is owned by uid
-10001: use `sudo`, or the `exec` form above). Treat the agent folder as a secret: it holds the identity.
+10001: use `sudo`, or the `exec` form above). Treat the agent folder as a secret: it holds the identity. The agent machine also needs the broker's
+address: pass `--broker <host>:4222` (or `BUS_BROKER`), or put it in `<agent folder>/broker`, the one-line file
+`agent-bus enroll` writes; each identity has its own, so without either it dials `localhost:4222`.
 
 ### Keep the directory fresh
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -50,6 +51,8 @@ func (cmd *EnrollCmd) Run(ctx context.Context, cli *CLI) error {
 	if cli.Agent == "" {
 		return errors.New("--agent is required")
 	}
+	// Enrolling names its broker: one kept from an earlier enrollment must not be picked silently.
+	cli.Broker = cmp.Or(cli.Broker, defaultBroker)
 	password := cmd.EnrollPassword
 	if password == "" {
 		var err error

@@ -49,7 +49,11 @@ type Config struct {
 	AgentID   string
 	Dir       string // the identity's directory: key, lock, known_agents, handled.jsonl, alerts.log
 	Transport bus.Transport
-	Directory trust.Directory
+	// BrokerAddress is where the Transport connects, only so that whoami can say it.
+	BrokerAddress string
+	// BrokerNote warns that the broker was a guess, for whoami to repeat to the agent.
+	BrokerNote string
+	Directory  trust.Directory
 	// FetchDirectory brings the local Directory up to date from busd. Nil: the directory only
 	// changes when someone copies files in. It also runs when an agent is missing from the
 	// directory, so it must not call the adapter.
@@ -248,6 +252,12 @@ func (adapter *Adapter) Close() error {
 func (adapter *Adapter) Ready() error { return adapter.lockErr }
 
 func (adapter *Adapter) AgentID() string { return adapter.config.AgentID }
+
+// BrokerAddress is where the adapter's transport connects.
+func (adapter *Adapter) BrokerAddress() string { return adapter.config.BrokerAddress }
+
+// BrokerNote is a warning about how the broker was chosen, or "".
+func (adapter *Adapter) BrokerNote() string { return adapter.config.BrokerNote }
 
 // Now is the adapter's clock, which tests move.
 func (adapter *Adapter) Now() time.Time { return adapter.config.Now() }

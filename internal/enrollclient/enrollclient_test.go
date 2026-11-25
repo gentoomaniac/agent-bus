@@ -101,7 +101,7 @@ func newFixture(t *testing.T) *fixture {
 
 func (f *fixture) run(wait time.Duration) error {
 	e := &enrolment{
-		opts:      Options{ConfigDir: f.configDir, AgentID: agentID, EnrollPassword: "shared-secret", Wait: wait, Out: f.out},
+		opts:      Options{ConfigDir: f.configDir, AgentID: agentID, Broker: "bus.example.org:4222", EnrollPassword: "shared-secret", Wait: wait, Out: f.out},
 		requester: f.busd, caPEM: f.busd.caPEM, dir: creds.AgentDir(f.configDir, agentID),
 		pollEvery: broker.Backoff{Initial: time.Millisecond, Max: 5 * time.Millisecond}, exchangeTimeout: time.Second,
 	}
@@ -157,6 +157,40 @@ func TestApprovalInstallsTheCertificateAndTheDirectory(t *testing.T) {
 	}
 	if password, err := creds.ReadPassword(filepath.Join(f.configDir, passwordDir)); err != nil || password != "shared-secret" {
 		t.Errorf("the enrollment password kept for the directory fetch: %q, %v", password, err)
+	}
+	if broker, err := EnrolledBroker(f.configDir, agentID); err != nil || broker != "bus.example.org:4222" {
+		t.Errorf("the broker kept as the default: %q, %v", broker, err)
+	}
+}
+
+func TestEnrolledBrokerIsEmptyBeforeEnrollingAndRefusesAnInvalidFile(t *testing.T) {
+	configDir := t.TempDir()
+	if broker, err := EnrolledBroker(configDir, agentID); err != nil || broker != "" {
+		t.Errorf("before enrolling: %q, %v", broker, err)
+	}
+	if err := os.MkdirAll(creds.AgentDir(configDir, agentID), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, content := range []string{"", "  \n", "no-port\n", "a b:4222:1"} {
+		if err := os.WriteFile(BrokerPath(configDir, agentID), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := EnrolledBroker(configDir, agentID); err == nil || !strings.Contains(err.Error(), BrokerPath(configDir, agentID)) {
+			t.Errorf("file %q: error %v, want one naming the file", content, err)
+		}
+	}
+}
+
+func TestEachIdentityKeepsItsOwnBroker(t *testing.T) {
+	configDir := t.TempDir()
+	if err := writeBroker(configDir, "a@x", "one:4222"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeBroker(configDir, "b@x", "two:4222"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := EnrolledBroker(configDir, "a@x"); got != "one:4222" {
+		t.Errorf("a@x: %q", got)
 	}
 }
 

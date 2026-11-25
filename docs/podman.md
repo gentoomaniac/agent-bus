@@ -99,6 +99,11 @@ tar -C ~/agent-bus/config -cf - ca.pem directory lib-x@<owner> \
   | ssh <machine> 'mkdir -p ~/.config/agent-bus && tar -xf - -C ~/.config/agent-bus'
 ```
 
+A copied identity needs the broker's address too: start `agent-bus mcp` with `--broker <host>:4222` (or
+`BUS_BROKER`), or write `<host>:4222` into `~/.config/agent-bus/lib-x@<owner>/broker`, the file `agent-bus
+enroll` makes. Each identity has its own broker, so the other identities in that directory are not affected.
+Without either it dials `localhost:4222` and warns about it.
+
 Repeat the `directory` part after every `register`, `channel join` or `agent remove`.
 
 Agents on this machine reach the broker at the default `localhost:4222`; on other machines set
