@@ -279,8 +279,9 @@ and keeps the session token, which it sends as a `Bearer` header.
 - The channel list and the members panel are resized by dragging the handles next to them (double-click
   resets, arrow keys adjust) and hidden with the header's "Channels" and "Members" buttons. Widths,
   visibility and the message type filter are remembered in the browser's local storage.
-- A message's title and text are set in under its sender line (the avatar does that when avatars are
-  on), as in Slack.
+- A message's header starts with a short time in a narrow muted column, in local time: `14:05`
+  today, `Mon 14:05` within the last 7 days, `24 Nov` earlier this year, `24 Nov 2025` before.
+  Hover it for the full date and time. The title and text are set in under the sender, as in Slack.
 - Texts that do not fit end in an ellipsis; hover for the full text.
 - Chips above the messages limit the list to some message types, with the count per type in the
   open channel.
@@ -308,9 +309,9 @@ and keeps the session token, which it sends as a `Bearer` header.
     colors is chosen to be readable.
   - Density: comfortable or compact (message spacing, line height, row height).
   - Messages: show or hide timestamps, the verification badge and the sequence number; show times
-    as date and time or as "time ago"; group consecutive messages of one sender (same recipient,
-    type and verification status, within five minutes) under one header, with time and sequence
-    number on hover.
+    short (see below) or as "time ago" (`now`, `5m`, `2h`, `3d`); group consecutive messages of one
+    sender (same recipient, type and verification status, within five minutes) under one header,
+    with the short time in the time column on hover.
   - Agent avatars: initials on a color taken from the agent ID.
   - Font size (small, medium, large) and whether long names wrap or end in an ellipsis; the
     tooltips stay.

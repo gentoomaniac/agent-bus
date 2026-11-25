@@ -125,9 +125,9 @@
   .message[data-depth="3"] { margin-left: calc(var(--thread-indent) * 3); }
   .message[data-depth="4"] { margin-left: calc(var(--thread-indent) * 4); }
   .fresh-thread { box-shadow: inset 3px 0 0 var(--mention); }
-  .reply-count { margin-left: 1.25em; padding: 2px 0 var(--message-pad); font-size: var(--font-s); color: var(--muted); }
+  .reply-count { margin-left: var(--time-indent); padding: 2px 0 var(--message-pad); font-size: var(--font-s); color: var(--muted); }
   .reply-count .pill { margin-left: 6px; }
-  :root[data-avatars=on] .reply-count { margin-left: calc(var(--avatar) + 10px); }
+  :root[data-avatars=on] .reply-count { margin-left: calc(var(--avatar) + 10px + var(--time-indent)); }
   .pill.new-thread { background: var(--mention); color: var(--mention-text); border-color: var(--mention); font-weight: 600; }
   .reply-to { font-size: var(--font-xs); color: var(--muted); }
   #messages { flex: 1; overflow-y: auto; padding: 0 16px; min-height: 0; }
@@ -135,14 +135,16 @@
   .message:first-child { border-top: 0; }
   .message.grouped { border-top: 0; padding-top: 0; }
   :root[data-avatars=on] .message { grid-template-columns: var(--avatar) minmax(0, 1fr); }
-  .message .body { min-width: 0; }
-  /* Like Slack: the sender line stays at the edge, what was said is set in under it. With avatars the avatar column does that. */
-  :root:not([data-avatars=on]) .message .body > :is(.title, .text, .reason, .targets-row) { margin-left: 1.25em; }
-  /* A grouped message has no header: its time and sequence number show on hover. */
-  .meta.slim { position: absolute; right: 0; top: 0; padding-left: 8px; background: var(--panel); opacity: 0; }
+  .message .body { position: relative; min-width: 0; }
+  /* Like Slack: a short time in a narrow column left of the sender, what was said set in under the sender. */
+  :root { --time-col: 76px; --time-indent: calc(var(--time-col) + 8px); }
+  :root[data-timestamps=off] { --time-indent: 0px; }
+  .message .meta > .time { flex: none; width: var(--time-col); font-size: var(--font-xs); }
+  .message .body > :is(.title, .text, .reason, .targets-row) { margin-left: var(--time-indent); }
+  /* A grouped message has no header: its short time shows in that column while the row is hovered. */
+  .meta.slim { position: absolute; left: 0; top: 0; opacity: 0; }
   .message:hover .meta.slim { opacity: 1; }
   .message.grouped:hover { background: var(--hover); }
-  .message.grouped:hover .meta.slim { background: var(--hover); }
   .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
   .meta > * { white-space: nowrap; }
   .meta > .cut { max-width: min(30ch, 100%); }
@@ -627,18 +629,36 @@ function avatarFor(agentId, small = false) {
 
 // ---- time
 
-function relativeTime(time) {
-  const age = Date.now() - new Date(time).getTime();
-  return age >= 24 * 3600 * 1000 || age < 0 ? new Date(time).toLocaleString() : ago(time) + " ago";
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DAY_MS = 24 * 3600 * 1000;
+
+// The short time of the message column, in local time: "14:05" today, "Mon 14:05" within the
+// last 7 days, "24 Nov" earlier this year, "24 Nov 2025" before. Relative: "now", "5m", "2h", "3d".
+function shortTime(time, now, relative) {
+  const at = new Date(time);
+  const age = now - at.getTime();
+  if (relative) {
+    if (age < 60 * 1000) return "now";
+    if (age < 3600 * 1000) return Math.floor(age / 60000) + "m";
+    if (age < DAY_MS) return Math.floor(age / 3600000) + "h";
+    return Math.floor(age / DAY_MS) + "d";
+  }
+  const today = new Date(now);
+  const clock = String(at.getHours()).padStart(2, "0") + ":" + String(at.getMinutes()).padStart(2, "0");
+  if (at.toDateString() === today.toDateString()) return clock;
+  if (age >= 0 && age < 7 * DAY_MS) return WEEKDAYS[at.getDay()] + " " + clock;
+  const date = at.getDate() + " " + MONTHS[at.getMonth()];
+  return at.getFullYear() === today.getFullYear() ? date : date + " " + at.getFullYear();
 }
 
 function formatTime(time) {
-  if (!time) return "";
-  return settings.timeFormat === "relative" ? relativeTime(time) : new Date(time).toLocaleString();
+  return time ? shortTime(time, Date.now(), settings.timeFormat === "relative") : "";
 }
 
 function timeSpan(time) {
-  return el("span", { class: "muted time", "data-time": time || "", title: time || "" }, formatTime(time));
+  const full = time ? new Date(time).toLocaleString(undefined, { dateStyle: "full", timeStyle: "medium" }) : "";
+  return el("span", { class: "muted time", "data-time": time || "", title: full }, formatTime(time));
 }
 
 function refreshTimes() {
@@ -1251,11 +1271,11 @@ function repliesLine({ replies, unseen }) {
 function renderMessage(message, grouped, depth, orphanOf, thread) {
   const sequence = el("span", { class: "muted seq" }, "#" + message.sequence);
   const header = grouped
-    ? el("div", { class: "meta slim" }, timeSpan(message.time), sequence)
+    ? el("div", { class: "meta slim" }, timeSpan(message.time))
     : el("div", { class: "meta" },
+      timeSpan(message.time),
       el("span", { class: "from cut", title: message.from || "" }, message.from || "unknown sender"),
       ...(message.to ? [destination(message)] : []),
-      timeSpan(message.time),
       ...(message.type ? [el("span", { class: "pill" }, message.type)] : []),
       el("span", { class: "badge " + message.status }, STATUS_LABEL[message.status] || message.status),
       sequence);
