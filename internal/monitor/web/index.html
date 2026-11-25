@@ -1311,15 +1311,25 @@ function shownMessages(list) {
   return state.shownTypes.size ? list.filter((m) => state.shownTypes.has(m.type)) : list;
 }
 
-// Rows that are on screen while the page is looked at count as seen; see readOnReturn.
-// A row counts from half of it on, so a tall message is seen once its half is.
+// Rows that are on screen while the page is looked at count as seen; see readOnReturn. A row is
+// on screen when half of it is visible, or when it fills half of the box (a message taller than
+// the box would never show half of itself).
+function markVisibleRowsSeen() {
+  if (!looking()) return;
+  const box = $("messages").getBoundingClientRect();
+  for (const row of $("messages").querySelectorAll(".message")) {
+    const rect = row.getBoundingClientRect();
+    const visible = Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top);
+    if (visible >= rect.height / 2 || visible >= box.height / 2) state.seen.add(Number(row.dataset.sequence));
+  }
+}
+
+// The observer only says that some row moved in or out of view (after a render, a scroll); the
+// rule above decides what counts. Coming back to the page fires nothing, see readOnReturn.
 let rowObserver = null;
 function observeRows(box) {
   if (rowObserver) rowObserver.disconnect();
-  rowObserver = new IntersectionObserver((observed) => {
-    if (!looking()) return;
-    for (const { target, isIntersecting } of observed) if (isIntersecting) state.seen.add(Number(target.dataset.sequence));
-  }, { root: box, threshold: 0.5 });
+  rowObserver = new IntersectionObserver(markVisibleRowsSeen, { root: box, threshold: [0, 0.25, 0.5, 0.75, 1] });
   for (const row of box.querySelectorAll(".message")) rowObserver.observe(row);
 }
 
@@ -1719,17 +1729,21 @@ function connectEvents() {
 
 // Coming back to the page reads the open channel. Its "New" line goes too if every shown message
 // after it (not the monitor's own) was on screen at some point; otherwise it stays until a later
-// return, or until another channel is opened.
+// return, or until another channel is opened. The rows in view now are marked seen after that
+// decision, so mail that arrived while away is shown on this return and cleared on the next.
 function readOnReturn() {
   if (!state.selected || !looking()) return;
   markRead(state.selected);
   renderSidebar();
-  if (state.marker === null) return;
-  const list = shownMessages(state.messages.get(state.selected) || []);
-  const allSeen = list.every((m) => m.sequence <= state.marker || m.from === state.status.agent || state.seen.has(m.sequence));
-  if (!allSeen) return;
-  state.marker = null;
-  renderMessages(false);
+  if (state.marker !== null) {
+    const list = shownMessages(state.messages.get(state.selected) || []);
+    const allSeen = list.every((m) => m.sequence <= state.marker || m.from === state.status.agent || state.seen.has(m.sequence));
+    if (allSeen) {
+      state.marker = null;
+      renderMessages(false);
+    }
+  }
+  markVisibleRowsSeen();
 }
 document.addEventListener("visibilitychange", readOnReturn);
 window.addEventListener("focus", readOnReturn);

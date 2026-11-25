@@ -175,7 +175,9 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   arrived while the page was open. Opening it draws a **New** line above the first unseen message
   (starting there when the new part is longer than the screen); the line stays until you open
   another channel, or until the page gets focus again (or becomes visible) after every shown
-  message below the line, not your own, was on screen at least once while you looked at the page;
+  message below the line, not your own, was on screen at least once while you looked at the page (a
+  message counts when half of it, or half of the message area, is in view; on coming back, what
+  is in view then counts for the next return);
   messages the type filter hides do not count, and if something arrived unseen the line waits for
   a later return. Your own messages in the open channel never count as new. Mail that arrives
   while the tab is hidden or unfocused stays unseen until you come back. What you have seen is kept
