@@ -412,8 +412,8 @@ func TestMilestone1a(t *testing.T) {
 			t.Errorf("BUS subjects = %q, want %q", got, want)
 		}
 		if config.Storage != jetstream.FileStorage || config.Retention != jetstream.LimitsPolicy ||
-			config.MaxAge != 0 || config.MaxBytes != -1 || config.MaxMsgs != -1 || config.Duplicates != 24*time.Hour {
-			t.Errorf("BUS config = storage %v retention %v max age %v bytes %d msgs %d duplicates %v; want file, limits, infinite, 24h",
+			config.MaxAge != 90*24*time.Hour || config.MaxBytes != 1<<30 || config.MaxMsgs != -1 || config.Duplicates != 24*time.Hour {
+			t.Errorf("BUS config = storage %v retention %v max age %v bytes %d msgs %d duplicates %v; want file, limits, 90 days, 1 GiB, 24h",
 				config.Storage, config.Retention, config.MaxAge, config.MaxBytes, config.MaxMsgs, config.Duplicates)
 		}
 
