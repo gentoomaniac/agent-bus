@@ -81,12 +81,13 @@ sequenceDiagram
   participant Ledger as LEDGER (planned)
   Op->>Op: take the file lock
   Op->>Conf: write a candidate with a new generation number
+  Op-->>Ledger: record the desired generation before any effect (planned)
   Op->>Server: nats-server -t validates the candidate
   Op->>Conf: atomically replace auth.conf
   Op->>Server: signal reload through the pid file
   Op->>Server: monitoring endpoint, config load time moved past the reload
+  Op-->>Ledger: record the confirmed generation (planned)
   Op->>Op: report done
-  Op-->>Ledger: record desired and confirmed generation (planned)
 ```
 
 What a reload does:
