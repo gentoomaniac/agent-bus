@@ -79,13 +79,13 @@ export class ChatPanels implements vscode.Disposable {
   }
 
   // Answers a search of the page. A failure goes to the page, which shows it in place of the results.
-  private async search(channelId: string, chat: Chat, { run, text, allChannels, cursor }: Extract<FromWebview, { type: "search" }>): Promise<void> {
+  private async search(channelId: string, chat: Chat, { run, chips, text, allChannels, cursor }: Extract<FromWebview, { type: "search" }>): Promise<void> {
     const { model } = this.session;
     const channel = this.channelOf(channelId);
     const scope = allChannels || !channel ? [] : scopeTerms(channel);
     let answer: Extract<ToWebview, { type: "searchResults" }>;
     try {
-      const page = await model.api.search(buildQuery(scope, text), cursor);
+      const page = await model.api.search(buildQuery(scope, chips, text), cursor);
       const hits = page.results
         .filter((hit) => allChannels || hit.channel === channelId)
         .map((hit) => ({ ...hit, where: hitPlace(model.channels, hit.channel) }));
@@ -263,8 +263,13 @@ export class ChatPanels implements vscode.Disposable {
   #description { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #messages, #results { flex: 1; overflow-y: auto; padding: 4px 0; }
   #searchbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
-  #searchInput { flex: 1; min-width: 0; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px; padding: 3px 6px; outline: 0; }
-  #searchInput:focus { border-color: var(--vscode-focusBorder); }
+  #searchField { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px; padding: 2px 6px; }
+  #searchField:focus-within { border-color: var(--vscode-focusBorder); }
+  #searchInput { flex: 1; min-width: 8em; color: var(--vscode-input-foreground); background: transparent; border: 0; padding: 2px 0; outline: 0; }
+  .tag { background: transparent; }
+  .tag:not(.badge) { color: inherit; padding: 0; }
+  .tag:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); text-decoration: underline; }
+  .tag:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
   #searchbar .pill { color: var(--vscode-descriptionForeground); background: transparent; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 10px; font-size: 0.85em; padding: 1px 8px; white-space: nowrap; }
   #searchbar .pill:hover:not(:disabled) { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground); }
   #searchbar .pill[aria-pressed="true"] { color: var(--vscode-foreground); border-color: var(--vscode-focusBorder); }
@@ -357,7 +362,7 @@ export class ChatPanels implements vscode.Disposable {
 <body>
 <header><h1 id="heading"></h1><div id="description"></div><button id="searchToggle" class="link" type="button" title="Search messages (Ctrl+F)" aria-pressed="false">Search</button><button id="threads" class="link" type="button" title="Show replies under their parent" aria-pressed="false">Threads</button></header>
 <div id="searchbar" role="search" hidden>
-  <input id="searchInput" type="text" placeholder="Search: words, &quot;phrases&quot;, from: type: targets: after: before:" aria-label="Search messages" autocomplete="off" spellcheck="false">
+  <div id="searchField"><input id="searchInput" type="text" placeholder="Search: words, &quot;phrases&quot;, from: type: targets: after: before:" aria-label="Search messages" autocomplete="off" spellcheck="false"></div>
   <button id="scope" class="pill" type="button" title="Search all channels, not only this one" aria-pressed="false">All channels</button>
   <button id="searchClose" class="link" type="button" title="Close search (Esc)" aria-label="Close search">×</button>
 </div>

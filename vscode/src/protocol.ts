@@ -1,3 +1,4 @@
+import { CHIP_KEYS, Chip } from "./search";
 import { Message, SearchHit } from "./types";
 
 // An agent's presence as the page draws it: a dot, with the state and its start as the tooltip.
@@ -50,8 +51,14 @@ export type FromWebview =
   | { type: "send"; draft: Draft }
   | { type: "threaded"; value: boolean }
   | { type: "raw"; sequence: number } // open the record as stored
-  | { type: "search"; run: number; text: string; allChannels: boolean; cursor?: string }
+  | { type: "search"; run: number; chips: Chip[]; text: string; allChannels: boolean; cursor?: string }
   | { type: "jump"; channel: string; sequence: number }; // show a search result: load history and open its channel if needed
+
+function isChip(raw: unknown): raw is Chip {
+  if (typeof raw !== "object" || raw === null) return false;
+  const { key, value } = raw as Record<string, unknown>;
+  return typeof key === "string" && CHIP_KEYS.includes(key) && typeof value === "string" && value.trim() !== "";
+}
 
 // What the page posted, if it is a well-formed message. The page is our own code, but it renders
 // untrusted text, so the host checks what it acts on.
@@ -61,10 +68,11 @@ export function parseFromWebview(raw: unknown): FromWebview | undefined {
   if (message.type === "ready" || message.type === "older") return { type: message.type };
   if (message.type === "raw") return Number.isSafeInteger(message.sequence) && (message.sequence as number) >= 0 ? { type: "raw", sequence: message.sequence as number } : undefined;
   if (message.type === "search") {
-    const { run, text, allChannels, cursor } = message;
+    const { run, chips, text, allChannels, cursor } = message;
     if (!Number.isSafeInteger(run) || typeof text !== "string" || typeof allChannels !== "boolean") return undefined;
     if (cursor !== undefined && typeof cursor !== "string") return undefined;
-    return { type: "search", run: run as number, text, allChannels, ...(cursor === undefined ? {} : { cursor }) };
+    if (!Array.isArray(chips) || !chips.every(isChip)) return undefined;
+    return { type: "search", run: run as number, chips: chips.map(({ key, value }) => ({ key, value })), text, allChannels, ...(cursor === undefined ? {} : { cursor }) };
   }
   if (message.type === "jump") {
     const { channel, sequence } = message;

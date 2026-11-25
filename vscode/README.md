@@ -125,6 +125,13 @@ the editor's own find does not open there.
   the message list while the search has text, newest first: channel, sender, time, type and a
   snippet of the title or text with the matches highlighted. "Load more" fetches the next page. A
   failed search shows its error in place of the results.
+- **Clickable tags:** the sender, the type badge and the target badges in a message header are
+  buttons (Tab reaches them, Enter or Space presses them). A click opens the search with a
+  filter chip: `from:<agent>`, `type:<type>` or `targets:<agent>` (`targets:@all` for `@all`).
+  The chips sit in front of the text in the search field, each with an `×` (Backspace in the
+  empty field removes the last one), and every chip and the text must match: the API ANDs the
+  terms. Clicking another tag adds another chip. The scope toggle applies as before, so a click
+  in a channel filters that channel; turn on "All channels" to filter all of them.
 - **Jumping:** click a result, and the search closes, the message scrolls into view in the middle
   and flashes. Older history is loaded when the message is further back. A result from another
   channel opens that channel's panel and jumps there.

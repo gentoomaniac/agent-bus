@@ -16,9 +16,27 @@ export function scopeTerms(channel: Channel): string[] {
   return (channel.agents ?? []).map((agent) => term("to", agent));
 }
 
-// The query the monitor gets: the scope, then what the user typed.
-export function buildQuery(scope: string[], text: string): string {
-  return [...scope, text.trim()].filter(Boolean).join(" ");
+// A filter a click on a tag adds to the search, shown as a removable chip: `from:`, `type:` or `targets:`.
+export interface Chip {
+  key: "from" | "type" | "targets";
+  value: string;
+}
+
+export const CHIP_KEYS: readonly string[] = ["from", "type", "targets"];
+
+export function chipTerm({ key, value }: Chip): string {
+  return term(key, value);
+}
+
+// The chips with one more, unless it is there already.
+export function withChip(chips: readonly Chip[], chip: Chip): Chip[] {
+  return chips.some(({ key, value }) => key === chip.key && value === chip.value) ? [...chips] : [...chips, chip];
+}
+
+// The query the monitor gets: the scope, the chips, then what the user typed. The API ANDs the
+// terms; only several `type:` filters are alternatives.
+export function buildQuery(scope: string[], chips: readonly Chip[], text: string): string {
+  return [...scope, ...chips.map(chipTerm), text.trim()].filter(Boolean).join(" ");
 }
 
 // The channel of a result as the page names it; the ID of one the monitor does not list (yet).

@@ -2,7 +2,7 @@
 import { matchTargets, mentionBefore, mentionText } from "../completion";
 import { continuesGroup, insertMessage } from "../messages";
 import { parsePresenceMarks } from "../protocol";
-import { snippetParts } from "../search";
+import { Chip, chipTerm, snippetParts, withChip } from "../search";
 import type { ChatState, FromWebview, PresenceMark, SearchHitView, ToWebview } from "../protocol";
 import { presenceClass } from "../presence";
 import { shortTime } from "../time";
@@ -42,6 +42,7 @@ const problem = document.getElementById("problem") as HTMLElement;
 const searchToggle = document.getElementById("searchToggle") as HTMLButtonElement;
 const searchbar = document.getElementById("searchbar") as HTMLElement;
 const searchInput = document.getElementById("searchInput") as HTMLInputElement;
+const searchField = document.getElementById("searchField") as HTMLElement;
 const scopeToggle = document.getElementById("scope") as HTMLButtonElement;
 const results = document.getElementById("results") as HTMLElement;
 
@@ -85,12 +86,22 @@ function paintDots(): void {
   for (const dot of list.querySelectorAll<HTMLElement>(".dot")) paintDot(dot, dot.dataset.from ?? "");
 }
 
+// A sender, type or target in a header is a button: it adds its filter to the search and opens it.
+function renderTag(className: string, text: string, chip: Chip): HTMLElement {
+  const button = el("button", className + " tag", text);
+  button.type = "button";
+  button.title = "Search " + chipTerm(chip);
+  button.addEventListener("click", () => addSearchChip(chip));
+  return button;
+}
+
 // `newTag` is the "New" or "new" marker of a thread view, shown before the time.
 function renderHeader(message: Message, newTag: string | undefined): HTMLElement {
   const header = el("div", "meta");
-  header.append(renderDot(message.from ?? ""), el("span", "from", message.from || "unknown sender"));
-  if (message.type && message.type !== DEFAULT_TYPE) header.append(el("span", "badge", message.type));
-  for (const target of message.targets ?? []) header.append(el("span", target === state?.self ? "badge me" : "badge", "→ " + target));
+  header.append(renderDot(message.from ?? ""));
+  header.append(message.from ? renderTag("from", message.from, { key: "from", value: message.from }) : el("span", "from", "unknown sender"));
+  if (message.type && message.type !== DEFAULT_TYPE) header.append(renderTag("badge", message.type, { key: "type", value: message.type }));
+  for (const target of message.targets ?? []) header.append(renderTag(target === state?.self ? "badge me" : "badge", "→ " + target, { key: "targets", value: target }));
   if (message.status === "verified") {
     const verified = el("span", "verified", "✓");
     verified.title = "verified";
@@ -376,11 +387,12 @@ function updateSend(): void {
 }
 
 // ---- search ----
-// While the search has text, its results take the place of the message list.
+// While the search has text or chips, its results take the place of the message list.
 
 const SEARCH_DELAY_MS = 250;
 let searching = false;
 let allChannels = false; // the search is not limited to the open channel
+let chips: Chip[] = []; // the filters of clicked tags, ANDed with each other and the text
 let searchRun = 0; // the host's answers to an older search are dropped
 let appending = false; // the search under way asks for the next page
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -402,7 +414,6 @@ function openSearch(): void {
   searchbar.hidden = false;
   searchToggle.setAttribute("aria-pressed", "true");
   searchInput.focus();
-  searchInput.select();
   runSearch();
 }
 
@@ -413,6 +424,32 @@ function closeSearch(): void {
   searchbar.hidden = true;
   searchToggle.setAttribute("aria-pressed", "false");
   showList();
+}
+
+// The chips sit in front of the input, each with a button that removes it.
+function renderChips(): void {
+  const nodes = chips.map((chip) => {
+    const node = el("span", "chip", chipTerm(chip));
+    const remove = el("button", "", "×");
+    remove.type = "button";
+    remove.title = "Remove " + chipTerm(chip);
+    remove.setAttribute("aria-label", remove.title);
+    remove.addEventListener("click", () => {
+      chips = chips.filter((other) => other !== chip);
+      renderChips();
+      searchInput.focus();
+      runSearch();
+    });
+    node.append(remove);
+    return node;
+  });
+  searchField.replaceChildren(...nodes, searchInput);
+}
+
+function addSearchChip(chip: Chip): void {
+  chips = withChip(chips, chip);
+  renderChips();
+  openSearch();
 }
 
 function renderHit(hit: SearchHitView): HTMLElement {
@@ -436,11 +473,11 @@ function renderHit(hit: SearchHitView): HTMLElement {
 function runSearch(cursor?: string): void {
   clearTimeout(searchTimer);
   searchRun++;
-  if (!searchInput.value.trim()) return showList();
+  if (!searchInput.value.trim() && chips.length === 0) return showList();
   hideList();
   appending = cursor !== undefined;
   if (!appending) results.replaceChildren(el("div", "empty", "Searching…"));
-  host.postMessage({ type: "search", run: searchRun, text: searchInput.value, allChannels, cursor });
+  host.postMessage({ type: "search", run: searchRun, chips, text: searchInput.value, allChannels, cursor });
 }
 
 function showResults(answer: Extract<ToWebview, { type: "searchResults" }>): void {
@@ -484,7 +521,11 @@ searchInput.addEventListener("input", () => {
 });
 searchbar.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && event.target === searchInput) runSearch();
-  else if (event.key === "Escape") closeSearch();
+  else if (event.key === "Backspace" && event.target === searchInput && searchInput.value === "" && chips.length > 0) {
+    chips.pop();
+    renderChips();
+    runSearch();
+  } else if (event.key === "Escape") closeSearch();
   else return;
   event.preventDefault();
 });
@@ -493,6 +534,7 @@ window.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "f") return;
   event.preventDefault();
   openSearch();
+  searchInput.select();
 }, true);
 
 window.addEventListener("message", (event: MessageEvent<ToWebview>) => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseFromWebview } from "../protocol";
-import { buildQuery, hitPlace, plainLabel, scopeTerms, snippetParts } from "../search";
+import { Chip, buildQuery, chipTerm, hitPlace, plainLabel, scopeTerms, snippetParts, withChip } from "../search";
 import { Channel } from "../types";
 
 const channel = (extra: Partial<Channel>): Channel => ({ id: "general", kind: "general", name: "general", description: "", messages: 0, last_sequence: 0, ...extra });
@@ -13,10 +13,22 @@ test("scopeTerms limits to a group by its name and to a DM by both agents", () =
   assert.deepEqual(scopeTerms(channel({ id: "dm:a@x:b@y", kind: "dm", name: "a@x + b@y", agents: ["a@x", "b@y"] })), ["to:a@x", "to:b@y"]);
 });
 
-test("buildQuery puts the scope before the typed text and leaves out what is empty", () => {
-  assert.equal(buildQuery(["to:#ops"], "  deploy  from:bob "), "to:#ops deploy  from:bob");
-  assert.equal(buildQuery([], "deploy"), "deploy");
-  assert.equal(buildQuery(["to:#ops"], " "), "to:#ops");
+test("buildQuery puts the scope, then the chips, then the typed text, and leaves out what is empty", () => {
+  assert.equal(buildQuery(["to:#ops"], [], "  deploy  from:bob "), "to:#ops deploy  from:bob");
+  assert.equal(buildQuery([], [], "deploy"), "deploy");
+  assert.equal(buildQuery(["to:#ops"], [], " "), "to:#ops");
+  const chips: Chip[] = [{ key: "type", value: "question" }, { key: "targets", value: "@all" }, { key: "from", value: "a b" }];
+  assert.equal(buildQuery(["to:#ops"], chips, "deploy"), 'to:#ops type:question targets:@all from:"a b" deploy');
+  assert.equal(buildQuery([], chips.slice(0, 1), ""), "type:question");
+});
+
+test("chipTerm drops quotes from a value, and withChip adds a chip once", () => {
+  assert.equal(chipTerm({ key: "from", value: 'x"y' }), "from:xy");
+  const type: Chip = { key: "type", value: "ack" };
+  const once = withChip([], type);
+  assert.deepEqual(withChip(once, { key: "type", value: "ack" }), [type]);
+  assert.deepEqual(withChip(once, { key: "from", value: "ack" }), [type, { key: "from", value: "ack" }]);
+  assert.deepEqual(once, [type]); // the argument is not changed
 });
 
 test("snippetParts cuts at the matches, counted in code points", () => {
@@ -54,11 +66,13 @@ test("hitPlace names a listed channel and falls back to the ID", () => {
 });
 
 test("parseFromWebview checks search and jump messages", () => {
-  assert.deepEqual(parseFromWebview({ type: "search", run: 3, text: "deploy", allChannels: false }), { type: "search", run: 3, text: "deploy", allChannels: false });
-  assert.deepEqual(parseFromWebview({ type: "search", run: 3, text: "", allChannels: true, cursor: "c1", extra: 1 }), { type: "search", run: 3, text: "", allChannels: true, cursor: "c1" });
+  assert.deepEqual(parseFromWebview({ type: "search", run: 3, chips: [], text: "deploy", allChannels: false }), { type: "search", run: 3, chips: [], text: "deploy", allChannels: false });
+  assert.deepEqual(parseFromWebview({ type: "search", run: 3, chips: [{ key: "from", value: "a@x", extra: 1 }], text: "", allChannels: true, cursor: "c1", extra: 1 }),
+    { type: "search", run: 3, chips: [{ key: "from", value: "a@x" }], text: "", allChannels: true, cursor: "c1" });
   assert.deepEqual(parseFromWebview({ type: "jump", channel: "group:ops", sequence: 42 }), { type: "jump", channel: "group:ops", sequence: 42 });
-  const search = { type: "search", run: 1, text: "x", allChannels: false };
-  for (const bad of [{ ...search, run: "1" }, { ...search, run: 1.5 }, { ...search, text: 1 }, { ...search, allChannels: "yes" }, { ...search, cursor: 5 },
+  const search = { type: "search", run: 1, chips: [], text: "x", allChannels: false };
+  for (const bad of [{ ...search, chips: undefined }, { ...search, chips: "from:a" }, { ...search, chips: [null] }, { ...search, chips: [{ key: "to", value: "a" }] },
+    { ...search, chips: [{ key: "from", value: 1 }] }, { ...search, chips: [{ key: "from", value: " " }] },{ ...search, run: "1" }, { ...search, run: 1.5 }, { ...search, text: 1 }, { ...search, allChannels: "yes" }, { ...search, cursor: 5 },
     { type: "jump", channel: "", sequence: 1 }, { type: "jump", channel: 7, sequence: 1 }, { type: "jump", channel: "general", sequence: -1 }, { type: "jump", channel: "general" }]) {
     assert.equal(parseFromWebview(bad), undefined);
   }
