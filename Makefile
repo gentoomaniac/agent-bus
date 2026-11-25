@@ -1,4 +1,4 @@
-.PHONY: check fmt-check vet test itest image
+.PHONY: check fmt-check vet test itest image vsix
 
 check: fmt-check vet test
 
@@ -32,3 +32,7 @@ image:
 	CGO_ENABLED=0 GOOS=linux go build -trimpath -o bin/image/$(IMAGE_PLATFORM)/ ./cmd/busd ./cmd/agent-busctl ./cmd/agent-bus ./cmd/bus-monitor
 	cp deploy/entrypoint.sh deploy/nats-server.conf bin/image/deploy/
 	$(CONTAINER) build --platform $(IMAGE_PLATFORM) --build-arg TARGETPLATFORM=$(IMAGE_PLATFORM) -f deploy/Dockerfile -t agent-messenger:dev bin/image
+
+# The VS Code extension (vscode/), checked and packed as vscode/agent-messenger.vsix. Needs Node.js and npm.
+vsix:
+	cd vscode && npm ci && npm run check && npm run package
