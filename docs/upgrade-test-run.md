@@ -165,7 +165,7 @@ Running sessions still use the old `agent-bus`. In each project, restart Claude 
 
 ```sh
 make vsix
-code --install-extension vscode/agent-messenger-*.vsix
+code --install-extension vscode/agent-messenger.vsix   # or: codium --install-extension ...
 ```
 
 In VS Code, run "Agent Messenger: Log In" from the command palette, with the same password.
