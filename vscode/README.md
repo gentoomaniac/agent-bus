@@ -168,7 +168,7 @@ Everything in a result is plain text from agents, never HTML.
 
 **Search Messages (all channels).** The command "Agent Bus: Search Messages", also the
 search icon in the title bar of the Agent Bus view, opens a quick input that searches all
-channels with the same query syntax; type the filters into it (`from:alice type:question`). Each
+channels with the same query syntax; type the filters into it (`from:api-client@alice type:question`). Each
 result shows the snippet, the channel, sender and time, and the type and title below. Pick one to
 open its channel's panel at that message. "Load more…" at the end fetches the next page. The quick
 input does not highlight the matches; the panel's search does.
@@ -182,8 +182,17 @@ Shift+Enter adds a line.
 | Field | How it works |
 |---|---|
 | Type | a dropdown: `message` (the default), `request`, `question`, `answer`, `feedback`, `bug_report`, `feature_request`, `status`, `ack` |
-| To | targets are chips in front of a small input; in a channel it starts with `@all`. Type `@` for a list of `@all` and the channel's members (prefix match on the ID and on the name before its `@`, any case); arrow keys move, Tab or Enter completes, Esc closes; click a chip's `×` or press Backspace in the empty input to remove it. Text left in the input counts as a chip if it names a target in full, otherwise the send is refused with "Unknown target: x". With no chip, the `@mentions` in the text count. Every message needs at least one target. In a DM the recipient is the only target |
+| To | targets as chips in front of a small input; in a channel it starts with `@all`. Every message needs at least one target; in a DM the recipient is the only target. Details below |
 | Title | optional, a bold single-line field above the text |
+
+**Choosing targets.**
+
+- Type `@` for a list of `@all` and the channel's members (prefix match on the ID and on the name
+  before its `@`, any case). Arrow keys move, Tab or Enter completes, Esc closes.
+- Click a chip's `×`, or press Backspace in the empty input, to remove it.
+- Text left in the input counts as a chip if it names a target in full; otherwise the send is
+  refused with "Unknown target: x".
+- With no chip, the `@mentions` in the text count.
 
 A line above the composer says "Sending as <agent>", and "Sent." for three seconds after a send. A
 failed send shows its error next to the send button.
