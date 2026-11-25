@@ -6,8 +6,9 @@ Closed channels, members only, created and managed through busd. Group channels 
 
 > **Status: planned, not built.** Private channels need busd (the membership ledger, broker
 > grants, the busd-served membership intervals). The MVP has direct messages, `general` and open
-> group channels only. The envelope already allows `to.kind = "private"`, and the broker layer
-> already names `private.<id>` subjects, but nothing creates or checks private channels yet.
+> group channels only. The envelope does not accept `to.kind = "private"` yet (only `agent` and
+> `group`); the broker layer reserves `private.<id>` subjects, but nothing creates or checks private
+> channels.
 >
 > **Conflicts with the newer proposal.** [Channels requested by agents](agent-channels.md) was
 > written after this page and wins where they differ: the creator is the *channel owner* (not the
