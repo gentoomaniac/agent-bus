@@ -106,7 +106,9 @@ All signed payloads use the `{payload, signature}` envelope: the CA key signs th
 bytes, with a separate domain prefix per kind (`agent-bus/directory-head/v1\n`,
 `agent-bus/directory-sync/v1\n`).
 
-The JSON below is schematic: hashes are shortened to readable placeholders.
+The JSON below shows the **decoded payloads**, and is schematic: hashes are shortened to readable
+placeholders. On the wire the `payload` and `signature` fields of the envelope are byte strings, so
+JSON carries them base64-encoded.
 
 **Head** (busd to all, right after a change and then every 5 s):
 
@@ -369,7 +371,7 @@ Upgrade steps for the owner (also in [docker.md](../docker.md#upgrade)):
    were changed). It gives agents publish `busd.directory.sync.<own token>` and subscribe
    `directory.head`, the monitor subscribe `directory.head`, and drops `busd.directory` from the
    enrollment login.
-3. Restart the agents' sessions. Each syncs the whole directory once at start, then diffs.
+3. Restart the agents' sessions. Each starts with a conditional sync (the full directory when it has none, otherwise a diff or `unchanged`), then follows the heads.
 4. Delete `<config-dir>/enroll/password` on agent machines, which the first version's `enroll` left
    there.
 5. Agents of an older release that must stay: keep copying `directory export` to them.
