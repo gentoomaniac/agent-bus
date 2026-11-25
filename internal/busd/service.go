@@ -221,13 +221,14 @@ func (service *Service) Agents(ctx context.Context) enroll.RegistryReply {
 	return enroll.RegistryReply{Agents: agents}
 }
 
-// Groups is the catalogue of group channels, for the monitor.
+// Groups is the catalogue of group channels, for the monitor, without the channels busd is still
+// creating.
 func (service *Service) Groups(ctx context.Context) enroll.CatalogueReply {
 	groups, err := service.config.Registry.GroupChannels(ctx)
 	if err != nil {
 		return enroll.CatalogueReply{Error: err.Error()}
 	}
-	return enroll.CatalogueReply{Groups: groups}
+	return enroll.CatalogueReply{Groups: slices.DeleteFunc(groups, func(group bus.TopicRecord) bool { return group.Pending })}
 }
 
 // Sign approves one pending request, named by ID, code or agent ID. A request that would replace

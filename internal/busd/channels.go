@@ -40,7 +40,7 @@ type ChannelAdmin interface {
 	Agents(ctx context.Context) ([]bus.AgentRecord, error)
 	AgentAccounts(ctx context.Context) ([]string, error)
 	CreateGroupChannel(ctx context.Context, record bus.TopicRecord) (created bool, err error)
-	DescribeGroupChannel(ctx context.Context, name, description string) error
+	UpdateGroupChannel(ctx context.Context, name string, change func(record *bus.TopicRecord)) error
 	CreateReadCursor(ctx context.Context, agentID string, channel bus.Channel, afterSequence uint64) error
 	DeleteReadCursor(ctx context.Context, agentID string, channel bus.Channel) error
 	LastSequence(ctx context.Context) (uint64, error)
@@ -180,7 +180,7 @@ func (channels *Channels) manage(ctx context.Context, request channelapi.Request
 		if err := checkDescription(request.Description); err != nil {
 			return err
 		}
-		return channels.config.Admin.DescribeGroupChannel(ctx, request.Channel, request.Description)
+		return channels.config.Admin.UpdateGroupChannel(ctx, request.Channel, func(record *bus.TopicRecord) { record.Description = request.Description })
 	}
 }
 
@@ -230,11 +230,12 @@ func checkDescription(description string) error {
 // create makes the channel with the caller as its owner and first member, within the caller's
 // creation limit, and returns the limits the channel lives under.
 //
-// Every step can be repeated, so a create that failed half way is finished by the next one of the
-// same owner: the owner's read cursor comes first (an existing one keeps its position, the start
-// of the first attempt), then the catalogue entry with the grants (an existing entry is kept, the
-// grants are regenerated). Until the entry is written, nothing lists the channel. A create of a
-// channel the caller owns already counts no second time against the limit.
+// The entry is written first, marked pending, with the owner's start in the log: that takes the
+// name and counts against the limit at once. Then come the grants and the owner's read cursor,
+// and then busd clears the mark. Every step can be repeated, so the owner's next create finishes
+// a pending channel as the first attempt meant it; others are refused its name meanwhile. A
+// create of a complete channel the caller owns changes nothing: a late retry must not bring back
+// a member that left.
 func (channels *Channels) create(ctx context.Context, request channelapi.Request) (*channelapi.Limits, error) {
 	if err := checkDescription(request.Description); err != nil {
 		return nil, err
@@ -249,27 +250,31 @@ func (channels *Channels) create(ctx context.Context, request channelapi.Request
 	}
 	now := channels.config.Now().UTC()
 	left, exempt := channels.creationsLeft(groups, request.AgentID, now)
-	record := bus.TopicRecord{Name: request.Channel, Description: request.Description, Owner: request.AgentID, CreatedAt: now, UpdatedAt: now}
-	if index := slices.IndexFunc(groups, func(group bus.TopicRecord) bool { return group.Name == request.Channel }); index >= 0 {
-		if groups[index].Owner != request.AgentID {
-			return nil, fmt.Errorf("channel %s exists: join it, or pick another name", request.Channel)
-		}
+	index := slices.IndexFunc(groups, func(group bus.TopicRecord) bool { return group.Name == request.Channel })
+	var record bus.TopicRecord
+	switch {
+	case index >= 0 && groups[index].Owner != request.AgentID:
+		return nil, fmt.Errorf("channel %s exists: join it, or pick another name", request.Channel)
+	case index >= 0:
 		record = groups[index]
-	} else if !exempt && left <= 0 {
+	case !exempt && left <= 0:
 		return nil, fmt.Errorf("limit of %d new channels per day reached; next at %s",
 			channels.config.CreateLimit, channels.nextCreation(groups, request.AgentID, now).Format("2006-01-02T15:04Z"))
-	} else {
+	default:
+		last, err := channels.config.Admin.LastSequence(ctx)
+		if err != nil {
+			return nil, err
+		}
+		record = bus.TopicRecord{
+			Name: request.Channel, Description: request.Description, Owner: request.AgentID, CreatedAt: now, UpdatedAt: now,
+			Pending: true, OwnerStart: last,
+		}
 		left--
 	}
-	last, err := channels.config.Admin.LastSequence(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := channels.config.Admin.CreateReadCursor(ctx, request.AgentID, bus.GroupChannel(request.Channel), last); err != nil {
-		return nil, err
-	}
-	if _, err := channels.config.Admin.CreateGroupChannel(ctx, record); err != nil {
-		return nil, err
+	if record.Pending {
+		if err := channels.finish(ctx, record); err != nil {
+			return nil, err
+		}
 	}
 	limits := &channelapi.Limits{}
 	if retention.MaxAge > 0 {
@@ -282,6 +287,19 @@ func (channels *Channels) create(ctx context.Context, request channelapi.Request
 		limits.ChannelsLeftToday, limits.CreationLimitPerDay = ptr(left), ptr(channels.config.CreateLimit)
 	}
 	return limits, nil
+}
+
+// finish makes a pending channel complete: its entry (kept if it exists) with the grants, the
+// owner's read cursor at the entry's start (kept if it exists), and then the cleared mark.
+func (channels *Channels) finish(ctx context.Context, record bus.TopicRecord) error {
+	admin := channels.config.Admin
+	if _, err := admin.CreateGroupChannel(ctx, record); err != nil {
+		return err
+	}
+	if err := admin.CreateReadCursor(ctx, record.Owner, bus.GroupChannel(record.Name), record.OwnerStart); err != nil {
+		return err
+	}
+	return admin.UpdateGroupChannel(ctx, record.Name, func(entry *bus.TopicRecord) { entry.Pending = false })
 }
 
 // creationsLeft is how many channels the agent may still create in the day up to now, and whether
@@ -319,7 +337,7 @@ func (channels *Channels) find(ctx context.Context, name string) (bus.TopicRecor
 		return bus.TopicRecord{}, err
 	}
 	index := slices.IndexFunc(groups, func(group bus.TopicRecord) bool { return group.Name == name })
-	if index < 0 {
+	if index < 0 || groups[index].Pending {
 		return bus.TopicRecord{}, fmt.Errorf("there is no channel %s", name)
 	}
 	return groups[index], nil
@@ -369,6 +387,7 @@ func (channels *Channels) list(ctx context.Context, caller string) (list []chann
 	if err != nil {
 		return nil, false, err
 	}
+	groups = slices.DeleteFunc(groups, func(group bus.TopicRecord) bool { return group.Pending })
 	slices.SortFunc(groups, func(a, b bus.TopicRecord) int { return strings.Compare(a.Name, b.Name) })
 	if len(groups) > channelapi.MaxListedChannels {
 		groups, truncated = groups[:channelapi.MaxListedChannels], true

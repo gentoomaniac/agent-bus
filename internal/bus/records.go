@@ -12,6 +12,12 @@ type TopicRecord struct {
 	Owner     string    `json:"owner,omitempty"`
 	CreatedAt time.Time `json:"created_at,omitzero"` // zero for a channel of a release before owners
 	UpdatedAt time.Time `json:"updated_at"`
+	// Pending marks a channel busd is still creating: the name is taken and counts against the
+	// owner's creation limit, but the channel is listed nowhere, the directory included, until busd
+	// clears the mark. OwnerStart is where the owner's read cursor starts, so that a create
+	// finished by a retry starts it where the first attempt meant to.
+	Pending    bool   `json:"pending,omitempty"`
+	OwnerStart uint64 `json:"owner_start,omitempty"`
 }
 
 // AgentRecord is the registry entry of an agent, keyed by its agent token. PublicKey and

@@ -98,7 +98,8 @@ type CatalogueSource interface {
 }
 
 // BuildCatalogue snapshots the group channels and who reads each. The broker is the source, so the
-// snapshot is complete however often it is made.
+// snapshot is complete however often it is made. A channel busd is still creating (Pending) is left
+// out: agents learn of it once it is complete, in the catalogue's form every release reads.
 func BuildCatalogue(ctx context.Context, source CatalogueSource) (Catalogue, error) {
 	groups, err := source.GroupChannels(ctx)
 	if err != nil {
@@ -106,6 +107,9 @@ func BuildCatalogue(ctx context.Context, source CatalogueSource) (Catalogue, err
 	}
 	catalogue := Catalogue{}
 	for _, group := range groups {
+		if group.Pending {
+			continue
+		}
 		readers, err := source.ReadCursorHolders(ctx, bus.GroupChannel(group.Name))
 		if err != nil {
 			return nil, err

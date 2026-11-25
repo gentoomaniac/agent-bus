@@ -44,7 +44,8 @@ func (cmd *ChannelCreateCmd) Run(ctx context.Context, cli *CLI) error {
 		return err
 	}
 	if !created {
-		if err := admin.DescribeGroupChannel(ctx, cmd.Name, cmd.Description); err != nil {
+		describe := func(record *bus.TopicRecord) { record.Description = cmd.Description }
+		if err := admin.UpdateGroupChannel(ctx, cmd.Name, describe); err != nil {
 			return err
 		}
 	}

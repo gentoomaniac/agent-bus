@@ -82,9 +82,9 @@ type Admin interface {
 	// CreateGroupChannel adds the channel to the catalogue and gives every agent access to it. A
 	// channel in the catalogue keeps its entry. It says whether the channel is new.
 	CreateGroupChannel(ctx context.Context, record TopicRecord) (created bool, err error)
-	// DescribeGroupChannel replaces the description of a catalogued channel; the rest of its entry
-	// stays.
-	DescribeGroupChannel(ctx context.Context, name, description string) error
+	// UpdateGroupChannel changes the entry of a catalogued channel with change, compare-and-set, and
+	// sets its UpdatedAt.
+	UpdateGroupChannel(ctx context.Context, name string, change func(record *TopicRecord)) error
 	// CreateReadCursor makes the agent's read cursor on a channel, starting after the given
 	// sequence (0: at the beginning). A cursor that exists is left as it is, with its position.
 	CreateReadCursor(ctx context.Context, agentID string, channel Channel, afterSequence uint64) error

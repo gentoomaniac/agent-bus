@@ -201,11 +201,18 @@ creation limit. Without one, only channel owners manage the channels agents crea
   read cursor at the end of the log, as `agent-busctl channel join` does; leaving and removal delete
   it. After every change busd rebuilds its directory at once, so agents learn of it from the next
   head and read the channel without a restart.
-- `create` makes the owner's cursor first and then the catalogue entry with the grants; it reads
-  the retention before it changes anything. Each step can be repeated, so a `create` that failed
-  half way is finished by the owner's next `create` of the channel: the entry (owner,
-  `created_at`) and the cursor's start stay those of the first attempt, and it counts once
-  against the limit. Another agent's `create` of the name is refused.
+- `create` reads the retention, then writes the catalogue entry marked `pending`, with the owner,
+  `created_at` and the owner's start in the log (`owner_start`): that takes the name and counts
+  against the limit at once. Then come the grants and the owner's read cursor, then busd clears
+  the mark. Each step can be repeated, so a `create` that failed half way is finished by the
+  owner's next `create`, with the first attempt's entry and start; another agent's is refused the
+  name. A `create` of a complete channel the caller owns changes nothing, so a late retry does
+  not bring back an owner that left or was removed.
+- A pending channel is listed nowhere: not by `list` or `members`, not to the monitor, and not
+  in the directory's catalogue. The catalogue busd publishes keeps its form, so agents of 0.2 sync
+  as before and never see a half-made channel. (A busd of 0.2, run on the catalogue again, would
+  list a pending entry, as it does not know the mark.) A channel left pending stays so until its
+  owner creates it again; nothing cleans it up yet.
 
 **The creation limit.** `--channel-create-limit` / `BUSD_CHANNEL_CREATE_LIMIT`, 5 by default, 0
 off. A day is a rolling 24 hours, counted from the catalogue: the channels the agent owns with a

@@ -207,7 +207,7 @@ func (admin *Admin) CreateGroupChannel(ctx context.Context, record bus.TopicReco
 	return created, admin.updateAuth(ctx, func(*userTable) error { return nil })
 }
 
-func (admin *Admin) DescribeGroupChannel(ctx context.Context, name, description string) error {
+func (admin *Admin) UpdateGroupChannel(ctx context.Context, name string, change func(record *bus.TopicRecord)) error {
 	catalogue, err := admin.control.stream.KeyValue(ctx, catalogueKV)
 	if err != nil {
 		return fmt.Errorf("opening the catalogue (has `agent-busctl init` run?): %w", admin.control.explain(err))
@@ -223,7 +223,8 @@ func (admin *Admin) DescribeGroupChannel(ctx context.Context, name, description 
 	if err := json.Unmarshal(entry.Value(), &record); err != nil {
 		return fmt.Errorf("reading the catalogue entry of %s: %w", name, err)
 	}
-	record.Description, record.UpdatedAt = description, time.Now().UTC()
+	change(&record)
+	record.UpdatedAt = time.Now().UTC()
 	value, err := json.Marshal(record)
 	if err != nil {
 		return err

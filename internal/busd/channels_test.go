@@ -16,6 +16,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/channelapi"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
 // What the channel requests change on the broker, beyond what approval needs.
@@ -28,10 +29,10 @@ func (fake *fakeRegistry) CreateGroupChannel(_ context.Context, record bus.Topic
 	}
 	return created, fake.createErr
 }
-func (fake *fakeRegistry) DescribeGroupChannel(_ context.Context, name, description string) error {
+func (fake *fakeRegistry) UpdateGroupChannel(_ context.Context, name string, change func(*bus.TopicRecord)) error {
 	for i := range fake.groups {
 		if fake.groups[i].Name == name {
-			fake.groups[i].Description = description
+			change(&fake.groups[i])
 			return nil
 		}
 	}
@@ -299,34 +300,70 @@ func TestARequestSignedWithAReplacedKeyIsRefused(t *testing.T) {
 	}
 }
 
-// A create that failed after its first steps is finished by the next create of the same owner,
-// which keeps the channel's entry and the cursor's start and counts once against the limit.
-func TestARepeatedCreateFinishesAHalfMadeChannel(t *testing.T) {
+// A create that failed after it wrote the pending entry is finished by the next create of the
+// same owner, with the first attempt's entry and start, and counts once against the limit. While
+// it is pending the channel is listed nowhere and its name is taken.
+func TestARepeatedCreateFinishesAPendingChannel(t *testing.T) {
 	f := newChannelFixture(t)
 	f.registry.last = 7
 	f.registry.createErr = errors.New("the reload was not confirmed")
+	created := f.now
 	if _, err := f.create(owner, "agent-bus"); err == nil {
 		t.Fatal("the create succeeded although the grants failed")
 	}
+	if entry := f.registry.groups[0]; !entry.Pending || entry.OwnerStart != 7 {
+		t.Errorf("the entry after the failure is %+v, want a pending one starting after 7", entry)
+	}
+	if list := f.must(channelapi.Request{AgentID: member, Action: channelapi.List}).Channels; len(list) != 0 {
+		t.Errorf("a pending channel is listed: %+v", list)
+	}
+	for _, refused := range []channelapi.Request{
+		{AgentID: member, Action: channelapi.Join, Channel: "agent-bus"},
+		{AgentID: member, Action: channelapi.Members, Channel: "agent-bus"},
+	} {
+		if _, err := f.ask(refused); err == nil || !strings.Contains(err.Error(), "no channel agent-bus") {
+			t.Errorf("%s of a pending channel: %v", refused.Action, err)
+		}
+	}
+	if _, err := f.create(member, "agent-bus"); err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Errorf("another agent's create of a pending channel: %v", err)
+	}
+	catalogue, err := trust.BuildCatalogue(context.Background(), f.registry)
+	if err != nil || len(catalogue) != 0 {
+		t.Errorf("the directory's catalogue has %v (%v), want no pending channel", catalogue, err)
+	}
+
 	f.registry.createErr = nil
 	f.registry.last = 9
-	created := f.now
 	f.now = f.now.Add(time.Minute)
 	reply, err := f.create(owner, "agent-bus")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(reply.Channel.Members, []string{owner}) || !slices.Contains(f.registry.cursors, owner+" channel agent-bus after 7") {
-		t.Errorf("members %v, cursors %v: want the owner's cursor of the first attempt", reply.Channel.Members, f.registry.cursors)
+		t.Errorf("members %v, cursors %v: want the owner's cursor at the first attempt's start", reply.Channel.Members, f.registry.cursors)
+	}
+	if entry := f.registry.groups[0]; entry.Pending || !entry.CreatedAt.Equal(created.UTC()) {
+		t.Errorf("the entry is %+v, want the first attempt's, complete", entry)
 	}
 	if *reply.Limits.ChannelsLeftToday != 1 {
 		t.Errorf("channels left = %d, want 1: the channel counts once", *reply.Limits.ChannelsLeftToday)
 	}
-	if entry := f.registry.groups[0]; entry.Owner != owner || !entry.CreatedAt.Equal(created.UTC()) {
-		t.Errorf("the entry is %+v, want the first attempt's", entry)
+}
+
+// A create repeated after the channel was complete, and its owner had left, changes nothing.
+func TestALateCreateDoesNotUndoALeave(t *testing.T) {
+	f := newChannelFixture(t)
+	if _, err := f.create(owner, "agent-bus"); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := f.create(member, "agent-bus"); err == nil || !strings.Contains(err.Error(), "exists") {
-		t.Errorf("another agent's create of the channel: %v", err)
+	f.must(channelapi.Request{AgentID: owner, Action: channelapi.Leave, Channel: "agent-bus"})
+	reply, err := f.create(owner, "agent-bus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reply.Channel.Members) != 0 || slices.ContainsFunc(f.registry.cursors, func(cursor string) bool { return strings.HasPrefix(cursor, owner+" channel") }) {
+		t.Errorf("the late create brought the owner back: %v", f.registry.cursors)
 	}
 }
 
