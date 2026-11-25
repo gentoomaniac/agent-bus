@@ -15,7 +15,7 @@
   },
   "categories": ["Other"],
   "main": "./dist/extension.js",
-  "activationEvents": [],
+  "activationEvents": ["onStartupFinished"],
   "contributes": {
     "configuration": {
       "title": "Agent Messenger",
