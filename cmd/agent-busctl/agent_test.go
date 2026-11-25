@@ -112,6 +112,23 @@ func TestRemovedIDIsNotRegisteredAgain(t *testing.T) {
 	}
 }
 
+func TestNoCertificateForAnUnknownOrRemovedAgent(t *testing.T) {
+	admin := newFakeAdmin()
+	ctx := context.Background()
+	if err := requireActiveAgent(ctx, admin, doomed); err != nil {
+		t.Errorf("an active agent was refused: %v", err)
+	}
+	if err := requireActiveAgent(ctx, admin, "other@bob"); err == nil {
+		t.Error("an unregistered agent was accepted")
+	}
+	if err := removeAgent(ctx, admin, doomed, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireActiveAgent(ctx, admin, doomed); err == nil {
+		t.Error("a removed agent was accepted: its ID must not get a certificate again")
+	}
+}
+
 func TestWriteCatalogueSnapshotsGroupsWithTheirReaders(t *testing.T) {
 	admin := newFakeAdmin()
 	dir := trust.FileDirectory(t.TempDir())

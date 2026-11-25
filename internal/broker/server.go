@@ -92,13 +92,22 @@ func (server Server) hasAgent(agentToken string) (bool, error) {
 // the change done. A reload that does not take is an error, and the file stays replaced: the
 // next UpdateAuth, or a restart of the server, finishes it.
 func (server Server) UpdateAuth(ctx context.Context, edit func(currentBody string) (string, error)) error {
+	return server.updateAuthFile(ctx, authFile, edit)
+}
+
+// UpdateControlAuth is UpdateAuth for control-auth.conf, the users of CONTROL.
+func (server Server) UpdateControlAuth(ctx context.Context, edit func(currentBody string) (string, error)) error {
+	return server.updateAuthFile(ctx, controlAuthFile, edit)
+}
+
+func (server Server) updateAuthFile(ctx context.Context, name string, edit func(currentBody string) (string, error)) error {
 	unlock, err := server.lock()
 	if err != nil {
 		return err
 	}
 	defer unlock()
 
-	current, err := os.ReadFile(server.path(authFile))
+	current, err := os.ReadFile(server.path(name))
 	if err != nil {
 		return fmt.Errorf("reading the authorization file (has `agent-busctl admin init` run?): %w", err)
 	}
@@ -108,14 +117,14 @@ func (server Server) UpdateAuth(ctx context.Context, edit func(currentBody strin
 		return err
 	}
 
-	if err := server.testConfig(ctx, withGeneration(generation+1, newBody)); err != nil {
+	if err := server.testConfig(ctx, name, withGeneration(generation+1, newBody)); err != nil {
 		return fmt.Errorf("the new authorization file is invalid, nothing changed: %w", err)
 	}
 	loadedBefore, err := server.configLoadTime(ctx)
 	if err != nil {
 		return err
 	}
-	if err := writeAuthFile(server.path(authFile), generation+1, newBody); err != nil {
+	if err := writeAuthFile(server.path(name), generation+1, newBody); err != nil {
 		return err
 	}
 	if err := server.signalReload(); err != nil {
@@ -141,24 +150,24 @@ func (server Server) lock() (unlock func(), err error) {
 	return func() { lock.Close() }, nil
 }
 
-// testConfig runs `nats-server -t` on a copy of the server's configuration that has the candidate
-// as its auth.conf; the live files stay untouched.
-func (server Server) testConfig(ctx context.Context, candidate string) error {
+// testConfig runs `nats-server -t` on a copy of the server's configuration in which the
+// authorization file called name is the candidate; the live files stay untouched.
+func (server Server) testConfig(ctx context.Context, name, candidate string) error {
 	dir, err := os.MkdirTemp(server.Dir, "config-test-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(dir)
-	for _, name := range []string{serverConfFile, controlAuthFile} {
-		content, err := os.ReadFile(server.path(name))
+	for _, live := range []string{serverConfFile, authFile, controlAuthFile} {
+		content, err := os.ReadFile(server.path(live))
 		if err != nil {
 			return err
 		}
-		if err := files.Write(filepath.Join(dir, name), content, files.SecretMode, false); err != nil {
+		if err := files.Write(filepath.Join(dir, live), content, files.SecretMode, false); err != nil {
 			return err
 		}
 	}
-	if err := files.Write(filepath.Join(dir, authFile), []byte(candidate), files.SecretMode, false); err != nil {
+	if err := files.Write(filepath.Join(dir, name), []byte(candidate), files.SecretMode, true); err != nil {
 		return err
 	}
 	output, err := exec.CommandContext(ctx, server.Binary, "-t", "-c", filepath.Join(dir, serverConfFile)).CombinedOutput()

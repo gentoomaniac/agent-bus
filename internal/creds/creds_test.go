@@ -19,6 +19,35 @@ func TestNewPasswordIsRandomAndShellSafe(t *testing.T) {
 	}
 }
 
+func TestClientCertFilesAreWrittenReplacedAndRemoved(t *testing.T) {
+	dir := t.TempDir()
+	if HasClientCert(dir) {
+		t.Fatal("an empty directory has a certificate")
+	}
+	if err := WriteClientCert(dir, []byte("cert1"), []byte("key1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteClientCert(dir, []byte("cert2"), []byte("key2")); err != nil {
+		t.Fatalf("renewal: %v", err)
+	}
+	certPath, keyPath := ClientCertPaths(dir)
+	if got, _ := os.ReadFile(certPath); string(got) != "cert2" {
+		t.Errorf("certificate = %q", got)
+	}
+	if info, _ := os.Stat(keyPath); info.Mode().Perm() != 0o600 {
+		t.Errorf("key mode %v, want 0600", info.Mode().Perm())
+	}
+	if !HasClientCert(dir) {
+		t.Error("the certificate is not found")
+	}
+	if err := RemoveClientCert(dir); err != nil || HasClientCert(dir) {
+		t.Errorf("after removal: %v, has %v", err, HasClientCert(dir))
+	}
+	if err := RemoveClientCert(dir); err != nil {
+		t.Errorf("removing twice: %v", err)
+	}
+}
+
 func TestMonitorPasswordIsStoredAsAHash(t *testing.T) {
 	dir := t.TempDir()
 	if hash, err := ReadMonitorPasswordHash(dir); hash != nil || err != nil {

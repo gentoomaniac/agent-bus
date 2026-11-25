@@ -1,4 +1,4 @@
-// Package creds stores passwords in the per-principal directories of the config directory.
+// Package creds stores passwords and client certificates in the per-principal directories of the config directory.
 // The user name is not stored: it is the admin user's name for an admin and the agent token for
 // an agent.
 package creds
@@ -20,6 +20,8 @@ import (
 
 const (
 	passwordFile        = "password"
+	clientCertFile      = "client.pem"
+	clientKeyFile       = "client.key"
 	passwordBytes       = 32
 	monitorPasswordFile = "monitor-web/password.bcrypt"
 	// oldMonitorPasswordFile was easily confused with the monitor@<owner> agent folder.
@@ -45,6 +47,39 @@ func AdminDir(configDir, adminUser string) string {
 // AgentDir holds an agent's private key and credentials.
 func AgentDir(configDir, agentID string) string {
 	return filepath.Join(configDir, agentID)
+}
+
+// ClientCertPaths are the certificate and key of a certificate login inside a credentials directory.
+func ClientCertPaths(dir string) (certPath, keyPath string) {
+	return filepath.Join(dir, clientCertFile), filepath.Join(dir, clientKeyFile)
+}
+
+// HasClientCert says whether dir holds a certificate login, which clients prefer to a password.
+func HasClientCert(dir string) bool {
+	certPath, keyPath := ClientCertPaths(dir)
+	_, certErr := os.Stat(certPath)
+	_, keyErr := os.Stat(keyPath)
+	return certErr == nil && keyErr == nil
+}
+
+// WriteClientCert stores a certificate and its key, replacing earlier ones (renewal).
+func WriteClientCert(dir string, certPEM, keyPEM []byte) error {
+	certPath, keyPath := ClientCertPaths(dir)
+	if err := files.Write(keyPath, keyPEM, files.SecretMode, true); err != nil {
+		return err
+	}
+	return files.Write(certPath, certPEM, files.PublicMode, true)
+}
+
+// RemoveClientCert deletes the certificate login of dir, so clients use the password again.
+func RemoveClientCert(dir string) error {
+	certPath, keyPath := ClientCertPaths(dir)
+	for _, path := range []string{certPath, keyPath} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 // WritePassword stores the password in dir/password with mode 0600.

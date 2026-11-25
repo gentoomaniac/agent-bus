@@ -43,6 +43,12 @@ type CLI struct {
 		Export DirectoryExportCmd `cmd:"" help:"Write the record of every agent, removed ones included, to a directory agents can use as their local directory."`
 	} `cmd:"" help:"The agents' directory of keys."`
 
+	Cert struct {
+		Issue  CertIssueCmd  `cmd:"" help:"Create a key and a client certificate for an agent, or for the admin users, in their credentials directory."`
+		Sign   CertSignCmd   `cmd:"" help:"Sign a certificate request that was made on the agent's machine."`
+		Switch CertSwitchCmd `cmd:"" help:"Let an agent, or the admin users, log in with the certificate instead of the password; --password goes back."`
+	} `cmd:"" help:"Client certificates for the mapped listener."`
+
 	Channel struct {
 		Create ChannelCreateCmd `cmd:"" help:"Create a group channel and add it to the catalogue."`
 		Join   ChannelJoinCmd   `cmd:"" help:"Let a registered agent read a group channel from now on."`
@@ -81,6 +87,15 @@ func (cli *CLI) server() broker.Server {
 // account. Without busd (milestone 3) every command that needs it goes this way, so --direct is
 // required.
 func (cli *CLI) adminClient() (bus.Admin, error) {
+	admin, err := cli.brokerAdmin()
+	if err != nil {
+		return nil, err // not `return cli.brokerAdmin()`: a nil *Admin would become a non-nil bus.Admin
+	}
+	return admin, nil
+}
+
+// brokerAdmin is adminClient with the concrete type, for what bus.Admin does not offer.
+func (cli *CLI) brokerAdmin() (*broker.Admin, error) {
 	if !cli.Direct {
 		return nil, errors.New("busd does not exist yet: pass --direct to act as the admin users")
 	}
@@ -96,11 +111,7 @@ func (cli *CLI) adminClient() (bus.Admin, error) {
 	if err != nil {
 		return nil, err
 	}
-	admin, err := broker.NewAdmin(busConn, controlConn, cli.server())
-	if err != nil {
-		return nil, err // not `return broker.NewAdmin(...)`: a nil *Admin would become a non-nil bus.Admin
-	}
-	return admin, nil
+	return broker.NewAdmin(busConn, controlConn, cli.server())
 }
 
 func main() {

@@ -308,6 +308,65 @@ func listControlRecords[T any](ctx context.Context, admin *Admin, bucket string)
 	return records, nil
 }
 
+// AgentCertIdentity is the URI SAN of the client certificate an agent logs in with, and the NATS
+// user name nats-server maps it to.
+func AgentCertIdentity(agentID string) string {
+	return certIdentity(roleAgent, bus.AgentToken(agentID))
+}
+
+// AdminCertIdentity is the same for an admin user (BusAdminUser or ControlAdminUser).
+func AdminCertIdentity(adminUser string) string { return certIdentity(roleAdmin, adminUser) }
+
+// SetAgentLogin changes how a registered agent logs in, as one confirmed reload that closes its
+// connections. With a password hash it logs in with that password; with none, with a certificate
+// for AgentCertIdentity. Its ID, consumers and grants stay.
+func (admin *Admin) SetAgentLogin(ctx context.Context, agentID, passwordHash string) error {
+	token := bus.AgentToken(agentID)
+	return admin.updateAuth(ctx, func(table *userTable) error {
+		if _, exists := table.find(roleAgent, token); !exists {
+			return fmt.Errorf("%s has no account on the broker", agentID)
+		}
+		table.set(loginOf(roleAgent, token, passwordHash))
+		return nil
+	})
+}
+
+// SetAdminLogin is SetAgentLogin for an admin user. The connections of that user close, so a
+// caller that changes both admins changes BusAdminUser first: that change reads the catalogue
+// through the CONTROL connection.
+func (admin *Admin) SetAdminLogin(ctx context.Context, adminUser, passwordHash string) error {
+	change := func(table *userTable) error {
+		if _, exists := table.find(roleAdmin, adminUser); !exists {
+			return fmt.Errorf("%s is not an admin user of this broker", adminUser)
+		}
+		table.set(loginOf(roleAdmin, adminUser, passwordHash))
+		return nil
+	}
+	switch adminUser {
+	case BusAdminUser:
+		return admin.updateAuth(ctx, change)
+	case ControlAdminUser:
+		return admin.server.UpdateControlAuth(ctx, func(body string) (string, error) {
+			table, err := parseUserTable(body)
+			if err != nil {
+				return "", err
+			}
+			if err := change(&table); err != nil {
+				return "", err
+			}
+			return table.render(nil), nil
+		})
+	}
+	return fmt.Errorf("%s is not an admin user of this broker", adminUser)
+}
+
+func loginOf(role authRole, name, passwordHash string) authUser {
+	if passwordHash == "" {
+		return authUser{role: role, name: name, mode: modeCert}
+	}
+	return authUser{role: role, name: name, mode: modePassword, passwordHash: passwordHash}
+}
+
 func (admin *Admin) Presence(ctx context.Context, agentID string) ([]byte, error) {
 	return admin.bus.readPresence(ctx, bus.AgentToken(agentID))
 }
