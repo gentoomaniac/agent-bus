@@ -11,8 +11,10 @@ make itest    # integration tests against a real nats-server
 binaries:
 
 ```sh
-go build -o bin/ ./cmd/agent-busctl ./cmd/agent-bus
+go build -o bin/ ./cmd/agent-busctl ./cmd/agent-bus ./cmd/bus-monitor ./cmd/busd
 ```
+
+`make image` builds the central image, `make vsix` the VS Code extension.
 
 ## Code layout
 
@@ -20,7 +22,7 @@ go build -o bin/ ./cmd/agent-busctl ./cmd/agent-bus
 `internal/broker` implements them on NATS JetStream and is the only package that imports the NATS
 client library (`internal/itest` also does, to test against a real server).
 `internal/monitor` is the backend of `bus-monitor` ([design/monitor-and-api.md](design/monitor-and-api.md)): it follows every channel with
-the admin's transport, verifies each message against the registry, keeps them in memory and serves
+its own read-only logins (the admin logins only as a fallback, with a warning), verifies each message against the registry, keeps them in memory and serves
 the JSON API, the event stream and the embedded page (`web/index.html`, plain HTML, CSS and
 JavaScript without a build step). It sends through an adapter session.
 `internal/identity` also reads the private key back and takes the identity lock ([design/identity-and-trust.md](design/identity-and-trust.md)): an
@@ -61,10 +63,18 @@ that feeds the same events (no automated test: check it by hand, docs/opencode.m
 `internal/trust` is the `known_agents` file of an identity (pinned public keys, [design/identity-and-trust.md](design/identity-and-trust.md)) and
 trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name
 a key in it that is not revoked, and the key is pinned (`tofu`) after the signature verified. A
-changed key is refused. Not done yet: holds, rotation chains and `revoked_keys`. Agents cannot read
-the registry on the broker ([design/jetstream-binding.md](design/jetstream-binding.md)) and busd does not exist yet, so the MVP registry read path is
+changed key is refused. `revoked_keys` (the fingerprints of removed agents' keys) is done; not done yet:
+holds and rotation chains. Agents cannot read the registry on the broker ([design/jetstream-binding.md](design/jetstream-binding.md)),
+so the registry read path is
 `<config-dir>/directory/<agent-token>.json`, one record per agent, which `agent-busctl register` writes.
-To use an agent from another machine, copy that directory there.
+To use an agent from another machine, copy that directory there, or let enrollment deliver it once.
+`cmd/busd` and `internal/busd` are busd, the minimal control service that runs beside `nats-server` in
+the broker's container, holds the CA key and handles enrollment and approvals ([design/busd.md](design/busd.md)).
+`internal/enroll` is the wire protocol of enrollment, `internal/enrollclient` is `agent-bus enroll`
+(the new machine's side) and `internal/review` is the owner's `agent-busctl ca review` screen.
+`internal/creds` stores the passwords and client certificates in the config directory,
+`internal/tlsinit` makes the CA and the broker certificate, `internal/files` writes local files with
+the permissions secrets need and `internal/testcert` makes client certificates for tests.
 `internal/envelope` is the signed message ([design/protocol.md](design/protocol.md), [design/identity-and-trust.md](design/identity-and-trust.md)): its fields, the canonical JSON that is
 signed, signing and the stateless checks (size, version, `to`, timestamp). The canonical form is
 RFC 8785 (JCS), implemented in the package for the JSON subset the bus produces (integers up to
@@ -114,6 +124,11 @@ install`), then starts and stops its own server (temporary config directory, ran
   parent PID) is not reported to the first; the sockets are gone when both servers end.
 - The registry and catalogue hold what `register` and `channel create` wrote; `agent-busctl` needs
   `--direct`, refuses a second registration and gives up on a dead broker.
+- Certificate login (`mtls_test.go`), enrollment through busd (`enroll_test.go`), the wake-up of an
+  idle session (`wake_test.go`), outages and reconnects (`outage_test.go`), removing an agent
+  (`remove_test.go`), mail targets (`targets_test.go`), presence (`presence_test.go`,
+  `presence_e2e_test.go`) and the monitor, its API and the proxy (`monitor_test.go`,
+  `monitor_proxy_test.go`).
 
 ## Running the broker without Docker
 
@@ -122,7 +137,7 @@ the integration tests. It is not how the bus is run for real ([docker.md](docker
 lives in `~/.config/agent-bus/` (or `BUS_CONFIG_DIR`), and `agent-busctl` runs on the host:
 
 ```sh
-go build -o bin/ ./cmd/agent-busctl ./cmd/agent-bus
+go build -o bin/ ./cmd/agent-busctl ./cmd/agent-bus ./cmd/busd
 bin/agent-busctl tls init
 bin/agent-busctl admin init
 deploy/nats.sh install    # builds nats-server v2.15.3 with go install into <config-dir>/bin/
@@ -130,6 +145,8 @@ deploy/nats.sh up         # renders nats/nats-server.conf, tests it, starts the 
 bin/agent-busctl --direct init
 deploy/nats.sh down       # keeps the data; `down --purge` deletes it too
 ```
+
+This does not start busd, so the `ca` commands and enrollment do not work here; run `bin/busd` yourself for those.
 
 The pid file and `nats-server.log` are in `<config-dir>/nats/`. Environment variables of the script:
 
