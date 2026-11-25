@@ -65,7 +65,7 @@ agent-busctl --direct agent list
 ## 5. Give an agent machine its files
 
 Each agent machine needs `ca.pem`, `directory/` and its own agent folder from the config volume
-(this copies the agent's key: the current MVP way until enrollment exists, see [design/access-control.md](design/access-control.md)).
+(this copies the agent's key. To keep keys on the machine that uses them, enroll the machine instead: [section 9](#9-enrolling-a-new-machine)).
 
 ```sh
 mkdir -p ~/.config/agent-bus
@@ -190,3 +190,90 @@ podman logs -f agent-bus                      # broker log
 podman stop agent-bus-monitor agent-bus       # stop
 podman rm -f agent-bus-monitor agent-bus      # remove containers (volumes keep all state)
 ```
+
+## 9. Enrolling a new machine
+
+A new machine gets its agent's certificate by asking the broker, and you approve it: nothing is
+copied by hand and the agent's private keys never leave the machine it runs on
+([design/access-control.md](design/access-control.md), phase B).
+
+**What runs where.** The image has a second program, `busd`. The entrypoint starts it in the broker
+container next to `nats-server` when the config volume has the CA key (`ca.key`, made by `tls init`)
+and starts it again if it stops; `BUS_BUSD=off` (an environment variable of the container) runs the
+broker without it. busd holds the CA key, keeps the pending requests and makes the changes to the
+authorization file and the reloads, all inside this container. It has no HTTP port. Its log is
+part of `podman logs agent-bus` (lines starting `busd:`). `podman exec agent-bus pkill busd` makes
+the entrypoint start it afresh, which busd needs once after `cert issue --admin` to read the
+admin certificates. The web monitor only shows "N pending enrollments"; it holds no CA key and
+cannot approve.
+
+**An existing setup** needs nothing: after the image is updated, busd starts by itself and does
+nothing until `enroll init` ran. Password logins, certificate logins and the monitor go on as
+they were. One optional step, for `--ca-fingerprint` below: a broker certificate made by an older
+`tls init` lacks the CA after it, which is what a new machine reads to check the CA against your
+fingerprint. Without it, copy `ca.pem` to the new machine instead (no step needed), or add the CA once:
+
+```sh
+podman exec agent-bus sh -c 'grep -c BEGIN /config/broker.pem; cat /config/ca.pem >> /config/broker.pem'
+podman restart agent-bus          # the first line must have printed 1, or the CA is already there
+```
+
+**Turn enrollment on (once).** It makes a shared login that only lets a machine ask, and prints its
+password once:
+
+```sh
+agent-busctl enroll init
+```
+
+**On the new machine** (the `agent-bus` binary, no other file needed), with the password and the CA
+fingerprint that `enroll init` printed (`agent-busctl ca fingerprint` shows the fingerprint
+again; read it off this machine, not off the new one):
+
+```sh
+agent-bus enroll --broker <broker-host>:4222 --agent lib-x@<owner> \
+  --ca-fingerprint CA:64:89:... --enroll-password '<password>' --waitforcert
+```
+
+It fetches the CA certificate from the broker and keeps it only if its SHA-256 equals the
+fingerprint you gave (or uses a `ca.pem` you copied into `~/.config/agent-bus/`), makes the keys
+there, sends the request and prints an approval code and its signing key fingerprint. A CA that is
+only taken from the broker would prove nothing, so without a copied `ca.pem` the flag is required.
+`--waitforcert` keeps asking (every few seconds, slowing to every half minute) until you decide, for
+up to 24 hours or the time you give (`--waitforcert=10m`); without it the command returns, and
+running it again collects the answer.
+
+**Approve it, on the broker's machine:**
+
+```sh
+podman exec -it agent-bus agent-busctl ca review
+```
+
+The screen lists each request with the agent ID, hostname, code, age and both key fingerprints.
+Compare the code and the agent ID with what the new machine printed. Keys: up and down select, `a`
+approves, `r` rejects (it asks for a reason that the new machine shows), `/` filters, `q` quits.
+For scripts: `agent-busctl ca list`, `ca sign <code>`, `ca reject <code> --reason "..."`.
+
+On approval busd builds the certificate from the approved agent ID (one URI SAN, client use only,
+one year, never from the request's own names), registers the agent (or switches an existing one),
+creates its read cursors, switches its account to certificate login with a confirmed reload, and
+the new machine installs the certificate, `ca.pem` and the directory of agents. It then reaches the
+broker on port `4223` as any certificate agent does: publish that port ([5a](#5a-certificate-login-optional)).
+Agents that already run need the new agent in their `directory/` (`agent-busctl --direct
+directory export`, copied as in step 5) until busd serves it over the bus.
+
+- **An ID that exists.** A machine that enrolls an ID that is already registered *with its own key*
+  (the agent's `key` file is there) only gets a certificate; its password stops working. An ID
+  registered with *another* key shows as `replaces` and needs `ca sign <code> --replace` (the
+  screen asks you to confirm): the old key is revoked. A removed ID is refused for good.
+- **Autosign (off by default).** `agent-busctl enroll autosign` prints a secret; a machine that
+  passes it (`agent-bus enroll --secret <secret>`) is approved without you, and busd logs it
+  (`busd: autosigned ...`). It never replaces an ID that has another key. `agent-busctl enroll
+  autosign --off` ends it. Use it only on a network where whoever knows the secret is trusted.
+- **Limits.** At most 100 requests wait (3 per agent ID), 10 requests a minute are taken, a request
+  expires after 24 hours, and a repeated request of the same machine replaces its earlier one.
+  Pending requests survive a restart of busd (`enroll/state.json` in the config volume).
+- **The shared password** is only a ticket to ask. Everyone who has it can send requests, see the
+  (public) answers meant for others and keep the queue busy, but cannot get a certificate you did
+  not approve or touch the bus. Change it with `enroll init --force`.
+- **Rollback.** `agent-busctl --direct cert switch <agent-id> --password` as in 5a; `agent remove`
+  as ever.

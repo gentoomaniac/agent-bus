@@ -56,7 +56,7 @@ things stand today.
 4. [Message protocol](protocol.md): the envelope, targets, types and the request lifecycle.
 5. [Delivery](delivery.md) and [presence](presence.md): inbox, acks, holds, hooks and waking sessions.
 6. [Safety](safety.md): untrusted content, loop guard, rate limits, secret scan.
-7. [Access control](access-control.md): accounts, grants, mTLS phase A and the enrollment plan.
+7. [Access control](access-control.md): accounts, grants, mTLS phase A and the enrollment flow.
 8. [Private channels](private-channels.md) and [busd](busd.md): the planned control plane.
 9. [agent-busctl](admin-cli.md), [monitor and API](monitor-and-api.md), [operations](operations.md).
 10. Reference: [MCP tools](mcp-tools.md), [milestones](milestones.md), [acceptance tests](acceptance-tests.md), [decisions log](decisions.md).
@@ -76,10 +76,10 @@ things stand today.
 | Presence | [presence](presence.md) | implemented |
 | Loop guard, rate limit, secret scan, untrusted frame | [safety](safety.md) | implemented (limits are not CLI flags yet) |
 | TLS, per-role grants, password logins, mTLS phase A | [access control](access-control.md) | implemented |
-| mTLS enrollment (phase B) | [access control](access-control.md) | planned, under review |
+| mTLS enrollment (phase B): enrollment login, `ca` commands and review screen, autosign | [access control](access-control.md) | implemented (decision 41) |
 | Private channels | [private channels](private-channels.md) | planned |
-| busd | [busd](busd.md) | planned |
-| agent-busctl | [admin CLI](admin-cli.md) | partly: setup, register, channels, removal, directory, certificates, monitor password |
+| busd | [busd](busd.md) | minimal busd built (enrollment, CA key, approvals, local reloads); the rest planned |
+| agent-busctl | [admin CLI](admin-cli.md) | partly: setup, register, channels, removal, directory, certificates, enrollment (`enroll`, `ca`), monitor password |
 | Monitor and API | [monitor and API](monitor-and-api.md) | implemented; own principal and `human@` key planned |
 | MCP tools | [MCP tools](mcp-tools.md) | partly: 8 of the specified tools |
 | Deployment, reload, releases | [operations](operations.md) | implemented |
@@ -92,7 +92,9 @@ Noted while restructuring; neither side was changed.
 - Holds: the text says a changed key or an unknown sender (with `--no-auto-accept-new-keys`) is held on disk and acked. The code terminally rejects a changed key (alert, acked) and leaves a sender whose registry record cannot be read unacked for redelivery; there is no hold store.
 - The flags `--max-hops`, `--rate-limit`, `--inbox-buffer`, `--[no-]auto-accept-new-keys` and `--owner-identity` are named in the text; the adapter has the limits as configuration fields but the `agent-bus` command line does not expose them.
 - The monitor is specified with its own read-only principal `monitor@<owner>` and a consumer made by busd; the code logs in as the two admin users and sends as a registered agent identity, and refuses `human@<owner>`.
-- Registry and catalogue reads are specified through busd; the code reads a hand-copied `directory/`.
+- Registry and catalogue reads are specified through busd; the code reads a hand-copied `directory/` (an enrolling machine gets the current one from busd once).
+- busd is specified with a signed `busd.<method>` protocol; the minimal busd serves only enrollment and approval on `busd.enroll.*` and `busd.ca.*` subjects in `CONTROL`, authenticated by the account (the owner's tools are `control-admin`).
+- The enrollment text said the CA fingerprint is checked against the central machine; the code can also fetch the CA from the broker's handshake, and keeps it only if it matches the owner's fingerprint.
 - Only 8 of the MCP tools in the table exist.
 
 ## Related documents

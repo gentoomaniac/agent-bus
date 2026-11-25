@@ -38,7 +38,7 @@ Every command takes these.
 | `--nats-server`         | `BUS_NATS_SERVER`  | `bin/nats-server` in the config dir | the binary that tests configurations        |
 | `--version`             |                    |                            | print the version                                    |
 
-`--direct` is needed by every command that requires admin rights until `busd` exists. `agent-busctl`
+`--direct` is needed by every command that requires admin rights, except `ca` and `enroll autosign`, which talk to busd or write a file (the `ca` commands need busd to be running, which the broker container starts by itself). `agent-busctl`
 then connects to `--broker` as `bus-admin` and `control-admin` (two connections), trusting
 `--ca-cert`, with their passwords, or with their certificates once `cert issue --admin` has run. It must run on the broker's host, because access changes rewrite `nats/auth.conf`.
 
@@ -274,6 +274,53 @@ admin users.
 never registered or certified again, so a certificate issued before the removal cannot log in
 as, or under the name of, a later agent.
 
+### enroll init
+
+Turns on the enrollment of new machines ([podman.md](podman.md#9-enrolling-a-new-machine)). It
+makes the shared enrollment login (user `enroll`, in `nats/control-auth.conf`, a confirmed reload),
+stores its password in `enroll/password` of the config directory (0600) and prints it once, with
+the CA fingerprint, for copying to each new machine. The login may only publish `busd.enroll.request`
+and `busd.enroll.status` and subscribe `_INBOX.enroll.>`. `--force` makes a new password. It runs in
+the broker's container, like `cert switch`, and needs the broker running; busd needs no restart.
+
+### enroll autosign
+
+Prints a new secret and turns autosigning on: a request that carries it (`agent-bus enroll --secret`)
+is approved without you, never for an ID that is registered with another key, and busd logs each
+one. `--off` turns it off. The secret is `enroll/autosign` (0600), read by busd on every request.
+
+### ca list
+
+Lists the pending enrollment requests (code, agent, hostname, age, ID status `new`, `same-key` or
+`replaces`, and the fingerprints of the signing key and the TLS key). Like the other `ca` commands
+it asks busd over the bus as `control-admin` (its certificate if it has one): no `--direct`, and it
+fails with "busd is not running" when busd is down.
+
+### ca sign
+
+`ca sign <code|request-id|agent-id> [--replace]` approves a request: busd builds the certificate from
+the agent ID, registers the agent or switches its account to certificate login, creates its read
+cursors and confirms the reload. An agent ID is accepted only when one request names it. An ID that
+is registered with another key needs `--replace`, which revokes the old key. An approval is
+single-use; a failed one leaves the request pending and can be repeated.
+
+### ca reject
+
+`ca reject <code|request-id|agent-id> [--reason <text>]` rejects a pending request; the machine
+prints the reason.
+
+### ca fingerprint
+
+Prints the CA certificate's SHA-256 fingerprint (colon-separated hex) from `ca.pem`, without
+the broker. A new machine passes it as `agent-bus enroll --ca-fingerprint`.
+
+### ca review
+
+A terminal screen for the same, updated every two seconds: the list of pending requests, a detail
+pane, and the keys up/down, `a` approve, `r` reject (reason prompt), `/` filter, `q` quit. An approval of an
+ID that would replace another key asks for confirmation first. It needs a terminal: `podman exec -it
+agent-bus agent-busctl ca review`.
+
 ### monitor password
 
 Sets the password of the [web monitor](monitor.md#login), stored as a bcrypt hash in
@@ -289,4 +336,4 @@ printf '%s\n' "$PASSWORD" | agent-busctl monitor password   # from a script
 
 ## Not built yet
 
-`agent-busctl alerts` (alerts go to `<agent-dir>/alerts.log` only) and every command that needs `busd`.
+`agent-busctl alerts` (alerts go to `<agent-dir>/alerts.log` only) and every command that needs the full `busd` (channels, history, registry reads over the bus). What exists of busd is enrollment and approval ([design/busd.md](design/busd.md)).

@@ -230,7 +230,20 @@ arrives after the reconnect ([troubleshooting.md](troubleshooting.md#when-the-bu
 
 ## Other machines
 
-A sender is pinned on first contact from `<config-dir>/directory/<token>.json`, one record per
+**A new machine enrolls; no keys are copied.** Install `agent-bus` there and run, with the values
+`agent-busctl enroll init` printed on the broker's machine:
+
+```sh
+agent-bus enroll --broker <broker-host>:4222 --agent lib-x@<owner> \
+  --ca-fingerprint <fingerprint> --enroll-password '<password>' --waitforcert
+```
+
+Then approve on the broker's machine (`podman exec -it agent-bus agent-busctl ca review`), comparing
+the code it prints. The machine makes its own keys, receives its certificate, the CA and the
+directory of agents, and `agent-bus mcp` logs in with the certificate from then on (port `4223` must
+be published). Step by step, with autosign and existing IDs: [podman.md](podman.md#9-enrolling-a-new-machine).
+
+The older way, still working, is to copy the files. A sender is pinned on first contact from `<config-dir>/directory/<token>.json`, one record per
 agent, which `register` writes on the machine it runs on. Agents cannot read the registry on the
 broker ([design/jetstream-binding.md](design/jetstream-binding.md)) and `busd` does not exist yet, so to use an agent from another machine,
 copy that `directory/` there, together with `ca.pem`, and again after agents are added or removed

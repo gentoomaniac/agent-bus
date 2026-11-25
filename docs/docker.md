@@ -10,8 +10,9 @@ is for development and tests only, see [development.md](development.md#running-t
 
 Every release pushes a multi-arch (linux amd64 and arm64) image to
 `ghcr.io/gentoomaniac/agent-messenger`, tagged with the version and `latest`. It holds the pinned
-`nats-server` (v2.15.3), `agent-busctl`, `bus-monitor` and `agent-bus`, and runs as the non-root user `bus` (uid 10001).
-The entrypoint renders `deploy/nats-server.conf` from the environment and runs `nats-server` as
+`nats-server` (v2.15.3), `busd`, `agent-busctl`, `bus-monitor` and `agent-bus`, and runs as the non-root user `bus` (uid 10001).
+The entrypoint renders `deploy/nats-server.conf` from the environment, starts `busd` beside it when the
+config volume has `ca.key` (enrollment and approval, [podman.md](podman.md#9-enrolling-a-new-machine); `BUS_BUSD=off` skips it) and runs `nats-server` as
 PID 1, so `docker stop` stops it cleanly and `agent-busctl --direct` inside the container can reload it.
 
 To build the image from a checkout instead, for this machine's architecture (docker or podman,

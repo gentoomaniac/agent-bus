@@ -71,7 +71,7 @@ Reloads go through the broker's container only; the monitor container never sign
 
 ## Deploy
 
-**Deploy.** `nats-server` runs on the dev machine as a plain binary, started by a script or a user service unit (`deploy/`: `nats-server.conf` and the start script; `auth.conf` is generated, mode 0600). If a container runtime is used later, a Pod manifest replaces the start script and reload signals the container; nothing in the Go code or agent-busctl depends on how the process starts. busd and the monitor are plain binaries next to it. busd runs supervised (a user service unit with automatic restart); there is no high availability, and [busd](busd.md) says what works while busd is down.
+**Deploy.** `nats-server` runs on the dev machine as a plain binary, started by a script or a user service unit (`deploy/`: `nats-server.conf` and the start script; `auth.conf` is generated, mode 0600). If a container runtime is used later, a Pod manifest replaces the start script and reload signals the container; nothing in the Go code or agent-busctl depends on how the process starts. busd and the monitor are plain binaries next to it (as built, the minimal busd is started by the broker container's entrypoint and restarted by it if it stops). busd runs supervised (a user service unit with automatic restart); there is no high availability, and [busd](busd.md) says what works while busd is down.
 
 > **Superseded in part:** the broker is run from the Docker image (compose file in `deploy/`), not
 > from a Pod manifest (decisions 15 and 31). busd, when it exists, is a plain binary next to it.
@@ -86,5 +86,5 @@ nothing. The procedure is in [docs/development.md](../development.md#cutting-a-r
 
 ## See also
 
-- [Access control](access-control.md): the two listeners and the reload topology of phase B.
+- [Access control](access-control.md): the two listeners, enrollment and the reload topology (busd reloads inside the broker container).
 - [JetStream binding](jetstream-binding.md): what the configuration contains.

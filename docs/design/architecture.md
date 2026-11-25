@@ -10,7 +10,7 @@ process.
 |---|---|
 | Broker (`nats-server`), adapter (`agent-bus`), delivery hooks, `agent-busctl --direct`, monitor | implemented |
 | Internal boundary (`internal/bus` interfaces, `internal/broker` binding) | implemented |
-| busd (control service) | **planned**; the MVP uses `agent-busctl --direct` and a copied directory instead ([busd](busd.md)) |
+| busd (control service) | **minimal busd built** (enrollment, CA key, approvals, local reloads); the rest is **planned**; the MVP uses `agent-busctl --direct` and a copied directory instead ([busd](busd.md)) |
 | Browser admin UI | later, not specified |
 
 ## Component diagram

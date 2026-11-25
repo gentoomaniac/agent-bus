@@ -3,7 +3,7 @@
 [Design index](README.md) | previous: [safety](safety.md) | next: [private channels](private-channels.md)
 
 Who may connect to the broker and what each account may do: accounts and TLS, the grants matrix per
-role, and how agents authenticate (passwords today, client certificates in phase A, a Puppet-style
+role, and how agents authenticate (passwords, client certificates in phase A, a Puppet-style
 enrollment flow in phase B).
 
 | Part | Status |
@@ -11,8 +11,8 @@ enrollment flow in phase B).
 | TLS-only broker, private CA (`agent-busctl tls init`), static users with bcrypt passwords, per-role grants, `admin init`, generated `auth.conf` | implemented |
 | Roles `agent`, `admin` | implemented; `monitor` and `enrollment` roles are reserved with no access (the monitor logs in as the two admin users) |
 | mTLS phase A: certificate login on a second listener (`cert issue`, `cert sign`, `cert switch`) | implemented |
-| mTLS phase B: enrollment flow, `ca list\|sign\|reject`, autosigning, CA key location | **planned**, and **under review** (see below) |
-| The busd and monitor columns of the grants matrix | **planned** (no busd, no `monitor_<owner>` user yet) |
+| mTLS phase B: enrollment flow, `ca list\|sign\|reject\|fingerprint\|review`, autosigning, CA key in a minimal busd (decision 41) | implemented (see below) |
+| The busd and monitor columns of the grants matrix | **planned**: the minimal busd logs in as the two admin users and serves only enrollment and approval; there is no `monitor_<owner>` user yet |
 
 ## Accounts and access
 
@@ -95,49 +95,94 @@ copies them to the agent's machine; no request or approval flow. What differs fr
 - *Reload topology.* Only the broker's container reloads nats-server; the monitor container never
   signals (docs/broker.md).
 
-### Phase B (planned): the enrollment flow
+### Phase B (implemented): the enrollment flow
 
-**Phase B (planned): the enrollment flow.** Everything below that phase A did not build:
-the request/approval flow, `ca list|sign|reject`, the monitor's pending list and CA key, the
-enrollment login and its limits, autosigning, `--waitforcert`, the CA fingerprint check, and the
-monitor reloading nats-server through a helper in the broker container. The enrollment login needs
-no listener of its own: it stays a password user of the password listener.
-
-**Decision** (owner, 2026-11-24, after a design review): agents get client certificates from the bus CA through a Puppet-style enrollment flow, replacing agent passwords. Planned after agent removal, the protocol fixes and the minimal monitor API.
-
-> **Decided (owner, 2026-11-25, decision 41): busd holds the CA key, not the monitor.** A minimal
-> busd in the broker container holds the CA key, signs certificates, keeps the pending enrollment
-> requests and makes every auth-file change and reload. The monitor stays strictly read-only: it
-> shows the number of pending requests, nothing more. Approval is a TUI, `agent-busctl ca review`
-> (run with `podman exec -it agent-bus …`), plus `agent-busctl ca list|sign|reject` for scripts;
-> no web approval page. Where the text below says the monitor signs or reloads, read busd.
+**Phase B (built, decision 41): the enrollment flow.** A new machine asks for a client certificate
+and the owner approves it; the owner's tools are `agent-busctl ca review` (a terminal screen,
+`podman exec -it agent-bus agent-busctl ca review`) and `agent-busctl ca list|sign|reject|fingerprint`.
+User documentation: [docs/podman.md](../podman.md#9-enrolling-a-new-machine). **Decided (owner,
+2026-11-25): busd holds the CA key, not the monitor.** A minimal busd ([busd](busd.md)) runs in the
+broker's container, holds the CA key, signs certificates, keeps the pending requests and makes every
+auth-file change and reload locally. It has no HTTP interface. The monitor stays strictly
+read-only: it shows the number of pending requests and has no CA key and no approval endpoint.
 
 ```mermaid
 sequenceDiagram
   participant Agent as agent-bus enroll on the agent machine
-  participant Listener as Enrollment login on the password listener
-  participant Approver as Monitor or agent-busctl ca
-  participant Owner as Owner
+  participant Busd as busd in the broker container
+  participant Owner as Owner, agent-busctl ca review
   participant Broker as nats-server
-  Agent->>Agent: create TLS key, CSR, signing key proof and a fresh nonce
-  Agent->>Agent: check the CA fingerprint against the central machine
-  Agent->>Listener: request with agent ID, CSR, public key, hostname, nonce
-  Listener->>Approver: pending request with its approval code
-  Owner->>Approver: ca list, then ca sign or ca reject, or autosign with an enrollment secret
-  Approver->>Approver: build the certificate from the approved ID, one URI SAN
-  Approver->>Broker: add the mapping and reload through a helper in the broker container
-  Approver-->>Agent: certificate on the agent's own reply inbox
+  Agent->>Agent: create TLS key, CSR and proof of possession
+  Agent->>Agent: CA: a copied ca.pem, or fetched from the handshake and matched to the owner's fingerprint
+  Agent->>Busd: request on busd.enroll.request, as the shared enrollment login
+  Busd-->>Agent: pending, with the approval code
+  Owner->>Busd: ca sign (or autosign with the secret)
+  Busd->>Busd: build the certificate from the approved ID, one URI SAN
+  Busd->>Broker: registry record, read cursors, certificate account, confirmed reload
+  Agent->>Busd: busd.enroll.status, polling with a backoff (--waitforcert)
+  Busd-->>Agent: certificate, CA certificate, directory
   Agent->>Broker: log in with the client certificate on the mapped listener
 ```
 
-- **Request.** `agent-bus enroll --broker <host> --agent <id>` creates the TLS key and CSR on the agent's machine (an existing agent keeps its signing key, ID, consumers and local state; a new one also creates its Ed25519 key). Keys never leave the machine. The request carries the agent ID, CSR, public signing key with proof of possession, hostname and a fresh nonce; its approval code is derived from all of these, so it cannot be reused for another request. `--waitforcert` keeps retrying until the request is approved or rejected.
-- **Trust in the broker.** The CA fingerprint is confirmed against the value the central machine shows (or the CA certificate is copied once), never taken from the enrollment endpoint alone.
-- **Enrollment login.** A shared enrollment login on a separate listener may only send a request and receive its own reply (dedicated inbox namespace), with size, pending-count, expiry and rate limits and no BUS, JetStream or admin access. It requests approval; it never proves identity. Optional autosigning: a request carrying a configured enrollment secret (like Puppet's challenge password) is approved automatically; off by default.
-- **Approval.** The monitor's "pending agents" list (ID, hostname, fingerprints, code) or `agent-busctl ca list` / `agent-busctl ca sign <id>` / `agent-busctl ca reject <id>`. The monitor holds the CA key (mode 0600, never served, logged or exported); it is local-only and exposed only through a reverse proxy. Approvals are single-use and expire, and never overwrite an existing identity silently.
-- **Certificates.** Built by us from the approved ID, never copied from the CSR: client-auth only, not a CA, bounded validity, one URI SAN that nats-server's `verify_and_map` maps to the agent's user. A renew/reissue command exists before certificates expire.
-- **Broker.** The mapped mTLS listener and the password/enrollment listener are separate; admin users and the monitor get certificates before agents are switched; password logins are retired only after certificate login is verified (documented rollback). The generated authorization files model explicit roles (agent, admin, monitor, enrollment) and authentication modes, round-tripped without loss.
-- **Removal.** Removing an agent drops its mapping and reloads; a removed ID is never reused while certificates issued for it are valid (tombstones in the registry). Agents learn about new and removed agents through a directory refresh and keep revoked fingerprints locally, checked even for pinned keys. **Implemented for password accounts** (`agent-busctl agent remove`, `agent-busctl directory export`, the adapter's local refresh; docs/agent-busctl.md): the directory is copied by hand until busd serves it over the bus.
-- **Docker.** One supported topology lets the monitor reload nats-server (for example sharing the broker container's PID namespace); config is mounted as a directory so atomic replacement stays visible.
+What was built, and where it differs from the plan above it:
+
+- **Where busd's API lives: the `CONTROL` account.** The subjects `busd.enroll.request`,
+  `busd.enroll.status`, `busd.ca.list|sign|reject` and the announcement `busd.enroll.pending` are in
+  `CONTROL`, which agents cannot reach: not by login, and not by the JetStream redirection that lets
+  any `BUS` reader make the server publish a stored payload onto a subject of `BUS` it names. busd
+  also drops every message without a reply subject, so a reply or a publication redirected onto
+  one of its subjects is not taken for a request. The owner's tools log in as `control-admin`.
+- **The enrollment login** is the shared user `enroll`, role `enrollment`, in `control-auth.conf`,
+  on the password listener (no listener of its own). Grants: publish `busd.enroll.request` and
+  `busd.enroll.status`, subscribe `_INBOX.enroll.>`; nothing else, so no stream, JetStream API or
+  `BUS` access. Its password is made by `agent-busctl enroll init` (`enroll/password`, shown once).
+  Each client uses a random inbox prefix under `_INBOX.enroll.`, but the login is shared, so
+  **residual risk:** anyone who has it can read the replies meant for other enrollees. Replies
+  therefore hold only public data (certificate, CA certificate, directory); the client believes only an
+  answer that names its own request ID and installs only a certificate for exactly its agent and
+  TLS key, signed by the CA it trusts. The login proves no identity: it is a ticket to ask.
+- **Request.** `agent-bus enroll --broker <host> --agent <id> [--waitforcert[=<max>]] [--secret <s>]
+  [--ca-fingerprint <sha256>]`. An existing identity keeps its signing key (and so its pins, ID and
+  consumers); only the TLS key and CSR are new. The request has the agent ID, CSR, public signing
+  key, hostname and a fresh nonce, with an Ed25519 signature over all of them (proof of
+  possession, domain-separated). The **approval code** is the first 40 bits of the SHA-256 of that
+  whole request (`XXXX-XXXX`), the request ID is the full digest. The machine prints the code and
+  the signing key fingerprint; the owner sees them with the TLS key fingerprint.
+- **Trust in the broker.** `enroll` needs the CA certificate: a copied `ca.pem`, or `--ca-fingerprint`
+  from `agent-busctl ca fingerprint`. With the fingerprint, the CA is read from the broker's TLS
+  handshake (`tls init` now has the broker send the CA after its own certificate) *before* any
+  password is sent, and kept only if its SHA-256 matches and it signs the broker's certificate. A CA
+  learned from the enrollment endpoint alone is never trusted. A broker certificate made by an older
+  `tls init` lacks the CA: copy `ca.pem` or append it once (optional migration, docs/podman.md).
+- **Pending requests** (busd, in memory and `enroll/state.json`, which holds public data only):
+  at most 8 KiB each, 100 pending, 3 per agent ID, 10 requests a minute (burst 10), expiry after 24
+  hours (the agent then hears "expired"), a decided request is kept 24 hours for the agent to
+  collect, a request of the same agent ID and signing key supersedes the earlier one. Over a limit
+  the answer is `busy` and the agent retries.
+- **Approval** is single-use: only a pending request can be approved. busd builds the certificate with
+  `SignCSR` from the approved agent ID and the CSR's public key alone, the CSR's own names and
+  usages are ignored (phase A code). A removed (tombstoned) ID is refused at request and at approval.
+  An ID that is registered *with the same signing key* only switches to certificate login. An ID
+  registered *with another key* is flagged `replaces` and needs an explicit confirmation (`ca sign
+  --replace`, a yes in the screen); then its current key is revoked and the new one added. Steps: the
+  registry record, the read cursors of DM and `general`, the account in certificate mode (one confirmed
+  reload), `<config>/directory` updated; each repeatable, so a failed approval stays pending.
+- **Autosign** (off by default): `agent-busctl enroll autosign` writes `enroll/autosign`, which busd reads on
+  every request; a request with the matching secret (constant-time compare) is approved at once, never
+  for an ID that would be replaced, and logged. An empty or missing file means off.
+- **Monitor.** busd announces the pending count every five seconds on `busd.enroll.pending`; the
+  monitor shows it in its header and hides it when it stops coming.
+- **Certificates** are as in phase A: client use only, not a CA, one URI SAN, one year (`BUS_CERT_VALIDITY`
+  of busd). Renewal is still `cert issue`, or enrolling again from the machine.
+- **Removal** is as before (`agent remove`: mapping dropped with the account, ID tombstoned, never
+  reused). The directory still reaches other agents by hand (`directory export`); an enrolled machine
+  starts with the directory busd returns.
+
+Not built from the earlier plan: busd's signed `busd.<method>` API for agents (only the enrollment
+and approval subjects exist), reload through a helper called by the monitor (busd reloads locally, the
+monitor never signals), a certificate renewal command, and a separate enrollment listener (the shared
+login uses the password listener). Admin certificates are still `cert issue --admin`; busd must be
+restarted after it (`pkill busd`, the entrypoint starts it again) to read them.
 
 ## See also
 

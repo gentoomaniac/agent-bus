@@ -152,6 +152,36 @@ as `bad certificate`, on a machine whose agent folder has `client.pem` and `clie
 - The password port (`4222`) refuses a certificate agent, and the certificate port refuses
   everything without a client certificate; that is intended.
 
+## Enrollment fails
+
+Symptoms of `agent-bus enroll` and `agent-busctl ca`, and what they mean
+([podman.md](podman.md#9-enrolling-a-new-machine)):
+
+- `no CA certificate at ...`: copy `ca.pem` from the central machine, or pass `--ca-fingerprint`
+  (`agent-busctl ca fingerprint` there).
+- `sent no CA certificate with the fingerprint ...`: the fingerprint is wrong, you are talking to
+  another broker, or the broker's `broker.pem` was made by an older `tls init` and lacks the CA
+  after the broker certificate. Copy `ca.pem` instead, or append it once (podman.md, section 9).
+- `has the fingerprint ..., not ...: it is not the owner's CA`: the `ca.pem` on this machine is not
+  the one you meant; do not go on until the fingerprints agree.
+- `Authorization Violation` when asking: the enrollment password is wrong, or `agent-busctl enroll
+  init` never ran (or ran with `--force` since).
+- `busd is not running on the broker`: busd did not start (it needs `ca.key` in the config volume,
+  `BUS_BUSD` not `off`) or has stopped. `podman logs agent-bus` shows `busd:` lines; the entrypoint
+  starts it again within seconds. After `cert issue --admin` run `podman exec agent-bus pkill busd`
+  once so it reads the admin certificates.
+- `too many ...` or `busy`: a limit was hit (10 requests a minute, 100 pending, 3 per ID); the
+  machine tries again with `--waitforcert`.
+- `the request ... was rejected: ...`: the owner rejected it, or it expired after 24 hours; the
+  reason is printed. Run the command again for a new request.
+- `no pending request`: `ca sign` and `ca reject` name a pending request by code, request ID or
+  agent ID; with two requests for one ID, use the code. busd keeps them across a restart.
+- `is registered with another key ... --replace`: an ID of an existing agent with a different
+  signing key: only approve this if the machine really replaces that agent.
+- `was removed and its ID is never used again`: pick another ID.
+- A machine that was approved but cannot log in: publish port `4223`, and check
+  [Certificate login fails](#certificate-login-fails).
+
 ## Reload failed
 
 Symptom: `register` or `channel join` fails while testing or reloading the server.

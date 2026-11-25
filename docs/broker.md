@@ -120,6 +120,7 @@ example the monitor, which shares the network but not the processes, that pid is
 So every command that changes access runs in the broker container (`podman exec agent-bus
 agent-busctl --direct ...`, the alias of [podman.md](podman.md)). The monitor and every other
 container only read the config volume and never reload. Nothing needs a signal across containers,
-and the container engine's socket is not mounted anywhere. A later monitor that approves
-enrollments ([design/access-control.md](design/access-control.md), phase B) asks the broker container to reload, for example through a
-small helper there, instead of signalling itself.
+and the container engine's socket is not mounted anywhere. Enrollment follows the
+same rule ([design/access-control.md](design/access-control.md), phase B): `busd` runs in the broker container,
+holds the CA key and makes its auth-file changes and reloads there; the monitor only shows the number
+of pending requests.

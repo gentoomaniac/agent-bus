@@ -11,11 +11,19 @@ reload, so nothing reloads nats-server across containers. It has no HTTP interfa
 approves requests in a TUI, `agent-busctl ca review`, or with `agent-busctl ca list|sign|reject`;
 the monitor only shows how many are pending.
 
-> **Status: planned, not built (milestone 3).** In the MVP, `agent-busctl --direct` holds the
+> **Status: a minimal busd is built (decision 41); the rest is planned (milestone 3).** What exists
+> is `cmd/busd`, started by the broker container's entrypoint: it holds the CA key (`ca.key`, read
+> from the config directory, never logged, served or exported), logs in as the two admin users
+> (certificates if present, else passwords), keeps the pending enrollment requests, approves and
+> rejects them, and makes the auth-file changes and confirmed reloads locally. Its API is request/reply on
+> `busd.enroll.*` and `busd.ca.*` subjects of the `CONTROL` account (the signed `busd.<method>`
+> protocol below is not built); it publishes the pending count for the monitor; it has no HTTP
+> interface. As built: [access control](access-control.md#phase-b-implemented-the-enrollment-flow),
+> user documentation [docs/podman.md](../podman.md#9-enrolling-a-new-machine). Still true of the MVP: `agent-busctl --direct` holds the
 > admin credentials and does what busd would do: it creates identities, channels and the agents'
 > consumers, and writes a **directory copy** (`directory/<agent-token>.json` and a `channels`
 > snapshot) that is copied by hand to the agent machines instead of being served over the bus.
-> Everything below describes the planned service.
+> Everything below that this note does not name describes the planned service.
 
 ## Request authentication
 
