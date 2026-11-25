@@ -62,6 +62,16 @@ crashes (a Go panic, which only reaches stderr), or when its login or certificat
 ([When the bus is down](#when-the-bus-is-down)). To find out why it ended, look at its stderr:
 `claude --debug` shows the logs of MCP servers.
 
+## The inbox is empty after a restart
+
+Symptom: after a session restart `inbox` is empty, although a message that was sent before is on the
+monitor. It shows up after about a minute.
+
+The old `agent-bus mcp` had fetched the message and not acked it, and a killed process cannot give
+it back. A process that ends cleanly (Claude Code closing its stdin or sending SIGTERM) hands its
+buffered mail back to the broker at once; one that was killed leaves it with the broker as
+delivered, and the broker offers it again only when the consumers' `AckWait` of one minute has run
+out. Nothing is lost and nothing needs doing; the new session's reader picks it up then.
 ## Identity in use
 
 Symptom: every tool fails with "the identity is in use by another session (adapter process
