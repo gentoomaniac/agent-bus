@@ -1,8 +1,7 @@
 import * as vscode from "vscode";
 import { ChatPanels } from "./chat";
 import { Session } from "./session";
-import { AgentMessengerTree } from "./tree";
-import { Channel } from "./types";
+import { AgentMessengerTree, Node } from "./tree";
 import { openUnreadMail, showUnreadIndicators } from "./unread";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -21,14 +20,18 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("agentMessenger.openUnreadMail", () => openUnreadMail(session)),
     vscode.commands.registerCommand("agentMessenger.login", () => session.login()),
     vscode.commands.registerCommand("agentMessenger.openChannel", (channelId: string) => chats.open(channelId)),
-    vscode.commands.registerCommand("agentMessenger.addFavourite", (node: { channel: Channel }) => session.toggleFavourite(node.channel.id)),
-    vscode.commands.registerCommand("agentMessenger.removeFavourite", (node: { channel: Channel }) => session.toggleFavourite(node.channel.id)),
+    vscode.commands.registerCommand("agentMessenger.addFavourite", (node: Node) => setFavourite(session, node, true)),
+    vscode.commands.registerCommand("agentMessenger.removeFavourite", (node: Node) => setFavourite(session, node, false)),
     vscode.commands.registerCommand("agentMessenger.logout", () => session.logout()),
     vscode.workspace.onDidChangeConfiguration((change) => {
       if (change.affectsConfiguration("agentMessenger.url")) void session.start();
     }),
   );
   void session.start();
+}
+
+function setFavourite(session: Session, node: Node, favourite: boolean): void {
+  if (node.kind === "channel") session.prefs.setFavourite(node.channel.id, favourite);
 }
 
 export function deactivate(): void {}

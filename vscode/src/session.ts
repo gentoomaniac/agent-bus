@@ -2,12 +2,14 @@ import * as vscode from "vscode";
 import { Api, ApiError } from "./api";
 import { followEvents } from "./events";
 import { Model } from "./model";
-import { Message } from "./types";
+import { LegacyPrefs, Prefs } from "./prefs";
+import { Message, ServerPrefs } from "./types";
 
 // One connection to a monitor: its URL from the settings, the token from the secret storage, the
 // model and the event stream. Everything restarts on login, logout and a changed URL.
 export class Session implements vscode.Disposable {
   model: Model;
+  prefs: Prefs;
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   private readonly messageEmitter = new vscode.EventEmitter<Message>();
   private readonly refreshEmitter = new vscode.EventEmitter<void>();
@@ -22,7 +24,7 @@ export class Session implements vscode.Disposable {
   readonly onDidRefresh = this.refreshEmitter.event; // the state was read again, after every (re)connect
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.model = this.newModel(this.url, undefined);
+    ({ model: this.model, prefs: this.prefs } = this.newModel(this.url, undefined));
   }
 
   get url(): string {
@@ -35,45 +37,27 @@ export class Session implements vscode.Disposable {
     return "agentMessenger.token:" + url;
   }
 
-  private newModel(url: string, token: string | undefined): Model {
-    const key = "lastRead:" + url;
-    const memento = this.context.globalState;
-    const model = new Model(new Api(url, token), {
-      get: (channelId) => memento.get<Record<string, number>>(key, {})[channelId],
-      set: (channelId, sequence) => void memento.update(key, { ...memento.get<Record<string, number>>(key, {}), [channelId]: sequence }),
-    });
+  private newModel(url: string, token: string | undefined): { model: Model; prefs: Prefs } {
+    const api = new Api(url, token);
+    const prefs = new Prefs(api, () => this.changeEmitter.fire(), (error) => this.report(error));
+    const model = new Model(api, prefs);
     this.modelSubscription?.dispose();
     this.modelSubscription = model.onChange(() => this.changeEmitter.fire());
-    return model;
+    return { model, prefs };
   }
 
-  // Favourite channels and folded categories, per monitor URL like the last-read sequences.
-  get favourites(): Set<string> {
-    return this.readSet("favourites:");
+  // What an older version kept in the global state for this monitor, before the prefs were shared.
+  // Folded categories were then called directMessages where the monitor says dms.
+  private legacyPrefs(url: string): LegacyPrefs | undefined {
+    const state = this.context.globalState;
+    const read = state.get<Record<string, number>>("lastRead:" + url, {});
+    const favourites = state.get<string[]>("favourites:" + url, []);
+    const collapsed = state.get<string[]>("collapsed:" + url, []).map((id) => (id === "directMessages" ? "dms" : id));
+    return Object.keys(read).length + favourites.length + collapsed.length > 0 ? { read, favourites, collapsed } : undefined;
   }
 
-  get collapsedCategories(): Set<string> {
-    return this.readSet("collapsed:");
-  }
-
-  toggleFavourite(channelId: string): void {
-    this.updateSet("favourites:", channelId, !this.favourites.has(channelId));
-    this.changeEmitter.fire();
-  }
-
-  setCategoryCollapsed(categoryId: string, collapsed: boolean): void {
-    this.updateSet("collapsed:", categoryId, collapsed);
-  }
-
-  private readSet(prefix: string): Set<string> {
-    return new Set(this.context.globalState.get<string[]>(prefix + this.url, []));
-  }
-
-  private updateSet(prefix: string, member: string, present: boolean): void {
-    const members = this.readSet(prefix);
-    if (present) members.add(member);
-    else members.delete(member);
-    void this.context.globalState.update(prefix + this.url, [...members]);
+  private async dropLegacyPrefs(url: string): Promise<void> {
+    for (const prefix of ["lastRead:", "favourites:", "collapsed:"]) await this.context.globalState.update(prefix + url, undefined);
   }
 
   async start(): Promise<void> {
@@ -83,17 +67,22 @@ export class Session implements vscode.Disposable {
     const token = await this.context.secrets.get(this.tokenKey(url));
     if (generation !== this.generation) return; // a newer start took over while the token was read
     this.hasToken = token !== undefined;
-    const model = (this.model = this.newModel(url, token));
+    const { model, prefs } = this.newModel(url, token);
+    this.model = model;
+    this.prefs = prefs;
     const stream = (this.stream = new AbortController());
     await vscode.commands.executeCommand("setContext", "agentMessenger.loginRequired", false);
     this.changeEmitter.fire();
     void followEvents(model.api, {
       onOpen: async () => {
         model.setLive(true);
+        // The prefs come first: the first refresh counts a channel without a read marker as read.
+        if (await prefs.load(this.legacyPrefs(url))) await this.dropLegacyPrefs(url);
         await model.refresh();
         this.refreshEmitter.fire();
       },
       onEvent: (event) => {
+        if (event.event === "prefs") prefs.apply(JSON.parse(event.data) as ServerPrefs);
         model.apply(event).then(
           (message) => message && generation === this.generation && this.messageEmitter.fire(message),
           (error) => this.report(error),

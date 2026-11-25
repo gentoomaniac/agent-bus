@@ -1,4 +1,4 @@
-import { Agent, Channel, Message, Presence, SendRequest, Status } from "./types";
+import { Agent, Channel, Message, Presence, SendRequest, ServerPrefs, Status } from "./types";
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -55,5 +55,17 @@ export class Api {
   }
   send(request: SendRequest): Promise<{ id: string }> {
     return this.json("/api/v1/send", request);
+  }
+  prefs(): Promise<ServerPrefs> {
+    return this.json("/api/v1/prefs");
+  }
+  postRead(updates: Record<string, number>): Promise<Record<string, number>> {
+    return this.json("/api/v1/prefs/read", updates);
+  }
+  putFavourites(channels: string[]): Promise<ServerPrefs> {
+    return this.json("/api/v1/prefs/favourites", channels, "PUT");
+  }
+  putCollapsed(sections: string[]): Promise<ServerPrefs> {
+    return this.json("/api/v1/prefs/collapsed", sections, "PUT");
   }
 }
