@@ -240,7 +240,15 @@ export class ChatPanels implements vscode.Disposable {
   #composer textarea, #composer input { display: block; box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: transparent; border: 0; outline: 0; padding: 0; }
   #composer ::placeholder { color: var(--vscode-input-placeholderForeground); }
   #composer textarea { resize: none; max-height: 10lh; padding: 8px 10px 4px; line-height: 1.4; }
-  #title { font-weight: bold; padding: 8px 10px 0; }
+  #composer #title { font-weight: bold; padding: 6px 10px; border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 8px 8px 0 0; }
+  #composer #title:hover { background: var(--vscode-list-hoverBackground); }
+  #composer #title:focus { border-bottom-color: var(--vscode-focusBorder); }
+  #composer textarea:hover { background: var(--vscode-list-hoverBackground); }
+  .field-label { flex: none; font-size: 0.8em; color: var(--vscode-descriptionForeground); }
+  #targets { padding: 1px 4px; border: 1px solid transparent; border-radius: 6px; }
+  #targets:hover { background: var(--vscode-list-hoverBackground); }
+  #targets:focus-within { border-color: var(--vscode-focusBorder); }
+  #toolbar select.pill:hover, #toolbar select.pill:focus-visible { border-color: var(--vscode-focusBorder); }
   #toolbar { display: flex; align-items: center; gap: 6px; padding: 2px 6px 6px 8px; }
   #toolbar button:focus-visible, #toolbar select:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   #completions { position: absolute; bottom: 100%; left: 0; margin: 0 0 4px; padding: 3px; list-style: none; max-height: 12em; overflow-y: auto; min-width: 10em; color: var(--vscode-editorSuggestWidget-foreground); background: var(--vscode-editorSuggestWidget-background); border: 1px solid var(--vscode-editorSuggestWidget-border, var(--vscode-widget-border, var(--vscode-focusBorder))); border-radius: 6px; box-shadow: 0 2px 8px var(--vscode-widget-shadow); z-index: 1; }
@@ -266,12 +274,13 @@ export class ChatPanels implements vscode.Disposable {
 <div id="note" hidden></div>
 <form id="composer" hidden>
   <ul id="completions" role="listbox" hidden></ul>
-  <input id="title" placeholder="Title" aria-label="Title" hidden>
+  <input id="title" placeholder="Title (optional)" aria-label="Title">
   <textarea id="text" rows="1" aria-label="Message"></textarea>
   <div id="toolbar">
+    <span class="field-label">Type</span>
     <select id="type" class="pill" aria-label="Type"></select>
+    <span class="field-label">To</span>
     <div id="targets"><input id="targetInput" placeholder="@ to target" aria-label="To"></div>
-    <button id="toggleTitle" class="pill" type="button" title="Add a title" aria-label="Title" aria-pressed="false">T</button>
     <span id="problem"></span>
     <button id="send" type="submit" title="Send" aria-label="Send" disabled>↑</button>
   </div>

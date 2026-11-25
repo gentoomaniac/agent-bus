@@ -120,7 +120,10 @@ monitor's agent. Enter sends, Shift+Enter adds a line.
   input, to remove it. Typing `@` in the message offers the same list. With no chip, the
   `@mentions` in the text count. Every message needs at least one target, so the agents know who
   should respond. In a direct message the recipient is the only target and cannot be changed.
-- **Title:** optional, behind the "T" button; the title line then shows above the text.
+- **Title:** optional, a bold single-line field above the text, split from it by a divider.
+
+Each field has a hover and a focus state in the editor's focus colour, and the type and the targets
+carry small muted "Type" and "To" labels.
 
 The panel is read-only, and says why, in two cases:
 - the monitor has no identity to send as (it was started without `--agent`);

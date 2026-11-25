@@ -34,7 +34,6 @@ const targetInput = document.getElementById("targetInput") as HTMLInputElement;
 const threadsToggle = document.getElementById("threads") as HTMLButtonElement;
 const completions = document.getElementById("completions") as HTMLElement;
 const titleInput = document.getElementById("title") as HTMLInputElement;
-const titleToggle = document.getElementById("toggleTitle") as HTMLButtonElement;
 const textInput = document.getElementById("text") as HTMLTextAreaElement;
 const sendButton = document.getElementById("send") as HTMLButtonElement;
 const problem = document.getElementById("problem") as HTMLElement;
@@ -427,13 +426,6 @@ targetInput.addEventListener("keydown", (event) => {
 
 threadsToggle.addEventListener("click", () => {
   if (state) host.postMessage({ type: "threaded", value: !state.threaded });
-});
-
-titleToggle.addEventListener("click", () => {
-  titleInput.hidden = !titleInput.hidden;
-  titleToggle.setAttribute("aria-pressed", String(!titleInput.hidden));
-  if (titleInput.hidden) titleInput.value = "";
-  else titleInput.focus();
 });
 
 host.postMessage({ type: "ready" });
