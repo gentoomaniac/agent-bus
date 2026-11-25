@@ -78,6 +78,10 @@ func (monitor *Monitor) handler(access Access, now func() time.Time) (http.Handl
 		monitor.serveEvents(w, r, func() bool { return who.token == "" || login.auth.isLive(who.token) })
 	}))
 	mux.HandleFunc("POST /api/v1/send", change(monitor.serveSend))
+	mux.HandleFunc("GET /api/v1/prefs", read(monitor.servePrefs))
+	mux.HandleFunc("POST /api/v1/prefs/read", change(monitor.servePrefsRead))
+	mux.HandleFunc("PUT /api/v1/prefs/favourites", change(monitor.servePrefsFavourites))
+	mux.HandleFunc("PUT /api/v1/prefs/collapsed", change(monitor.servePrefsCollapsed))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	})
@@ -185,11 +189,12 @@ func (monitor *Monitor) serveSend(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveEvents streams every new message as a server-sent event named "message" and every presence
-// change as one named "presence". The stream ends when the client leaves, falls too far behind or
-// its login session ends; the browser then reconnects and reads what it missed from
-// /api/v1/messages and /api/v1/presence. Events carry an id, but nothing is replayed after a
-// reconnect: Last-Event-ID is ignored, the client re-reads the state (snapshot and reconnect).
+// serveEvents streams every new message as a server-sent event named "message", every presence
+// change as one named "presence" and the full prefs after every change as one named "prefs". The
+// stream ends when the client leaves, falls too far behind or its login session ends; the browser
+// then reconnects and reads what it missed from /api/v1/messages, /api/v1/presence and
+// /api/v1/prefs. Events carry an id, but nothing is replayed after a reconnect: Last-Event-ID is
+// ignored, the client re-reads the state (snapshot and reconnect).
 func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request, loggedIn func() bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -200,6 +205,8 @@ func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request, logg
 	defer unsubscribe()
 	views, unsubscribeViews := monitor.SubscribePresence()
 	defer unsubscribeViews()
+	prefs, unsubscribePrefs := monitor.SubscribePrefs()
+	defer unsubscribePrefs()
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	fmt.Fprint(w, ": connected\n\n")
@@ -234,6 +241,15 @@ func (monitor *Monitor) serveEvents(w http.ResponseWriter, r *http.Request, logg
 				return
 			}
 			fmt.Fprintf(w, "id: presence:%s@%d\nevent: presence\ndata: %s\n\n", view.Agent, time.Now().UnixNano(), data)
+		case changed, open := <-prefs:
+			if !open || !loggedIn() {
+				return
+			}
+			data, err := json.Marshal(changed)
+			if err != nil {
+				return
+			}
+			fmt.Fprintf(w, "id: prefs@%d\nevent: prefs\ndata: %s\n\n", time.Now().UnixNano(), data)
 		}
 		flusher.Flush()
 	}

@@ -29,6 +29,7 @@ const (
 	stagedSuffix        = ".new"
 	passwordBytes       = 32
 	monitorPasswordFile = "monitor-web/password.bcrypt"
+	monitorPrefsFile    = "prefs.json"
 	// oldMonitorPasswordFile was easily confused with the monitor@<owner> agent folder.
 	oldMonitorPasswordFile = "monitor/password.bcrypt"
 	// MinMonitorPasswordBytes keeps out the passwords that are guessed in a few tries.
@@ -264,6 +265,18 @@ func ReadPassword(dir string) (string, error) {
 // MonitorPasswordPath is the file that holds the web monitor's password hash.
 func MonitorPasswordPath(configDir string) string {
 	return filepath.Join(configDir, monitorPasswordFile)
+}
+
+// MonitorPrefsPath is the web monitor's shared preferences file, next to the password hash. While
+// the hash is still in the old folder the preferences go there too, so one folder holds both.
+func MonitorPrefsPath(configDir string) string {
+	folder := filepath.Dir(MonitorPasswordPath(configDir))
+	if _, err := os.Stat(MonitorPasswordPath(configDir)); errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(filepath.Join(configDir, oldMonitorPasswordFile)); err == nil {
+			folder = filepath.Join(configDir, filepath.Dir(oldMonitorPasswordFile))
+		}
+	}
+	return filepath.Join(folder, monitorPrefsFile)
 }
 
 // WriteMonitorPassword stores the bcrypt hash of the web monitor's password, replacing the old one.

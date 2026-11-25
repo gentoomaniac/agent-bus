@@ -94,6 +94,9 @@ type Config struct {
 	// OfflineAfter is how long an agent may go without a heartbeat before it is shown offline;
 	// zero means presence.OfflineAfter.
 	OfflineAfter time.Duration
+	// PrefsPath is the file the shared preferences (read markers, favourites, folded sections) are
+	// kept in; empty keeps them in memory only.
+	PrefsPath string
 }
 
 // Monitor follows every channel and answers the web interface's questions.
@@ -115,6 +118,8 @@ type Monitor struct {
 	askedPresence map[string]bool            // agents whose stored record was read at start
 	presenceHub   hub[Presence]
 
+	prefs *prefsStore
+
 	pendingMu    sync.Mutex
 	pendingCount int       // enrollment requests waiting, as busd announced
 	pendingAt    time.Time // when busd announced it
@@ -130,6 +135,7 @@ func New(config Config) *Monitor {
 		records:       map[string]presence.Record{},
 		shownState:    map[string]string{},
 		askedPresence: map[string]bool{},
+		prefs:         loadPrefs(config.PrefsPath, config.Report),
 	}
 }
 

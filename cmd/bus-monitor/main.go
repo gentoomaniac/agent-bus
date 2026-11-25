@@ -139,7 +139,7 @@ func (cli *CLI) Run() error {
 	}
 	defer closeSender()
 
-	web := monitor.New(monitor.Config{Admin: registry, History: history, Sender: sender, ReadOnlyNote: readOnlyNote, Report: func(err error) { log.Print(err) }})
+	web := monitor.New(monitor.Config{Admin: registry, History: history, Sender: sender, ReadOnlyNote: readOnlyNote, Report: func(err error) { log.Print(err) }, PrefsPath: creds.MonitorPrefsPath(cli.ConfigDir)})
 	go web.Run(ctx)
 
 	handler, err := web.Handler(access)

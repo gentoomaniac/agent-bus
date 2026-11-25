@@ -91,6 +91,9 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | `GET /api/v1/messages?channel=<id>&after=<seq>&limit=<n>` | messages after a stream sequence, oldest first, at most 1000 (default 100) |
 | `GET /api/v1/search?q=<query>&limit=<n>&cursor=<c>`    | matching messages, newest first, at most 200 (default 50); [Search](#search) |
 | `POST /api/v1/send`                                    | `{"id": "<message id>"}`                                     |
+| `GET /api/v1/prefs`                                    | the shared preferences, [below](#shared-preferences)         |
+| `POST /api/v1/prefs/read`                              | merges read markers; answers the merged `read` map           |
+| `PUT /api/v1/prefs/favourites`, `PUT /api/v1/prefs/collapsed` | replace the array; answer the new prefs              |
 | `GET /api/v1/events`                                   | server-sent events, below                                    |
 
 Channel IDs are `general`, `group:<name>` and `dm:<agent>:<agent>` (the two agents sorted). To page
@@ -152,9 +155,32 @@ that matched, or the start of the text when the query has no words), with `…` 
 `matches` are `[start, end)` offsets in Unicode code points of `snippet.text`, not bytes or UTF-16
 units. Everything is untrusted text: highlight it with text nodes, never as HTML.
 
+## Shared preferences
+
+The monitor keeps the owner's read markers, favourites and folded sidebar sections for every
+client (there is one password, so one user). They are stored in `prefs.json` next to the password
+hash and answered by `GET /api/v1/prefs`:
+
+```json
+{"read": {"general": 12, "group:ops": 40}, "favourites": ["group:ops"], "collapsed": ["agents"]}
+```
+
+- `read` maps a channel ID to the last stream sequence the owner has read.
+- `favourites` lists channel IDs. `collapsed` lists the folded sections: `favourites`, `channels`,
+  `dms`, `agents`.
+- `POST /api/v1/prefs/read` takes `{"<channel>": <sequence>, ...}` and raises each marker to the
+  given sequence; a lower value never moves a marker back. It answers the merged `read` map.
+- `PUT /api/v1/prefs/favourites` and `PUT /api/v1/prefs/collapsed` take a JSON array, replace the
+  stored one and answer the new prefs.
+
+Like `send`, these want `Content-Type: application/json` and the same origin rules. Names are
+strings of 1 to 200 bytes; there are at most 2000 read markers, 200 favourites and 20 sections;
+sequences are non-negative integers; a body is at most 256 KiB. Anything else is a `400`
+`bad_request`. Every change is sent to the open event streams as a `prefs` event.
+
 ## Events
 
-`GET /api/v1/events` is a `text/event-stream` that needs the same login. It carries two events:
+`GET /api/v1/events` is a `text/event-stream` that needs the same login. It carries three events:
 
 ```
 : connected
@@ -166,10 +192,15 @@ data: {"sequence":12,"channel":"general","status":"verified","id":"01J...","from
 id: presence:lib-x@alice@1795521600000000000
 event: presence
 data: {"agent":"lib-x@alice","state":"working","since":"2026-11-24T12:00:00Z","activity":"Bash npm","activity_since":"2026-11-24T12:00:03Z","pending":1}
+
+id: prefs@1795521600000000000
+event: prefs
+data: {"read":{"general":12},"favourites":[],"collapsed":["agents"]}
 ```
 
 - `message`: one new message, in the shape of `messages`.
 - `presence`: an agent's new view, in the shape of `presence`, including an agent that went offline.
+- `prefs`: the full shared preferences after every change, from any client.
 - Lines starting with `:` are comments: one when the stream opens and a keep-alive every 15
   seconds. A stream whose session ended closes at the next event or keep-alive, whichever comes
   first, without writing it.
@@ -177,7 +208,7 @@ data: {"agent":"lib-x@alice","state":"working","since":"2026-11-24T12:00:00Z","a
 **Snapshot and reconnect.** The stream is a live tail, not a log. Events carry an `id` (a message
 is `<channel>#<sequence>`), but there is no replay: the monitor ignores `Last-Event-ID`, and a
 client that was disconnected missed events. So on every (re)connect, when the stream opens,
-re-read the state through `channels`, `agents`, `presence`, `members` and `messages?after=<last
+re-read the state through `channels`, `agents`, `presence`, `prefs`, `members` and `messages?after=<last
 sequence you have>`, then apply the events that follow; a message you already have (same
 `channel` and `sequence`) is a duplicate. The page does exactly this. The server also ends a
 stream whose client falls too far behind. Durable replay may come later.
