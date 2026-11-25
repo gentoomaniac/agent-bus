@@ -90,6 +90,9 @@ type Admin interface {
 	Presence(ctx context.Context, agentID string) ([]byte, error)
 	// WatchPresence calls handler with every presence record published from now on, until stop.
 	WatchPresence(handler func(agentID string, record []byte)) (stop func(), err error)
+	// WatchPendingEnrollments calls handler with the number of enrollment requests waiting for the
+	// owner, as busd announces it, until stop.
+	WatchPendingEnrollments(handler func(count int)) (stop func(), err error)
 	// LastSequence is the sequence of the newest record of all conversation channels together.
 	LastSequence(ctx context.Context) (uint64, error)
 	Close()

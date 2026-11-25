@@ -186,6 +186,50 @@ func TestWriteAdminAuthKeepsCertificateAgents(t *testing.T) {
 	}
 }
 
+func TestEnrollmentLoginMayOnlyRequestAndHearItsInbox(t *testing.T) {
+	entry := userEntry(authUser{role: roleEnrollment, name: "enroll", mode: modePassword, passwordHash: "$2a$10$e"}, nil)
+	want := `{publish: {allow: ["busd.enroll.request", "busd.enroll.status"]}, subscribe: {allow: ["_INBOX.enroll.>"]}}`
+	if !strings.Contains(entry, want) {
+		t.Errorf("enrollment entry %s lacks %s", entry, want)
+	}
+	for _, forbidden := range []string{"$JS", "dm.", "general", "ledger", "$KV", "busd.ca", "busd.>"} {
+		if strings.Contains(entry, forbidden) {
+			t.Errorf("enrollment entry mentions %q", forbidden)
+		}
+	}
+}
+
+func TestWriteAdminAuthKeepsTheEnrollmentLogin(t *testing.T) {
+	server := Server{Dir: t.TempDir()}
+	if err := server.WriteAdminAuth("$2a$10$one", "$2a$10$two"); err != nil {
+		t.Fatal(err)
+	}
+	body, generation := splitGeneration(readFile(t, server.path(controlAuthFile)))
+	table, err := parseUserTable(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table.set(authUser{role: roleEnrollment, name: "enroll", mode: modePassword, passwordHash: "$2a$10$e"})
+	if err := writeAuthFile(server.path(controlAuthFile), generation+1, table.render(nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := server.WriteAdminAuth("$2a$10$three", "$2a$10$four"); err != nil {
+		t.Fatal(err)
+	}
+	body, _ = splitGeneration(readFile(t, server.path(controlAuthFile)))
+	table, err = parseUserTable(body)
+	if err != nil || len(table) != 2 {
+		t.Fatalf("control users after admin init --force: %+v, %v", table, err)
+	}
+	if index, _ := table.find(roleAdmin, ControlAdminUser); table[index].passwordHash != "$2a$10$four" {
+		t.Error("the control admin's hash was not replaced")
+	}
+	if index, found := table.find(roleEnrollment, "enroll"); !found || table[index].passwordHash != "$2a$10$e" {
+		t.Error("the enrollment login was lost")
+	}
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	content, err := os.ReadFile(path)

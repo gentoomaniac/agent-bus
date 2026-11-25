@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -129,6 +131,17 @@ func (admin *Admin) CreateAccount(ctx context.Context, agentID, password string)
 			return fmt.Errorf("%s already has an account", agentID)
 		}
 		table.set(authUser{role: roleAgent, name: token, mode: modePassword, passwordHash: hash})
+		return nil
+	})
+}
+
+// EnsureCertAccount gives the agent an account that logs in with a certificate for
+// AgentCertIdentity: it creates the account, or switches an existing one from its password, as
+// one confirmed reload. The agent's grants are those of every agent.
+func (admin *Admin) EnsureCertAccount(ctx context.Context, agentID string) error {
+	token := bus.AgentToken(agentID)
+	return admin.updateAuth(ctx, func(table *userTable) error {
+		table.set(authUser{role: roleAgent, name: token, mode: modeCert})
 		return nil
 	})
 }
@@ -378,6 +391,59 @@ func (admin *Admin) WatchPresence(handler func(agentID string, record []byte)) (
 	})
 	if err == nil {
 		err = admin.bus.conn.Flush() // so the server knows the subscription before this returns
+	}
+	if err != nil {
+		return nil, err
+	}
+	return func() { _ = subscription.Unsubscribe() }, nil
+}
+
+// Serve answers requests on a subject of CONTROL until stop is called: handle gets the request's
+// body and returns the reply's. A message that carries no reply subject is not a request and is
+// dropped. busd's own replies and publications have none, so one that is redirected onto a busd
+// subject cannot pass for a request; the account's other users cannot publish there at all.
+func (admin *Admin) Serve(subject string, handle func(request []byte) []byte) (stop func(), err error) {
+	subscription, err := admin.control.conn.Subscribe(subject, func(message *nats.Msg) {
+		if message.Reply == "" {
+			return
+		}
+		if err := message.Respond(handle(message.Data)); err != nil {
+			log.Printf("busd: answering a request on %s: %v", subject, err)
+		}
+	})
+	if err == nil {
+		err = admin.control.conn.Flush() // so requests sent after this returns find the subscription
+	}
+	if err != nil {
+		return nil, err
+	}
+	return func() { _ = subscription.Unsubscribe() }, nil
+}
+
+// pendingEnrollments is the body of a message on enroll.SubjectPending.
+type pendingEnrollments struct {
+	Pending int `json:"pending"`
+}
+
+// PublishPendingEnrollments tells the monitor, which listens with WatchPendingEnrollments, how many
+// enrollment requests wait for the owner. The count is all it learns.
+func (admin *Admin) PublishPendingEnrollments(count int) error {
+	body, err := json.Marshal(pendingEnrollments{Pending: count})
+	if err != nil {
+		return err
+	}
+	return admin.control.conn.Publish(enroll.SubjectPending, body)
+}
+
+func (admin *Admin) WatchPendingEnrollments(handler func(count int)) (func(), error) {
+	subscription, err := admin.control.conn.Subscribe(enroll.SubjectPending, func(message *nats.Msg) {
+		var body pendingEnrollments
+		if json.Unmarshal(message.Data, &body) == nil {
+			handler(body.Pending)
+		}
+	})
+	if err == nil {
+		err = admin.control.conn.Flush()
 	}
 	if err != nil {
 		return nil, err

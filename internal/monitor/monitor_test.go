@@ -45,6 +45,8 @@ func (fake *fakeBus) WatchPresence(handler func(agentID string, record []byte)) 
 	return func() {}, nil
 }
 
+func (fake *fakeBus) WatchPendingEnrollments(func(int)) (func(), error) { return func() {}, nil }
+
 // publishPresence stores the record and tells the watchers, as the broker does.
 func (fake *fakeBus) publishPresence(agentID string, record []byte) {
 	fake.mu.Lock()

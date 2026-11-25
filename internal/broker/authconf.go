@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -37,9 +38,8 @@ type authRole string
 const (
 	roleAgent authRole = "agent"
 	roleAdmin authRole = "admin"
-	// roleMonitor and roleEnrollment are reserved for phase B of the mTLS login (docs/design/access-control.md).
-	// A file that has them is read and written back unchanged; they have no access until their
-	// grants are defined.
+	// roleEnrollment is the shared login of new machines (docs/design/access-control.md). roleMonitor is
+	// reserved: a file that has it is read and written back unchanged, with no access.
 	roleMonitor    authRole = "monitor"
 	roleEnrollment authRole = "enrollment"
 )
@@ -230,6 +230,10 @@ func permissions(user authUser, groups []string) string {
 	case roleAgent:
 		publish, subscribe := agentPermissions(user.name, groups)
 		return allowOnly(publish, subscribe)
+	case roleEnrollment:
+		// It may ask busd for approval and hear the answers on its own inbox space, nothing else:
+		// no stream, no JetStream API. The login is shared, so its replies hold public data only.
+		return allowOnly([]string{enroll.SubjectRequest, enroll.SubjectStatus}, []string{enroll.InboxPrefix + ".>"})
 	default:
 		return `{publish: {deny: [">"]}, subscribe: {deny: [">"]}}`
 	}

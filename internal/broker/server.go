@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
 )
 
@@ -58,8 +59,29 @@ func (server Server) WriteAdminAuth(busAdminHash, controlAdminHash string) error
 	if err := writeAuthFile(server.path(authFile), generation+1, body); err != nil {
 		return err
 	}
-	controlTable := userTable{{role: roleAdmin, name: ControlAdminUser, mode: modePassword, passwordHash: controlAdminHash}}
-	return writeAuthFile(server.path(controlAuthFile), 1, controlTable.render(nil))
+	// The same for control-auth.conf, which also holds the enrollment login.
+	controlBody, controlGeneration := "users = [\n]\n", 0
+	if current, err := os.ReadFile(server.path(controlAuthFile)); err == nil {
+		controlBody, controlGeneration = splitGeneration(string(current))
+	}
+	controlBody, err = replaceUserEntry(controlBody, authUser{role: roleAdmin, name: ControlAdminUser, mode: modePassword, passwordHash: controlAdminHash})
+	if err != nil {
+		return err
+	}
+	return writeAuthFile(server.path(controlAuthFile), controlGeneration+1, controlBody)
+}
+
+// SetEnrollmentLogin creates or replaces the shared enrollment login in control-auth.conf, as one
+// confirmed reload.
+func (server Server) SetEnrollmentLogin(ctx context.Context, passwordHash string) error {
+	return server.UpdateControlAuth(ctx, func(body string) (string, error) {
+		table, err := parseUserTable(body)
+		if err != nil {
+			return "", err
+		}
+		table.set(authUser{role: roleEnrollment, name: enroll.EnrollUser, mode: modePassword, passwordHash: passwordHash})
+		return table.render(nil), nil
+	})
 }
 
 // NewServer describes this host's nats-server, which deploy/nats.sh configures under

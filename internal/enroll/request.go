@@ -31,10 +31,12 @@ import (
 )
 
 // The subjects of busd's enrollment and approval API, all in the CONTROL account. The first two
-// are what the enrollment login may publish; the rest need an admin login.
+// are what the enrollment login may publish; the rest need an admin login. busd publishes the
+// number of pending requests on SubjectPending, for the monitor.
 const (
 	SubjectRequest = "busd.enroll.request"
 	SubjectStatus  = "busd.enroll.status"
+	SubjectPending = "busd.enroll.pending"
 	SubjectList    = "busd.ca.list"
 	SubjectSign    = "busd.ca.sign"
 	SubjectReject  = "busd.ca.reject"
