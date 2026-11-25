@@ -8,7 +8,7 @@ import (
 )
 
 type AdminInitCmd struct {
-	Force bool `help:"Replace existing passwords, also to finish an admin init that failed half way. The registered agents stay; a running server must be restarted to take the new ones."`
+	Force bool `help:"Replace existing passwords, also to finish an admin init that failed half way. The registered agents stay; a running server must be restarted to take the new ones. Admin certificates are retired (client.pem.retired, client.key.retired): the admin users log in with passwords again."`
 }
 
 // Run creates the passwords of bus-admin and control-admin and writes the server's authorization
@@ -30,6 +30,13 @@ func (cmd *AdminInitCmd) Run(cli *CLI) error {
 	server := cli.server()
 	if err := server.WriteAdminAuth(hashes[broker.BusAdminUser], hashes[broker.ControlAdminUser]); err != nil {
 		return err
+	}
+	// The server entries are passwords again, so certificates left here would make the tools and the
+	// monitor try a login the server no longer maps.
+	for _, user := range adminUsers {
+		if err := creds.RetireClientCert(creds.AdminDir(cli.ConfigDir, user)); err != nil {
+			return err
+		}
 	}
 	fmt.Printf("Admin credentials written to %s and %s; the server's authorization files to %s.\n",
 		creds.AdminDir(cli.ConfigDir, broker.BusAdminUser), creds.AdminDir(cli.ConfigDir, broker.ControlAdminUser), server.Dir)

@@ -71,7 +71,7 @@ broker needed.
 
 | Flag      | Meaning                                                                          |
 |-----------|----------------------------------------------------------------------------------|
-| `--force` | replace existing passwords, also to finish an `admin init` that failed half way; registered agents stay, a running server must be restarted |
+| `--force` | replace existing passwords, also to finish an `admin init` that failed half way; registered agents stay (grants and certificate mappings untouched), a running server must be restarted. Both admin users are password users again, so their certificates are renamed to `client.pem.retired` and `client.key.retired`; restart `bus-monitor` too |
 
 ```sh
 bin/agent-busctl admin init
