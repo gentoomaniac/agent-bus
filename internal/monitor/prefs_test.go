@@ -69,7 +69,7 @@ func TestPrefsAreValidated(t *testing.T) {
 		"empty channel":       {"POST", "read", `{"":3}`},
 		"long channel":        {"POST", "read", `{"` + strings.Repeat("c", maxPrefNameLength+1) + `":3}`},
 		"null read":           {"POST", "read", `null`},
-		"read as array":      {"POST", "read", `["general"]`},
+		"read as array":       {"POST", "read", `["general"]`},
 		"object as list":      {"PUT", "favourites", `{"general":1}`},
 		"null list":           {"PUT", "favourites", `null`},
 		"number in list":      {"PUT", "collapsed", `[1]`},
