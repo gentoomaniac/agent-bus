@@ -31,7 +31,8 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build",
+    "test": "tsc -p tsconfig.test.json && node --test out/test/",
+    "check": "npm run typecheck && npm test && npm run build",
     "package": "npm run build && cp ../LICENSE LICENSE && vsce package --out agent-messenger.vsix"
   },
   "devDependencies": {
