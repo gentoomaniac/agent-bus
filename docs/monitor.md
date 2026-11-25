@@ -34,16 +34,16 @@ shares the broker container's network, so the broker is `localhost` to it, with 
 by the broker container on the host's loopback:
 
 ```sh
-docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
 export BUS_AGENT=monitor@alice     # the compose file passes it to monitor-init and to the monitor
+docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl --direct register $BUS_AGENT
+docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
 docker compose -f deploy/docker-compose.yaml run --rm monitor-init
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 ```
 
-`monitor-init` copies into the monitor's folder the CA certificate, the monitor's logins, the web
-password, the directory snapshot and the key of `BUS_AGENT`, which must be registered in the
-container (`docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl --direct
-register monitor@alice`). Agents registered or enrolled later show up by themselves
+Register `BUS_AGENT` and set the password before `monitor-init`: it copies into the monitor's
+folder the CA certificate, the monitor's logins, the web password, the directory snapshot and the
+key of `BUS_AGENT`, and stops when the key is not there. Agents registered or enrolled later show up by themselves
 ([limits](#limits-of-the-mvp)). Run it again, and restart the monitor, only after a password
 change, a new key of `BUS_AGENT` or a new CA.
 
@@ -63,7 +63,10 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
 ## Start it without Docker
 
 The monitor needs a running broker ([broker.md](broker.md)) and a config directory of its own
-(`ca.pem`, `monitor-bus/` and `monitor-control/`). `agent-busctl monitor init <dir>` makes it from the
+(`ca.pem`, `monitor-bus/` and `monitor-control/`). This section runs the native binaries of a source
+build (`bin/agent-busctl`, `bin/bus-monitor`) on the machine that holds the broker's folder; with
+containers use [Docker](#docker) or [podman.md](podman.md#6-the-monitor) instead.
+`bin/agent-busctl monitor init <dir>` makes it from the
 broker's config directory, the one the other `agent-busctl` commands use (`BUS_CONFIG_DIR`, default
 `~/.config/agent-bus`). It copies in the CA certificate, the read-only logins, the web password hash
 and the key of the agent the monitor posts as, so set the password ([Login](#login)) before you run
@@ -107,12 +110,17 @@ from the last sequence it stored, so nothing is missed or shown twice
 ## Login
 
 Set the one password in the broker's config directory, copy it into the monitor's with
-`monitor init`, then restart `bus-monitor` (a restart also ends all login sessions):
+`monitor init`, then restart `bus-monitor` (a restart also ends all login sessions). With the native
+binaries of [Start it without Docker](#start-it-without-docker):
 
 ```sh
-agent-busctl monitor password       # prompts twice, or reads one line from standard input
-agent-busctl monitor init ~/.config/agent-bus-monitor --agent monitor@alice
+bin/agent-busctl monitor password       # prompts twice, or reads one line from standard input
+bin/agent-busctl monitor init ~/.config/agent-bus-monitor --agent monitor@alice
 ```
+
+With containers the monitor's folder is a host folder, so `monitor init` runs as a one-off container
+that mounts both folders ([agent-busctl.md](agent-busctl.md#monitor-init)), and `monitor password`
+runs through your alias (Podman: with `-it`, see [Running it](agent-busctl.md#running-it)).
 
 It stores a bcrypt hash in `monitor-web/password.bcrypt` of the config directory (older versions
 used `monitor/password.bcrypt`; that file is still read until the new one exists). Sending stays
