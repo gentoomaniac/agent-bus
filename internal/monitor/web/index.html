@@ -216,7 +216,7 @@
         <button class="toggle" id="toggle-sidebar" type="button" title="Show or hide the channel list" aria-pressed="true">Channels</button>
         <div><span class="title cut" id="channel-title">Select a channel</span> <span class="muted cut" id="channel-description"></span></div>
       </div>
-      <div class="right"><span id="live">connecting...</span><span id="identity" class="muted cut"></span><button id="logout" type="button" hidden>Log out</button>
+      <div class="right"><span id="live">connecting...</span><span id="pending" class="muted" hidden></span><span id="identity" class="muted cut"></span><button id="logout" type="button" hidden>Log out</button>
         <button class="toggle" id="open-settings" type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog">&#9881;</button>
         <button class="toggle" id="toggle-members" type="button" title="Show or hide the members panel" aria-pressed="true">Members</button></div>
     </header>
@@ -786,6 +786,11 @@ function renderIdentity() {
   $("identity").textContent = text;
   $("identity").title = text;
   $("logout").hidden = !loggedIn;
+  // Approving happens in the terminal (agent-busctl ca review): the page only says that someone waits.
+  const pending = state.status.pending_enrollments || 0;
+  $("pending").hidden = pending === 0;
+  $("pending").textContent = pending + (pending === 1 ? " pending enrollment" : " pending enrollments");
+  $("pending").title = "Approve with agent-busctl ca review";
 }
 
 async function select(channelId) {

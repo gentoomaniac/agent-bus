@@ -306,6 +306,7 @@ components:
         can_send: { type: boolean }
         note: { type: string, description: Why it cannot send. }
         password_set: { type: boolean }
+        pending_enrollments: { type: integer, description: Enrollment requests that wait for the owner, as busd last announced; absent when none. The monitor cannot approve them (agent-busctl ca review). }
     Channel:
       type: object
       required: [id, kind, name, messages, last_sequence]

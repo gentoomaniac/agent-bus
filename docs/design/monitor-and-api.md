@@ -10,6 +10,7 @@ presence. User documentation: [docs/monitor.md](../monitor.md); the HTTP API:
 |---|---|
 | Read-only live view, browsing, verification against the registry, presence, search | implemented |
 | Minimal versioned API `/api/v1`, one password, sessions, Origin check, login rate limit, `--behind-proxy` | implemented (decision 39) |
+| Header count of pending enrollment requests, announced by busd (read-only, no approval endpoint; decision 41) | implemented |
 | Sending | implemented **as one registered agent identity** (`--agent`, through an adapter session); `human@<owner>` is refused |
 | Own principal `monitor@<owner>`, consumer `bus-monitor` created by busd, read-only busd methods | **planned**; today the monitor logs in as the two admin users and follows channels with the admin's transport |
 | `human@<owner>` key (Argon2id, master password), delivering the owner's messages as user commands | **planned** (milestone 9) |

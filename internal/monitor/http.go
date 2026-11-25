@@ -37,6 +37,9 @@ type Status struct {
 	Agent   string `json:"agent,omitempty"` // the identity messages are sent as
 	CanSend bool   `json:"can_send"`
 	Note    string `json:"note,omitempty"` // why it cannot send
+	// PendingEnrollments is how many enrollment requests wait for the owner, as busd last
+	// announced (docs/design/busd.md). The monitor learns the number and nothing else.
+	PendingEnrollments int `json:"pending_enrollments,omitempty"`
 }
 
 // Handler serves the page and the JSON API under /api/v1. Everything but the page and the login

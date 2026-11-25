@@ -178,6 +178,12 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   an agent: below the list its panel shows the state and since when, unread targeted mail, the
   running workers and the recent activity, newest first.
 
+- **Pending enrollments** (header): "N pending enrollments" when new machines wait for your approval
+  ([podman.md](podman.md#9-enrolling-a-new-machine)). busd announces the number; the monitor learns
+  that and nothing else. It cannot approve, reject or sign: that is `agent-busctl ca review` in the
+  broker's container, so the page you may publish through a proxy holds no CA key and no approval
+  endpoint.
+
 ## Presence
 
 The monitor shows whether each agent can respond and what it is doing, gathered without the model

@@ -114,6 +114,10 @@ type Monitor struct {
 	shownState    map[string]string          // state last announced, by agent ID
 	askedPresence map[string]bool            // agents whose stored record was read at start
 	presenceHub   hub[Presence]
+
+	pendingMu    sync.Mutex
+	pendingCount int       // enrollment requests waiting, as busd announced
+	pendingAt    time.Time // when busd announced it
 }
 
 func New(config Config) *Monitor {
@@ -134,6 +138,7 @@ func New(config Config) *Monitor {
 func (monitor *Monitor) Run(ctx context.Context) {
 	defer monitor.followers.Wait()
 	monitor.followers.Go(func() { monitor.followPresence(ctx) })
+	monitor.followers.Go(func() { monitor.followPendingEnrollments(ctx) })
 	for {
 		if err := monitor.discover(ctx); err != nil && ctx.Err() == nil {
 			monitor.report(err)
@@ -327,9 +332,9 @@ func (monitor *Monitor) Status() Status {
 	}
 	sender := monitor.config.Sender
 	if sender == nil {
-		return Status{Bus: busState, Note: cmp.Or(monitor.config.ReadOnlyNote, "read-only: the monitor was started without --agent")}
+		return Status{Bus: busState, PendingEnrollments: monitor.pendingEnrollments(), Note: cmp.Or(monitor.config.ReadOnlyNote, "read-only: the monitor was started without --agent")}
 	}
-	status := Status{Bus: busState, Agent: sender.AgentID()}
+	status := Status{Bus: busState, Agent: sender.AgentID(), PendingEnrollments: monitor.pendingEnrollments()}
 	if err := sender.Ready(); err != nil {
 		status.Note = err.Error()
 		return status
@@ -451,4 +456,35 @@ func (registry *registry) agents() []Agent {
 	}
 	slices.SortFunc(agents, func(a, b Agent) int { return cmp.Compare(a.ID, b.ID) })
 	return agents
+}
+
+// pendingFresh is how long an announcement of the pending count counts: busd repeats it every few
+// seconds, so a count that stops coming means busd is gone, and nobody can be waiting on it.
+const pendingFresh = 30 * time.Second
+
+// followPendingEnrollments keeps the count busd announces until ctx ends.
+func (monitor *Monitor) followPendingEnrollments(ctx context.Context) {
+	for ctx.Err() == nil {
+		stop, err := monitor.config.Admin.WatchPendingEnrollments(func(count int) {
+			monitor.pendingMu.Lock()
+			defer monitor.pendingMu.Unlock()
+			monitor.pendingCount, monitor.pendingAt = count, time.Now()
+		})
+		if err == nil {
+			defer stop()
+			<-ctx.Done()
+			return
+		}
+		monitor.report(err)
+		sleep(ctx, failedReadPause)
+	}
+}
+
+func (monitor *Monitor) pendingEnrollments() int {
+	monitor.pendingMu.Lock()
+	defer monitor.pendingMu.Unlock()
+	if time.Since(monitor.pendingAt) > pendingFresh {
+		return 0
+	}
+	return monitor.pendingCount
 }

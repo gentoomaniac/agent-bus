@@ -30,6 +30,8 @@ type fakeBus struct {
 
 	presence map[string][]byte
 	watchers []func(agentID string, record []byte)
+
+	pendingWatchers []func(count int)
 }
 
 func (fake *fakeBus) Presence(_ context.Context, agentID string) ([]byte, error) {
@@ -45,7 +47,22 @@ func (fake *fakeBus) WatchPresence(handler func(agentID string, record []byte)) 
 	return func() {}, nil
 }
 
-func (fake *fakeBus) WatchPendingEnrollments(func(int)) (func(), error) { return func() {}, nil }
+func (fake *fakeBus) WatchPendingEnrollments(handler func(int)) (func(), error) {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	fake.pendingWatchers = append(fake.pendingWatchers, handler)
+	return func() {}, nil
+}
+
+// announcePending tells the watchers how many enrollment requests wait, as busd does.
+func (fake *fakeBus) announcePending(count int) {
+	fake.mu.Lock()
+	watchers := slices.Clone(fake.pendingWatchers)
+	fake.mu.Unlock()
+	for _, watcher := range watchers {
+		watcher(count)
+	}
+}
 
 // publishPresence stores the record and tells the watchers, as the broker does.
 func (fake *fakeBus) publishPresence(agentID string, record []byte) {

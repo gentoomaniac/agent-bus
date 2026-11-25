@@ -83,7 +83,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 |--------------------------------------------------------|--------------------------------------------------------------|
 | `POST /api/v1/login`                                   | `{"token"}`; sets the cookie                                 |
 | `POST /api/v1/logout`                                  | `204`; ends the session and clears the cookie                |
-| `GET /api/v1/status`                                   | `bus` (`live` or `reconnecting`), `agent`, `can_send`, `note`, `password_set` |
+| `GET /api/v1/status`                                   | `bus` (`live` or `reconnecting`), `agent`, `can_send`, `note`, `password_set`, `pending_enrollments` (only when some wait for the owner; the monitor never approves) |
 | `GET /api/v1/channels`                                 | channels: `id`, `kind` (`general`, `group`, `dm`), `name`, `description`, `agents` (DM), `messages`, `last_sequence` |
 | `GET /api/v1/agents`                                   | registered agents: `id`, `fingerprint`, `registered_at`, `removed` |
 | `GET /api/v1/presence`                                 | every agent's `state`, `since`, `activity`, `activity_since`, `workers`, `recent`, `pending` |
