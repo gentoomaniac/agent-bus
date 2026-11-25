@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
@@ -402,9 +403,21 @@ func (admin *Admin) WatchPresence(handler func(agentID string, record []byte)) (
 // body and returns the reply's. A message that carries no reply subject is not a request and is
 // dropped. busd's own replies and publications have none, so one that is redirected onto a busd
 // subject cannot pass for a request; the account's other users cannot publish there at all.
-func (admin *Admin) Serve(subject string, handle func(request []byte) []byte) (stop func(), err error) {
+//
+// The reply goes only to a literal subject below replyPrefix (the caller's inbox space). The
+// subject is the sender's to name, so answering anywhere else would let it make busd publish
+// wherever busd may, into a registry key or a JetStream API subject among them. Such a request is
+// dropped; the first one is logged.
+func (admin *Admin) Serve(subject, replyPrefix string, handle func(request []byte) []byte) (stop func(), err error) {
+	var dropped atomic.Int64
 	subscription, err := admin.control.conn.Subscribe(subject, func(message *nats.Msg) {
 		if message.Reply == "" {
+			return
+		}
+		if !isReplyBelow(message.Reply, replyPrefix) {
+			if dropped.Add(1) == 1 {
+				log.Printf("busd: dropping a request on %s whose reply subject %q is outside %s.* (further ones are not logged)", subject, message.Reply, replyPrefix)
+			}
 			return
 		}
 		if err := message.Respond(handle(message.Data)); err != nil {
@@ -418,6 +431,21 @@ func (admin *Admin) Serve(subject string, handle func(request []byte) []byte) (s
 		return nil, err
 	}
 	return func() { _ = subscription.Unsubscribe() }, nil
+}
+
+// isReplyBelow says whether reply is a literal subject (no wildcard, no empty token) of the form
+// prefix.<token>[.<token>...].
+func isReplyBelow(reply, prefix string) bool {
+	rest, found := strings.CutPrefix(reply, prefix+".")
+	if !found {
+		return false
+	}
+	for token := range strings.SplitSeq(rest, ".") {
+		if token == "" || strings.ContainsAny(token, "*> \t\r\n") {
+			return false
+		}
+	}
+	return true
 }
 
 // pendingEnrollments is the body of a message on enroll.SubjectPending.

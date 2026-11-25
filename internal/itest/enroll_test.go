@@ -5,6 +5,7 @@ package itest
 import (
 	"bytes"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -403,6 +404,72 @@ func TestEnrollment(t *testing.T) {
 				t.Errorf("busd did not answer a status question: %v", err)
 			}
 		})
+	})
+
+	t.Run("busd answers only into inbox space, so a chosen reply subject cannot make it write to CONTROL", func(t *testing.T) {
+		control := h.rawAdmin(t, broker.ControlAdminUser)
+		// streamState is what the attacks below would change: a KV write or a purge moves it, a
+		// deleted stream is an error.
+		streamState := func(stream string) string {
+			reply, err := control.conn.Request("$JS.API.STREAM.INFO."+stream, nil, 2*time.Second)
+			if err != nil {
+				t.Fatalf("stream %s: %v", stream, err)
+			}
+			var info struct {
+				State struct {
+					Messages uint64 `json:"messages"`
+					LastSeq  uint64 `json:"last_seq"`
+				} `json:"state"`
+				Error *struct{ Description string } `json:"error"`
+			}
+			if err := json.Unmarshal(reply.Data, &info); err != nil || info.Error != nil {
+				t.Fatalf("stream %s: %s", stream, reply.Data)
+			}
+			return fmt.Sprintf("%d messages, last sequence %d", info.State.Messages, info.State.LastSeq)
+		}
+		streams := []string{"KV_registry", "KV_catalogue", "LEDGER"}
+		before := map[string]string{}
+		for _, stream := range streams {
+			before[stream] = streamState(stream)
+		}
+		recordsBefore, err := h.admin(t).Agents(timeout(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		enrollee := h.connectRaw(t, broker.Connection{User: enroll.EnrollUser, Password: password}, enroll.InboxPrefix+".attack")
+		for _, reply := range []string{
+			"$KV.registry." + bus.AgentToken(alice), "$KV.registry.>", "$JS.API.STREAM.DELETE.LEDGER", "$JS.API.STREAM.PURGE.KV_registry",
+			"$JS.API.STREAM.DELETE.KV_registry", enroll.SubjectPending, "_INBOX.agent-busctl.x", "_INBOX.>", enroll.InboxPrefix + ".>",
+		} {
+			for _, subject := range []string{enroll.SubjectStatus, enroll.SubjectRequest} {
+				if err := enrollee.conn.PublishMsg(&nats.Msg{Subject: subject, Reply: reply, Data: []byte(`{"request_id":"none"}`)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// The owner's endpoints are called by the admin login, which may publish anywhere.
+			for _, subject := range []string{enroll.SubjectList, enroll.SubjectSign, enroll.SubjectReject} {
+				if err := control.conn.PublishMsg(&nats.Msg{Subject: subject, Reply: reply, Data: []byte(`{}`)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		enrollee.conn.Flush()
+		control.conn.Flush()
+		time.Sleep(500 * time.Millisecond)
+
+		for _, stream := range streams {
+			if after := streamState(stream); after != before[stream] {
+				t.Errorf("stream %s changed from %q to %q", stream, before[stream], after)
+			}
+		}
+		recordsAfter, err := h.admin(t).Agents(timeout(t))
+		if err != nil || len(recordsAfter) != len(recordsBefore) {
+			t.Errorf("the registry after the attacks: %d records, %v; before: %d", len(recordsAfter), err, len(recordsBefore))
+		}
+		if list := h.run(t, h.agentBusctl, "ca", "list"); !strings.Contains(list, "later@carol") {
+			t.Errorf("busd no longer serves the owner after the attacks:\n%s", list)
+		}
 	})
 
 	t.Run("an agent of the bus cannot reach busd's approval API", func(t *testing.T) {

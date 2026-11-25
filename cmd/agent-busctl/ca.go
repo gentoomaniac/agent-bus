@@ -12,13 +12,10 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/busd"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
 )
-
-// busdInboxPrefix is where an admin tool's answers from busd arrive; the admin login may
-// subscribe anywhere.
-const busdInboxPrefix = "_INBOX.agent-busctl"
 
 // busdClient logs in as the control admin (the certificate if there is one, else the password) and
 // returns busd's approval API. Unlike the --direct commands it changes nothing itself: busd, which
@@ -28,7 +25,7 @@ func (cli *CLI) busdClient() (client busd.Client, closeClient func(), err error)
 	if err != nil {
 		return busd.Client{}, nil, err
 	}
-	requester, err := broker.NewRequester(connection, busdInboxPrefix)
+	requester, err := broker.NewRequester(connection, enroll.AdminInboxPrefix)
 	if err != nil {
 		return busd.Client{}, nil, err
 	}

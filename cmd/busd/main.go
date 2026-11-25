@@ -89,30 +89,36 @@ func (cli *CLI) Run() error {
 	if err != nil {
 		return err
 	}
-	handlers := map[string]func(context.Context, []byte) any{
-		enroll.SubjectRequest: func(ctx context.Context, body []byte) any { return service.HandleRequest(ctx, body) },
-		enroll.SubjectStatus:  func(ctx context.Context, body []byte) any { return service.HandleStatus(ctx, body) },
-		enroll.SubjectList:    func(ctx context.Context, _ []byte) any { return service.List(ctx) },
-		enroll.SubjectSign: func(ctx context.Context, body []byte) any {
+	// The sender names the reply subject, so each endpoint answers only inside the inbox space of
+	// the login that may call it: enrollees get the enrollment space, the owner's tool its own.
+	type endpoint struct {
+		replyPrefix string
+		handle      func(context.Context, []byte) any
+	}
+	endpoints := map[string]endpoint{
+		enroll.SubjectRequest: {enroll.InboxPrefix, func(ctx context.Context, body []byte) any { return service.HandleRequest(ctx, body) }},
+		enroll.SubjectStatus:  {enroll.InboxPrefix, func(ctx context.Context, body []byte) any { return service.HandleStatus(ctx, body) }},
+		enroll.SubjectList:    {enroll.AdminInboxPrefix, func(ctx context.Context, _ []byte) any { return service.List(ctx) }},
+		enroll.SubjectSign: {enroll.AdminInboxPrefix, func(ctx context.Context, body []byte) any {
 			var command enroll.SignCommand
 			if err := json.Unmarshal(body, &command); err != nil {
 				return enroll.CommandReply{Error: "not a sign command"}
 			}
 			return service.Sign(ctx, command)
-		},
-		enroll.SubjectReject: func(_ context.Context, body []byte) any {
+		}},
+		enroll.SubjectReject: {enroll.AdminInboxPrefix, func(_ context.Context, body []byte) any {
 			var command enroll.RejectCommand
 			if err := json.Unmarshal(body, &command); err != nil {
 				return enroll.CommandReply{Error: "not a reject command"}
 			}
 			return service.Reject(command)
-		},
+		}},
 	}
-	for subject, handle := range handlers {
-		stopServing, err := admin.Serve(subject, func(body []byte) []byte {
+	for subject, endpoint := range endpoints {
+		stopServing, err := admin.Serve(subject, endpoint.replyPrefix, func(body []byte) []byte {
 			handlerCtx, cancel := context.WithTimeout(ctx, handlerTimeout)
 			defer cancel()
-			reply, _ := json.Marshal(handle(handlerCtx, body))
+			reply, _ := json.Marshal(endpoint.handle(handlerCtx, body))
 			return reply
 		})
 		if err != nil {

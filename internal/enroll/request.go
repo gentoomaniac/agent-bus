@@ -43,10 +43,13 @@ const (
 )
 
 // EnrollUser is the shared login of the enrollment listener; InboxPrefix is the only subject
-// space it may subscribe to, with one random sub-prefix per client.
+// space it may subscribe to, with one random sub-prefix per client. AdminInboxPrefix is where the
+// owner's tool (agent-busctl) hears busd's answers. busd answers a request only below the prefix
+// of its endpoint, because the sender names the reply subject.
 const (
-	EnrollUser  = "enroll"
-	InboxPrefix = "_INBOX.enroll"
+	EnrollUser       = "enroll"
+	InboxPrefix      = "_INBOX.enroll"
+	AdminInboxPrefix = "_INBOX.agent-busctl"
 )
 
 // Bounds on what busd accepts from the shared login.
