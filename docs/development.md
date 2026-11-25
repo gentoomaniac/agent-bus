@@ -1,156 +1,123 @@
 # Development
 
-## Build and check
+## Prerequisites
 
-```sh
-make check    # gofmt, go vet and the unit tests; needs no broker
-make itest    # integration tests against a real nats-server
-```
+| Tool | Version | Needed for |
+|---|---|---|
+| Go | the version in `go.mod` (`go version` must be at least that) | everything |
+| Node.js and npm | 22, as in the release workflow | `vscode/` |
+| Podman or Docker | any recent | `make image` |
+| `curl` and `envsubst` (package `gettext`) | any | `deploy/nats.sh` ([below](#running-the-broker-without-docker)) |
 
-`make itest` builds the pinned nats-server into `bin/` (`deploy/nats.sh install`) on first use. The
-binaries:
+## Build
 
 ```sh
 go build -o bin/ ./cmd/agent-busctl ./cmd/agent-bus ./cmd/bus-monitor ./cmd/busd
+make image    # the central image, agent-messenger:dev
+make vsix     # the VS Code extension, vscode/agent-messenger.vsix
 ```
 
-`make image` builds the central image, `make vsix` the VS Code extension.
+**Checkpoint:** `bin/agent-busctl --version` prints a version, `podman images agent-messenger:dev`
+(or `docker images`) lists the image, and `vscode/agent-messenger.vsix` exists.
+
+## Test levels
+
+| Command                       | Runs                                                              | Needs                  |
+|-------------------------------|-------------------------------------------------------------------|------------------------|
+| `make check`                  | gofmt check, `go vet` and the unit tests                          | Go only, no broker     |
+| `make itest`                  | integration tests against a real `nats-server`                    | Go; builds the pinned nats-server into `bin/` on first use (`deploy/nats.sh install`) |
+| `cd vscode && npm ci && npm run check` | the extension's typecheck, unit tests (`node --test`) and bundle | Node.js and npm  |
+
+`make check` is the gate for every commit. Run `make itest` when you touch the broker, the adapter,
+the hooks or the monitor, and the vscode check when you touch `vscode/`. Each ends without error
+messages; `make itest` and `make check` end with `ok` lines per package.
 
 ## Code layout
 
-`internal/bus` holds the broker-neutral model and the two interfaces (`Transport`, `Admin`).
-`internal/broker` implements them on NATS JetStream and is the only package that imports the NATS
-client library (`internal/itest` also does, to test against a real server).
-`internal/monitor` is the backend of `bus-monitor` ([design/monitor-and-api.md](design/monitor-and-api.md)): it follows every channel with
-its own read-only logins (the admin logins only as a fallback, with a warning), verifies each message against the registry, keeps them in memory and serves
-the JSON API, the event stream and the embedded page (`web/index.html`, plain HTML, CSS and
-JavaScript without a build step). It sends through an adapter session.
-`internal/identity` also reads the private key back and takes the identity lock ([design/identity-and-trust.md](design/identity-and-trust.md)): an
-exclusive `flock` on `<agent-dir>/lock` holding the owner's PID, released by the OS when the process
-ends.
-`internal/adapter` is the adapter core. Its handled set ([design/bus-model.md](design/bus-model.md)) is the append-only file
-`<agent-dir>/handled.jsonl`, synced to disk (after the broker confirmed an agent's ack, before acking a
-rejection): verified messages by
-(destination, sender, ID) with a digest of the signed record, rejected deliveries by stream sequence
-only. No SQLite: a file read into memory at start is enough for one identity. Outgoing messages
-are rate limited (30 per 10 minutes, in memory) and their bodies scanned for obvious secrets
-(private keys, AWS, GitHub, Slack and Anthropic tokens, bearer tokens, `password=`-style
-assignments); a match blocks the send. The inbox buffer holds verified, unacknowledged messages, at
-most 500 and 8 MB; the reader fetches only as many records as would still fit (counting each as
-96 KB) and tells the broker `InProgress` for every buffered message every 20 seconds, inside the
-consumers' one-minute `AckWait`.
+| Path                | What it is                                                                          |
+|---------------------|-------------------------------------------------------------------------------------|
+| `cmd/agent-bus`     | the adapter: MCP server, hooks, `enroll`                                            |
+| `cmd/agent-busctl`  | the admin CLI ([agent-busctl.md](agent-busctl.md))                                  |
+| `cmd/busd`          | the control service beside `nats-server`: CA key, enrollment, approvals ([design/busd.md](design/busd.md)) |
+| `cmd/bus-monitor`   | the web monitor ([monitor.md](monitor.md))                                          |
+| `internal/bus`      | the broker-neutral model and the two interfaces, `Transport` and `Admin`            |
+| `internal/broker`   | those interfaces on NATS JetStream; the only package that imports the NATS client (`internal/itest` also does, to test against a real server) |
+| `internal/envelope` | the signed message: fields, canonical JSON (RFC 8785), signing, stateless checks ([design/protocol.md](design/protocol.md)) |
+| `internal/identity` | an agent's keys and the identity lock                                               |
+| `internal/adapter`  | the adapter core: verify, buffer, ack, send                                         |
+| `internal/trust`    | the `known_agents` file and trust on first use                                      |
+| `internal/directory`| the registry and catalogue snapshot agents read ([design/directory-v2.md](design/directory-v2.md)) |
+| `internal/mcpserver`| the MCP server of one adapter session (official Go SDK)                             |
+| `internal/hook`     | the socket between the MCP server and the hooks, hook output formats, `agent-bus event` |
+| `internal/presence` | the presence record, tracker and publisher ([design/delivery.md](design/delivery.md)) |
+| `internal/monitor`  | the monitor backend: JSON API, event stream and the embedded page `web/index.html` (plain HTML, CSS and JavaScript, no build step) |
+| `internal/channelapi` | the group channel requests and answers shared by busd and its clients             |
+| `internal/busd`, `internal/enroll`, `internal/enrollclient`, `internal/review` | busd, the enrollment protocol, `agent-bus enroll` and `agent-busctl ca review` |
+| `internal/creds`, `internal/tlsinit`, `internal/files`, `internal/testcert` | stored passwords and client certificates, the CA and broker certificate, files with the permissions secrets need, test certificates |
+| `internal/itest`    | the integration tests behind `make itest`                                           |
+| `deploy/`           | the Dockerfile, compose files, proxy samples, `nats.sh` and the OpenCode plugin (`deploy/opencode/agent-bus.js`, no automated test: check it by hand, [opencode.md](opencode.md)) |
+| `vscode/`           | the VS Code extension ([vscode/README.md](../vscode/README.md))                     |
 
-The adapter API (`adapter.Open`, then `Send`, `Publish`, `Poll` or `Run`, `Inbox`, `Ack`) follows
-[design/jetstream-binding.md](design/jetstream-binding.md) and [design/identity-and-trust.md](design/identity-and-trust.md). Per delivery: a sequence already handled or rejected is acked at once; a
-record that fails size, version, `to`, sender, signature or timestamp checks, or whose key changed,
-is recorded by sequence, written to `<agent-dir>/alerts.log` and acked; a sender whose registry
-record cannot be read is left unacked, so the broker redelivers it after `AckWait`; a verified
-message already handled is skipped, one already buffered gets `InProgress`, a new one is buffered.
-`Ack` acks the broker first (a confirmed double ack), then writes the handled set, so a failed broker ack leaves the message unread. Sends set `hops` from the parent: the
-`reply_to` the agent names, or else the message it read or acked in the last five minutes; the
-parent must be known locally, and a parent at 6 hops stops the send, except an ack, answer or status (they may go to 7). If another process holds the
-identity lock, `Open` still returns an adapter, but every method fails with an error naming the
-holder's PID. Alerts go to `alerts.log` only; `agent-busctl alerts` does not exist yet.
-The adapter also remembers, in memory, which buffered messages the delivery hooks already told the
-agent about (`NewMail`, `UnreadSummary`): new mail is reported once, and not again within 10 seconds
-of the last report ([design/safety.md](design/safety.md) rule 3; held-back mail is reported by the next call).
-`internal/hook` is the socket between the MCP server and the hooks, the hook output formats, and the reduction of a hook's JSON to a presence event (`agent-bus event`).
-`internal/presence` is the presence record, the tracker that turns events into it and the publisher that
-throttles and heartbeats it ([design/delivery.md](design/delivery.md)); `deploy/opencode/agent-bus.js` is the OpenCode plugin
-that feeds the same events (no automated test: check it by hand, docs/opencode.md).
+### What to read for each part
 
-`internal/mcpserver` is the MCP server of one adapter session (official Go SDK, pinned in `go.mod`).
-`internal/trust` is the `known_agents` file of an identity (pinned public keys, [design/identity-and-trust.md](design/identity-and-trust.md)) and
-trust on first use: a sender with no pin is looked up in the registry record, its `key_fp` must name
-a key in it that is not revoked, and the key is pinned (`tofu`) after the signature verified. A
-changed key is refused. `revoked_keys` (the fingerprints of removed agents' keys) is done; not done yet:
-holds and rotation chains. Agents cannot read the registry on the broker ([design/jetstream-binding.md](design/jetstream-binding.md)),
-so the registry read path is
-`<config-dir>/directory/<agent-token>.json`, one record per agent, which `agent-busctl register` writes
-and the adapter exports from the directory it syncs from busd (`internal/directory`,
-[design/directory-v2.md](design/directory-v2.md)). An agent of an older version needs that directory
-copied to its machine.
-`cmd/busd` and `internal/busd` are busd, the minimal control service that runs beside `nats-server` in
-the broker's container, holds the CA key and handles enrollment and approvals ([design/busd.md](design/busd.md)).
-`internal/enroll` is the wire protocol of enrollment, `internal/enrollclient` is `agent-bus enroll`
-(the new machine's side) and `internal/review` is the owner's `agent-busctl ca review` screen.
-`internal/creds` stores the passwords and client certificates in the config directory,
-`internal/tlsinit` makes the CA and the broker certificate, `internal/files` writes local files with
-the permissions secrets need and `internal/testcert` makes client certificates for tests.
-`internal/envelope` is the signed message ([design/protocol.md](design/protocol.md), [design/identity-and-trust.md](design/identity-and-trust.md)): its fields, the canonical JSON that is
-signed, signing and the stateless checks (size, version, `to`, timestamp). The canonical form is
-RFC 8785 (JCS), implemented in the package for the JSON subset the bus produces (integers up to
-2^53, no floats); a message with other numbers cannot be verified.
+| Part | Short version | Details |
+|---|---|---|
+| Adapter | verifies each delivery, buffers verified mail, acks on request, rate limits and secret-scans what it sends, keeps a handled set in `<agent-dir>/handled.jsonl` and rejected mail in `alerts.log` | [design/bus-model.md](design/bus-model.md), [design/safety.md](design/safety.md), [design/jetstream-binding.md](design/jetstream-binding.md) |
+| Identity | an exclusive `flock` on `<agent-dir>/lock` holds the identity, released by the OS when the process ends | [design/identity-and-trust.md](design/identity-and-trust.md) |
+| Trust | `known_agents` pins keys on first use from the registry record; a changed key is refused | [design/identity-and-trust.md](design/identity-and-trust.md) |
+| Directory | agents sync the registry and the channel catalogue from busd; `<config-dir>/directory/` is the older copy path | [design/directory-v2.md](design/directory-v2.md) |
+| Monitor | read-only logins, verification against the registry, messages in memory, sends through an adapter session | [design/monitor-and-api.md](design/monitor-and-api.md) |
+| Presence | hooks feed events, a tracker builds the record, a publisher throttles and heartbeats it | [design/delivery.md](design/delivery.md) |
+| Envelope | the signed message and its canonical JSON (RFC 8785 subset: integers up to 2^53, no floats) | [design/protocol.md](design/protocol.md) |
 
-## Tests
+### What the integration tests cover
 
-`make itest` builds the pinned nats-server into `bin/` (`deploy/nats.sh
-install`), then starts and stops its own server (temporary config directory, random ports, TLS) with
-`deploy/nats.sh` and checks, at the raw NATS level and through `agent-busctl --direct`:
+`make itest` starts its own `nats-server` (temporary config directory, random ports, TLS) and
+checks, at the raw NATS level and through `agent-busctl --direct`, these areas. The files are in
+`internal/itest/`:
 
-- TLS only: no plaintext, no untrusted CA, no wrong password; the two admin users are distinct and
-  each sees only its own account.
-- Two-account isolation: an agent cannot publish, subscribe or call JetStream for anything in
-  `CONTROL`; even `bus-admin` (all subjects) cannot see it. Every JetStream API an agent holds,
-  called with a reply subject of `$KV.registry.<key>`, `$KV.catalogue.<key>`, `ledger.<x>` or a
-  `busd.*` subject, delivers inside `BUS` only and leaves `CONTROL` untouched. A pulled record sent
-  to a reply subject is delivered but not stored again; a JetStream API response sent to one is
-  stored anew with a new stream sequence.
-- Per-role grants: an agent cannot pull from, inspect or ack another agent's consumer, read its DM
-  channel, direct-get a message, subscribe to another agent's inbox prefix or to `busd.>`, publish
-  to `private.*`, `$KV.*`, `ledger.*` or an owner-only busd method, or create, update or delete a
-  consumer, its own included; what it is granted works.
-- Consumers: `register` creates `<token>__dm` and `<token>__general` with the fixed configuration
-  (`MaxDeliver` -1, `MaxAckPending` 500 holding back the 501st unacknowledged message, `AckWait` 1
-  minute); a group cursor starts after the boundary it is given; the stream sequence is in the
-  delivery metadata; history moves no cursor; `LastSequence` reads the stream's last sequence.
-- `Nats-Msg-Id` dedupe keyed by destination subject and envelope ID; `LEDGER` refuses a stale
-  `Nats-Expected-Last-Subject-Sequence`.
-- Reloads: a grant added or revoked takes effect on a live connection, a removed user is
-  disconnected, an invalid candidate is refused before it replaces `auth.conf`, and each reload is
-  confirmed by the monitoring endpoint's config load time.
-- The adapter on a real broker (`adapter_test.go`, one fresh bus per case): two agents exchange a DM
-  and a `general` post and both pin the other; an agent joined to a group with `channel join` reads
-  another agent's post there; a message altered after signing is rejected, alerted
-  and acked on the broker; a repeated publish ID is stored once and a replayed signed record is
-  delivered once (the copy that arrives next to the buffered original gets `InProgress`, then is
-  acked after redelivery); ack B before A and restart: A comes back, B does not; a second adapter on
-  one identity fails every operation until the first session ends; two auto-repliers stop at 6
-  hops, also alternating `send` and `publish` (each with an explicit `reply_to`); the secret scan blocks a send.
-- `agent-bus mcp` as a real stdio process (`mcp_test.go`): alice's `send` reaches bob's
-  `wait_for_messages` framed as untrusted and bob acks it; a second server on one identity does not
-  start and names the holder on stderr; SIGTERM ends a server and frees the identity.
-- The hooks (`hook_test.go`): `agent-bus pending --format=hook` as a child of the same process as
-  an MCP server is silent without mail, blocks once for a message from another session without
-  its text, then is silent; `session-start` summarises it; mail for a second session (another
-  parent PID) is not reported to the first; the sockets are gone when both servers end.
-- The registry and catalogue hold what `register` and `channel create` wrote; `agent-busctl` needs
-  `--direct`, refuses a second registration and gives up on a dead broker.
-- Certificate login (`mtls_test.go`), enrollment through busd (`enroll_test.go`), the wake-up of an
-  idle session (`wake_test.go`), outages and reconnects (`outage_test.go`), removing an agent
-  (`remove_test.go`), mail targets (`targets_test.go`), presence (`presence_test.go`,
-  `presence_e2e_test.go`) and the monitor, its API and the proxy (`monitor_test.go`,
-  `monitor_proxy_test.go`).
+| Area | Where |
+|---|---|
+| TLS, two-account isolation, per-role grants, consumers, dedupe, config reloads | `itest_test.go` |
+| the adapter on a real broker: DMs, groups, rejection, replay, ordering, identity lock, hop limit, secret scan | `adapter_test.go` |
+| `agent-bus mcp` as a stdio process and the hooks | `mcp_test.go`, `hook_test.go` |
+| certificate login, enrollment through busd, wake-up of an idle session | `mtls_test.go`, `enroll_test.go`, `wake_test.go` |
+| outages and reconnects, agent removal, mail targets | `outage_test.go`, `remove_test.go`, `targets_test.go` |
+| presence, and the monitor with its API and the proxy | `presence_test.go`, `presence_e2e_test.go`, `monitor_test.go`, `monitor_proxy_test.go` |
 
 ## Running the broker without Docker
 
 `deploy/nats.sh` runs the pinned `nats-server` as a plain background process, for development and
-the integration tests. It is not how the bus is run for real ([docker.md](docker.md)). State
-lives in `~/.config/agent-bus/` (or `BUS_CONFIG_DIR`), and `agent-busctl` runs on the host:
+the integration tests. It is not how the bus is run for real ([docker.md](docker.md)). Use a
+disposable directory and ports of their own, so it cannot touch a real setup in
+`~/.config/agent-bus` or clash with a broker on the default ports:
 
 ```sh
+export BUS_CONFIG_DIR="$HOME/bus-dev"          # disposable: rm -rf it when done
+export BUS_NATS_PORT=14222 BUS_MAPPED_PORT=14223 BUS_MONITOR_PORT=18222
+export BUS_LISTEN_IP=127.0.0.1                 # loopback only
+export BUS_BROKER="localhost:$BUS_NATS_PORT"   # read by agent-busctl
+export BUS_MONITOR_URL="http://127.0.0.1:$BUS_MONITOR_PORT"
+
 go build -o bin/ ./cmd/agent-busctl ./cmd/agent-bus ./cmd/busd
 bin/agent-busctl tls init
 bin/agent-busctl admin init
 deploy/nats.sh install    # builds nats-server v2.15.3 with go install into <config-dir>/bin/
 deploy/nats.sh up         # renders nats/nats-server.conf, tests it, starts the server, waits until ready
 bin/agent-busctl --direct init
-deploy/nats.sh down       # keeps the data; `down --purge` deletes it too
 ```
 
-This does not start busd, so the `ca` commands and enrollment do not work here; run `bin/busd` yourself for those.
+**Checkpoint:** `curl -fs "$BUS_MONITOR_URL/healthz"` succeeds and `bin/agent-busctl --direct agent
+list` prints an empty list without an error.
 
-The pid file and `nats-server.log` are in `<config-dir>/nats/`. Environment variables of the script:
+```sh
+deploy/nats.sh down       # keeps the data; `down --purge` deletes it too
+rm -rf "$BUS_CONFIG_DIR"  # when you are done
+```
+
+This does not start busd, so the `ca` commands and enrollment do not work here; run `bin/busd`
+yourself for those. The pid file and `nats-server.log` are in `<config-dir>/nats/`. Environment
+variables of the script:
 
 | Variable           | Default                          | Meaning                                         |
 |--------------------|----------------------------------|-------------------------------------------------|
@@ -167,27 +134,47 @@ The pid file and `nats-server.log` are in `<config-dir>/nats/`. Environment vari
 
 ## Cutting a release
 
-`.github/workflows/release.yaml` runs on GitHub Actions (github.com/gentoomaniac/agent-bus).
-On every push to `main` and every pull request it runs `make check` and a goreleaser snapshot build that
-publishes nothing. A tag `v*` publishes the archives, `checksums.txt` and the changelog as a
-GitHub release and pushes the image to `ghcr.io/gentoomaniac/agent-messenger` ([docker.md](docker.md)):
+`.github/workflows/release.yaml` runs on GitHub Actions (github.com/gentoomaniac/agent-bus). On
+every push to `main` and every pull request it runs `make check` and a goreleaser snapshot build
+that publishes nothing. A tag `v*` publishes the release.
 
-```sh
-git tag v0.2.0
-git push <github-remote> v0.2.0     # the remote of the GitHub repository; it builds the release
-```
+1. Check that `main` is green: `make check` and `make itest` pass, and the vscode check passes if
+   `vscode/` changed.
+2. Declare the version and the remote, then run the preflight checks. `RELEASE_REMOTE` is the
+   remote of the GitHub repository (find it with `git remote -v`), not the one you push work to:
 
-A second job, `vsix`, then packs the VS Code extension ([vscode/README.md](../vscode/README.md)) with the
-tag's version and attaches `agent-messenger.vsix` to that release; it is not published to a marketplace.
-`make vsix` builds the same file locally.
+   ```sh
+   VERSION=v0.2.0                      # vX.Y.Z
+   RELEASE_REMOTE=github               # a remote that points at github.com/gentoomaniac/agent-bus
+   git remote get-url "$RELEASE_REMOTE" | grep -q 'gentoomaniac/agent-bus' || echo "wrong remote"
+   echo "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || echo "not vX.Y.Z"
+   test -z "$(git status --porcelain)" || echo "working tree is not clean"
+   git rev-parse --short HEAD          # the commit you intend to release
+   git rev-parse -q --verify "refs/tags/$VERSION" && echo "tag exists"
+   ```
+
+   **Checkpoint:** none of the `echo` lines printed, and the commit is the one you mean.
+
+3. Tag it and push the tag:
+
+   ```sh
+   git tag "$VERSION"
+   git push "$RELEASE_REMOTE" "$VERSION"
+   ```
+
+4. The release workflow then runs on that tag:
+   - goreleaser publishes the archives, `checksums.txt` and the changelog as a GitHub release and
+     pushes the image to `ghcr.io/gentoomaniac/agent-messenger` ([docker.md](docker.md));
+   - a second job, `vsix`, packs the VS Code extension ([vscode/README.md](../vscode/README.md)) with
+     the tag's version and attaches `agent-messenger.vsix` to the release. It is not published to a
+     marketplace; `make vsix` builds the same file locally.
+5. After the first release, make the ghcr.io package public in the package settings on GitHub: a
+   new package is private, and `docker pull` without a login fails until then.
 
 The job's `GITHUB_TOKEN` creates the release and pushes the image; the workflow asks for the
 `contents: write` and `packages: write` permissions it needs. No secret has to be set. The optional
 repository variable `IMAGE_NAME` overrides the image name (default
 `ghcr.io/<owner>/agent-messenger`).
-
-A new ghcr.io package is private. After the first release, make it public in the package settings
-on GitHub, or `docker pull` without a login fails.
 
 To try the build locally:
 
