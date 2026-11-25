@@ -31,7 +31,8 @@ const EVENT_TYPES = [
   "permission.replied",
 ];
 
-// run starts agent-bus, feeds it stdin and resolves with its stdout. It never rejects.
+// run starts agent-bus, feeds it stdin and resolves with its stdout and whether it exited 0 in
+// time. It never rejects.
 function run(args, stdin = "") {
   return new Promise((resolve) => {
     let output = "";
@@ -39,14 +40,14 @@ function run(args, stdin = "") {
     try {
       child = spawn(AGENT_BUS, args, { stdio: ["pipe", "pipe", "ignore"] });
     } catch {
-      return resolve("");
+      return resolve({ output: "", ok: false });
     }
     const timer = setTimeout(() => child.kill(), COMMAND_TIMEOUT_MS);
     child.stdout.on("data", (chunk) => (output += chunk));
-    child.on("error", () => resolve(""));
-    child.on("close", () => {
+    child.on("error", () => resolve({ output: "", ok: false }));
+    child.on("close", (code) => {
       clearTimeout(timer);
-      resolve(output);
+      resolve({ output, ok: code === 0 });
     });
     child.stdin.on("error", () => {});
     child.stdin.end(stdin);
@@ -92,17 +93,36 @@ export default Plugin.define({
     // agent's one inbox.
     let watcher = null;
 
+    // Mail the session was prompted about but that could not be marked told. Only the mark is
+    // retried for it: prompting again would wake the model for mail it already has.
+    let unmarkedIds = [];
+
+    async function markTold(ids) {
+      const { ok } = await run(["pending", "--mark=" + ids.join(",")]);
+      return ok;
+    }
+
     // deliverMail prompts the session about new mail. The mail is marked told only after the prompt
-    // was accepted, so a failed prompt is retried at the next check.
+    // was accepted, so a failed prompt is retried at the next check. It runs outside the event
+    // loop, so one call at a time.
+    let delivering = false;
     async function deliverMail(sessionID) {
-      const output = (await run(["pending", "--format=plugin"])).trim();
-      if (!output) return;
+      if (delivering) return;
+      delivering = true;
       try {
+        if (unmarkedIds.length > 0) {
+          if (!(await markTold(unmarkedIds))) return;
+          unmarkedIds = [];
+        }
+        const { output } = await run(["pending", "--format=plugin"]);
+        if (!output.trim()) return;
         const { reason, ids } = JSON.parse(output);
         await ctx.session.prompt({ sessionID, text: reason });
-        await run(["pending", "--mark=" + ids.join(",")]);
+        if (!(await markTold(ids))) unmarkedIds = ids;
       } catch {
         // the next check tries again; the mail is still in the inbox
+      } finally {
+        delivering = false;
       }
     }
 
@@ -154,7 +174,7 @@ export default Plugin.define({
         case "session.execution.succeeded":
         case "session.execution.interrupted":
           await report("stop");
-          await deliverMail(sessionID);
+          deliverMail(sessionID);
           watchWhileIdle(sessionID);
           break;
         case "session.execution.failed":
