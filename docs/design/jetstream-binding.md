@@ -116,7 +116,11 @@ still append to an uncatalogued subject, but no consumer reads it and nobody rec
 
 ## Order
 
-**Order.** The canonical order of a channel is the stream sequence. A first delivery follows it; a redelivery (after a crash, an `AckWait` expiry or a reconnect) can arrive after later messages. The promise of [bus model](bus-model.md) is therefore canonical order for reading history, and first-delivery order otherwise. The adapter exposes the sequence as `seq` on every message it lists, and the inbox lists messages in stream order; targeted mail is prioritised by thread (a thread with a message for the agent is listed first), never by reordering the messages of one thread, so an untargeted parent is not listed after the targeted reply to it. Messages of different threads or channels are only loosely ordered by that priority. Anything that must be order-correct, such as folding request status changes ([protocol](protocol.md)), uses the stream sequence from authoritative history, never arrival order. The stream sequence is also what private-channel membership is checked against ([private channels](private-channels.md)).
+**Order.** The canonical order of a channel is the stream sequence. A first delivery follows it; a redelivery (after a crash, an `AckWait` expiry or a reconnect) can arrive after later messages. The promise of [bus model](bus-model.md) is therefore canonical order for reading history, and first-delivery order otherwise.
+
+- **Listing.** The adapter exposes the sequence as `seq` on every message it lists, and the inbox lists messages in stream order.
+- **Priority.** Targeted mail is prioritised by thread: a thread with a message for the agent is listed first. The messages of one thread are never reordered, so an untargeted parent is not listed after the targeted reply to it. Messages of different threads or channels are only loosely ordered by that priority.
+- **What must be exact.** Anything that must be order-correct, such as folding request status changes ([protocol](protocol.md)), uses the stream sequence from authoritative history, never arrival order. The stream sequence is also what private-channel membership is checked against ([private channels](private-channels.md)).
 
 ## History (planned)
 

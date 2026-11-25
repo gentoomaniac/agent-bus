@@ -38,7 +38,10 @@ Signatures are what keep messages trustworthy: a message that was altered, or th
 
 - `sig = Ed25519.sign(sk, JCS(envelope))`, where JCS is RFC 8785 JSON canonicalization.
 - The whole envelope is signed, including `to`, so a signed message cannot be replayed into a different channel or inbox.
-- **Wire profile (decision).** The adapter implements the subset of RFC 8785 that envelopes use: objects, arrays, strings, booleans, null and integers whose magnitude is at most 2^53 (what ES6 prints as a plain integer). A number written with a fraction or an exponent, or beyond ±2^53, cannot be canonicalised, so such a record is refused (terminal, "envelope cannot be canonicalised"); no field of v1 needs one. Another implementation of the protocol must produce the same canonical bytes for these values and must not send others. Field names are matched exactly: a record whose key differs from a known field only by case or Unicode folding (`Targets`, `targetſ`, the Kelvin sign in `key_fp`) is refused, because Go's decoder would read it as the field while other readers would not, and two keys that fold to the same name count as duplicates. Duplicate keys, invalid UTF-8 and lone surrogates are refused as well.
+- **Wire profile (decision).** The adapter implements the subset of RFC 8785 that envelopes use: objects, arrays, strings, booleans, null and integers whose magnitude is at most 2^53 (what ES6 prints as a plain integer). Another implementation of the protocol must produce the same canonical bytes for these values and must not send others. A record that breaks the profile is refused:
+  - **Numbers.** A number written with a fraction or an exponent, or beyond ±2^53, cannot be canonicalised: the record is refused (terminal, "envelope cannot be canonicalised"). No field of v1 needs one.
+  - **Field names.** Names are matched exactly. A key that differs from a known field only by case or Unicode folding (`Targets`, `targetſ`, the Kelvin sign in `key_fp`) is refused, because Go's decoder would read it as the field while other readers would not. Two keys that fold to the same name count as duplicates.
+  - **Encoding.** Duplicate keys, invalid UTF-8 and lone surrogates are refused as well.
 
 ## Key storage
 
