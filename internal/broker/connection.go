@@ -20,12 +20,17 @@ import (
 // that is down ends in an error instead of a hang.
 const connectTimeout = 10 * time.Second
 
-// Connection says how to reach the broker and who to be.
+// Connection says how to reach the broker and who to be: a user with a password, or, when
+// ClientCertPath is set, the identity of a client certificate. A certificate login goes to the
+// mapped listener (a wss:// address, see MappedAddress) and sends no user name or password; the
+// broker takes the user from the certificate.
 type Connection struct {
-	Address    string
-	CACertPath string
-	User       string
-	Password   string
+	Address        string
+	CACertPath     string
+	User           string // for messages; the password login's user name
+	Password       string
+	ClientCertPath string
+	ClientKeyPath  string
 
 	// Reconnect makes the connection outlive the broker: it connects, and reconnects after an
 	// outage, in the background on this schedule and never gives up, so it can be made while the
@@ -65,12 +70,21 @@ func connect(conn Connection, inboxPrefix string) (*session, error) {
 		conn.Log = func(string, ...any) {}
 	}
 	s := &session{}
+	tlsConfig := &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
 	options := []nats.Option{
-		nats.UserInfo(conn.User, conn.Password),
-		nats.Secure(&tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}),
 		nats.Timeout(connectTimeout),
 		nats.ErrorHandler(func(_ *nats.Conn, _ *nats.Subscription, err error) { s.rememberServerError(err) }),
 	}
+	if conn.ClientCertPath == "" {
+		options = append(options, nats.UserInfo(conn.User, conn.Password))
+	} else {
+		pair, err := tls.LoadX509KeyPair(conn.ClientCertPath, conn.ClientKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading the client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{pair}
+	}
+	options = append(options, nats.Secure(tlsConfig))
 	if conn.Reconnect == nil {
 		options = append(options, nats.NoReconnect())
 	} else {

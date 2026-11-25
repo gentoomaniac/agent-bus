@@ -38,6 +38,7 @@ type CLI struct {
 	Agent      string        `help:"The identity to act as, <name>@<owner>. Required except for pending." aliases:"identity" env:"BUS_AGENT"`
 	ConfigDir  string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
 	Broker     string        `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
+	MappedPort int           `help:"Port of the broker's certificate listener, on the host of --broker. Used instead of --broker's port when the identity directory has client.pem and client.key." default:"4223" env:"BUS_MAPPED_PORT"`
 	CACert     string        `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
 	Groups     []string      `help:"Group channels to read besides the DM channel, general and the groups that agent-busctl channel join recorded in the directory." env:"BUS_GROUPS"`
 	Deliver    string        `help:"Which messages reach the agent's inbox: targeted (DMs and messages aimed at it or at @all, the default) or all (every message in its channels)." default:"targeted" enum:"targeted,all" env:"BUS_DELIVER"`
@@ -290,15 +291,14 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 		return nil, nil, err
 	}
 	dir := creds.AgentDir(cli.ConfigDir, cli.Agent)
-	password, err := creds.ReadPassword(dir)
-	if err != nil {
-		return nil, nil, err
-	}
 	caCert := cli.CACert
 	if caCert == "" {
 		caCert = filepath.Join(cli.ConfigDir, "ca.pem")
 	}
-	connection := broker.Connection{Address: cli.Broker, CACertPath: caCert, User: bus.AgentToken(cli.Agent), Password: password}
+	connection, err := broker.UserConnection(dir, bus.AgentToken(cli.Agent), cli.Broker, cli.MappedPort, caCert)
+	if err != nil {
+		return nil, nil, err
+	}
 	if longRunning {
 		connection.Reconnect = &broker.Backoff{Initial: cli.ReconnectInitial, Max: cli.ReconnectMax}
 		connection.Log = func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) }

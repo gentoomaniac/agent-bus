@@ -35,11 +35,12 @@ const shutdownTimeout = 5 * time.Second
 type CLI struct {
 	Version kong.VersionFlag `help:"Print the version and exit."`
 
-	Listen    string `help:"Address of the web interface. It shows all traffic and speaks plain HTTP: it must be a loopback address unless --behind-proxy is set." default:"127.0.0.1:8080" env:"BUS_WEB_LISTEN"`
-	Agent     string `help:"The identity messages are sent as, <name>@<owner>, registered on this machine. Without it the interface is read-only." env:"BUS_AGENT"`
-	ConfigDir string `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
-	Broker    string `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
-	CACert    string `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
+	Listen     string `help:"Address of the web interface. It shows all traffic and speaks plain HTTP: it must be a loopback address unless --behind-proxy is set." default:"127.0.0.1:8080" env:"BUS_WEB_LISTEN"`
+	Agent      string `help:"The identity messages are sent as, <name>@<owner>, registered on this machine. Without it the interface is read-only." env:"BUS_AGENT"`
+	ConfigDir  string `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
+	Broker     string `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
+	MappedPort int    `help:"Port of the broker's certificate listener, on the host of --broker. Used instead of --broker's port for an identity directory that has client.pem and client.key." default:"4223" env:"BUS_MAPPED_PORT"`
+	CACert     string `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
 
 	BehindProxy  bool     `help:"A reverse proxy that does the TLS sits in front: allows a non-loopback --listen address." env:"BUS_WEB_BEHIND_PROXY"`
 	TrustedProxy []string `help:"Address or CIDR range of a proxy whose X-Forwarded-* headers are believed (repeatable). Default: 127.0.0.1 and ::1. Needs --behind-proxy." env:"BUS_WEB_TRUSTED_PROXY"`
@@ -50,14 +51,13 @@ type CLI struct {
 	ReconnectMax     time.Duration `help:"The longest wait between reconnect attempts." default:"30s" env:"BUS_RECONNECT_MAX"`
 }
 
-// connection says how to reach the broker as a user. The monitor outlives the broker: it starts
-// without it and reconnects after an outage.
-func (cli *CLI) connection(caCert, user, password string) broker.Connection {
-	return broker.Connection{
-		Address: cli.Broker, CACertPath: caCert, User: user, Password: password,
-		Reconnect: &broker.Backoff{Initial: cli.ReconnectInitial, Max: cli.ReconnectMax},
-		Log:       func(format string, args ...any) { log.Printf("bus-monitor: "+format, args...) },
-	}
+// connection says how to reach the broker as the user whose credentials are in dir. The monitor
+// outlives the broker: it starts without it and reconnects after an outage.
+func (cli *CLI) connection(caCert, user, dir string) (broker.Connection, error) {
+	connection, err := broker.UserConnection(dir, user, cli.Broker, cli.MappedPort, caCert)
+	connection.Reconnect = &broker.Backoff{Initial: cli.ReconnectInitial, Max: cli.ReconnectMax}
+	connection.Log = func(format string, args ...any) { log.Printf("bus-monitor: "+format, args...) }
+	return connection, err
 }
 
 // access collects the flags that decide who may reach the page.
@@ -91,15 +91,11 @@ func (cli *CLI) Run() error {
 	if caCert == "" {
 		caCert = filepath.Join(cli.ConfigDir, "ca.pem")
 	}
-	connection := func(user string) (broker.Connection, error) {
-		password, err := creds.ReadPassword(creds.AdminDir(cli.ConfigDir, user))
-		return cli.connection(caCert, user, password), err
-	}
-	busConn, err := connection(broker.BusAdminUser)
+	busConn, err := cli.connection(caCert, broker.BusAdminUser, creds.AdminDir(cli.ConfigDir, broker.BusAdminUser))
 	if err != nil {
 		return err
 	}
-	controlConn, err := connection(broker.ControlAdminUser)
+	controlConn, err := cli.connection(caCert, broker.ControlAdminUser, creds.AdminDir(cli.ConfigDir, broker.ControlAdminUser))
 	if err != nil {
 		return err
 	}
@@ -163,11 +159,11 @@ func (cli *CLI) openSender(caCert string) (sender monitor.Sender, readOnlyNote s
 		return nil, cli.Agent + " needs a password-protected key, which is not supported yet: the interface is read-only", closeSender, nil
 	}
 	dir := creds.AgentDir(cli.ConfigDir, cli.Agent)
-	password, err := creds.ReadPassword(dir)
+	connection, err := cli.connection(caCert, bus.AgentToken(cli.Agent), dir)
 	if err != nil {
 		return nil, "", closeSender, err
 	}
-	transport, err := broker.NewTransport(cli.connection(caCert, bus.AgentToken(cli.Agent), password), cli.Agent)
+	transport, err := broker.NewTransport(connection, cli.Agent)
 	if err != nil {
 		return nil, "", closeSender, err
 	}

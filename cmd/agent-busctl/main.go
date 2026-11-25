@@ -24,6 +24,7 @@ type CLI struct {
 
 	ConfigDir  string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
 	Broker     string        `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
+	MappedPort int           `help:"Port of the broker's certificate listener, on the host of --broker. Used instead of --broker's port for an admin user that has client.pem and client.key." default:"4223" env:"BUS_MAPPED_PORT"`
 	CACert     string        `help:"CA certificate. Default: ca.pem in the config directory." type:"path" env:"BUS_CA_CERT"`
 	Timeout    time.Duration `help:"Give up after this long, for example when the broker is down." default:"30s" env:"BUS_TIMEOUT"`
 	Direct     bool          `help:"Act as the admin users of the config directory, without busd. The only way until busd exists; on the broker's host, because it rewrites the server's authorization file."`
@@ -100,8 +101,7 @@ func (cli *CLI) brokerAdmin() (*broker.Admin, error) {
 		return nil, errors.New("busd does not exist yet: pass --direct to act as the admin users")
 	}
 	connection := func(user string) (broker.Connection, error) {
-		password, err := creds.ReadPassword(creds.AdminDir(cli.ConfigDir, user))
-		return broker.Connection{Address: cli.Broker, CACertPath: cli.caCertPath(), User: user, Password: password}, err
+		return broker.UserConnection(creds.AdminDir(cli.ConfigDir, user), user, cli.Broker, cli.MappedPort, cli.caCertPath())
 	}
 	busConn, err := connection(broker.BusAdminUser)
 	if err != nil {
