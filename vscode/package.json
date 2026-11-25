@@ -24,6 +24,11 @@
           "type": "string",
           "default": "http://localhost:8080",
           "description": "Base URL of the bus monitor, for example http://localhost:8080 or its public URL behind a proxy."
+        },
+        "agentMessenger.checkForUpdates": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check GitHub for a newer version of this extension when the editor starts, and then every 24 hours. The command Agent Messenger: Check for Updates always works."
         }
       }
     },
@@ -32,6 +37,7 @@
       { "command": "agentMessenger.logout", "title": "Log Out", "category": "Agent Messenger" },
       { "command": "agentMessenger.openChannel", "title": "Open Channel", "category": "Agent Messenger" },
       { "command": "agentMessenger.openUnreadMail", "title": "Open Unread Mail", "category": "Agent Messenger" },
+      { "command": "agentMessenger.checkForUpdates", "title": "Check for Updates", "category": "Agent Messenger" },
       { "command": "agentMessenger.addFavourite", "title": "Add to Favourites", "icon": "$(star-empty)" },
       { "command": "agentMessenger.removeFavourite", "title": "Remove from Favourites", "icon": "$(star-full)" },
       { "command": "agentMessenger.messageAgent", "title": "Message Agent" },

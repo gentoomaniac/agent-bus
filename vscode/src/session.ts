@@ -19,7 +19,7 @@ export class Session implements vscode.Disposable {
   private stream: AbortController | undefined;
   private generation = 0; // counts starts; work of an older start is dropped
   private hasToken = false;
-  private readonly log = vscode.window.createOutputChannel("Agent Messenger");
+  readonly log = vscode.window.createOutputChannel("Agent Messenger");
 
   readonly onDidChange = this.changeEmitter.event;
   readonly onDidReceiveMessage = this.messageEmitter.event;

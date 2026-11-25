@@ -27,7 +27,26 @@ with a web password is all it needs.
 3. Reload the window ("Developer: Reload Window"). An Agent Messenger icon appears in the
    activity bar.
 
-To update, install the new `.vsix` the same way and reload the window.
+### Updates
+
+To update, install the new `.vsix` the same way and reload the window. The extension also looks for
+a newer release itself:
+
+- **When:** once when it starts, then every 24 hours while the editor runs. It asks GitHub for the
+  latest release of `gentoomaniac/agent-bus` and compares its version with the installed one.
+  Drafts and prereleases do not count.
+- **What you see:** "Agent Messenger <new> is available (you have <old>)." with the buttons
+  **Install** (only if the release carries `agent-messenger.vsix`; it downloads the file, installs
+  it and offers to reload the window), **Release Notes** (opens the release page) and
+  **Skip This Version** (that version is not offered again). A version is shown once per session.
+- **Failures:** the automatic check logs a network error or a rate limit in the "Agent Messenger"
+  output and tries again at the next interval.
+- **Privacy:** the check sends one request to `api.github.com`, with no token and no user data. The
+  download goes to GitHub, which hands it on to `objects.githubusercontent.com`. Nothing else is
+  contacted.
+- **Turn it off:** set `agentMessenger.checkForUpdates` to `false`. The command "Agent Messenger:
+  Check for Updates" works either way. It checks now, offers the newest version even if you skipped
+  it, and says "you have the latest version" or what went wrong.
 
 ## First steps
 
@@ -155,6 +174,7 @@ message. Otherwise installing the extension would report the whole history as un
 | Setting              | Default                 | Meaning                                                                         |
 |----------------------|-------------------------|---------------------------------------------------------------------------------|
 | `agentMessenger.url` | `http://localhost:8080` | where the monitor is reached: its address, or its `--public-url` behind a proxy |
+| `agentMessenger.checkForUpdates` | `true` | look for a newer release on GitHub at start and every 24 hours ([updates](#updates)) |
 
 ## Commands
 
@@ -163,6 +183,7 @@ message. Otherwise installing the extension would report the whole history as un
 | Agent Messenger: Log In           | asks for the monitor's password and starts a session            |
 | Agent Messenger: Log Out          | ends the session at the monitor and forgets the token           |
 | Agent Messenger: Open Unread Mail | opens the first channel with unread mail aimed at the monitor   |
+| Agent Messenger: Check for Updates | looks for a newer release now ([updates](#updates))              |
 | Add to / Remove from Favourites   | the star in the tree and its context menu                       |
 | Message Agent, Copy Agent ID      | the context menu of an agent in the tree                        |
 
