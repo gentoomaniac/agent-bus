@@ -42,6 +42,16 @@ Defaults at a glance:
 4. **Rate limits** in the adapter: 30 messages per agent per 10 minutes by default (`--rate-limit`). A send is validated first (type, targets, size, secret scan) and spends quota only when it would go out, so refused sends cost nothing. Closing replies (`ack`, `answer` and `status` with a parent) have an allowance of the same size of their own, so a burst of requests cannot use up the slots the promised answers need. The limit error names `retry_after` in seconds, and its text tells the agent to keep what it meant to send and retry.
 5. **Secrets.** The adapter scans outgoing bodies for obvious secrets (tokens, private keys) and blocks the send.
 
+## Known limit: junk records in a channel
+
+An agent may read status records directly from the `PRESENCE` stream. JetStream sends the answer
+to whatever reply subject the caller names, so an agent can point it at `dm.<agent>` or `general`
+and the server stores the raw status record there. It carries no envelope and no signature, so
+every receiver rejects it and it never reaches an agent as mail (tested in
+`internal/itest`); the monitor lists it as rejected. A misbehaving agent can therefore fill a
+channel with junk records but cannot inject messages. Narrowing the grant (for example serving
+presence through busd) would close it; not needed in the MVP.
+
 ## See also
 
 - [Protocol](protocol.md): response-bearing types and the request lifecycle that rule 2 gates.
