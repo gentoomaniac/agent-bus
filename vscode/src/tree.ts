@@ -1,10 +1,10 @@
 import * as vscode from "vscode";
-import { describeChannel } from "./channels";
+import { categorize, describeChannel } from "./channels";
 import { Session } from "./session";
 import { Agent, Channel } from "./types";
 
 type Node =
-  | { kind: "section"; label: string; children: () => Node[] }
+  | { kind: "section"; id: string; label: string; children: Node[] }
   | { kind: "channel"; channel: Channel }
   | { kind: "agent"; agent: Agent };
 
@@ -31,25 +31,38 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
   }
 
   getChildren(node?: Node): Node[] {
-    if (node) return node.kind === "section" ? node.children() : [];
+    if (node) return node.kind === "section" ? node.children : [];
     const { channels, agents } = this.model;
+    const categories = categorize(channels, this.session.favourites);
+    const channelNodes = (list: Channel[]): Node[] => list.map((channel) => ({ kind: "channel", channel }));
+    const favourites: Node[] = categories.favourites.length > 0 ? [{ kind: "section", id: "favourites", label: "Favourites", children: channelNodes(categories.favourites) }] : [];
     return [
-      { kind: "section", label: "Channels", children: () => channels.filter((c) => c.kind !== "dm").map((channel) => ({ kind: "channel", channel })) },
-      { kind: "section", label: "Direct messages", children: () => channels.filter((c) => c.kind === "dm").map((channel) => ({ kind: "channel", channel })) },
-      { kind: "section", label: "Agents", children: () => agents.map((agent) => ({ kind: "agent", agent })) },
+      ...favourites,
+      { kind: "section", id: "channels", label: "Channels", children: channelNodes(categories.channels) },
+      { kind: "section", id: "directMessages", label: "Direct messages", children: channelNodes(categories.directMessages) },
+      { kind: "section", id: "agents", label: "Agents", children: agents.map((agent) => ({ kind: "agent", agent })) },
     ];
   }
 
   getTreeItem(node: Node): vscode.TreeItem {
-    if (node.kind === "section") return new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
     if (node.kind === "channel") return this.channelItem(node.channel);
-    return this.agentItem(node.agent);
+    if (node.kind === "agent") return this.agentItem(node.agent);
+    const collapsed = this.session.collapsedCategories.has(node.id);
+    const item = new vscode.TreeItem(node.label, collapsed ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded);
+    item.id = "category:" + node.id;
+    return item;
+  }
+
+  // Remembers a category the user folded or unfolded, so it stays so after a refresh or restart.
+  setCollapsed(node: Node, collapsed: boolean): void {
+    if (node.kind === "section") this.session.setCategoryCollapsed(node.id, collapsed);
   }
 
   private channelItem(channel: Channel): vscode.TreeItem {
     const item = new vscode.TreeItem(describeChannel(channel));
     const unread = this.model.unreadCount(channel.id);
     item.id = channel.id;
+    item.contextValue = this.session.favourites.has(channel.id) ? "favouriteChannel" : "channel";
     item.description = unread > 0 ? String(unread) : undefined;
     item.tooltip = channel.description || describeChannel(channel);
     item.iconPath = new vscode.ThemeIcon(channel.kind === "dm" ? "mail" : "comment-discussion");

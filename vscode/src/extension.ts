@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { ChatPanels } from "./chat";
 import { Session } from "./session";
 import { AgentMessengerTree } from "./tree";
+import { Channel } from "./types";
 import { openUnreadMail, showUnreadIndicators } from "./unread";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -14,10 +15,14 @@ export function activate(context: vscode.ExtensionContext): void {
     session,
     chats,
     treeView,
+    treeView.onDidCollapseElement((event) => tree.setCollapsed(event.element, true)),
+    treeView.onDidExpandElement((event) => tree.setCollapsed(event.element, false)),
     showUnreadIndicators(session, treeView),
     vscode.commands.registerCommand("agentMessenger.openUnreadMail", () => openUnreadMail(session)),
     vscode.commands.registerCommand("agentMessenger.login", () => session.login()),
     vscode.commands.registerCommand("agentMessenger.openChannel", (channelId: string) => chats.open(channelId)),
+    vscode.commands.registerCommand("agentMessenger.addFavourite", (node: { channel: Channel }) => session.toggleFavourite(node.channel.id)),
+    vscode.commands.registerCommand("agentMessenger.removeFavourite", (node: { channel: Channel }) => session.toggleFavourite(node.channel.id)),
     vscode.commands.registerCommand("agentMessenger.logout", () => session.logout()),
     vscode.workspace.onDidChangeConfiguration((change) => {
       if (change.affectsConfiguration("agentMessenger.url")) void session.start();

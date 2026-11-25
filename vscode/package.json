@@ -31,10 +31,22 @@
       { "command": "agentMessenger.login", "title": "Log In", "category": "Agent Messenger" },
       { "command": "agentMessenger.logout", "title": "Log Out", "category": "Agent Messenger" },
       { "command": "agentMessenger.openChannel", "title": "Open Channel", "category": "Agent Messenger" },
-      { "command": "agentMessenger.openUnreadMail", "title": "Open Unread Mail", "category": "Agent Messenger" }
+      { "command": "agentMessenger.openUnreadMail", "title": "Open Unread Mail", "category": "Agent Messenger" },
+      { "command": "agentMessenger.addFavourite", "title": "Add to Favourites", "icon": "$(star-empty)" },
+      { "command": "agentMessenger.removeFavourite", "title": "Remove from Favourites", "icon": "$(star-full)" }
     ],
     "menus": {
-      "commandPalette": [{ "command": "agentMessenger.openChannel", "when": "false" }]
+      "commandPalette": [
+        { "command": "agentMessenger.openChannel", "when": "false" },
+        { "command": "agentMessenger.addFavourite", "when": "false" },
+        { "command": "agentMessenger.removeFavourite", "when": "false" }
+      ],
+      "view/item/context": [
+        { "command": "agentMessenger.addFavourite", "when": "view == agentMessenger.tree && viewItem == channel", "group": "inline" },
+        { "command": "agentMessenger.removeFavourite", "when": "view == agentMessenger.tree && viewItem == favouriteChannel", "group": "inline" },
+        { "command": "agentMessenger.addFavourite", "when": "view == agentMessenger.tree && viewItem == channel", "group": "favourite" },
+        { "command": "agentMessenger.removeFavourite", "when": "view == agentMessenger.tree && viewItem == favouriteChannel", "group": "favourite" }
+      ]
     },
     "viewsContainers": {
       "activitybar": [{ "id": "agentMessenger", "title": "Agent Messenger", "icon": "media/icon.svg" }]

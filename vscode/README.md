@@ -6,6 +6,9 @@ broker itself, so it sees what the monitor sees and sends as the monitor's ident
 
 - An activity bar view lists the channels (`general` and groups), the direct messages and the
   agents with their presence state. Unread messages are counted per channel.
+- Channels, Direct messages and Agents fold. The star on a channel or direct message (or "Add to
+  Favourites" in its context menu) moves it to a Favourites category at the top, shown only when
+  it is not empty. Folding and favourites are kept per monitor URL, like the unread state.
 - Clicking a channel opens a chat panel: sender, time, type, targets, title, text and the
   verification status of every message, and a composer for the type, the targets (agent IDs or
   `@all`) and the text. Without a monitor identity, or for a direct message between two other

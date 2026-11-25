@@ -47,6 +47,35 @@ export class Session implements vscode.Disposable {
     return model;
   }
 
+  // Favourite channels and folded categories, per monitor URL like the last-read sequences.
+  get favourites(): Set<string> {
+    return this.readSet("favourites:");
+  }
+
+  get collapsedCategories(): Set<string> {
+    return this.readSet("collapsed:");
+  }
+
+  toggleFavourite(channelId: string): void {
+    this.updateSet("favourites:", channelId, !this.favourites.has(channelId));
+    this.changeEmitter.fire();
+  }
+
+  setCategoryCollapsed(categoryId: string, collapsed: boolean): void {
+    this.updateSet("collapsed:", categoryId, collapsed);
+  }
+
+  private readSet(prefix: string): Set<string> {
+    return new Set(this.context.globalState.get<string[]>(prefix + this.url, []));
+  }
+
+  private updateSet(prefix: string, member: string, present: boolean): void {
+    const members = this.readSet(prefix);
+    if (present) members.add(member);
+    else members.delete(member);
+    void this.context.globalState.update(prefix + this.url, [...members]);
+  }
+
   async start(): Promise<void> {
     const generation = ++this.generation;
     this.stop();
