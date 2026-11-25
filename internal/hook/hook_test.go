@@ -65,6 +65,8 @@ type fakeSession struct {
 	marked []string
 	titled string
 	busErr error // why the fake adapter cannot reach the broker
+	// notices are the directory notices the adapter has for the agent.
+	notices []string
 	// mailForWaiter ends a WaitNewMail with the mail sent on it, like mail arriving at the adapter.
 	mailForWaiter chan []adapter.Message
 }
@@ -94,6 +96,12 @@ func (session *fakeSession) MarkNotified(ids []string) {
 }
 
 func (session *fakeSession) BusUnavailable() error { return session.busErr }
+
+func (session *fakeSession) TakeDirectoryNotices() []string {
+	notices := session.notices
+	session.notices = nil
+	return notices
+}
 
 func (session *fakeSession) Event(event presence.Event) {
 	session.events = append(session.events, event)
@@ -186,4 +194,39 @@ func TestListenReplacesAStaleSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	second()
+}
+
+func TestDirectoryNoticesRideAlongWithMailAndNeverStandAlone(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sockets")
+	session := &fakeSession{titled: "the title", notices: []string{"Directory updated: carol@x joined."}}
+	stop, err := Listen(dir, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	reply, ok := Ask(dir, NewMail)
+	if !ok || len(reply.Directory) != 1 {
+		t.Fatalf("new-mail reply = %+v, %v; want the notice with the mail", reply, ok)
+	}
+	if output := StopOutput(reply); !strings.Contains(output, "carol@x joined") || !strings.Contains(output, "nothing to answer") {
+		t.Errorf("the Stop hook's notice lacks the directory notice: %s", output)
+	}
+	if reply, _ := Ask(dir, NewMail); len(reply.Directory) != 0 {
+		t.Errorf("a notice was told twice: %+v", reply)
+	}
+
+	// Alone, a notice wakes nobody and holds no Stop up, but goes into the session start's context.
+	alone := Reply{Directory: []string{"Directory updated: dave@x joined."}}
+	if StopOutput(alone) != "" || WakeOutput(alone) != "" || PluginOutput(alone) != "" {
+		t.Error("a directory notice alone produced a notice that blocks or wakes")
+	}
+	if output := SessionStartOutput(alone); !strings.Contains(output, "dave@x joined") || strings.Contains(output, "untrusted peer data") {
+		t.Errorf("the session start's context: %s", output)
+	}
+	// A problem with the bus still wakes, whatever notices wait.
+	alone.Problem = "the broker is out of reach"
+	if output := WakeOutput(alone); !strings.Contains(output, "out of reach") {
+		t.Errorf("a problem with a notice waiting did not wake: %q", output)
+	}
 }

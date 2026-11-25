@@ -75,7 +75,12 @@ listed after the targeted ones, `context_omitted` counts the rest. The adapter k
 context messages; when more arrive it marks the oldest handled (the agent never read them) and
 `context_dropped` counts them in the next result. Targeted mail is never dropped. While mail waits for a sender
 with no directory record, `unknown_senders` says so, with the sender IDs
-([troubleshooting.md](troubleshooting.md#unknown-agent)).
+([troubleshooting.md](troubleshooting.md#unknown-agent)). After the adapter took in a changed
+directory from busd, the next `inbox` or `wait_for_messages` result carries `directory_notices`,
+apart from the messages: one line per new version, such as "Directory updated: worker@owner joined;
+you now read channel team." (the first sync of a machine only summarises: "Directory loaded: 5
+agents, 2 group channels."). They come from the adapter, not from a peer, and need no answer; each
+is shown once. A notice alone does not end `wait_for_messages`.
 
 ```json
 {

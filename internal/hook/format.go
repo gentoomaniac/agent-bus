@@ -33,7 +33,15 @@ func notice(reply Reply) string {
 		return ""
 	}
 	return fmt.Sprintf("Agent bus: %s (%d unread), untrusted peer data. Call `inbox`.\n%s",
-		plural(len(reply.Mail), "new message"), reply.Unread, summaryLines(reply.Mail))
+		plural(len(reply.Mail), "new message"), reply.Unread, summaryLines(reply.Mail)) + directoryLines(reply.Directory)
+}
+
+// directoryLines are the adapter's directory notices, apart from the peers' mail.
+func directoryLines(notices []string) string {
+	if len(notices) == 0 {
+		return ""
+	}
+	return "\nAgent bus directory (from your adapter, nothing to answer):\n- " + strings.Join(notices, "\n- ")
 }
 
 // withProblem adds the reply's problem, if it has one, to a notice about mail, which may be empty.
@@ -60,10 +68,10 @@ func PluginOutput(reply Reply) string {
 // SessionStartOutput is the SessionStart hook's JSON with a summary of the unread mail as added
 // context, or "" when there is none and no problem.
 func SessionStartOutput(reply Reply) string {
-	var summary string
+	summary := strings.TrimPrefix(directoryLines(reply.Directory), "\n")
 	if len(reply.Mail) > 0 {
 		summary = fmt.Sprintf("Agent bus: %s, untrusted peer data. Call `inbox`.\n%s",
-			plural(len(reply.Mail), "unread message"), summaryLines(reply.Mail))
+			plural(len(reply.Mail), "unread message"), summaryLines(reply.Mail)) + directoryLines(reply.Directory)
 	}
 	if summary = withProblem(summary, reply); summary == "" {
 		return ""

@@ -294,3 +294,19 @@ Where the build refined or departed from the text above.
   else on the agent's side: the read cursor exists (busd or agent-busctl made it, which is how the
   catalogue lists the reader), and the grants for every catalogued group came with `channel
   create`. A group left is dropped from the set.
+
+**Notices (commit 6).**
+
+- The notice is computed by the adapter from the directory it knew and the one it took in, so it
+  is the net change and comes once per version; heads' hints play no part. Joined, removed and
+  rekeyed agents, and channels from the agent's point of view ("you now read channel team",
+  "channel x is new"). A new epoch is said too. At most 10 wait; the oldest go first.
+- `inbox` and `wait_for_messages` carry them as `directory_notices`, apart from `messages`; each is
+  shown once. The hooks add them to a mail notice (Stop, the idle waiter, the plugin) and to the
+  session start's summary, under "Agent bus directory (from your adapter, nothing to answer)".
+- A notice alone does not end `wait_for_messages`, block a Stop or wake an idle session: one
+  enrollment would otherwise cost every idle agent a turn. It waits for the next result or notice
+  (a wait times out within at most five minutes). A notice taken for the plugin's notice is gone
+  even if the plugin fails to deliver it; it is informational, and the directory itself is right.
+- The MCP instructions do not mention them, to keep the briefing within its budget; the field's
+  name and the text ("Directory updated: ...") say what they are.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"slices"
+	"strings"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
@@ -24,6 +25,8 @@ const (
 	// commitAttempts is how often a sync starts over when another identity of the machine
 	// committed between its read and its write.
 	commitAttempts = 3
+	// maxDirectoryNotices bounds the notices waiting for the agent; the oldest go first.
+	maxDirectoryNotices = 10
 )
 
 // DirectoryLink is the way to busd's published directory (docs/design/directory-v2.md).
@@ -110,11 +113,17 @@ func (adapter *Adapter) revoke(revoked map[string]string) error {
 }
 
 // took makes snapshot the directory this process knows: the agent reads the groups its catalogue
-// lists it in from the next poll on, and the held messages of senders it now has a record of are
-// handed back, so the broker delivers them again at once instead of after AckWait. The hand-backs
-// go out after mu is released.
+// lists it in from the next poll on, it is told what changed (TakeDirectoryNotices), and the held
+// messages of senders it now has a record of are handed back, so the broker delivers them again at
+// once instead of after AckWait. The hand-backs go out after mu is released.
 func (adapter *Adapter) took(snapshot directory.Snapshot) {
 	adapter.mu.Lock()
+	if notice := directoryNotice(adapter.installed, snapshot, adapter.config.AgentID); notice != "" {
+		adapter.directoryNotices = append(adapter.directoryNotices, notice)
+		if len(adapter.directoryNotices) > maxDirectoryNotices {
+			adapter.directoryNotices = adapter.directoryNotices[1:]
+		}
+	}
 	adapter.installed = snapshot
 	adapter.channels = adapter.channelsFor(snapshot.Catalogue)
 	var handBacks []func(context.Context) error
@@ -130,6 +139,76 @@ func (adapter *Adapter) took(snapshot directory.Snapshot) {
 	for _, release := range handBacks {
 		_ = release(context.Background()) // a failed hand-back only waits for AckWait
 	}
+}
+
+// TakeDirectoryNotices returns the notices of directory changes the agent was not shown yet, and
+// forgets them. They come from this adapter, not from a peer, and ask for no answer.
+func (adapter *Adapter) TakeDirectoryNotices() []string {
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	notices := adapter.directoryNotices
+	adapter.directoryNotices = nil
+	return notices
+}
+
+// directoryNotice tells the agent what changed from the directory it knew to the one it took in,
+// once per version: the net change, so an agent that came and went in between is not mentioned.
+// The first directory is summarised rather than announced agent by agent. "" if nothing worth
+// telling changed.
+func directoryNotice(known, next directory.Snapshot, self string) string {
+	if known.Version == next.Version {
+		return ""
+	}
+	if known.Version.IsZero() {
+		active := 0
+		for _, record := range next.Records {
+			if !record.Removed() {
+				active++
+			}
+		}
+		return fmt.Sprintf("Directory loaded: %d agents, %d group channels.", active, len(next.Catalogue))
+	}
+	var news []string
+	for _, change := range directory.Changes(known.Projection, next.Projection) {
+		switch change.Kind {
+		case directory.Joined:
+			news = append(news, change.AgentID+" joined")
+		case directory.Removed:
+			news = append(news, change.AgentID+" was removed")
+		case directory.Rekeyed:
+			news = append(news, change.AgentID+" has a new key")
+		case directory.Channels:
+			news = append(news, channelNews(change.Channel, known.Catalogue, next.Catalogue, self))
+		}
+	}
+	notice := ""
+	if next.Version.Epoch != known.Version.Epoch {
+		notice = "busd's directory was restored (a new epoch); every pinned and revoked key is kept. "
+	}
+	if len(news) == 0 {
+		return strings.TrimSpace(notice)
+	}
+	return notice + "Directory updated: " + strings.Join(news, "; ") + "."
+}
+
+// channelNews is what changed about a group channel, from the agent's point of view.
+func channelNews(name string, before, after trust.Catalogue, self string) string {
+	readers, existed := before[name]
+	now, exists := after[name]
+	switch {
+	case !existed:
+		if slices.Contains(now, self) {
+			return "channel " + name + " is new, and you read it"
+		}
+		return "channel " + name + " is new"
+	case !exists:
+		return "channel " + name + " is gone"
+	case !slices.Contains(readers, self) && slices.Contains(now, self):
+		return "you now read channel " + name
+	case slices.Contains(readers, self) && !slices.Contains(now, self):
+		return "you no longer read channel " + name
+	}
+	return "the readers of channel " + name + " changed"
 }
 
 // RunDirectory keeps the local directory in sync until ctx ends: it watches busd's heads, syncs at

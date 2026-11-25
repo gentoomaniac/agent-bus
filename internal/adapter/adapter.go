@@ -131,8 +131,11 @@ type Adapter struct {
 	lastSenderSync time.Time
 	// channels are the channels the adapter reads. A sync that changes the catalogue changes them.
 	channels []bus.Channel
-	inbox    inbox
-	rate     rateLimiter
+	// directoryNotices are the notices of directory changes not yet shown to the agent, oldest
+	// first, at most maxDirectoryNotices.
+	directoryNotices []string
+	inbox            inbox
+	rate             rateLimiter
 	// closingRate limits ack, answer and status replies on their own.
 	closingRate rateLimiter
 

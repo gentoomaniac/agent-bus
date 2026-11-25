@@ -49,6 +49,9 @@ type Reply struct {
 	// Problem is a sentence about the session's link to the bus (the MCP server is gone, the broker
 	// is out of reach), for the agent to pass on to its owner. It is empty when all is well.
 	Problem string
+	// Directory are the adapter's own notices of directory changes. They ride along with mail and
+	// the session start's summary: on its own a notice never wakes or holds up a session.
+	Directory []string `json:",omitempty"`
 }
 
 type request struct {
@@ -64,6 +67,7 @@ type Session interface {
 	UnreadSummary() ([]adapter.Message, error)
 	PeekNewMail() (fresh []adapter.Message, unread int, err error)
 	MarkNotified(ids []string)
+	TakeDirectoryNotices() []string
 	Event(presence.Event)
 	// BusUnavailable is why the adapter cannot reach the broker, or nil.
 	BusUnavailable() error
@@ -189,6 +193,9 @@ func serve(connection net.Conn, session Session, waiter *currentWaiter, brokerOu
 	if asked.Op != PeekMail { // the plugin's output has no room for it
 		reply.Problem = brokerOutage.report(session.BusUnavailable(), time.Now())
 	}
+	if len(messages) > 0 || asked.Op == Summary {
+		reply.Directory = session.TakeDirectoryNotices()
+	}
 	json.NewEncoder(connection).Encode(reply)
 }
 
@@ -240,6 +247,9 @@ func serveWait(connection net.Conn, session Session, waiter *currentWaiter, brok
 	stopWaiting()
 	<-watchEnded // a report it made is not lost to a mail that arrived at the same moment
 	reply := replyFor(messages, unread)
+	if len(messages) > 0 {
+		reply.Directory = session.TakeDirectoryNotices()
+	}
 	select {
 	case reply.Problem = <-outageReport:
 	default:
