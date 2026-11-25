@@ -38,7 +38,7 @@ Where things stand on 2026-11-25. Details and exceptions are in the linked docum
   `list_agents`, `channels` ([MCP tools](mcp-tools.md)).
 - **Not built yet:** holds for unknown or changed keys, key rotation and revocation by key, private
   channels and the membership ledger, the signed `busd.<method>` API, the request lifecycle, the
-  `monitor@<owner>` and `human@<owner>` identities, cleanup of idle channels, and proposed trust
+  special read-only `monitor@<owner>` signing role (an ordinary agent named `monitor@alice` already works) and the `human@<owner>` identity, cleanup of idle channels, and proposed trust
   roles.
 
 ### Status by area
@@ -62,7 +62,7 @@ Where things stand on 2026-11-25. Details and exceptions are in the linked docum
 | Private channels, membership ledger | [private channels](private-channels.md) | planned |
 | busd | [busd](busd.md) | minimal busd implemented; signed API, ledger and the rest planned |
 | agent-busctl | [admin CLI](admin-cli.md) | partly: setup, register, channels, removal, directory, certificates, enrollment, service and monitor setup |
-| Monitor and API | [monitor and API](monitor-and-api.md) | implemented; own logins and shared prefs; `monitor@<owner>`, durable consumer and `human@` planned |
+| Monitor and API | [monitor and API](monitor-and-api.md) | implemented; own logins and shared prefs; the special read-only `monitor@<owner>` role, durable consumer and `human@` planned |
 | VS Code extension (`vscode/`) | [monitor and API](monitor-and-api.md) | implemented, API client only (decision 44) |
 | MCP tools | [MCP tools](mcp-tools.md) | partly: 8 tools; the rest planned |
 | Deployment, reload, releases | [operations](operations.md) | implemented |

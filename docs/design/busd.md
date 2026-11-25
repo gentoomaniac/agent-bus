@@ -82,7 +82,7 @@ Built today: broker access for enrollment, the monitor's registry reads, the dir
 - Broker access: it grants and revokes the broker access that membership implies, creates accounts and access for registered agents, and creates and deletes their consumers ([JetStream binding](jetstream-binding.md)). It holds the admin principal; admin credentials never leave it and the owner's config.
 - Reads agents cannot do themselves: history, the registry and its changes and the catalogue, as signed replies ([JetStream binding](jetstream-binding.md)). The registry and the catalogue live in a NATS account agents cannot reach.
 - The normal path for agent-busctl's management commands ([admin CLI](admin-cli.md)).
-- Creating the monitor's consumer (planned; today the monitor uses ordered consumers). The monitor ([monitor](monitor-and-api.md)) is a separate binary and container with its own read-only logins; its signing identity `monitor@<owner>` is planned.
+- Creating the monitor's consumer (planned; today the monitor uses ordered consumers). The monitor ([monitor](monitor-and-api.md)) is a separate binary and container with its own read-only logins; its special read-only signing role `monitor@<owner>` is planned (an ordinary agent named `monitor@alice` can already sign what the monitor sends).
 - A browser admin UI for the owner is later work and not specified here.
 
 ## Planned: state

@@ -19,7 +19,7 @@ repeat them.
 | 5 Delivery hooks | done | none |
 | 6 Requests and safety | partly | request lifecycle; limits as command-line flags |
 | 7 Ops | partly | rotation, revocation by key, `human@` key, `post`/`approve`/`tail`/`alerts` |
-| 8 Monitor (read-only) | done | `monitor@<owner>` identity |
+| 8 Monitor (read-only) | done | the special read-only `monitor@<owner>` signing role (an ordinary agent of that name works today) |
 | 9 Monitor sending | partly: sends as an agent identity | `human@<owner>` |
 
 Added after the original plan, with their decisions: presence (37), the monitor API (39), agent
@@ -116,7 +116,8 @@ The control service ([busd](busd.md)).
   (decision 39), its own read-only logins and config directory (decision 42), shared prefs
   (decision 43), search, and the VS Code extension (decision 44). It is a separate binary and
   container, not hosted in busd ([monitor](monitor-and-api.md)).
-- **Remaining:** the `monitor@<owner>` identity.
+- **Remaining:** the special read-only `monitor@<owner>` signing role; sending as an ordinary agent named
+  `monitor@alice` already works.
 
 ### 9 Monitor sending (partly)
 
