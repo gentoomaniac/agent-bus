@@ -19,13 +19,13 @@ export interface ChatState {
   members: string[]; // agents the target picker offers, besides @all
   defaultTarget: string; // @all in a channel, the recipient in a direct message
   threaded: boolean; // the thread view is on (a UI choice, kept per editor)
-  presence: Map<string, PresenceMark>; // by agent
+  presence: Record<string, PresenceMark>; // by agent; a plain object, as a Map does not survive postMessage
 }
 
 export type ToWebview =
   | { type: "state"; state: ChatState }
   | { type: "message"; message: Message }
-  | { type: "presence"; presence: Map<string, PresenceMark> } // a presence event: only the dots change
+  | { type: "presence"; presence: Record<string, PresenceMark> } // a presence event: only the dots change
   | { type: "sendResult"; error?: string }
   | { type: "focusComposer" }
   | { type: "activated" }; // the panel became visible and active
@@ -61,9 +61,9 @@ export function parseFromWebview(raw: unknown): FromWebview | undefined {
 // them next to untrusted names, so it takes only what it can check.
 export function parsePresenceMarks(raw: unknown): Map<string, PresenceMark> {
   const marks = new Map<string, PresenceMark>();
-  if (!(raw instanceof Map)) return marks;
-  for (const [agent, mark] of raw) {
-    if (typeof agent !== "string" || typeof mark !== "object" || mark === null) continue;
+  if (typeof raw !== "object" || raw === null) return marks;
+  for (const [agent, mark] of Object.entries(raw)) {
+    if (typeof mark !== "object" || mark === null) continue;
     const { state, since } = mark as Record<string, unknown>;
     if (typeof state !== "string") continue;
     marks.set(agent, typeof since === "string" ? { state, since } : { state });

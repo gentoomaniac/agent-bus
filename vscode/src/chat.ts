@@ -20,6 +20,7 @@ interface Chat {
 export class ChatPanels implements vscode.Disposable {
   private readonly chats = new Map<string, Chat>();
   private readonly emptyDirects = new Map<string, Channel>(); // direct messages without a message yet
+  private sentPresence = ""; // the last presence posted to the panels, as JSON: only changes are sent again
   private readonly subscriptions: vscode.Disposable[];
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly session: Session) {
@@ -30,7 +31,13 @@ export class ChatPanels implements vscode.Disposable {
         void chat.panel.webview.postMessage({ type: "message", message } satisfies ToWebview);
         if (chat.panel.visible) session.model.markRead(message.channel);
       }),
-      session.onDidChange(() => this.chats.forEach((chat) => void chat.panel.webview.postMessage({ type: "presence", presence: this.presenceMarks() } satisfies ToWebview))),
+      session.onDidChange(() => {
+        const presence = this.presenceMarks();
+        const json = JSON.stringify(presence);
+        if (json === this.sentPresence) return;
+        this.sentPresence = json;
+        this.chats.forEach((chat) => void chat.panel.webview.postMessage({ type: "presence", presence } satisfies ToWebview));
+      }),
       session.onDidRefresh(() => this.chats.forEach((chat, channelId) => void this.show(channelId, chat, chat.panel.visible))),
     ];
   }
@@ -144,8 +151,8 @@ export class ChatPanels implements vscode.Disposable {
     if (chat.panel.visible) model.markRead(channelId);
   }
 
-  private presenceMarks(): Map<string, PresenceMark> {
-    return new Map([...this.session.model.presence].map(([agent, { state, since }]) => [agent, { state, since }]));
+  private presenceMarks(): Record<string, PresenceMark> {
+    return Object.fromEntries([...this.session.model.presence].map(([agent, { state, since }]) => [agent, { state, since }]));
   }
 
   private post(channelId: string, chat: Chat): void {

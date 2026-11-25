@@ -2,7 +2,7 @@
 import { matchTargets, mentionBefore, mentionText } from "../completion";
 import { continuesGroup, insertMessage } from "../messages";
 import { parsePresenceMarks } from "../protocol";
-import type { ChatState, FromWebview, ToWebview } from "../protocol";
+import type { ChatState, FromWebview, PresenceMark, ToWebview } from "../protocol";
 import { presenceClass } from "../presence";
 import { shortTime } from "../time";
 import { isSeen } from "../viewport";
@@ -16,6 +16,7 @@ const STATUS_LABEL: Record<string, string> = { unknown_sender: "unknown sender",
 const ID_SUFFIX = 8; // characters of a message ID shown in "reply to": the end of a ULID tells IDs apart
 
 let state: ChatState | undefined;
+let presence = new Map<string, PresenceMark>(); // the page's checked copy of the state's presence
 const messages: Message[] = [];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
@@ -50,7 +51,7 @@ function renderTime(message: Message, className: string): HTMLElement {
 // The dot shows the sender's presence. The monitor's own messages and agents without presence get a
 // hollow one.
 function paintDot(dot: HTMLElement, from: string): void {
-  const mark = from === state?.self ? undefined : state?.presence.get(from);
+  const mark = from === state?.self ? undefined : presence.get(from);
   dot.className = "dot " + presenceClass(mark?.state);
   if (!mark) dot.title = from === state?.self ? "you" : "no presence";
   else dot.title = mark.state + (mark.since ? " since " + shortTime(mark.since, new Date()) : "");
@@ -317,7 +318,8 @@ function completeMention(): void {
 
 function showState(next: ChatState): void {
   const first = state === undefined || state.title !== next.title;
-  state = { ...next, presence: parsePresenceMarks(next.presence) };
+  state = next;
+  presence = parsePresenceMarks(next.presence);
   if (first || next.dividerAfter !== hostDividerAfter) {
     dividerAfter = next.dividerAfter;
     seen.clear();
@@ -355,7 +357,7 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
   else if (data.type === "focusComposer") textInput.focus();
   else if (data.type === "activated") activate();
   else if (data.type === "presence") {
-    if (state) state.presence = parsePresenceMarks(data.presence);
+    presence = parsePresenceMarks(data.presence);
     paintDots();
   } else if (data.type === "message") {
     // Mail that arrives while nobody looks, with nothing unseen before it, starts a new unseen block.

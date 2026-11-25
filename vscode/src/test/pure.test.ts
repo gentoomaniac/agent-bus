@@ -158,9 +158,10 @@ test("mentionBefore finds an @word ending at the caret", () => {
 });
 
 test("parsePresenceMarks keeps only well-formed marks", () => {
-  const raw = new Map<unknown, unknown>([["a", { state: "idle", since: "t" }], ["b", { state: "working", since: 3 }], ["c", { state: 1 }], ["d", null], [4, { state: "idle" }]]);
-  assert.deepEqual([...parsePresenceMarks(raw)], [["a", { state: "idle", since: "t" }], ["b", { state: "working" }]]);
-  assert.equal(parsePresenceMarks({ a: { state: "idle" } }).size, 0);
+  const sent = { a: { state: "idle", since: "t" }, b: { state: "working", since: undefined }, c: { state: 1 }, d: null, e: { state: "x", since: 3 } };
+  const raw: unknown = JSON.parse(JSON.stringify(sent)); // as postMessage delivers it
+  assert.deepEqual([...parsePresenceMarks(raw)], [["a", { state: "idle", since: "t" }], ["b", { state: "working" }], ["e", { state: "x" }]]);
+  assert.equal(parsePresenceMarks(undefined).size, 0);
 });
 
 test("presenceClass groups the states like the tree", () => {
