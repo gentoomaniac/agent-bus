@@ -60,7 +60,7 @@ flowchart LR
 | | its API | subscribe `busd.>`, subscribe `_INBOX.busd.>`, publish `_INBOX.>` (replies) |
 | | acks | none for ordered consumers; a durable consumer of its own needs `$JS.ACK.BUS.<name>.>` |
 | busd, control connection (`CONTROL`) | registry, catalogue, ledger | **as built** (login `busd`): the JetStream read API of `KV_registry` and `KV_catalogue`, publish `$KV.registry.>`, `_INBOX.>` and `busd.enroll.pending`; subscribe `_INBOX.>` and its seven `busd.enroll.*`, `busd.ca.*` and `busd.monitor.*` subjects (`busd.monitor.registry` and `busd.monitor.catalogue` are the monitor's). **Planned**, with the ledger: `ledger.>`, `$JS.ACK.<stream>.<name>.>` for a durable consumer of its own |
-| Enrollment login `enroll` (`CONTROL`, shared, password listener) | ask for a certificate | publish `busd.enroll.request` and `busd.enroll.status`; subscribe `_INBOX.enroll.>`; never any stream, JetStream API, `BUS` or `busd.ca.*` subject ([phase B](#phase-b-implemented-the-enrollment-flow)) |
+| Enrollment login `enroll` (`CONTROL`, shared, password listener) | ask for a certificate, read the directory | publish `busd.enroll.request`, `busd.enroll.status` and `busd.directory`; subscribe `_INBOX.enroll.>`; never any stream, JetStream API, `BUS` or `busd.ca.*` subject ([phase B](#phase-b-implemented-the-enrollment-flow)) |
 | `bus-admin` (`BUS`) and `control-admin` (`CONTROL`), used by `agent-busctl --direct` over two connections | everything in its own account | publish and subscribe `>`; NATS usernames are server-wide, so the two are distinct users with separate passwords, which live only in the owner's config ([admin CLI](admin-cli.md)) |
 
 **Planned:** the monitor gets its own narrow signing identity, `monitor@<owner>`, with its own Ed25519 key registered with the role `monitor`: busd lets it call only the read-only methods above. It never uses the owner's key. busd, not the monitor, creates the monitor's consumer, so the monitor needs no create grant. Today the monitor reads with its two logins and ordered consumers. Read-only still has a limit: any raw JetStream reader, the monitor included, can make the server deliver a payload it can read to any subject of `BUS` it can name. That cannot be closed by grants within one account. The receiver checks ([private channels](private-channels.md), [signing and trust](identity-and-trust.md)) are what make it harmless. The grants for the busd methods and the consumers are generated; the per-channel part is rewritten by reload (below).
@@ -178,6 +178,14 @@ What was built, and where it differs from the plan above it:
   therefore hold only public data (certificate, CA certificate, directory); the client believes only an
   answer that names its own request ID and installs only a certificate for exactly its agent and
   TLS key, signed by the CA it trusts. The login proves no identity: it is a ticket to ask.
+- **The directory over the same login.** An agent's certificate login is in `BUS` and has no route
+  to busd, so a running agent learns of agents enrolled after it with the shared login too: a
+  request on `busd.directory` (the enrollment login may publish it; busd subscribes) is answered
+  with the registry records and the channel catalogue, the same snapshot an approval carries. The
+  answer is public data (agent IDs, public keys, fingerprints) and the asker is anonymous, which
+  this trusted-LAN MVP accepts. **Residual risk:** whoever holds the enrollment password can also
+  answer on an agent's inbox space with a forged directory; a forged record only matters for an
+  agent that is not pinned yet. busd rate-limits it (5 a second, burst 20).
 - **Request.** `agent-bus enroll --broker <host> --agent <id> [--waitforcert[=<max>]] [--secret <s>]
   [--ca-fingerprint <sha256>]`. An existing identity keeps its signing key (and so its pins, ID and
   consumers); only the TLS key and CSR are new. The request has the agent ID, CSR, public signing

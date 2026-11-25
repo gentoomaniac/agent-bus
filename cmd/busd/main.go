@@ -114,6 +114,7 @@ func (cli *CLI) Run() error {
 	endpoints := map[string]endpoint{
 		enroll.SubjectRequest:          {enroll.InboxPrefix, func(ctx context.Context, body []byte) any { return service.HandleRequest(ctx, body) }},
 		enroll.SubjectStatus:           {enroll.InboxPrefix, func(ctx context.Context, body []byte) any { return service.HandleStatus(ctx, body) }},
+		enroll.SubjectDirectory:        {enroll.InboxPrefix, func(ctx context.Context, _ []byte) any { return service.Directory(ctx) }},
 		enroll.SubjectList:             {enroll.AdminInboxPrefix, func(ctx context.Context, _ []byte) any { return service.List(ctx) }},
 		enroll.SubjectMonitorRegistry:  {enroll.MonitorInboxPrefix, func(ctx context.Context, _ []byte) any { return service.Agents(ctx) }},
 		enroll.SubjectMonitorCatalogue: {enroll.MonitorInboxPrefix, func(ctx context.Context, _ []byte) any { return service.Groups(ctx) }},

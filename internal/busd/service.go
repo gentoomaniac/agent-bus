@@ -38,6 +38,10 @@ const (
 	maxEntries         = 500 // pending and decided; the oldest decided ones go first
 	requestInterval    = 6 * time.Second
 	requestBurst       = 10
+	// directoryInterval and directoryBurst bound the directory reads (each reads the registry and the
+	// catalogue); agents ask once a minute and on a miss.
+	directoryInterval = 200 * time.Millisecond
+	directoryBurst    = 20
 
 	enrollDir    = "enroll"
 	autosignFile = "autosign"
@@ -70,8 +74,9 @@ type Config struct {
 // Service is the enrollment and approval logic. One mutex serialises everything, a certificate
 // approval included: an owner approves one request at a time.
 type Service struct {
-	config  Config
-	limiter *rate.Limiter
+	config           Config
+	limiter          *rate.Limiter
+	directoryLimiter *rate.Limiter
 
 	mu      sync.Mutex
 	entries map[string]*entry // by request ID
@@ -96,9 +101,10 @@ func New(config Config) (*Service, error) {
 		config.Now = time.Now
 	}
 	service := &Service{
-		config:  config,
-		limiter: rate.NewLimiter(rate.Every(requestInterval), requestBurst),
-		entries: map[string]*entry{},
+		config:           config,
+		limiter:          rate.NewLimiter(rate.Every(requestInterval), requestBurst),
+		directoryLimiter: rate.NewLimiter(rate.Every(directoryInterval), directoryBurst),
+		entries:          map[string]*entry{},
 	}
 	return service, service.load()
 }
@@ -210,6 +216,31 @@ func (service *Service) Groups(ctx context.Context) enroll.CatalogueReply {
 		return enroll.CatalogueReply{Error: err.Error()}
 	}
 	return enroll.CatalogueReply{Groups: groups}
+}
+
+// Directory is the public snapshot enrolled agents keep their local directory up to date with. It
+// proves nothing about the asker and holds public data only, like the snapshot of an approval.
+func (service *Service) Directory(ctx context.Context) enroll.DirectoryReply {
+	if !service.directoryLimiter.Allow() {
+		return enroll.DirectoryReply{Error: "too many directory requests, try again in a moment"}
+	}
+	directory, err := service.directory(ctx)
+	if err != nil {
+		return enroll.DirectoryReply{Error: err.Error()}
+	}
+	return enroll.DirectoryReply{Directory: directory}
+}
+
+func (service *Service) directory(ctx context.Context) (enroll.Directory, error) {
+	records, err := service.config.Registry.Agents(ctx)
+	if err != nil {
+		return enroll.Directory{}, err
+	}
+	catalogue, err := trust.BuildCatalogue(ctx, service.config.Registry)
+	if err != nil {
+		return enroll.Directory{}, err
+	}
+	return enroll.Directory{Records: records, Channels: catalogue}, nil
 }
 
 // Sign approves one pending request, named by ID, code or agent ID. A request that would replace
@@ -487,17 +518,13 @@ func (service *Service) reply(ctx context.Context, request *entry) enroll.Reply 
 	if request.Status != enroll.StatusApproved {
 		return reply
 	}
-	records, err := service.config.Registry.Agents(ctx)
-	var catalogue trust.Catalogue
-	if err == nil {
-		catalogue, err = trust.BuildCatalogue(ctx, service.config.Registry)
-	}
+	directory, err := service.directory(ctx)
 	if err != nil {
 		return refusal(fmt.Errorf("%w: %v", errRegistry, err))
 	}
 	reply.Certificate = request.Certificate
 	reply.CA = string(service.config.CACertPEM)
-	reply.Directory = &enroll.Directory{Records: records, Channels: catalogue}
+	reply.Directory = &directory
 	return reply
 }
 

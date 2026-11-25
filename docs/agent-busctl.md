@@ -324,8 +324,8 @@ as, or under the name of, a later agent.
 Turns on the enrollment of new machines ([podman.md](podman.md#9-enrolling-a-new-machine)). It
 makes the shared enrollment login (user `enroll`, in `nats/control-auth.conf`, a confirmed reload),
 stores its password in `enroll/password` of the config directory (0600) and prints it once, with
-the CA fingerprint, for copying to each new machine. The login may only publish `busd.enroll.request`
-and `busd.enroll.status` and subscribe `_INBOX.enroll.>`. `--force` makes a new password. It runs in
+the CA fingerprint, for copying to each new machine. The login may only publish `busd.enroll.request`,
+`busd.enroll.status` and `busd.directory` and subscribe `_INBOX.enroll.>`. `--force` makes a new password. It runs in
 the broker's container, like `cert switch`, and needs the broker running; busd needs no restart.
 
 ### enroll autosign
