@@ -44,7 +44,11 @@ func (sender *fakeSender) RequestChannel(_ context.Context, request channelapi.R
 	if sender.refuse != nil {
 		return channelapi.Reply{}, sender.refuse
 	}
-	return channelapi.Reply{Channel: &channelapi.Channel{Name: request.Channel, Description: request.Description, Members: []string{"lib-x@bob"}}}, nil
+	channel := &channelapi.Channel{Name: request.Channel, Description: request.Description, Members: []string{"lib-x@bob"}}
+	if request.Action == channelapi.RemoveMember {
+		channel.Members = nil // the last member left: busd's answer has no members
+	}
+	return channelapi.Reply{Channel: channel}, nil
 }
 
 func (sender *fakeSender) Invite(ctx context.Context, channelName, agentID string) (channelapi.Reply, string, error) {

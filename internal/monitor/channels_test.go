@@ -35,6 +35,9 @@ func TestTheBusOwnerChangesChannelsThroughTheAPI(t *testing.T) {
 			t.Errorf("%s: status %d, body %s", action, status, reply)
 		}
 	}
+	if _, reply := post("remove_member", `{"channel":"ops","agent":"lib-x@bob"}`); !strings.Contains(reply, `"members":[]`) {
+		t.Errorf("a channel without members: %s, want an empty members list", reply)
+	}
 	if !slices.Contains(sender.sent, "channel invite ops lib-x@bob ") || !slices.Contains(sender.sent, "channel update ops  the operations team") {
 		t.Errorf("requests made: %q", sender.sent)
 	}

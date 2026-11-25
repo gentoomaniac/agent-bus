@@ -152,7 +152,8 @@ named in its `--bus-owner` setting; otherwise it allows only what the identity's
 {"channel": "agent-bus", "agent": "lib-x@bob"}
 ```
 
-The answer is the channel as busd describes it after the change. `owner` is absent for a channel
+The answer is the channel as busd describes it after the change, with at most its first 1000
+members (`members` is there, also empty). `owner` is absent for a channel
 of the bus owner. `warning` says when an invited agent could not be told. A refusal of busd (not
 the owner, a limit, a channel that exists) is a `409` `refused` with busd's reason.
 

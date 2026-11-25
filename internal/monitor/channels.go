@@ -24,11 +24,13 @@ type ChannelChange struct {
 	Agent       string `json:"agent,omitempty"`
 }
 
-// ChangedChannel is the channel as busd describes it after the change. Warning says when an
-// invitee was not told of its invitation.
+// ChangedChannel is the channel as busd describes it after the change, with the first page of its
+// members. Members is always there, also when empty, where busd's answer leaves it out. Warning
+// says when an invitee was not told of its invitation.
 type ChangedChannel struct {
 	channelapi.Channel
-	Warning string `json:"warning,omitempty"`
+	Members []string `json:"members"`
+	Warning string   `json:"warning,omitempty"`
 }
 
 // ChangeChannel asks busd for the change, signed as the monitor's agent, which busd takes for the
@@ -60,5 +62,6 @@ func (monitor *Monitor) ChangeChannel(ctx context.Context, action string, change
 	default: // a round is due already
 	}
 	changed.Channel = *reply.Channel
+	changed.Members = append([]string{}, reply.Channel.Members...)
 	return changed, nil
 }
