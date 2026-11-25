@@ -1,7 +1,7 @@
 // Which live messages notify, how the notification reads, and how a burst is coalesced.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Coalescer, describeNotification, notifyReason, parseNotifyMode } from "../notify";
+import { Coalescer, describeNotification, muteLabel, notifyReason, parseNotifyMode } from "../notify";
 import { Message } from "../types";
 
 const SELF = "monitor@bob";
@@ -55,6 +55,11 @@ test("the part after the colon is at most 80 characters", () => {
   const text = describeNotification(message({ text: "x".repeat(200) }), "# ops");
   assert.equal(text, "a@x in # ops: " + "x".repeat(79) + "…");
   assert.equal(describeNotification(message({ text: "y".repeat(80) }), "# ops").length, "a@x in # ops: ".length + 80);
+});
+
+test("the mute button names the channel only for a subscription", () => {
+  assert.equal(muteLabel("subscribed", "# ops"), "Mute # ops");
+  assert.equal(muteLabel("targeted", "# ops"), "Turn off @-notifications");
 });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

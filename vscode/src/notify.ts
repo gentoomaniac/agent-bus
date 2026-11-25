@@ -28,6 +28,12 @@ export function describeNotification(message: Message, channelLabel: string): st
   return `${message.from ?? "unknown"} in ${channelLabel}: ${cut}`;
 }
 
+// The button that silences what just notified: a subscribed channel is muted; for mail that only
+// targets the agent, the thing to turn off is the setting.
+export function muteLabel(reason: "subscribed" | "targeted", channelLabel: string): string {
+  return reason === "subscribed" ? "Mute " + channelLabel : "Turn off @-notifications";
+}
+
 // Lets the first item through at once and holds the ones that follow within the window; they come
 // out together when it ends, which opens the next window.
 export class Coalescer<T> {

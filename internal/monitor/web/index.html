@@ -1967,17 +1967,17 @@ function connectEvents() {
   source.addEventListener("message", async (event) => {
     const message = JSON.parse(event.data);
     if (!state.channels.some((c) => c.id === message.channel)) await refresh();
-    notifyAbout(message);
     const list = state.messages.get(message.channel); // missing until the channel was opened
+    const added = list ? insertMessage(list, message) : true;
+    if (added) notifyAbout(message); // a duplicate event must not notify twice
     const own = message.from === state.status.agent;
     if (message.channel === state.selected) {
-      if (!list || !insertMessage(list, message)) return;
+      if (!list || !added) return;
       // Not looked at: the line shows where reading stopped, and the channel stays unread.
       if (looking() || own) markRead(message.channel, message.sequence);
       else noteUnseen(message.channel);
       renderMessages(false);
     } else {
-      if (list) insertMessage(list, message);
       if (own) {
         // Sequences count the whole stream: the channel was read if it was read up to its last
         // sequence, or the periodic refresh has already counted this very message as its last (then

@@ -212,8 +212,9 @@ With no agent on the monitor, only subscriptions notify. Nothing notifies for a 
 is visible and active in a focused window.
 
 - **Open** opens the channel's panel and scrolls to the message, like a search result.
-- **Mute** unsubscribes a subscribed channel. For a message that only notified because it was
-  addressed to you, it offers to turn those notifications off (`subscribedOnly`).
+- **Mute <channel>** unsubscribes a subscribed channel. For a message that only notified because
+  it was addressed to you, the button reads "Turn off @-notifications" and offers to set the
+  setting to `subscribedOnly`.
 - **Bursts:** at most one notification every 5 seconds. What arrives in between comes as one
   "N new messages" notification, which opens the first of them.
 - **Setting** `agentMessenger.notifications`: `targetedAndSubscribed` (default), `subscribedOnly`
