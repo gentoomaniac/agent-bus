@@ -257,7 +257,7 @@ paths:
   /api/v1/prefs:
     get:
       operationId: getPrefs
-      summary: The shared preferences (read markers, favourites, folded sections).
+      summary: The shared preferences (read markers, favourites, subscriptions, folded sections).
       responses:
         "200":
           description: The whole prefs object.
@@ -290,6 +290,26 @@ paths:
     put:
       operationId: putFavourites
       summary: Replace the favourite channel IDs.
+      description: Needs the same origin rules as `send`. At most 200 names.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Names" }
+      responses:
+        "200":
+          description: The new prefs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Prefs" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+  /api/v1/prefs/subscribed:
+    put:
+      operationId: putSubscribed
+      summary: Replace the channel IDs whose messages notify the owner.
       description: Needs the same origin rules as `send`. At most 200 names.
       requestBody:
         required: true
@@ -392,10 +412,14 @@ components:
       items: { type: string, minLength: 1, maxLength: 200 }
     Prefs:
       type: object
-      required: [read, favourites, collapsed]
+      required: [read, favourites, subscribed, collapsed]
       properties:
         read: { $ref: "#/components/schemas/ReadMarkers" }
         favourites:
+          type: array
+          maxItems: 200
+          items: { type: string, description: A channel ID. }
+        subscribed:
           type: array
           maxItems: 200
           items: { type: string, description: A channel ID. }

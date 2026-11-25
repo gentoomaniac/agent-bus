@@ -94,7 +94,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | `POST /api/v1/send`                                    | `{"id": "<message id>"}`                                     |
 | `GET /api/v1/prefs`                                    | the shared preferences, [below](#shared-preferences)         |
 | `POST /api/v1/prefs/read`                              | merges read markers; answers the merged `read` map           |
-| `PUT /api/v1/prefs/favourites`, `PUT /api/v1/prefs/collapsed` | replace the array; answer the new prefs              |
+| `PUT /api/v1/prefs/favourites`, `PUT /api/v1/prefs/subscribed`, `PUT /api/v1/prefs/collapsed` | replace the array; answer the new prefs |
 | `GET /api/v1/events`                                   | server-sent events, below                                    |
 
 Channel IDs are `general`, `group:<name>` and `dm:<agent>:<agent>` (the two agents sorted). To page
@@ -173,24 +173,25 @@ units. Everything is untrusted text: highlight it with text nodes, never as HTML
 
 ## Shared preferences
 
-The monitor keeps the owner's read markers, favourites and folded sidebar sections for every
+The monitor keeps the owner's read markers, favourites, notification subscriptions and folded sidebar sections for every
 client (there is one password, so one user). They are stored in `prefs.json` next to the password
 hash and answered by `GET /api/v1/prefs`:
 
 ```json
-{"read": {"general": 12, "group:ops": 40}, "favourites": ["group:ops"], "collapsed": ["agents"]}
+{"read": {"general": 12, "group:ops": 40}, "favourites": ["group:ops"], "subscribed": ["group:ops"], "collapsed": ["agents"]}
 ```
 
 - `read` maps a channel ID to the last stream sequence the owner has read.
-- `favourites` lists channel IDs. `collapsed` lists the folded sections: `favourites`, `channels`,
+- `favourites` lists channel IDs. `subscribed` lists the channel IDs whose messages notify the
+  owner (besides messages addressed to them). `collapsed` lists the folded sections: `favourites`, `channels`,
   `dms`, `agents`.
 - `POST /api/v1/prefs/read` takes `{"<channel>": <sequence>, ...}` and raises each marker to the
   given sequence; a lower value never moves a marker back. It answers the merged `read` map.
-- `PUT /api/v1/prefs/favourites` and `PUT /api/v1/prefs/collapsed` take a JSON array, replace the
+- `PUT /api/v1/prefs/favourites`, `PUT /api/v1/prefs/subscribed` and `PUT /api/v1/prefs/collapsed` take a JSON array, replace the
   stored one and answer the new prefs.
 
 Like `send`, these want `Content-Type: application/json` and the same origin rules. Names are
-strings of 1 to 200 bytes; there are at most 2000 read markers, 200 favourites and 20 sections;
+strings of 1 to 200 bytes; there are at most 2000 read markers, 200 favourites, 200 subscriptions and 20 sections;
 sequences are non-negative integers; a body is at most 256 KiB. A wrong `Content-Type` gets a
 `415` `unsupported_media_type`; anything else invalid (including `null`) is a `400` `bad_request`. Every change is sent to the open event streams as a `prefs` event.
 
@@ -211,7 +212,7 @@ data: {"agent":"lib-x@alice","state":"working","since":"2026-11-24T12:00:00Z","a
 
 id: prefs@1795521600000000000
 event: prefs
-data: {"read":{"general":12},"favourites":[],"collapsed":["agents"]}
+data: {"read":{"general":12},"favourites":[],"subscribed":[],"collapsed":["agents"]}
 ```
 
 - `message`: one new message, in the shape of `messages`.

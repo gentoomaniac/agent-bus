@@ -32,7 +32,7 @@ func failTest(t *testing.T) func(error) { return func(err error) { t.Error(err) 
 func TestPrefsStartEmpty(t *testing.T) {
 	_, _, send := prefsServer(t, t.TempDir(), failTest(t))
 	_, body := send("GET", "/api/v1/prefs", "")
-	if strings.TrimSpace(body) != `{"read":{},"favourites":[],"collapsed":[]}` {
+	if strings.TrimSpace(body) != `{"read":{},"favourites":[],"subscribed":[],"collapsed":[]}` {
 		t.Errorf("empty prefs = %s", body)
 	}
 }
@@ -59,6 +59,16 @@ func TestFavouritesAndCollapsedAreReplaced(t *testing.T) {
 	}
 }
 
+func TestSubscribedIsReplaced(t *testing.T) {
+	monitor, _, send := prefsServer(t, t.TempDir(), failTest(t))
+	send("PUT", "/api/v1/prefs/subscribed", `["general","group:a"]`)
+	send("PUT", "/api/v1/prefs/subscribed", `["dm:x"]`)
+	prefs := monitor.Prefs()
+	if len(prefs.Subscribed) != 1 || prefs.Subscribed[0] != "dm:x" || len(prefs.Favourites) != 0 {
+		t.Errorf("prefs = %+v", prefs)
+	}
+}
+
 func TestPrefsAreValidated(t *testing.T) {
 	_, headers, send := prefsServer(t, t.TempDir(), failTest(t))
 	tooMany := `["` + strings.Repeat(`x","`, maxPrefFavourites) + `x"]`
@@ -75,6 +85,9 @@ func TestPrefsAreValidated(t *testing.T) {
 		"number in list":      {"PUT", "collapsed", `[1]`},
 		"empty name":          {"PUT", "collapsed", `[""]`},
 		"too many favourites": {"PUT", "favourites", tooMany},
+		"null subscribed":     {"PUT", "subscribed", `null`},
+		"empty subscribed":    {"PUT", "subscribed", `[""]`},
+		"too many subscribed": {"PUT", "subscribed", `["` + strings.Repeat(`x","`, maxPrefSubscribed) + `x"]`},
 		"too many sections":   {"PUT", "collapsed", `["` + strings.Repeat(`x","`, maxPrefSections) + `x"]`},
 		"oversized body":      {"PUT", "favourites", `["` + strings.Repeat("x", maxPrefsBytes) + `"]`},
 	} {
@@ -111,11 +124,12 @@ func TestPrefsSurviveARestart(t *testing.T) {
 	_, _, send := prefsServer(t, dir, failTest(t))
 	send("POST", "/api/v1/prefs/read", `{"general":9}`)
 	send("PUT", "/api/v1/prefs/favourites", `["general"]`)
+	send("PUT", "/api/v1/prefs/subscribed", `["group:a"]`)
 	send("PUT", "/api/v1/prefs/collapsed", `["agents"]`)
 
 	again, _, _ := prefsServer(t, dir, failTest(t))
 	prefs := again.Prefs()
-	if prefs.Read["general"] != 9 || len(prefs.Favourites) != 1 || len(prefs.Collapsed) != 1 {
+	if prefs.Read["general"] != 9 || len(prefs.Favourites) != 1 || len(prefs.Subscribed) != 1 || len(prefs.Collapsed) != 1 {
 		t.Errorf("after a restart: %+v", prefs)
 	}
 	info, err := os.Stat(filepath.Join(dir, "prefs.json"))
@@ -146,7 +160,7 @@ func TestACorruptPrefsFileIsReportedAndStartsEmpty(t *testing.T) {
 func TestPrefsNeedTheLoginAndTheOrigin(t *testing.T) {
 	server, _ := serveWithPassword(t, Access{})
 	for _, endpoint := range []struct{ method, path string }{
-		{"GET", "/api/v1/prefs"}, {"POST", "/api/v1/prefs/read"}, {"PUT", "/api/v1/prefs/favourites"}, {"PUT", "/api/v1/prefs/collapsed"},
+		{"GET", "/api/v1/prefs"}, {"POST", "/api/v1/prefs/read"}, {"PUT", "/api/v1/prefs/favourites"}, {"PUT", "/api/v1/prefs/subscribed"}, {"PUT", "/api/v1/prefs/collapsed"},
 	} {
 		_, body := call(t, server, endpoint.method, endpoint.path, `{}`, map[string]string{"Content-Type": "application/json"})
 		if errorCode(body) != "unauthenticated" {
@@ -199,7 +213,7 @@ func TestEventStreamDeliversPrefs(t *testing.T) {
 	}()
 	select {
 	case prefs := <-found:
-		if prefs.Read["general"] != 3 || prefs.Favourites == nil {
+		if prefs.Read["general"] != 3 || prefs.Favourites == nil || prefs.Subscribed == nil {
 			t.Errorf("event = %+v", prefs)
 		}
 	case <-time.After(5 * time.Second):

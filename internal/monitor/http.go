@@ -82,6 +82,7 @@ func (monitor *Monitor) handler(access Access, now func() time.Time) (http.Handl
 	mux.HandleFunc("GET /api/v1/prefs", read(monitor.servePrefs))
 	mux.HandleFunc("POST /api/v1/prefs/read", change(monitor.servePrefsRead))
 	mux.HandleFunc("PUT /api/v1/prefs/favourites", change(monitor.servePrefsFavourites))
+	mux.HandleFunc("PUT /api/v1/prefs/subscribed", change(monitor.servePrefsSubscribed))
 	mux.HandleFunc("PUT /api/v1/prefs/collapsed", change(monitor.servePrefsCollapsed))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")

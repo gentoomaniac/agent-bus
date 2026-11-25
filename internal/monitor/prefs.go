@@ -18,6 +18,7 @@ const (
 	maxPrefsBytes     = 256 << 10
 	maxPrefChannels   = 2000 // read markers
 	maxPrefFavourites = 200
+	maxPrefSubscribed = 200
 	maxPrefSections   = 20
 	maxPrefNameLength = 200
 )
@@ -27,11 +28,12 @@ const (
 type Prefs struct {
 	Read       map[string]uint64 `json:"read"`       // channel ID -> last read stream sequence
 	Favourites []string          `json:"favourites"` // channel IDs
+	Subscribed []string          `json:"subscribed"` // channel IDs whose messages notify
 	Collapsed  []string          `json:"collapsed"`  // folded sidebar sections: favourites, channels, dms, agents
 }
 
 func (p Prefs) clone() Prefs {
-	return Prefs{Read: maps.Clone(p.Read), Favourites: slices.Clone(p.Favourites), Collapsed: slices.Clone(p.Collapsed)}
+	return Prefs{Read: maps.Clone(p.Read), Favourites: slices.Clone(p.Favourites), Subscribed: slices.Clone(p.Subscribed), Collapsed: slices.Clone(p.Collapsed)}
 }
 
 var errPrefsSave = errors.New("saving the prefs")
@@ -49,7 +51,7 @@ type prefsStore struct {
 // loadPrefs reads the file. A missing file means empty prefs; a corrupt one is reported and the
 // monitor starts empty (the next change replaces it).
 func loadPrefs(path string, report func(error)) *prefsStore {
-	store := &prefsStore{path: path, report: report, prefs: Prefs{Read: map[string]uint64{}, Favourites: []string{}, Collapsed: []string{}}}
+	store := &prefsStore{path: path, report: report, prefs: Prefs{Read: map[string]uint64{}, Favourites: []string{}, Subscribed: []string{}, Collapsed: []string{}}}
 	if path == "" {
 		return store
 	}
@@ -65,6 +67,9 @@ func loadPrefs(path string, report func(error)) *prefsStore {
 			}
 			if loaded.Favourites != nil {
 				store.prefs.Favourites = loaded.Favourites
+			}
+			if loaded.Subscribed != nil {
+				store.prefs.Subscribed = loaded.Subscribed
 			}
 			if loaded.Collapsed != nil {
 				store.prefs.Collapsed = loaded.Collapsed
@@ -133,6 +138,11 @@ func (store *prefsStore) setFavourites(channels []string) error {
 	return err
 }
 
+func (store *prefsStore) setSubscribed(channels []string) error {
+	_, err := store.change(func(prefs *Prefs) error { prefs.Subscribed = channels; return nil })
+	return err
+}
+
 func (store *prefsStore) setCollapsed(sections []string) error {
 	_, err := store.change(func(prefs *Prefs) error { prefs.Collapsed = sections; return nil })
 	return err
@@ -192,6 +202,10 @@ func (monitor *Monitor) servePrefsRead(w http.ResponseWriter, r *http.Request) {
 
 func (monitor *Monitor) servePrefsFavourites(w http.ResponseWriter, r *http.Request) {
 	monitor.servePrefsList(w, r, maxPrefFavourites, monitor.prefs.setFavourites)
+}
+
+func (monitor *Monitor) servePrefsSubscribed(w http.ResponseWriter, r *http.Request) {
+	monitor.servePrefsList(w, r, maxPrefSubscribed, monitor.prefs.setSubscribed)
 }
 
 func (monitor *Monitor) servePrefsCollapsed(w http.ResponseWriter, r *http.Request) {
