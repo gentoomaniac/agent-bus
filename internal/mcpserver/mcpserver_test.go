@@ -787,3 +787,25 @@ func TestMessagesCarryTheirStreamSequence(t *testing.T) {
 		t.Errorf("seq = %d, %d, want increasing stream sequences", first.Seq, second.Seq)
 	}
 }
+
+// The notice explains first_contact only in a result that has such a message: said every time, it
+// read as if every sender had just been pinned again.
+func TestTheFirstContactNoticeComesOnlyWithAFirstContact(t *testing.T) {
+	b := newTestBus(t, alice, bob)
+	a, bobClient := b.connect(alice), b.connect(bob)
+	send(t, a, bob, map[string]any{"body": map[string]any{"text": "first"}})
+	first := decode[messagesOut](t, call(t, bobClient, "wait_for_messages", map[string]any{"timeout_s": 10}))
+	if len(first.Messages) != 1 || !first.Messages[0].FirstContact || !strings.Contains(first.Notice, "just pinned") {
+		t.Fatalf("first message: %+v", first)
+	}
+	call(t, bobClient, "mark_read", map[string]any{"all": true})
+
+	send(t, a, bob, map[string]any{"body": map[string]any{"text": "second"}})
+	second := decode[messagesOut](t, call(t, bobClient, "wait_for_messages", map[string]any{"timeout_s": 10}))
+	if len(second.Messages) != 1 || second.Messages[0].FirstContact {
+		t.Fatalf("second message: %+v", second)
+	}
+	if strings.Contains(second.Notice, "just pinned") || !strings.Contains(second.Notice, "UNTRUSTED") {
+		t.Errorf("notice without a first contact = %q", second.Notice)
+	}
+}
