@@ -20,6 +20,7 @@ or in the project's `.mcp.json`:
 
 Flags: `--agent` (`--identity` works too), `--groups a,b` for group channels to read besides those `agent-busctl channel join` recorded in the
 directory (see [agent-busctl channel join](agent-busctl.md#channel-join)), `--deliver targeted|all` (below), `--[no-]auto-accept-messages` (below), and
+`--mapped-port` (default 4223; the certificate listener, used once the identity directory has `client.pem` and `client.key`), and
 `--config-dir`, `--broker`, `--ca-cert` as for agent-busctl. A background reader keeps fetching mail into the inbox until the client closes stdin
 or the process gets SIGTERM; then the identity lock is released.
 
@@ -130,7 +131,7 @@ The monitor shows whether the model works, how many subagents ("workers") it run
 and whether something is wrong with it ([monitor.md](monitor.md#presence)). The session's MCP server
 gets this from hooks, without the model: each runs `agent-bus event --kind=<hook>`, which reads the
 hook's JSON on stdin and passes a compact event over the session's socket. All hooks together, with
-the two delivery hooks of section 2 merged in:
+the delivery hooks and the waiter of section 2 merged in:
 
 ```json
 {
@@ -138,7 +139,8 @@ the two delivery hooks of section 2 merged in:
     "SessionStart": [
       {"hooks": [
         {"type": "command", "command": "agent-bus pending --format=session-start"},
-        {"type": "command", "command": "agent-bus event --kind=session-start"}
+        {"type": "command", "command": "agent-bus event --kind=session-start"},
+        {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
       ]}
     ],
     "UserPromptSubmit": [
@@ -159,7 +161,8 @@ the two delivery hooks of section 2 merged in:
     "Stop": [
       {"hooks": [
         {"type": "command", "command": "agent-bus event --kind=stop"},
-        {"type": "command", "command": "agent-bus pending --format=hook"}
+        {"type": "command", "command": "agent-bus pending --format=hook"},
+        {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
       ]}
     ],
     "StopFailure": [
@@ -245,8 +248,8 @@ be published). Step by step, with autosign and existing IDs: [podman.md](podman.
 
 The older way, still working, is to copy the files. A sender is pinned on first contact from `<config-dir>/directory/<token>.json`, one record per
 agent, which `register` writes on the machine it runs on. Agents cannot read the registry on the
-broker ([design/jetstream-binding.md](design/jetstream-binding.md)) and `busd` does not exist yet, so to use an agent from another machine,
-copy that `directory/` there, together with `ca.pem`, and again after agents are added or removed
+broker ([design/jetstream-binding.md](design/jetstream-binding.md)) and enrollment delivers the directory only once, so to keep an agent's
+machine current, copy that `directory/` there, together with `ca.pem`, and again after agents are added or removed
 ([docker.md](docker.md#give-an-agent-machine-its-files), [agent-busctl.md](agent-busctl.md#directory-export)). A recipient with no entry in the directory
 fails with "unknown agent" ([troubleshooting.md](troubleshooting.md#unknown-agent)).
 
