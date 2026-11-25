@@ -63,35 +63,61 @@ scripts) keeps its own mounts, so skip this.
 
 ## 1. The bus machine
 
-Pick your runtime. Run these once in the shell you use, from the checkout; `agent-busctl` is the
-alias of [agent-busctl.md](agent-busctl.md#running-it):
+Pick your runtime and set it up once in the shell you use. `agent-busctl` is the alias of
+[agent-busctl.md](agent-busctl.md#running-it).
+
+**Docker.** Load your settings file. It carries the compose command, the profiles, the proxy overlay,
+`BUS_AGENT` and a pinned image ([docker.md](docker.md#quick-start)):
 
 ```sh
 export AGENT_BUS_HOME=~/agent-bus
-compose="docker compose -f $PWD/deploy/docker-compose.yaml"          # Docker
-alias agent-busctl="$compose exec agent-bus agent-busctl"            # Docker
-export IMG=ghcr.io/gentoomaniac/agent-messenger:latest              # Podman: the image to run
-alias agent-busctl='podman exec agent-bus agent-busctl'              # Podman, instead of the line above
+. $AGENT_BUS_HOME/compose.env
 ```
 
-The Podman scripts read `IMG` from the environment first and from `$AGENT_BUS_HOME/env` second, so
-an old `IMG=` line in `env` does not matter while the variable is exported.
+**Docker without a `compose.env`** (an install from the 0.1.0 compose file, or one started by hand):
+write one first, so that this and every later upgrade loads it. Add the exports your setup used:
+`BUS_AGENT` if the monitor sends as an identity, and, with a proxy, the overlay lines of
+[docker.md](docker.md#publish-the-monitor-through-a-tls-proxy).
+
+```sh
+export AGENT_BUS_HOME=~/agent-bus
+cat > $AGENT_BUS_HOME/compose.env <<EOF
+export AGENT_BUS_HOME=$AGENT_BUS_HOME
+export COMPOSE_PROFILES=monitor
+compose="docker compose -f $PWD/deploy/docker-compose.yaml"
+alias agent-busctl="\$compose exec agent-bus agent-busctl"
+EOF
+. $AGENT_BUS_HOME/compose.env
+```
+
+**Podman.** Export the image to run and set the alias of [podman.md](podman.md#4-create-the-streams).
+The scripts read `IMG` from the environment first and from `$AGENT_BUS_HOME/env` second, so an old
+`IMG=` line in `env` does not matter while the variable is exported:
+
+```sh
+export AGENT_BUS_HOME=~/agent-bus
+export IMG=ghcr.io/gentoomaniac/agent-messenger:latest
+alias agent-busctl='podman exec agent-bus agent-busctl'
+```
 
 | Step | Docker | Podman |
 |---|---|---|
-| 1. New image, restart | `$compose pull`, then `$compose up -d agent-bus` | `podman pull $IMG`, set `BUS_MAX_AGE` and `BUS_MAX_BYTES` in `$AGENT_BUS_HOME/env` if you want other limits than the defaults ([podman.md](podman.md#the-start-scripts)), then `$AGENT_BUS_HOME/start.sh`, which runs step 2's `init` |
-| 2. Retention and grants | `agent-busctl --direct init` | `podman exec agent-bus agent-busctl --direct init` |
-| 3. The monitor | `$compose --profile monitor up -d` | `$AGENT_BUS_HOME/monitor.sh` |
+| 1. New image, restart | `$compose pull`, then `$compose up -d agent-bus` | `podman pull $IMG`; set `BUS_MAX_AGE` and `BUS_MAX_BYTES` in `$AGENT_BUS_HOME/env` if you want other limits than the defaults ([podman.md](podman.md#the-start-scripts)); then `$AGENT_BUS_HOME/start.sh`, which runs step 2 with those limits |
+| 2. Retention and grants | `agent-busctl --direct init`, with your `--max-age` and `--max-bytes` | done by `start.sh`. Do not run `init` again by hand: it does not see `env` and applies the defaults |
+| 3. The monitor | `$compose up -d` | `$AGENT_BUS_HOME/monitor.sh` |
 
-To pin the version, export `AGENT_BUS_IMAGE=ghcr.io/gentoomaniac/agent-messenger:0.2.0` (Docker)
-or `IMG=ghcr.io/gentoomaniac/agent-messenger:0.2.0` (Podman scripts) before the commands.
+This guide moves a 0.1 bus to 0.2 with the current image. To stop at 0.2 for now, pin it: add
+`export AGENT_BUS_IMAGE=ghcr.io/gentoomaniac/agent-messenger:0.2.0` to `compose.env` (Docker) or set
+`IMG=ghcr.io/gentoomaniac/agent-messenger:0.2.0` in `env` (Podman). The next step after this one is
+[0.2 to 0.3](upgrade-0.3.md).
 
 ### Step 2 in detail
 
 **This deletes messages.** `init` applies the retention limits at once: messages older than 90 days,
 or beyond the newest 1 GiB, are gone when it returns, and no image downgrade brings them back.
 Do this only with the backup of step 0, and add your `--max-age`/`--max-bytes` if you use other
-limits:
+limits. On Podman `start.sh` has run it already with the limits of `env`: skip the command and
+compare its log with the output below.
 
 ```sh
 agent-busctl --direct init
