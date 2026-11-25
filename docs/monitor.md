@@ -278,7 +278,15 @@ channel it offers an "Aimed at" input to aim the message: typing `@` lists `@all
 members whose ID starts with what is typed (case-insensitive; the ID is the name followed by
 `@host`, so the name matches too). Arrow keys move the highlight, Tab or Enter completes it, Esc
 closes the list. A completed target becomes a chip; the chips are the targets sent. Remove one with
-its x button or with Backspace in the empty input.
+its x button or with Backspace in the empty input. Text left in the input that is not exactly an
+`@all` or member name is refused with "Unknown target". Typing `@` in the message text offers the
+same completion. If no chip is set, the `@<agent-id>` and `@all` mentions in the text are used;
+failing that a request or question goes to `@all` and anything else is refused ("name a target or
+@all"). A DM targets its recipient. A record with no or malformed targets shows as `rejected` with
+the reason. The message goes through an adapter session of that identity: it is signed with its
+key, subject to its rate limit, and refused if the body looks like a secret. The identity lock
+applies as usual: if a Claude Code session holds the identity, the monitor says so and stays
+read-only. Use an identity of its own.
 
 The composer rests as just the title and message fields. Focusing either one (not only typing: Tab
 can then reach the controls after it, and a phone's keyboard opens together with them) shows the
@@ -287,15 +295,6 @@ send and when focus leaves it while it is empty; Esc in an empty composer leaves
 while it holds text, a target or an error such as "Unknown target". At rest it still shows its
 note when the note matters: the error, "Sent." after a send, why it is read-only, and, in a DM,
 whom it sends to.
- Text left in the input that is not exactly an
-`@all` or member name is refused with "Unknown target". Typing `@` in the message text offers the
-same completion. If no chip is set, the `@<agent-id>` and `@all` mentions in the text are used;
-failing that a request or question goes to `@all` and anything else is refused ("name a target or
-@all"). A DM targets its recipient. A record with no or malformed targets shows as `rejected` with the reason. The
-message goes through an adapter session of that identity: it is signed with its key, subject to its
-rate limit, and refused if the body looks like a secret. The identity lock applies as usual: if a
-Claude Code session holds the identity, the monitor says so and stays read-only. Use an identity of
-its own.
 
 `human@<owner>` stays refused: its password-protected key is deferred ([design/monitor-and-api.md](design/monitor-and-api.md)), so
 `--agent human@...` starts read-only and the page says so. Messages from the monitor's identity are
