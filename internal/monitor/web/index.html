@@ -342,6 +342,15 @@
       </div>
     </fieldset>
     <fieldset>
+      <legend>Notifications</legend>
+      <div class="choices">
+        <label><input type="checkbox" data-setting="notifications">Notify about new messages</label>
+        <label>Notify for <select data-setting="notifyScope"><option value="targetedAndSubscribed">messages to me or @all, and subscribed channels</option><option value="subscribedOnly">subscribed channels only</option></select></label>
+        <div><button type="button" id="enable-notifications"></button></div>
+      </div>
+      <div class="muted">Without desktop notifications the tab title counts the new messages. A channel you are looking at never notifies.</div>
+    </fieldset>
+    <fieldset>
       <legend>Backup</legend>
       <div class="muted">Settings stay in this browser. Copy the text to move them to another one.</div>
       <textarea id="settings-json" aria-label="Settings as JSON" spellcheck="false"></textarea>
@@ -394,6 +403,7 @@ const state = {
   selected: null,                 // channel ID
   messages: new Map(),            // channel ID -> messages ordered by sequence, once loaded
   unread: new Map(),              // channel ID -> count of messages that arrived since the page loaded
+  notified: new Map(),            // channel ID -> notifying messages counted in the tab title, when desktop notifications are not available
   // The next four are the server's shared prefs (/api/v1/prefs).
   read: null,                     // channel ID -> sequence read up to; null on a first visit
   favourites: new Set(),          // channel IDs shown under Favourites
@@ -545,12 +555,14 @@ const RULES = {
   badge: isFlag, sequence: isFlag, grouping: isFlag, avatars: isFlag,
   fontSize: isChoice("small", "medium", "large"),
   names: isChoice("truncate", "wrap"),
+  notifications: isFlag, notifyScope: isChoice("targetedAndSubscribed", "subscribedOnly"),
 };
 const { label: _label, ...AUBERGINE } = THEMES.aubergine;
 const DEFAULTS = {
   theme: "system", custom: AUBERGINE, density: "comfortable",
   timestamps: true, timeFormat: "absolute", badge: true, sequence: true, grouping: false, avatars: false,
   fontSize: "medium", names: "truncate",
+  notifications: true, notifyScope: "targetedAndSubscribed",
 };
 
 // Keeps the known keys with valid values; the others are listed as ignored.
@@ -710,6 +722,7 @@ function changeSettings(change) {
   saveSetting(SETTINGS_KEY, settings);
   applySettings();
   syncSettingsPanel();
+  if (!settings.notifications) clearNotified();
   refreshTimes();
   if (state.selected) renderMessages(false);
 }
@@ -726,6 +739,7 @@ function syncSettingsPanel() {
     else if (control.type === "radio") control.checked = control.value === value;
     else control.value = value;
   }
+  syncNotificationButton();
   const colors = themeColors();
   for (const [key] of COLOR_FIELDS) $("custom-" + key).value = colors[key];
   $("custom-base").value = colors.base;
@@ -896,6 +910,7 @@ function noteUnseen(channelId) {
 }
 
 function markRead(channelId, sequence) {
+  if (state.notified.delete(channelId)) renderTitle();
   const list = state.messages.get(channelId) || [];
   const last = sequence ?? (list.length ? list[list.length - 1].sequence : 0);
   if (!state.read || last <= readSequence(channelId)) return; // nothing is kept before the first visit is set up
@@ -1816,6 +1831,108 @@ function showLive() {
   $("live").className = state.feedOpen && busUp ? "on" : "";
 }
 
+// ---- notifications ----
+
+const NOTIFY_WINDOW_MS = 5000;
+const NOTIFY_SUMMARY_LENGTH = 80;
+const PAGE_TITLE = document.title;
+
+// Why a live message notifies, if it does. A subscription wins over being addressed. Without an
+// agent only subscriptions count, and the own messages never do.
+function notifyReason(message, self, subscribed, scope) {
+  if (self && message.from === self) return null;
+  if (subscribed.has(message.channel)) return "subscribed";
+  if (scope === "subscribedOnly" || !self) return null;
+  const directToSelf = message.channel.startsWith("dm:") && message.to === self;
+  return directToSelf || (message.targets || []).some((target) => target === "@all" || target === self) ? "targeted" : null;
+}
+
+// The title, else the first line of the text, cut to 80 characters.
+function notifySummary(message) {
+  const firstLine = (message.text || "").split("\n").find((line) => line.trim() !== "") || "";
+  const summary = Array.from(((message.title || "").trim() || firstLine).trim());
+  return summary.length > NOTIFY_SUMMARY_LENGTH ? summary.slice(0, NOTIFY_SUMMARY_LENGTH - 1).join("") + "\u2026" : summary.join("");
+}
+
+// Lets the first item through at once and holds the ones that follow within the window; they come
+// out together when it ends, which opens the next window.
+function createCoalescer(emit, windowMs = NOTIFY_WINDOW_MS) {
+  let held = [];
+  let timer = null;
+  const openWindow = () => {
+    timer = setTimeout(() => {
+      timer = null;
+      const items = held;
+      held = [];
+      if (items.length) { emit(items); openWindow(); }
+    }, windowMs);
+  };
+  return { offer(item) {
+    if (timer !== null) { held.push(item); return; }
+    emit([item]);
+    openWindow();
+  } };
+}
+
+const desktopNotifications = () => typeof Notification !== "undefined" && Notification.permission === "granted";
+
+function renderTitle() {
+  const count = [...state.notified.values()].reduce((sum, n) => sum + n, 0);
+  document.title = count ? `(${count}) ${PAGE_TITLE}` : PAGE_TITLE;
+}
+
+function clearNotified() {
+  state.notified.clear();
+  renderTitle();
+}
+
+function syncNotificationButton() {
+  const button = $("enable-notifications");
+  const permission = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
+  button.textContent = { default: "Desktop notifications: Enable", granted: "Desktop notifications: enabled", denied: "Desktop notifications: blocked in the browser", unsupported: "Desktop notifications: not supported" }[permission];
+  button.disabled = permission !== "default";
+}
+
+// Asked only here, on a click: a page that asks on its own is blocked by the browsers.
+$("enable-notifications").addEventListener("click", async () => {
+  try { await Notification.requestPermission(); } catch (error) { /* the state below says what happened */ }
+  syncNotificationButton();
+});
+
+function showDesktopNotification(batch) {
+  const [first] = batch;
+  const channel = channelById(first.channel);
+  const where = channel ? describeChannel(channel) : first.channel;
+  const sender = first.from || "unknown";
+  const one = batch.length === 1;
+  try {
+    const notification = new Notification(one ? `${sender} in ${where}` : `${batch.length} new messages`, { body: one ? notifySummary(first) : `The first: ${sender} in ${where}` });
+    notification.onclick = () => {
+      window.focus();
+      notification.close();
+      openHit(first);
+    };
+  } catch (error) {
+    for (const message of batch) countNotified(message.channel); // a browser that only notifies through a service worker
+  }
+}
+
+function countNotified(channelId) {
+  state.notified.set(channelId, (state.notified.get(channelId) || 0) + 1);
+  renderTitle();
+}
+
+const notifications = createCoalescer(showDesktopNotification);
+
+// Called for every live message. The history loaded on connect never comes here.
+function notifyAbout(message) {
+  if (!settings.notifications) return;
+  if (!notifyReason(message, state.status.agent || "", state.subscribed, settings.notifyScope)) return;
+  if (message.channel === state.selected && looking()) return;
+  if (desktopNotifications()) notifications.offer(message);
+  else countNotified(message.channel);
+}
+
 function connectEvents() {
   const source = state.source = new EventSource("/api/v1/events");
   source.onopen = async () => {
@@ -1850,6 +1967,7 @@ function connectEvents() {
   source.addEventListener("message", async (event) => {
     const message = JSON.parse(event.data);
     if (!state.channels.some((c) => c.id === message.channel)) await refresh();
+    notifyAbout(message);
     const list = state.messages.get(message.channel); // missing until the channel was opened
     const own = message.from === state.status.agent;
     if (message.channel === state.selected) {

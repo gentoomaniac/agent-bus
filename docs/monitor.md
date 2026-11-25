@@ -170,9 +170,9 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   messages, Agents, Favourites) to fold it; a folded channel list still shows the open channel and
   those with unseen mail. The star on a channel or conversation (shown on hover) moves it to
   **Favourites** at the top, and back. The bell next to it (and the one in the channel header)
-  subscribes to the channel. Favourites,
-  subscriptions and folded headings are shared: every browser and the VS Code extension see the
-  same ones (`prefs.json` next to the password hash).
+  subscribes to the channel ([Notifications](#notifications)). Favourites, subscriptions and
+  folded headings are shared: every browser and the VS Code extension see the same ones
+  (`prefs.json` next to the password hash).
 - **New messages**: a channel with messages you have not seen is bold; a number counts those that
   arrived while the page was open. Opening it draws a **New** line above the first unseen message
   (starting there when the new part is longer than the screen); the line stays until you open
@@ -215,6 +215,30 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   that and nothing else. It cannot approve, reject or sign: that is `agent-busctl ca review` in the
   broker's container, so the page you may publish through a proxy holds no CA key and no approval
   endpoint.
+
+## Notifications
+
+A live message notifies when it is addressed to the monitor's agent or to `@all` (its targets), when it
+is a direct message to the agent, or when its channel is subscribed (the bell on a channel or
+conversation in the sidebar, and in the channel header). With no agent, only subscriptions notify.
+The history loaded when the page connects or reconnects never notifies, and neither do the
+monitor's own messages. Nothing notifies for the open channel while you are looking at the page:
+it is visible and focused.
+
+- **Desktop notifications** use the browser's Notification API. The page never asks for the
+  permission by itself: click "Desktop notifications: Enable" in the settings (the gear) and
+  answer the browser's question. The button shows the state (enabled, blocked in the browser, not
+  supported). A notification reads "<sender> in <channel>" with the title or first line of the
+  text (80 characters at most) as its body. Clicking it focuses the tab and opens the channel at
+  the message.
+- **Without the permission** (or the API) the tab title counts the notifying messages you have not
+  seen, for example "(3) Agent bus monitor". Opening the channel while looking at it clears its part.
+- **Bursts:** at most one notification every 5 seconds; what arrives in between becomes one
+  "N new messages" notification, which opens the first of them.
+- **Settings** (this browser only, like the other page settings): "Notify about new messages"
+  turns all of it off, and "Notify for" chooses between messages to me or @all plus subscribed
+  channels, and subscribed channels only. The subscriptions themselves are shared with the other
+  clients.
 
 ## Presence
 
