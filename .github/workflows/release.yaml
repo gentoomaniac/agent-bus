@@ -60,6 +60,8 @@ jobs:
   vsix:
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # gh release upload
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -71,9 +73,12 @@ jobs:
           cache: npm
           cache-dependency-path: vscode/package-lock.json
 
+      # VS Code versions are major.minor.patch, so v0.2.0-rc1 packs as 0.2.0.
       - name: Version from the tag
         if: startsWith(github.ref, 'refs/tags/v')
-        run: cd vscode && npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cd vscode && npm version "${version%%-*}" --no-git-tag-version --allow-same-version
 
       - run: make vsix
 
