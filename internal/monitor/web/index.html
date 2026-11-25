@@ -5,22 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agent bus monitor</title>
 <style>
+  /* The light palette is the default; the script sets data-base to "dark" for dark themes and for a dark system. */
   :root {
-    color-scheme: light dark;
+    color-scheme: light;
     --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #667085; --border: #dfe3ea;
     --accent: #3b5bdb; --accent-text: #ffffff; --hover: #eef1f6; --selected: #e3e9fb;
     --ok: #1a7f37; --ok-bg: #dcf5e3; --warn: #8a5a00; --warn-bg: #fff1cc; --bad: #b42318; --bad-bg: #fde4e1;
+    /* The sidebar and the mention color follow the palette until a theme sets them. */
+    --side-bg: var(--panel); --side-text: var(--text); --side-muted: var(--muted); --side-hover: var(--hover);
+    --side-active: var(--selected); --side-active-text: var(--text);
+    --mention: var(--accent); --mention-text: var(--accent-text);
+    --font: 14px; --font-s: 12px; --font-xs: 11px; --font-l: 16px; --line: 1.45;
+    --row-pad: 5px; --message-pad: 8px; --avatar: 36px; --sub-indent: 15px;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #12151c; --panel: #1a1e28; --text: #e6e9f0; --muted: #98a2b3; --border: #2b3140;
-      --accent: #7c93f5; --accent-text: #10131a; --hover: #232938; --selected: #2a3350;
-      --ok: #6fd48a; --ok-bg: #173424; --warn: #f0c565; --warn-bg: #3a2d10; --bad: #ff8f85; --bad-bg: #3d1a17;
-    }
+  :root[data-base=dark] {
+    color-scheme: dark;
+    --bg: #12151c; --panel: #1a1e28; --text: #e6e9f0; --muted: #98a2b3; --border: #2b3140;
+    --accent: #7c93f5; --accent-text: #10131a; --hover: #232938; --selected: #2a3350;
+    --ok: #6fd48a; --ok-bg: #173424; --warn: #f0c565; --warn-bg: #3a2d10; --bad: #ff8f85; --bad-bg: #3d1a17;
   }
+  :root[data-font=small] { --font: 13px; --font-s: 11px; --font-xs: 10px; --font-l: 15px; }
+  :root[data-font=large] { --font: 16px; --font-s: 13.5px; --font-xs: 12.5px; --font-l: 18px; }
+  :root[data-density=compact] { --line: 1.3; --row-pad: 2px; --message-pad: 3px; --avatar: 24px; }
+  :root[data-avatars=on] { --sub-indent: 39px; }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  body { background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif; }
+  body { background: var(--bg); color: var(--text); font: var(--font)/var(--line) system-ui, sans-serif; }
   :root { --sidebar-w: 260px; --members-w: 220px; --handle-w: 6px; }
   #app { display: grid; grid-template-columns: var(--sidebar-w) var(--handle-w) minmax(0, 1fr) var(--handle-w) var(--members-w); height: 100%; }
   aside { min-width: 0; overflow-x: hidden; }
@@ -29,22 +39,26 @@
   .handle:hover::after, .handle:focus-visible::after, .handle.dragging::after { background: var(--accent); }
   .handle.collapsed { cursor: default; pointer-events: none; }
   body.resizing { cursor: col-resize; user-select: none; }
-  .toggle { flex: none; padding: 1px 8px; font-size: 12px; background: var(--bg); color: var(--text); border-color: var(--border); }
+  .toggle { flex: none; padding: 1px 8px; font-size: var(--font-s); background: var(--bg); color: var(--text); border-color: var(--border); }
   .toggle[aria-pressed=false] { color: var(--muted); }
   aside, main { background: var(--panel); min-height: 0; display: flex; flex-direction: column; }
+  #sidebar, #sidebar-handle { background: var(--side-bg); color: var(--side-text); }
+  #sidebar h1 { color: var(--side-text); }
+  #sidebar h2, #sidebar .muted, #sidebar .empty, #sidebar .agent-sub { color: var(--side-muted); }
   #sidebar, #members-panel { overflow-y: auto; }
-  h1, h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 16px 12px 6px; }
-  h1 { margin-top: 12px; color: var(--text); font-size: 14px; text-transform: none; letter-spacing: 0; }
+  h1, h2 { font-size: var(--font-s); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 16px 12px 6px; }
+  h1 { margin-top: 12px; color: var(--text); font-size: var(--font); text-transform: none; letter-spacing: 0; }
   ul { list-style: none; margin: 0; padding: 0; }
-  li.item { padding: 5px 12px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-  li.item:hover { background: var(--hover); }
-  li.item.selected { background: var(--selected); font-weight: 600; }
+  li.item { padding: var(--row-pad) 12px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  li.item:hover { background: var(--side-hover); }
+  li.item.selected { background: var(--side-active); color: var(--side-active-text); font-weight: 600; }
+  #sidebar li.item.selected .muted, #sidebar li.item.selected .agent-sub { color: inherit; opacity: .8; }
   /* Long text is cut with an ellipsis and carries its full text as a tooltip; states never wrap. */
   .cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   li.item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   li.item .unread { flex: none; }
   li.item .label.pair { display: flex; flex-direction: column; }
-  li.member { padding: 4px 12px; cursor: pointer; }
+  li.member { padding: var(--row-pad) 12px; cursor: pointer; }
   li.member:hover { background: var(--hover); }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; flex: none; background: var(--muted); }
   .removed { opacity: .5; }
@@ -58,18 +72,18 @@
   .agent-line { display: flex; align-items: center; min-width: 0; }
   .agent-line .label { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .agent-line .state { flex: none; padding-left: 6px; white-space: nowrap; }
-  .agent-sub { margin-left: 15px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agent-sub { margin-left: var(--sub-indent); font-size: var(--font-s); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #agent-detail { border-top: 1px solid var(--border); padding-bottom: 12px; }
-  #agent-detail .entry { padding: 2px 12px; font-size: 12px; overflow-wrap: anywhere; }
+  #agent-detail .entry { padding: 2px 12px; font-size: var(--font-s); overflow-wrap: anywhere; }
   h2.cut { display: block; }
-  .unread { background: var(--accent); color: var(--accent-text); border-radius: 9px; padding: 0 6px; font-size: 11px; }
+  .unread { background: var(--mention); color: var(--mention-text); border-radius: 9px; padding: 0 6px; font-size: var(--font-xs); }
   .muted { color: var(--muted); }
   .empty { padding: 4px 12px; color: var(--muted); }
   header { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-  header .title { font-weight: 600; font-size: 16px; }
+  header .title { font-weight: 600; font-size: var(--font-l); }
   header .left > div { min-width: 0; }
   header .left .title, header .left .muted { display: inline-block; max-width: 100%; vertical-align: bottom; }
-  #live { font-size: 12px; color: var(--muted); }
+  #live { font-size: var(--font-s); color: var(--muted); }
   #live.on { color: var(--ok); }
   #search-bar { padding: 6px 16px; border-bottom: 1px solid var(--border); display: flex; }
   #search { flex: 1; min-width: 0; }
@@ -82,28 +96,46 @@
   .message.flash { animation: flash 2s ease-out; }
   @keyframes flash { from { background: var(--warn-bg); } to { background: transparent; } }
   #type-filter { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 16px; border-bottom: 1px solid var(--border); }
-  .chip { padding: 0 8px; font-size: 12px; border-radius: 9px; background: var(--bg); color: var(--muted); border-color: var(--border); white-space: nowrap; }
+  .chip { padding: 0 8px; font-size: var(--font-s); border-radius: 9px; background: var(--bg); color: var(--muted); border-color: var(--border); white-space: nowrap; }
   .chip[aria-pressed=true] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   .chip.empty-type { opacity: .55; }
-  #messages { flex: 1; overflow-y: auto; padding: 8px 16px; min-height: 0; }
-  .message { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  #messages { flex: 1; overflow-y: auto; padding: 0 16px; min-height: 0; }
+  .message { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 10px; padding: var(--message-pad) 0; border-top: 1px solid var(--border); }
+  .message:first-child { border-top: 0; }
+  .message.grouped { border-top: 0; padding-top: 0; }
+  :root[data-avatars=on] .message { grid-template-columns: var(--avatar) minmax(0, 1fr); }
+  .message .body { min-width: 0; }
+  /* A grouped message has no header: its time and sequence number show on hover. */
+  .meta.slim { position: absolute; right: 0; top: 0; padding-left: 8px; background: var(--panel); opacity: 0; }
+  .message:hover .meta.slim { opacity: 1; }
+  .message.grouped:hover { background: var(--hover); }
+  .message.grouped:hover .meta.slim { background: var(--hover); }
   .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
   .meta > * { white-space: nowrap; }
   .meta > .cut { max-width: min(30ch, 100%); }
   .from { font-weight: 600; }
   .message .title { font-weight: 600; margin-top: 2px; }
   .message .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
-  .message .reason { color: var(--muted); font-size: 12px; margin-top: 2px; }
-  .pill { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; font-size: 11px; border: 1px solid var(--border); border-radius: 9px; padding: 0 7px; color: var(--muted); }
+  .message .reason { color: var(--muted); font-size: var(--font-s); margin-top: 2px; }
+  .pill { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; font-size: var(--font-xs); border: 1px solid var(--border); border-radius: 9px; padding: 0 7px; color: var(--muted); }
   .pill.target { color: var(--accent); border-color: var(--accent); }
-  .pill.me { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  .pill.me { background: var(--mention); color: var(--mention-text); border-color: var(--mention); font-weight: 600; }
   .pill.all { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); font-weight: 600; }
   .targets-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
-  #targets { flex-wrap: wrap; align-items: center; font-size: 12px; }
+  #targets { flex-wrap: wrap; align-items: center; font-size: var(--font-s); }
   #targets label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; max-width: 30ch; }
   #targets label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #targets input { padding: 0; }
-  .badge { font-size: 11px; border-radius: 9px; padding: 0 7px; font-weight: 600; }
+  .avatar, .avatar-gap { width: var(--avatar); height: var(--avatar); }
+  .avatar { display: inline-grid; place-items: center; flex: none; border-radius: 6px; font-weight: 700; font-size: calc(var(--avatar) * .4); line-height: 1; user-select: none; }
+  .avatar.small { width: 18px; height: 18px; margin-right: 6px; border-radius: 4px; font-size: 9px; }
+  :root[data-avatars=off] .avatar, :root[data-avatars=off] .avatar-gap { display: none; }
+  :root[data-timestamps=off] .time, :root[data-badge=off] .badge, :root[data-sequence=off] .seq { display: none; }
+  /* Long names wrap instead of ending in an ellipsis; the tooltips stay. */
+  :root[data-names=wrap] :is(.cut, .label, .agent-sub, .pill, #targets label span) { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+  :root[data-names=wrap] .meta > * { white-space: normal; }
+  :root[data-names=wrap] .pill { display: inline; }
+  .badge { font-size: var(--font-xs); border-radius: 9px; padding: 0 7px; font-weight: 600; }
   .badge.verified { background: var(--ok-bg); color: var(--ok); }
   .badge.unknown_sender { background: var(--warn-bg); color: var(--warn); }
   .badge.rejected { background: var(--bad-bg); color: var(--bad); }
@@ -115,17 +147,49 @@
   textarea { width: 100%; resize: vertical; min-height: 56px; }
   button { background: var(--accent); color: var(--accent-text); border-color: var(--accent); cursor: pointer; }
   button:disabled, select:disabled, input:disabled, textarea:disabled { opacity: .55; cursor: not-allowed; }
-  #send-note { font-size: 12px; color: var(--muted); }
+  #send-note { font-size: var(--font-s); color: var(--muted); }
   #send-note.error { color: var(--bad); }
   [hidden] { display: none !important; }
   #login-screen { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); z-index: 1; }
   #login-form { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: min(320px, 90vw); }
-  #login-note { font-size: 12px; color: var(--bad); min-height: 1.4em; }
-  #banner { background: var(--warn-bg); color: var(--warn); padding: 4px 16px; font-size: 12px; }
+  #login-note { font-size: var(--font-s); color: var(--bad); min-height: 1.4em; }
+  #banner { background: var(--warn-bg); color: var(--warn); padding: 4px 16px; font-size: var(--font-s); }
   header .right, header .left { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
   header .left { flex: 1; }
-  #logout { padding: 1px 8px; font-size: 12px; background: var(--bg); color: var(--text); border-color: var(--border); flex: none; white-space: nowrap; }
-  #identity { font-size: 12px; max-width: 32ch; }
+  #logout { padding: 1px 8px; font-size: var(--font-s); background: var(--bg); color: var(--text); border-color: var(--border); flex: none; white-space: nowrap; }
+  #identity { font-size: var(--font-s); max-width: 32ch; }
+  #settings-dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0; width: min(560px, 94vw); max-height: 90vh; }
+  #settings-dialog::backdrop { background: rgb(0 0 0 / .5); }
+  .settings-box { padding: 4px 16px 16px; }
+  .settings-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .settings-head h1 { margin: 12px 0 0; }
+  #settings-dialog fieldset { border: 1px solid var(--border); border-radius: 6px; margin: 12px 0 0; padding: 6px 10px 10px; min-width: 0; }
+  #settings-dialog legend { padding: 0 4px; color: var(--muted); font-size: var(--font-s); text-transform: uppercase; letter-spacing: .06em; }
+  .choices { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+  .choices label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .choices input { padding: 0; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+  .swatch { display: grid; gap: 3px; justify-items: center; padding: 4px; border: 2px solid transparent; border-radius: 8px; cursor: pointer; font-size: var(--font-s); }
+  .swatch:has(input:checked) { border-color: var(--accent); }
+  .swatch:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .swatch input { position: absolute; opacity: 0; pointer-events: none; }
+  .swatch .sample { width: 56px; height: 34px; border-radius: 5px; border: 1px solid var(--border); }
+  #custom-colors { margin-top: 8px; }
+  #custom-colors label { display: inline-flex; gap: 6px; align-items: center; }
+  #custom-colors input[type=color] { padding: 0; width: 32px; height: 24px; }
+  #contrast-note { font-size: var(--font-s); margin-top: 6px; }
+  #contrast-note.low { color: var(--bad); }
+  #theme-preview { display: grid; grid-template-columns: 38% minmax(0, 1fr); margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--panel); }
+  #theme-preview .side { background: var(--side-bg); color: var(--side-text); padding: 6px 0; }
+  #theme-preview .side div { padding: var(--row-pad) 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #theme-preview .side .selected { background: var(--side-active); color: var(--side-active-text); font-weight: 600; }
+  #theme-preview .side .muted { color: var(--side-muted); }
+  #theme-preview .side .unread { display: inline-block; margin-left: 6px; }
+  #theme-preview .main { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 10px; padding: 8px 10px; align-content: start; }
+  #theme-preview .link { color: var(--accent); text-decoration: underline; }
+  #settings-json { font: var(--font-s)/1.4 ui-monospace, monospace; min-height: 90px; margin-top: 6px; }
+  #settings-note { font-size: var(--font-s); min-height: 1.4em; margin-top: 4px; }
+  .settings-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -153,6 +217,7 @@
         <div><span class="title cut" id="channel-title">Select a channel</span> <span class="muted cut" id="channel-description"></span></div>
       </div>
       <div class="right"><span id="live">connecting...</span><span id="identity" class="muted cut"></span><button id="logout" type="button" hidden>Log out</button>
+        <button class="toggle" id="open-settings" type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog">&#9881;</button>
         <button class="toggle" id="toggle-members" type="button" title="Show or hide the members panel" aria-pressed="true">Members</button></div>
     </header>
     <div id="search-bar">
@@ -179,6 +244,57 @@
     <div id="agent-detail"></div>
   </aside>
 </div>
+<dialog id="settings-dialog" aria-labelledby="settings-title">
+  <div class="settings-box">
+    <div class="settings-head">
+      <h1 id="settings-title">Settings</h1>
+      <button class="toggle" id="close-settings" type="button">Close</button>
+    </div>
+    <fieldset>
+      <legend>Theme</legend>
+      <div class="swatches" id="theme-choices" role="radiogroup" aria-label="Theme"></div>
+      <div id="custom-colors" class="choices"></div>
+      <div id="contrast-note" role="status"></div>
+      <div id="theme-preview" aria-hidden="true"></div>
+    </fieldset>
+    <fieldset>
+      <legend>Density</legend>
+      <div class="choices" role="radiogroup" aria-label="Density">
+        <label><input type="radio" name="density" data-setting="density" value="comfortable">Comfortable</label>
+        <label><input type="radio" name="density" data-setting="density" value="compact">Compact</label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Messages</legend>
+      <div class="choices">
+        <label><input type="checkbox" data-setting="timestamps">Timestamps</label>
+        <label>Time as <select data-setting="timeFormat"><option value="absolute">date and time</option><option value="relative">time ago</option></select></label>
+        <label><input type="checkbox" data-setting="badge">Verification badge</label>
+        <label><input type="checkbox" data-setting="sequence">Sequence number</label>
+        <label><input type="checkbox" data-setting="grouping">Group messages of one sender</label>
+        <label><input type="checkbox" data-setting="avatars">Agent avatars</label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Text</legend>
+      <div class="choices">
+        <label>Font size <select data-setting="fontSize"><option value="small">small</option><option value="medium">medium</option><option value="large">large</option></select></label>
+        <label>Long names <select data-setting="names"><option value="truncate">end in an ellipsis</option><option value="wrap">wrap</option></select></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Backup</legend>
+      <div class="muted">Settings stay in this browser. Copy the text to move them to another one.</div>
+      <textarea id="settings-json" aria-label="Settings as JSON" spellcheck="false"></textarea>
+      <div class="settings-actions">
+        <button type="button" id="export-settings">Export</button>
+        <button type="button" id="import-settings">Import</button>
+        <button type="button" id="reset-settings">Reset to defaults</button>
+      </div>
+      <div id="settings-note" role="status"></div>
+    </fieldset>
+  </div>
+</dialog>
 <script>
 "use strict";
 
@@ -300,6 +416,289 @@ for (const [name, panel] of Object.entries(PANELS)) {
 }
 addEventListener("resize", applyLayout);
 applyLayout();
+
+// ---- appearance ----
+
+// How the page looks is a browser setting, like the layout. Themes are CSS custom properties on
+// :root; the stylesheet's own colors are the "system" theme.
+const SETTINGS_KEY = "bus-monitor-ui";
+const GROUP_MS = 5 * 60 * 1000;
+const TIME_TICK_MS = 30 * 1000;
+const MIN_TEXT_CONTRAST = 4.5; // WCAG AA
+
+const THEMES = {
+  aubergine: { label: "Aubergine", base: "light", sideBg: "#3f0e40", sideText: "#eadbea", active: "#1164a3", accent: "#1264a3", mention: "#cd2553" },
+  hoth: { label: "Hoth", base: "light", sideBg: "#f2f2f4", sideText: "#1d1c1d", active: "#1164a3", accent: "#1264a3", mention: "#cd2553" },
+  ochin: { label: "Ochin", base: "light", sideBg: "#19447d", sideText: "#dfeaf8", active: "#0b6bcb", accent: "#0b5cad", mention: "#c2255c" },
+  monument: { label: "Monument", base: "dark", sideBg: "#0f2f33", sideText: "#d3eceb", active: "#0e7c74", accent: "#4fd1c5", mention: "#ff8a65" },
+};
+const COLOR_FIELDS = [
+  ["sideBg", "Sidebar background"], ["sideText", "Sidebar text"], ["active", "Active item"],
+  ["accent", "Accent and links"], ["mention", "Mention highlight"],
+];
+const THEME_PROPS = ["--side-bg", "--side-text", "--side-muted", "--side-hover", "--side-active", "--side-active-text", "--accent", "--accent-text", "--mention", "--mention-text"];
+
+const isChoice = (...choices) => (value) => choices.includes(value);
+const isHex = (value) => typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+const isFlag = (value) => typeof value === "boolean";
+const isCustomTheme = (value) => value !== null && typeof value === "object"
+  && isChoice("light", "dark")(value.base) && COLOR_FIELDS.every(([key]) => isHex(value[key]));
+const RULES = {
+  theme: isChoice("system", ...Object.keys(THEMES), "custom"),
+  custom: isCustomTheme,
+  density: isChoice("comfortable", "compact"),
+  timestamps: isFlag, timeFormat: isChoice("absolute", "relative"),
+  badge: isFlag, sequence: isFlag, grouping: isFlag, avatars: isFlag,
+  fontSize: isChoice("small", "medium", "large"),
+  names: isChoice("truncate", "wrap"),
+};
+const { label: _label, ...AUBERGINE } = THEMES.aubergine;
+const DEFAULTS = {
+  theme: "system", custom: AUBERGINE, density: "comfortable",
+  timestamps: true, timeFormat: "absolute", badge: true, sequence: true, grouping: false, avatars: false,
+  fontSize: "medium", names: "truncate",
+};
+
+// Keeps the known keys with valid values; the others are listed as ignored.
+function sanitizeSettings(input) {
+  const clean = {}, ignored = [];
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return { clean, ignored: ["(not an object)"] };
+  for (const [key, value] of Object.entries(input)) {
+    if (!Object.hasOwn(RULES, key) || !RULES[key](value)) ignored.push(key);
+    else clean[key] = key === "custom" ? { base: value.base, ...Object.fromEntries(COLOR_FIELDS.map(([field]) => [field, value[field].toLowerCase()])) } : value;
+  }
+  return { clean, ignored };
+}
+
+const settings = { ...DEFAULTS, ...sanitizeSettings(loadSetting(SETTINGS_KEY, {})).clean };
+
+// ---- colors
+
+function rgbOf(hex) {
+  return [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+}
+
+function hexOf(channels) {
+  return "#" + channels.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("");
+}
+
+function luminance(hex) {
+  const [r, g, b] = rgbOf(hex).map((c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrast(a, b) {
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+// Text that is readable on the color: white or near-black, whichever contrasts more.
+function readableOn(hex) {
+  return contrast(hex, "#ffffff") >= contrast(hex, "#111111") ? "#ffffff" : "#111111";
+}
+
+// The color that is `share` of the way from a to b.
+function mix(a, b, share) {
+  const [from, to] = [rgbOf(a), rgbOf(b)];
+  return hexOf(from.map((c, i) => c + (to[i] - c) * share));
+}
+
+function hslHex(hue, saturation, lightness) {
+  const k = (n) => (n + hue / 30) % 12;
+  const a = saturation * Math.min(lightness, 1 - lightness);
+  return hexOf([0, 8, 4].map((n) => 255 * (lightness - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))));
+}
+
+// ---- theme
+
+// The colors the theme is made of. "System" has none of its own: the pickers then start from the
+// theme that matches the system's light or dark.
+function themeColors() {
+  if (settings.theme === "custom") return settings.custom;
+  if (THEMES[settings.theme]) return THEMES[settings.theme];
+  return matchMedia("(prefers-color-scheme: dark)").matches ? THEMES.monument : THEMES.hoth;
+}
+
+function applyTheme() {
+  const root = document.documentElement;
+  const colors = themeColors();
+  root.dataset.base = colors.base;
+  for (const property of THEME_PROPS) root.style.removeProperty(property);
+  if (settings.theme === "system") return;
+  const props = {
+    "--side-bg": colors.sideBg, "--side-text": colors.sideText,
+    "--side-muted": mix(colors.sideBg, colors.sideText, 0.75), "--side-hover": mix(colors.sideBg, colors.sideText, 0.12),
+    "--side-active": colors.active, "--side-active-text": readableOn(colors.active),
+    "--accent": colors.accent, "--accent-text": readableOn(colors.accent),
+    "--mention": colors.mention, "--mention-text": readableOn(colors.mention),
+  };
+  for (const [property, value] of Object.entries(props)) root.style.setProperty(property, value);
+}
+
+// ---- avatars
+
+// Two initials from the ID's words ("claude-code-7" is CC), on a color the ID always gets.
+function initialsOf(agentId) {
+  const words = agentId.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const letters = words.length > 1 ? [words[0], words[1]].map((word) => Array.from(word)[0]) : Array.from(words[0] || "?").slice(0, 2);
+  return letters.join("").toUpperCase();
+}
+
+// A hue from the ID, darkened until the white initials can be read.
+function avatarColor(agentId) {
+  let hash = 2166136261;
+  for (const character of agentId) hash = Math.imul(hash ^ character.codePointAt(0), 16777619) >>> 0;
+  const hue = hash % 360;
+  let lightness = 0.5, color = hslHex(hue, 0.55, lightness);
+  while (contrast(color, "#ffffff") < MIN_TEXT_CONTRAST && lightness > 0.1) color = hslHex(hue, 0.55, lightness -= 0.02);
+  return color;
+}
+
+function avatarFor(agentId, small = false) {
+  const badge = el("span", { class: "avatar" + (small ? " small" : ""), "aria-hidden": "true" }, initialsOf(agentId || ""));
+  badge.style.background = agentId ? avatarColor(agentId) : "var(--muted)";
+  badge.style.color = agentId ? "#ffffff" : "var(--panel)";
+  return badge;
+}
+
+// ---- time
+
+function relativeTime(time) {
+  const age = Date.now() - new Date(time).getTime();
+  return age >= 24 * 3600 * 1000 || age < 0 ? new Date(time).toLocaleString() : ago(time) + " ago";
+}
+
+function formatTime(time) {
+  if (!time) return "";
+  return settings.timeFormat === "relative" ? relativeTime(time) : new Date(time).toLocaleString();
+}
+
+function timeSpan(time) {
+  return el("span", { class: "muted time", "data-time": time || "", title: time || "" }, formatTime(time));
+}
+
+function refreshTimes() {
+  for (const span of document.querySelectorAll(".time[data-time]")) span.textContent = formatTime(span.dataset.time);
+}
+
+// ---- the panel
+
+function applySettings() {
+  const root = document.documentElement;
+  root.dataset.density = settings.density;
+  root.dataset.font = settings.fontSize;
+  root.dataset.names = settings.names;
+  for (const key of ["timestamps", "badge", "sequence", "avatars"]) root.dataset[key] = settings[key] ? "on" : "off";
+  applyTheme();
+}
+
+function changeSettings(change) {
+  Object.assign(settings, change);
+  saveSetting(SETTINGS_KEY, settings);
+  applySettings();
+  syncSettingsPanel();
+  refreshTimes();
+  if (state.selected) renderMessages(false);
+}
+
+function note(text) {
+  $("settings-note").textContent = text;
+}
+
+// Shows the settings in the panel's controls and the contrast check.
+function syncSettingsPanel() {
+  for (const control of $("settings-dialog").querySelectorAll("[data-setting]")) {
+    const value = settings[control.dataset.setting];
+    if (control.type === "checkbox") control.checked = value;
+    else if (control.type === "radio") control.checked = control.value === value;
+    else control.value = value;
+  }
+  const colors = themeColors();
+  for (const [key] of COLOR_FIELDS) $("custom-" + key).value = colors[key];
+  $("custom-base").value = colors.base;
+
+  const panel = getComputedStyle(document.documentElement).getPropertyValue("--panel").trim();
+  const low = [];
+  if (contrast(colors.sideText, colors.sideBg) < MIN_TEXT_CONTRAST) low.push("sidebar text");
+  if (contrast(colors.accent, panel) < MIN_TEXT_CONTRAST) low.push("accent and links");
+  $("contrast-note").textContent = low.length ? "Low contrast: " + low.join(", ") + "." : "Contrast is readable.";
+  $("contrast-note").className = low.length ? "low" : "muted";
+}
+
+// Editing a color or the base makes the theme a custom one that starts from the colors shown.
+function changeCustomColor(key, value) {
+  const { label, ...colors } = themeColors();
+  changeSettings({ theme: "custom", custom: { ...colors, [key]: value } });
+}
+
+function buildSettingsPanel() {
+  const themeChoice = (value, label, background) => {
+    const sample = el("span", { class: "sample" });
+    sample.style.background = background;
+    return el("label", { class: "swatch" }, el("input", { type: "radio", name: "theme", value, "data-setting": "theme" }), sample, label);
+  };
+  const split = (left, right) => `linear-gradient(90deg, ${left} 38%, ${right} 38%)`;
+  $("theme-choices").replaceChildren(
+    themeChoice("system", "System", `linear-gradient(90deg, ${THEMES.hoth.sideBg} 25%, #ffffff 25% 50%, ${THEMES.monument.sideBg} 50% 75%, #1a1e28 75%)`),
+    ...Object.entries(THEMES).map(([value, theme]) => themeChoice(value, theme.label, split(theme.sideBg, theme.base === "dark" ? "#1a1e28" : "#ffffff"))),
+    themeChoice("custom", "Custom", split("#888888", "#cccccc")));
+
+  $("custom-colors").replaceChildren(
+    ...COLOR_FIELDS.map(([key, label]) => {
+      const picker = el("input", { type: "color", id: "custom-" + key });
+      picker.addEventListener("input", () => changeCustomColor(key, picker.value));
+      return el("label", {}, picker, label);
+    }),
+    el("label", {}, "Main area ", el("select", { id: "custom-base" }, el("option", { value: "light" }, "light"), el("option", { value: "dark" }, "dark"))));
+  $("custom-base").addEventListener("change", () => changeCustomColor("base", $("custom-base").value));
+
+  $("theme-preview").replaceChildren(
+    el("div", { class: "side" },
+      el("div", { class: "muted" }, "Channels"), el("div", {}, "# general"),
+      el("div", { class: "selected" }, "# ops-room", el("span", { class: "unread" }, "2")), el("div", {}, "a-very-long-agent-identifier")),
+    el("div", { class: "main" }, avatarFor("alice-review"),
+      el("div", {}, el("b", {}, "alice-review "), el("span", { class: "muted" }, "12:01 "), el("span", { class: "pill me" }, "bob"),
+        el("div", {}, "See ", el("span", { class: "link" }, "the report"), "."))));
+
+  $("settings-dialog").addEventListener("change", (event) => {
+    const key = event.target.dataset.setting;
+    if (key) changeSettings({ [key]: event.target.type === "checkbox" ? event.target.checked : event.target.value });
+  });
+}
+
+function importSettings() {
+  let input;
+  try { input = JSON.parse($("settings-json").value); } catch (error) { note("Not valid JSON: " + error.message); return; }
+  const { clean, ignored } = sanitizeSettings(input);
+  const count = Object.keys(clean).length;
+  if (count) changeSettings(clean);
+  note((count ? "Imported " + count + (count === 1 ? " setting" : " settings") : "Nothing imported") + (ignored.length ? "; ignored: " + ignored.join(", ") : "") + ".");
+}
+
+buildSettingsPanel();
+applySettings();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { applySettings(); syncSettingsPanel(); });
+
+$("open-settings").addEventListener("click", () => {
+  syncSettingsPanel();
+  $("settings-json").value = JSON.stringify(settings, null, 2);
+  note("");
+  $("settings-dialog").showModal();
+});
+$("close-settings").addEventListener("click", () => $("settings-dialog").close());
+// A click on the backdrop lands on the dialog itself, never on its box.
+$("settings-dialog").addEventListener("click", (event) => { if (event.target === $("settings-dialog")) $("settings-dialog").close(); });
+$("export-settings").addEventListener("click", () => {
+  $("settings-json").value = JSON.stringify(settings, null, 2);
+  $("settings-json").select();
+  note("Copy the text.");
+});
+$("import-settings").addEventListener("click", importSettings);
+$("reset-settings").addEventListener("click", () => {
+  changeSettings(DEFAULTS);
+  $("settings-json").value = JSON.stringify(settings, null, 2);
+  note("Back to the defaults.");
+});
 
 // ---- login ----
 
@@ -436,7 +835,7 @@ function presenceOf(agentId) {
 // The agent's ID with its status dot and state.
 function agentLine(agentId, view) {
   return el("span", { class: "agent-line", title: agentId + ": " + view.state },
-    el("span", { class: "dot " + stateClass(view.state) }), el("span", { class: "label" }, agentId),
+    el("span", { class: "dot " + stateClass(view.state) }), avatarFor(agentId, true), el("span", { class: "label" }, agentId),
     el("span", { class: "muted state" }, view.state));
 }
 
@@ -517,23 +916,36 @@ function destination(message) {
   return el("span", { class: "muted cut", title: label }, "\u2192 " + label);
 }
 
-function renderMessage(message, channel) {
-  const meta = el("div", { class: "meta" },
-    el("span", { class: "from cut", title: message.from || "" }, message.from || "unknown sender"),
-    ...(message.to ? [destination(message)] : []),
-    el("span", { class: "muted", title: message.time || "" }, message.time ? new Date(message.time).toLocaleString() : ""),
-    ...(message.type ? [el("span", { class: "pill" }, message.type)] : []),
-    el("span", { class: "badge " + message.status }, STATUS_LABEL[message.status] || message.status),
-    el("span", { class: "muted" }, "#" + message.sequence));
+// A message continues the previous one when the same sender wrote it to the same place, with the
+// same type and verification status, within GROUP_MS.
+function continues(previous, message) {
+  return Boolean(previous && message.from && previous.from === message.from && previous.to === message.to
+    && previous.type === message.type && previous.status === message.status
+    && new Date(message.time) - new Date(previous.time) < GROUP_MS);
+}
+
+function renderMessage(message, grouped) {
+  const sequence = el("span", { class: "muted seq" }, "#" + message.sequence);
+  const header = grouped
+    ? el("div", { class: "meta slim" }, timeSpan(message.time), sequence)
+    : el("div", { class: "meta" },
+      el("span", { class: "from cut", title: message.from || "" }, message.from || "unknown sender"),
+      ...(message.to ? [destination(message)] : []),
+      timeSpan(message.time),
+      ...(message.type ? [el("span", { class: "pill" }, message.type)] : []),
+      el("span", { class: "badge " + message.status }, STATUS_LABEL[message.status] || message.status),
+      sequence);
   const targets = (message.targets || []).map((target) => {
     const mine = target === state.status.agent;
     return el("span", { class: "pill " + (target === ALL ? "all" : mine ? "me" : "target"), title: target }, target);
   });
-  return el("div", { class: "message", "data-sequence": String(message.sequence) }, meta,
-    ...(targets.length ? [el("div", { class: "targets-row" }, ...targets)] : []),
-    ...(message.title ? [el("div", { class: "title" }, message.title)] : []),
-    ...(message.text ? [el("div", { class: "text" }, message.text)] : []),
-    ...(message.reason ? [el("div", { class: "reason" }, message.reason)] : []));
+  return el("div", { class: "message" + (grouped ? " grouped" : ""), "data-sequence": String(message.sequence) },
+    grouped ? el("span", { class: "avatar-gap" }) : avatarFor(message.from),
+    el("div", { class: "body" }, header,
+      ...(targets.length ? [el("div", { class: "targets-row" }, ...targets)] : []),
+      ...(message.title ? [el("div", { class: "title" }, message.title)] : []),
+      ...(message.text ? [el("div", { class: "text" }, message.text)] : []),
+      ...(message.reason ? [el("div", { class: "reason" }, message.reason)] : [])));
 }
 
 // One chip per message type, with how many of the open channel's messages have it. No chip
@@ -561,12 +973,11 @@ function renderMessages(scrollToEnd) {
   renderHeader();
   const box = $("messages");
   const atEnd = scrollToEnd || box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-  const channel = state.channels.find((c) => c.id === state.selected);
   const list = state.messages.get(state.selected) || [];
   renderTypeFilter(list);
   const shown = state.shownTypes.size ? list.filter((m) => state.shownTypes.has(m.type)) : list;
   const none = list.length ? "No message of these types." : "No messages yet.";
-  box.replaceChildren(...(shown.length ? shown.map((m) => renderMessage(m, channel)) : [el("div", { class: "empty" }, none)]));
+  box.replaceChildren(...(shown.length ? shown.map((m, i) => renderMessage(m, settings.grouping && continues(shown[i - 1], m))) : [el("div", { class: "empty" }, none)]));
   if (atEnd) box.scrollTop = box.scrollHeight;
 }
 
@@ -638,7 +1049,7 @@ function renderHit(hit) {
     el("div", { class: "meta" },
       el("span", { class: "cut", title: where }, where),
       el("span", { class: "from cut", title: hit.from || "" }, hit.from || ""),
-      el("span", { class: "muted", title: hit.time || "" }, hit.time ? new Date(hit.time).toLocaleString() : ""),
+      timeSpan(hit.time),
       ...(hit.type ? [el("span", { class: "pill" }, hit.type)] : []),
       el("span", { class: "muted" }, "#" + hit.sequence)),
     ...(hit.title && hit.snippet.field !== "title" ? [el("div", { class: "title" }, hit.title)] : []),
@@ -777,6 +1188,7 @@ async function start() {
 
 start();
 setInterval(refresh, REFRESH_MS);
+setInterval(refreshTimes, TIME_TICK_MS);
 </script>
 </body>
 </html>

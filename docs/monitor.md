@@ -238,6 +238,24 @@ OpenAPI 3.1 description. The unversioned `/api/...` paths of earlier versions ar
 - Chips above the messages limit the list to some message types, with the count per type in the
   open channel.
 - With a password set, the header shows "logged in" and a "Log out" button.
+- The gear button in the header opens the settings (Esc closes them). Every setting is per browser,
+  kept in its local storage, and the page works with the defaults when that is not available:
+  - Theme: System (follows the browser's light or dark), the presets Aubergine, Hoth, Ochin and
+    Monument, or a custom one with color pickers for the sidebar background and text, the active
+    item, the accent and links, and the mention highlight. Picking a color starts a custom theme
+    from the colors shown. The panel previews the theme and warns when the sidebar text or the
+    accent is hard to read (below WCAG AA, 4.5:1); text on the active item, accent and mention
+    colors is chosen to be readable.
+  - Density: comfortable or compact (message spacing, line height, row height).
+  - Messages: show or hide timestamps, the verification badge and the sequence number; show times
+    as date and time or as "time ago"; group consecutive messages of one sender (same recipient,
+    type and verification status, within five minutes) under one header, with time and sequence
+    number on hover.
+  - Agent avatars: initials on a color taken from the agent ID.
+  - Font size (small, medium, large) and whether long names wrap or end in an ellipsis; the
+    tooltips stay.
+  - Reset to defaults, and export or import of all settings as JSON. An import keeps the known
+    keys with valid values and names the ones it ignored.
 
 ## Search
 
