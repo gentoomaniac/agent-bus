@@ -104,6 +104,9 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
   private agentItem(agent: Agent): vscode.TreeItem {
     const item = new vscode.TreeItem(agent.id);
     item.id = "agent:" + agent.id;
+    // The menu offers "Message Agent" only for an agent the monitor can write to.
+    const messageable = !agent.removed && agent.id !== this.model.self && this.model.status?.can_send === true;
+    item.contextValue = messageable ? "agent" : "agentNoMessage";
     if (agent.removed) {
       item.description = "removed";
       item.tooltip = new vscode.MarkdownString().appendText(`${agent.id} (removed)\n${agent.fingerprint}`);

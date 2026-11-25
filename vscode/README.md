@@ -98,7 +98,7 @@ An agent row shows its state as a coloured icon and as text, like the web page:
 
 | State                           | Icon                |
 |---------------------------------|---------------------|
-| `working`                       | green, spinning-arrows |
+| `working`                       | green, arrows          |
 | `idle`                          | blue dot            |
 | `waiting_for_owner`             | yellow bell         |
 | `rate_limited`                  | orange watch        |
@@ -111,6 +111,13 @@ Hover an agent for its state and how long, its activity, its workers, the mail w
 its recent activity. An agent with workers or recent activity unfolds into its workers and its
 last three activities. The state comes from the monitor's presence, read at every connect and
 updated by the live `presence` events.
+
+**Right-click an agent:**
+- **Message Agent** opens the direct message between the monitor's agent and that agent, with the
+  composer focused. If the two have no messages yet, the panel is empty and sends to that agent;
+  once the first message is in, it is the normal conversation. The entry is not offered for the
+  monitor's own agent, for removed agents, or when the monitor cannot send.
+- **Copy Agent ID** puts the agent's ID on the clipboard.
 
 ## Favourites and folding
 
@@ -145,6 +152,7 @@ message. Otherwise installing the extension would report the whole history as un
 | Agent Messenger: Log Out          | ends the session at the monitor and forgets the token           |
 | Agent Messenger: Open Unread Mail | opens the first channel with unread mail aimed at the monitor   |
 | Add to / Remove from Favourites   | the star in the tree and its context menu                       |
+| Message Agent, Copy Agent ID      | the context menu of an agent in the tree                        |
 
 ## Login and the token
 

@@ -22,6 +22,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("agentMessenger.openChannel", (channelId: string) => chats.open(channelId)),
     vscode.commands.registerCommand("agentMessenger.addFavourite", (node: Node) => setFavourite(session, node, true)),
     vscode.commands.registerCommand("agentMessenger.removeFavourite", (node: Node) => setFavourite(session, node, false)),
+    vscode.commands.registerCommand("agentMessenger.messageAgent", (node: Node) => node.kind === "agent" && chats.openDirect(node.agent.id)),
+    vscode.commands.registerCommand("agentMessenger.copyAgentId", (node: Node) => node.kind === "agent" && vscode.env.clipboard.writeText(node.agent.id)),
     vscode.commands.registerCommand("agentMessenger.logout", () => session.logout()),
     vscode.workspace.onDidChangeConfiguration((change) => {
       if (change.affectsConfiguration("agentMessenger.url")) void session.start();

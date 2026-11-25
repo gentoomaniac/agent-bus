@@ -238,6 +238,7 @@ function growComposer(): void {
 window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
   const data = event.data;
   if (data.type === "state") showState(data.state);
+  else if (data.type === "focusComposer") textInput.focus();
   else if (data.type === "message") {
     if (insertMessage(messages, data.message)) render();
   } else {

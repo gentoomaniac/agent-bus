@@ -6,6 +6,11 @@ export function describeChannel(channel: Channel): string {
   return "# " + (channel.kind === "general" ? "general" : channel.name);
 }
 
+// "dm:<a>:<b>", the two agents sorted (docs/api.md).
+export function dmChannelId(a: string, b: string): string {
+  return "dm:" + [a, b].sort().join(":");
+}
+
 // Where a message composed in the channel goes. A DM can be written only by one of its two agents.
 export function destinationOf(channel: Channel, self: string): SendRequest["to"] | undefined {
   if (channel.kind === "general") return { kind: "group", name: "general" };

@@ -18,7 +18,8 @@ export interface ChatState {
 export type ToWebview =
   | { type: "state"; state: ChatState }
   | { type: "message"; message: Message }
-  | { type: "sendResult"; error?: string };
+  | { type: "sendResult"; error?: string }
+  | { type: "focusComposer" };
 
 export interface Draft {
   type: string;

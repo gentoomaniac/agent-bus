@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import { ApiError } from "./api";
-import { describeChannel, destinationOf } from "./channels";
+import { describeChannel, destinationOf, dmChannelId } from "./channels";
 import { ChatState, FromWebview, ToWebview } from "./protocol";
 import { Session } from "./session";
-import { ALL } from "./types";
+import { ALL, Channel } from "./types";
 
 const HISTORY = 100; // messages loaded when a channel is opened
 const THREADED_KEY = "agentMessenger.threaded"; // UI only: not one of the preferences shared through the monitor
@@ -13,11 +13,13 @@ interface Chat {
   panel: vscode.WebviewPanel;
   dividerAfter: number; // last-read sequence when the panel was opened or shown again
   members: string[];
+  focusComposer: boolean; // focus it once the page has drawn
 }
 
 // One chat panel per channel. The page only draws; the monitor is read and written from here.
 export class ChatPanels implements vscode.Disposable {
   private readonly chats = new Map<string, Chat>();
+  private readonly emptyDirects = new Map<string, Channel>(); // direct messages without a message yet
   private readonly subscriptions: vscode.Disposable[];
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly session: Session) {
@@ -32,23 +34,43 @@ export class ChatPanels implements vscode.Disposable {
     ];
   }
 
-  open(channelId: string): void {
+  // Opens the conversation with an agent, as an empty panel while the two have no messages yet.
+  openDirect(agentId: string): void {
+    const { self, channels } = this.session.model;
+    const id = dmChannelId(self, agentId);
+    if (!channels.some((channel) => channel.id === id) && !this.emptyDirects.has(id)) {
+      const agents = [self, agentId].sort();
+      this.emptyDirects.set(id, { id, kind: "dm", name: agents.join(" + "), description: "", agents, messages: 0, last_sequence: 0 });
+    }
+    this.open(id, true);
+  }
+
+  // A conversation the monitor lists, or an empty direct message opened here.
+  private channelOf(channelId: string): Channel | undefined {
+    return this.session.model.channels.find((channel) => channel.id === channelId) ?? this.emptyDirects.get(channelId);
+  }
+
+  open(channelId: string, focusComposer = false): void {
     const existing = this.chats.get(channelId);
     if (existing) {
       existing.panel.reveal();
+      if (focusComposer) void existing.panel.webview.postMessage({ type: "focusComposer" } satisfies ToWebview);
       return;
     }
-    const channel = this.session.model.channels.find((c) => c.id === channelId);
+    const channel = this.channelOf(channelId);
     if (!channel) return;
     const panel = vscode.window.createWebviewPanel("agentMessenger.chat", describeChannel(channel), vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "dist")],
     });
-    const chat: Chat = { panel, dividerAfter: 0, members: [] };
+    const chat: Chat = { panel, dividerAfter: 0, members: [], focusComposer };
     this.chats.set(channelId, chat);
     panel.webview.html = this.html(panel.webview);
-    panel.onDidDispose(() => this.chats.delete(channelId));
+    panel.onDidDispose(() => {
+      this.chats.delete(channelId);
+      this.emptyDirects.delete(channelId);
+    });
     panel.onDidChangeViewState(() => panel.visible && void this.show(channelId, chat));
     panel.webview.onDidReceiveMessage((message: FromWebview) => void this.handle(channelId, chat, message));
   }
@@ -62,6 +84,8 @@ export class ChatPanels implements vscode.Disposable {
     const model = this.session.model;
     if (message.type === "ready") {
       await this.show(channelId, chat);
+      if (chat.focusComposer) void chat.panel.webview.postMessage({ type: "focusComposer" } satisfies ToWebview);
+      chat.focusComposer = false;
     } else if (message.type === "older") {
       await this.guarded(() => model.loadOlder(channelId));
       this.post(channelId, chat);
@@ -72,7 +96,7 @@ export class ChatPanels implements vscode.Disposable {
       const { type, targets, title, text } = message.draft;
       let error: string | undefined;
       try {
-        const channel = model.channels.find((c) => c.id === channelId);
+        const channel = this.channelOf(channelId);
         const destination = channel && destinationOf(channel, model.self);
         if (!destination) throw new Error("this conversation is read-only");
         await model.api.send({ to: destination, type, targets, title: title.trim() || undefined, text });
@@ -97,10 +121,14 @@ export class ChatPanels implements vscode.Disposable {
   // A visible panel keeps its divider across a reconnect: its messages were read already.
   private async show(channelId: string, chat: Chat, keepDivider = false): Promise<void> {
     const model = this.session.model;
-    await this.guarded(async () => {
-      await model.loadHistory(channelId, HISTORY);
-      chat.members = await model.api.members(channelId);
-    });
+    if (model.channels.some((channel) => channel.id === channelId)) {
+      await this.guarded(async () => {
+        await model.loadHistory(channelId, HISTORY);
+        chat.members = await model.api.members(channelId);
+      });
+    } else {
+      chat.members = this.emptyDirects.get(channelId)?.agents ?? []; // the monitor knows no such channel yet
+    }
     if (!keepDivider) chat.dividerAfter = model.lastRead(channelId);
     this.post(channelId, chat);
     if (chat.panel.visible) model.markRead(channelId);
@@ -108,7 +136,7 @@ export class ChatPanels implements vscode.Disposable {
 
   private post(channelId: string, chat: Chat): void {
     const model = this.session.model;
-    const channel = model.channels.find((c) => c.id === channelId);
+    const channel = this.channelOf(channelId);
     if (!channel || !model.status) return;
     const destination = destinationOf(channel, model.self);
     const canWrite = destination !== undefined;

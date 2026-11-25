@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ago, describePresence, recentActivity } from "../presence";
 import { matchTargets, mentionBefore } from "../completion";
-import { categorize, describeChannel, destinationOf } from "../channels";
+import { categorize, describeChannel, destinationOf, dmChannelId } from "../channels";
 import { nextBackoff } from "../events";
 import { continuesGroup, insertMessage, isTargeted, unreadMessages } from "../messages";
 import { SseParser } from "../sse";
@@ -66,6 +66,11 @@ test("destinationOf aims at the channel, or at the peer of a DM the agent is in"
   const dm = channel({ kind: "dm", agents: ["a@x", "b@y"] });
   assert.deepEqual(destinationOf(dm, "b@y"), { kind: "agent", name: "a@x" });
   assert.equal(destinationOf(dm, "c@z"), undefined);
+});
+
+test("dmChannelId sorts the two agents", () => {
+  assert.equal(dmChannelId("b@y", "a@x"), "dm:a@x:b@y");
+  assert.equal(dmChannelId("a@x", "b@y"), "dm:a@x:b@y");
 });
 
 test("nextBackoff doubles up to the maximum", () => {
