@@ -200,6 +200,11 @@ its recent activity. An agent with workers or recent activity unfolds into its w
 last three activities. The state comes from the monitor's presence, read at every connect and
 updated by the live `presence` events.
 
+Besides the stream, the extension reads the channels, agents, status and presence again every 5
+seconds, as the web page does, and updates the view only when something changed. So a new empty
+channel, a new or removed agent and a changed `can_send` show up without a reconnect. It stops
+while a login is needed.
+
 **Right-click an agent:**
 - **Message Agent** opens the direct message between the monitor's agent and that agent, with the
   composer focused. If the two have no messages yet, the panel is empty and sends to that agent;

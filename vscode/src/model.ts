@@ -21,6 +21,8 @@ export class Model {
   presence = new Map<string, Presence>();
   live = false; // the event stream is open
   private seen = false; // the first refresh succeeded
+  private snapshot = ""; // what the last read of the state returned, as JSON
+  private pollTimer: ReturnType<typeof setInterval> | undefined;
   private messages = new Map<string, Message[]>();
   private covered = new Map<string, number>(); // channel -> every message after this sequence is loaded
   private listeners = new Set<() => void>();
@@ -72,12 +74,45 @@ export class Model {
     return result;
   }
 
-  // Reads the whole state again. At the first refresh a channel without a stored last-read
-  // sequence counts as read up to now, so the first start does not report the whole history as
-  // unread. A channel that appears later starts unread: its first message is news. Then every channel's messages
-  // are brought up to its last sequence.
+  // Reads the whole state again, after every (re)connect. At the first refresh a channel without a
+  // stored last-read sequence counts as read up to now, so the first start does not report the whole
+  // history as unread. A channel that appears later starts unread: its first message is news. Then
+  // every channel's messages are brought up to its last sequence.
   async refresh(): Promise<void> {
+    await this.readState();
+    await Promise.all(this.channels.map((channel) => this.loadNewer(channel)));
+    this.seen = true;
+    this.changed();
+  }
+
+  // Reads channels, agents, status and presence, but no messages, and announces only a change: this
+  // is what the web page does every REFRESH_MS, so a new channel or agent shows up without a reconnect.
+  async refreshState(): Promise<void> {
+    if (await this.readState()) this.changed();
+  }
+
+  // Calls refreshState every `intervalMs` until stopPolling. A read still under way is not started twice.
+  startPolling(intervalMs: number, onError: (error: unknown) => void): void {
+    if (this.pollTimer) return;
+    let reading = false;
+    this.pollTimer = setInterval(() => {
+      if (reading) return;
+      reading = true;
+      this.refreshState().catch(onError).finally(() => (reading = false));
+    }, intervalMs);
+  }
+
+  stopPolling(): void {
+    clearInterval(this.pollTimer);
+    this.pollTimer = undefined;
+  }
+
+  // The answer says whether anything differs from the last read.
+  private async readState(): Promise<boolean> {
     const [status, channels, agents, presence] = await Promise.all([this.api.status(), this.api.channels(), this.api.agents(), this.api.presence()]);
+    const snapshot = JSON.stringify([status, channels, agents, presence]);
+    if (snapshot === this.snapshot) return false;
+    this.snapshot = snapshot;
     this.status = status;
     this.channels = channels ?? [];
     this.agents = agents ?? [];
@@ -86,9 +121,7 @@ export class Model {
       if (!this.seen && this.lastReads.get(channel.id) === undefined) this.lastReads.set(channel.id, channel.last_sequence);
       if (!this.covered.has(channel.id)) this.covered.set(channel.id, this.lastRead(channel.id));
     }
-    await Promise.all(this.channels.map((channel) => this.loadNewer(channel)));
-    this.seen = true;
-    this.changed();
+    return true;
   }
 
   private async loadNewer(channel: Channel): Promise<void> {

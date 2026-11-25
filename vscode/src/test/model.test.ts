@@ -118,3 +118,36 @@ test("presence comes from the snapshot and from presence events, and a change is
   assert.deepEqual(model.presence.get("a@x"), view);
   assert.equal(changes, 1);
 });
+
+test("refreshState announces a new channel or agent, and nothing when the state is the same", async () => {
+  const api = new FakeApi([message("general", 1)]);
+  const model = new Model(api as unknown as Api, memoryStore());
+  await model.refresh();
+  let changes = 0;
+  model.onChange(() => changes++);
+  await model.refreshState();
+  assert.equal(changes, 0);
+  api.channelList = [...api.channelList, { id: "group:empty", kind: "group", name: "empty", description: "", messages: 0, last_sequence: 0 }];
+  await model.refreshState();
+  assert.deepEqual(model.channels.map((channel) => channel.id), ["general", "group:empty"]);
+  assert.equal(changes, 1);
+  await model.refreshState();
+  assert.equal(changes, 1);
+});
+
+test("polling refreshes the state until it is stopped, and starting twice makes one timer", async () => {
+  const api = new FakeApi([message("general", 1)]);
+  const model = new Model(api as unknown as Api, memoryStore());
+  await model.refresh();
+  let changes = 0;
+  model.onChange(() => changes++);
+  model.startPolling(1, assert.ifError);
+  model.startPolling(1, assert.ifError);
+  api.presenceList = [{ agent: "a@x", state: "idle" }];
+  while (changes === 0) await new Promise((resolve) => setTimeout(resolve, 2));
+  model.stopPolling();
+  assert.equal(model.presence.get("a@x")?.state, "idle");
+  api.presenceList = [];
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(model.presence.size, 1); // stopped: the change is not read
+});

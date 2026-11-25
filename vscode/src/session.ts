@@ -5,6 +5,8 @@ import { Model } from "./model";
 import { LegacyPrefs, Prefs } from "./prefs";
 import { Message, ServerPrefs } from "./types";
 
+const REFRESH_MS = 5000; // as the web page: a new channel or agent shows up within this time
+
 const legacyKey = (part: keyof LegacyPrefs, url: string) => (part === "read" ? "lastRead:" : part + ":") + url;
 
 // One connection to a monitor: its URL from the settings, the token from the secret storage, the
@@ -84,6 +86,7 @@ export class Session implements vscode.Disposable {
         // The prefs come first: the first refresh counts a channel without a read marker as read.
         await this.dropLegacyPrefs(url, await prefs.load(this.legacyPrefs(url)));
         await model.refresh();
+        model.startPolling(REFRESH_MS, (error) => this.report(error));
         this.refreshEmitter.fire();
       },
       onEvent: (event) => {
@@ -101,6 +104,7 @@ export class Session implements vscode.Disposable {
 
   stop(): void {
     this.stream?.abort();
+    this.model.stopPolling();
   }
 
   dispose(): void {
@@ -119,6 +123,7 @@ export class Session implements vscode.Disposable {
 
   private async requireLogin(): Promise<void> {
     this.loginRequired = true;
+    this.model.stopPolling();
     this.changeEmitter.fire();
     await vscode.commands.executeCommand("setContext", "agentMessenger.loginRequired", true);
     if (!this.hasToken) return;
