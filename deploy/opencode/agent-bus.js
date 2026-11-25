@@ -5,13 +5,31 @@
 // OpenCode.
 //
 // It speaks to the same commands as the Claude Code hooks: `agent-bus event --kind=<hook>` with a
-// small JSON on stdin, and `agent-bus pending --format=hook`.
+// small JSON on stdin, and `agent-bus pending --format=plugin`.
+//
+// It is an OpenCode 2 plugin (`Plugin.define`); OpenCode 1's plugin API is not supported.
 import { spawn } from "node:child_process";
+import { Plugin } from "@opencode/plugin";
 
 const AGENT_BUS = process.env.AGENT_BUS_BIN || "agent-bus";
 const COMMAND_TIMEOUT_MS = 3000;
 // How often an idle session is checked for mail aimed at it. A check is one local socket call.
 const IDLE_POLL_MS = 15000;
+
+// The tool that starts a subagent; presence knows it under Claude Code's name for it, "Agent".
+const SUBAGENT_TOOL = "subagent";
+
+const EVENT_TYPES = [
+  "session.created",
+  "session.deleted",
+  "session.execution.started",
+  "session.execution.succeeded",
+  "session.execution.failed",
+  "session.execution.interrupted",
+  "session.retry.scheduled",
+  "permission.asked",
+  "permission.replied",
+];
 
 // run starts agent-bus, feeds it stdin and resolves with its stdout. It never rejects.
 function run(args, stdin = "") {
@@ -40,7 +58,8 @@ function report(kind, input = {}) {
 }
 
 // toolInput keeps what presence shows (a command's first word, a file's name), nothing else.
-function toolInput(args = {}) {
+function toolInput(input) {
+  const args = input && typeof input === "object" ? input : {};
   return {
     command: args.command,
     file_path: args.filePath ?? args.file_path ?? args.path,
@@ -48,140 +67,136 @@ function toolInput(args = {}) {
   };
 }
 
-// errorKind maps an OpenCode session error to the kinds Claude Code's StopFailure reports. null
-// means the user stopped the turn: not an error.
+// errorKind maps a failed execution's error to the kinds Claude Code's StopFailure reports.
 function errorKind(error) {
-  switch (error?.name) {
-    case "MessageAbortedError":
-      return null;
-    case "ProviderAuthError":
-      return "authentication_failed";
-    case "MessageOutputLengthError":
-      return "max_output_tokens";
-    case "APIError": {
-      const status = error.data?.statusCode;
-      if (status === 429) return "rate_limit";
-      if (status === 401 || status === 403) return "authentication_failed";
-      if (status === 402) return "billing_error";
-      if (status === 404) return "model_not_found";
-      if (status >= 500) return "server_error";
-      if (status >= 400) return "invalid_request";
-      return "unknown";
-    }
-    default:
-      return "unknown";
-  }
+  if (error?.type === "provider.no-route") return "model_not_found";
+  const status = error?.status;
+  if (status === 429) return "rate_limit";
+  if (status === 401 || status === 403) return "authentication_failed";
+  if (status === 402) return "billing_error";
+  if (status === 404) return "model_not_found";
+  if (status >= 500) return "server_error";
+  if (status >= 400) return "invalid_request";
+  return "unknown";
 }
 
-async function server({ client }) {
-  // Subagent sessions run inside a task of the main one: their idle and errors are not the agent's.
-  const childSessions = new Set();
-  // OpenCode goes idle after an error too; that idle must not hide the error or prompt a model
-  // that just failed.
-  const failedSessions = new Set();
+export default Plugin.define({
+  id: "agent-bus",
+  async setup(ctx) {
+    // Subagent sessions run inside a task of the main one: they are workers, and their idle and
+    // errors are not the agent's.
+    const childSessions = new Set();
+    // The session that went idle last is checked for mail every IDLE_POLL_MS until it is busy
+    // again, so mail that arrives after the idle wakes it. The adapter reports only mail aimed at
+    // the agent, so chatter never prompts the model. One session is enough: all of them share the
+    // agent's one inbox.
+    let watcher = null;
 
-  // deliverMail prompts the session about new mail. The mail is marked told only after the prompt
-  // was accepted, so a failed prompt is retried at the next idle.
-  async function deliverMail(sessionID) {
-    const output = (await run(["pending", "--format=plugin"])).trim();
-    if (!output) return;
-    try {
-      const { reason, ids } = JSON.parse(output);
-      const result = await client.session.promptAsync({ path: { id: sessionID }, body: { parts: [{ type: "text", text: reason }] } });
-      if (result?.error) return;
-      await run(["pending", "--mark=" + ids.join(",")]);
-    } catch {
-      // the next idle tries again; the mail is still in the inbox
+    // deliverMail prompts the session about new mail. The mail is marked told only after the prompt
+    // was accepted, so a failed prompt is retried at the next check.
+    async function deliverMail(sessionID) {
+      const output = (await run(["pending", "--format=plugin"])).trim();
+      if (!output) return;
+      try {
+        const { reason, ids } = JSON.parse(output);
+        await ctx.session.prompt({ sessionID, text: reason });
+        await run(["pending", "--mark=" + ids.join(",")]);
+      } catch {
+        // the next check tries again; the mail is still in the inbox
+      }
     }
-  }
 
-  // An idle session is checked for mail every IDLE_POLL_MS until it is busy again, so mail that
-  // arrives after the idle event wakes it. The adapter reports only mail aimed at the agent, so
-  // chatter never prompts the model.
-  const idleWatchers = new Map();
+    function stopWatchingIdle() {
+      if (!watcher) return;
+      watcher.stopped = true;
+      clearTimeout(watcher.timer);
+      watcher = null;
+    }
 
-  function stopWatchingIdle(sessionID) {
-    const watcher = idleWatchers.get(sessionID);
-    if (!watcher) return;
-    watcher.stopped = true;
-    clearTimeout(watcher.timer);
-    idleWatchers.delete(sessionID);
-  }
+    function watchWhileIdle(sessionID) {
+      stopWatchingIdle();
+      const own = { sessionID, stopped: false, timer: null };
+      watcher = own;
+      // One check at a time: the next is scheduled when the last one is done.
+      const check = async () => {
+        await deliverMail(sessionID);
+        if (!own.stopped) schedule();
+      };
+      const schedule = () => {
+        own.timer = setTimeout(check, IDLE_POLL_MS);
+        own.timer.unref?.();
+      };
+      schedule();
+    }
 
-  function watchWhileIdle(sessionID) {
-    stopWatchingIdle(sessionID);
-    const watcher = { stopped: false, timer: null };
-    // One check at a time: the next is scheduled when the last one is done.
-    const check = async () => {
-      await deliverMail(sessionID);
-      if (!watcher.stopped) schedule();
-    };
-    const schedule = () => {
-      watcher.timer = setTimeout(check, IDLE_POLL_MS);
-      watcher.timer.unref?.();
-    };
-    idleWatchers.set(sessionID, watcher);
-    schedule();
-  }
-
-  return {
-    event: async ({ event }) => {
-      const properties = event.properties ?? {};
-      if (event.type === "session.created" || event.type === "session.updated") {
-        if (properties.info?.parentID) childSessions.add(properties.info.id);
+    // handle maps one OpenCode event to agent-bus calls.
+    async function handle({ type, data }) {
+      const sessionID = data?.sessionID;
+      if (type === "session.created") {
+        if (data.parentID) {
+          childSessions.add(sessionID);
+          await report("subagent-start", { agent_id: sessionID, agent_type: "task" });
+        }
         return;
       }
-      if (childSessions.has(properties.sessionID)) return;
-      switch (event.type) {
-        case "session.status":
-          if (properties.status?.type === "busy") {
-            stopWatchingIdle(properties.sessionID);
-            failedSessions.delete(properties.sessionID);
-            await report("user-prompt");
-          }
-          if (properties.status?.type === "retry") await report("stop-failure", { error: "retrying" });
-          break;
-        case "session.idle":
-          if (failedSessions.delete(properties.sessionID)) break;
-          await report("stop");
-          await deliverMail(properties.sessionID);
-          watchWhileIdle(properties.sessionID);
-          break;
-        case "session.error": {
-          stopWatchingIdle(properties.sessionID);
-          const kind = errorKind(properties.error);
-          if (kind) failedSessions.add(properties.sessionID);
-          await (kind ? report("stop-failure", { error: kind }) : report("stop"));
-          break;
+      if (childSessions.has(sessionID)) {
+        if (type === "session.deleted") childSessions.delete(sessionID);
+        if (type.startsWith("session.execution.") && type !== "session.execution.started") {
+          await report("subagent-stop", { agent_id: sessionID });
         }
-        case "permission.updated":
+        return;
+      }
+      switch (type) {
+        case "session.execution.started":
+          stopWatchingIdle();
+          await report("user-prompt");
+          break;
+        case "session.execution.succeeded":
+        case "session.execution.interrupted":
+          await report("stop");
+          await deliverMail(sessionID);
+          watchWhileIdle(sessionID);
+          break;
+        case "session.execution.failed":
+          await report("stop-failure", { error: errorKind(data.error) });
+          break;
+        case "session.retry.scheduled":
+          await report("stop-failure", { error: "retrying" });
+          break;
+        case "permission.asked":
           await report("notification", { notification_type: "permission_prompt" });
           break;
         case "permission.replied":
           await report("post-tool");
           break;
         case "session.deleted":
-        case "server.instance.disposed":
-          for (const sessionID of [...idleWatchers.keys()]) stopWatchingIdle(sessionID);
+          if (watcher?.sessionID === sessionID) stopWatchingIdle();
           await report("session-end");
           break;
       }
-    },
-    // Tool hooks do not wait for agent-bus: they run on every tool call, like Claude Code's async
-    // hooks. A task call is a worker, told apart by its call ID; its events are chained so the
-    // launch comes before the start, and the start before the stop.
-    "tool.execute.before": async (input, output) => {
-      const isTask = input.tool === "task";
-      const launched = report("pre-tool", { tool_name: isTask ? "Agent" : input.tool, tool_input: toolInput(output.args) });
-      if (isTask) launched.then(() => report("subagent-start", { agent_id: input.callID, agent_type: "task" }));
-    },
-    "tool.execute.after": async (input) => {
-      const done = report("post-tool", { tool_name: input.tool });
-      if (input.tool === "task") done.then(() => report("subagent-stop", { agent_id: input.callID }));
-    },
-  };
-}
+    }
 
-// The V1 plugin module form, which OpenCode 2 still loads: one default export, so the plugin
-// is registered once.
-export default { id: "agent-bus", server };
+    const abort = new AbortController();
+    (async () => {
+      for await (const event of ctx.event.subscribe({ types: EVENT_TYPES, signal: abort.signal })) {
+        await handle(event).catch(() => {});
+      }
+    })().catch(() => {});
+
+    // Tool hooks do not wait for agent-bus: they run on every tool call, like Claude Code's async
+    // hooks.
+    await ctx.tool.hook("execute.before", (call) => {
+      const tool = call.tool === SUBAGENT_TOOL ? "Agent" : call.tool;
+      report("pre-tool", { tool_name: tool, tool_input: toolInput(call.input) });
+    });
+    await ctx.tool.hook("execute.after", (call) => {
+      report("post-tool", { tool_name: call.tool });
+    });
+
+    return async () => {
+      abort.abort();
+      stopWatchingIdle();
+      await report("session-end");
+    };
+  },
+});
