@@ -10,9 +10,9 @@ are deployed and released. The step-by-step guides are the user documentation:
 | Part | Status |
 |---|---|
 | `nats-server` as its own process, `deploy/nats-server.conf`, `deploy/nats.sh`, generated `auth.conf` and `control-auth.conf` | implemented |
-| Confirmed reload (lock, candidate, validate, replace, signal, confirm) | implemented in `agent-busctl --direct`; the **generation numbers recorded in the ledger and crash recovery by busd** are planned |
-| One image with `nats-server`, `agent-busctl`, `agent-bus`, `bus-monitor`; compose files; Caddy and nginx proxy samples; release by tag (archives and image) | implemented (this replaced the Pod manifest of the original plan, decisions 15 and 31) |
-| busd as a supervised service | **planned** |
+| Confirmed reload (lock, candidate, validate, replace, signal, confirm) | implemented in `agent-busctl --direct` and in busd (enrollment approvals); the **generation numbers recorded in the ledger and crash recovery by busd** are planned |
+| One image with `nats-server`, `busd`, `agent-busctl`, `agent-bus`, `bus-monitor`; compose files, Podman scripts (`deploy/podman/start.sh`, `monitor.sh`); Caddy and nginx proxy samples; release by tag (archives and image) | implemented (this replaced the Pod manifest of the original plan, decisions 15 and 31) |
+| busd as a supervised service | minimal busd runs in the broker container, restarted by an entrypoint loop; systemd-style supervision **planned** |
 
 ## Deployment
 
@@ -25,13 +25,16 @@ flowchart LR
   subgraph host["Central host"]
     subgraph broker["Container agent-bus"]
       nats["nats-server, ports 4222 and 4223"]
+      busd["busd, started by the entrypoint, restarted if it stops"]
       busctl["agent-busctl, started with exec"]
     end
     subgraph monitorc["Container monitor, compose profile monitor"]
       monitor["bus-monitor, port 8080, shares the broker network"]
     end
+    initc["monitor-init: agent-busctl monitor init"]
     proxy["Caddy or nginx, TLS, optional"]
     config[("volume config at /config")]
+    monitorconfig[("volume monitor-config: no CA key, no admin logins")]
     data[("volume data at /data")]
   end
   agents["Agent machines: agent-bus mcp"]
@@ -44,7 +47,12 @@ flowchart LR
   monitor -->|"localhost, shared network"| nats
   nats --- data
   nats --- config
-  monitor --- config
+  busd --- config
+  busd -->|"localhost"| nats
+  monitor -->|"busd.monitor.*"| busd
+  initc -->|"reads"| config
+  initc -->|"fills"| monitorconfig
+  monitor --- monitorconfig
   busctl --- config
 ```
 
@@ -54,7 +62,7 @@ flowchart LR
 
 ```mermaid
 sequenceDiagram
-  participant Op as agent-busctl --direct, later busd
+  participant Op as agent-busctl --direct or busd
   participant Conf as auth.conf
   participant Server as nats-server
   Op->>Op: take the file lock
@@ -67,14 +75,14 @@ sequenceDiagram
 ```
 
 Reloads go through the broker's container only; the monitor container never signals
-([docs/broker.md](../broker.md)).
+([docs/broker.md](../broker.md)). The monitor's config volume is filled by `monitor-init` from the broker's config, which it reads only; the Podman scripts `deploy/podman/start.sh` and `monitor.sh` do the same with bind mounts.
 
 ## Deploy
 
-**Deploy.** `nats-server` runs on the dev machine as a plain binary, started by a script or a user service unit (`deploy/`: `nats-server.conf` and the start script; `auth.conf` is generated, mode 0600). If a container runtime is used later, a Pod manifest replaces the start script and reload signals the container; nothing in the Go code or agent-busctl depends on how the process starts. busd and the monitor are plain binaries next to it (as built, the minimal busd is started by the broker container's entrypoint and restarted by it if it stops). busd runs supervised (a user service unit with automatic restart); there is no high availability, and [busd](busd.md) says what works while busd is down.
+**Deploy.** One image holds `nats-server`, `busd`, `agent-busctl`, `bus-monitor` and `agent-bus`. Its entrypoint renders the server configuration (`deploy/nats-server.conf`; `auth.conf` is generated, mode 0600), starts busd beside it in a restart loop where the config volume has `ca.key` (`BUS_BUSD=off` skips it) and runs `nats-server` as the main process, so signals reach it and `agent-busctl --direct` can reload it. The monitor runs from the same image in its own container, with a config volume of its own. Run it with the compose file in `deploy/` or the Podman scripts in `deploy/podman/`; a plain `nats-server` binary with the start script is for development and tests only ([docs/development.md](../development.md)). Nothing in the Go code or agent-busctl depends on how the processes start. There is no high availability, and [busd](busd.md) says what works while busd is down.
 
-> **Superseded in part:** the broker is run from the Docker image (compose file in `deploy/`), not
-> from a Pod manifest (decisions 15 and 31). busd, when it exists, is a plain binary next to it.
+> **Superseded in part:** the broker is run from the Docker image, not from a Pod manifest
+> (decisions 15 and 31).
 
 ## Releases
 
