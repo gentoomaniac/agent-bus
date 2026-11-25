@@ -41,7 +41,7 @@ services:
     environment:
       BUS_WEB_LISTEN: 0.0.0.0:8080
       BUS_WEB_BEHIND_PROXY: "true"
-      # BUS_AGENT: monitor@alice   # an identity registered with agent-busctl, to send as
+      BUS_AGENT: ${BUS_AGENT:-}   # an identity registered with agent-busctl, to send as (empty: read-only)
     profiles: ["monitor"]
 
   # Fills and refreshes the monitor's config folder from the broker's, which it reads only:

@@ -4,8 +4,8 @@ http:
   routers:
     monitor:
       entryPoints: [websecure]
-      # Any host name: the monitor itself accepts only the host of its public URL. Narrow it with
-      # Host(`bus.example.com`) if this Traefik serves other sites too.
+      # Any host name: the monitor itself accepts only the host of its public URL (and loopback
+      # names). Narrow it with Host(`bus.example.com`), the better choice for production.
       rule: "PathPrefix(`/`)"
       service: monitor
       tls: {}

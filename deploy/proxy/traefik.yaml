@@ -8,6 +8,10 @@
 #   BUS_WEB_TRUSTED_PROXY=<Traefik's address or network>
 # The compose overlay sets all three.
 
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
 entryPoints:
   web:
     address: ":80"
@@ -16,6 +20,7 @@ entryPoints:
         entryPoint:
           to: websecure
           scheme: https
+          # For a public HTTPS port other than 443, use `to: ":8443"` instead of websecure.
   websecure:
     # No forwardedHeaders.trustedIPs here: Traefik drops the X-Forwarded-* headers a client sent and
     # sets its own, which the monitor needs to count login attempts per client.

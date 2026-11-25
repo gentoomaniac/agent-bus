@@ -6,7 +6,7 @@
 #   docker compose -f deploy/docker-compose.yaml -f deploy/docker-compose.proxy.yaml \
 #     --profile monitor --profile proxy-nginx up -d          # or proxy-traefik, or proxy-caddy
 #
-# Needs Docker Compose 2.24 or newer (`!override`). Before the first start set the monitor's password:
+# Needs Docker Compose 2.24.4 or newer (`!override`). Before the first start set the monitor's password:
 #   docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
 #
 # BUS_PUBLIC_HOST   the host name clients use (default: localhost); Caddy gets its certificate for it
