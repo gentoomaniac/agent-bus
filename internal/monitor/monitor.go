@@ -59,7 +59,9 @@ type Message struct {
 	Text     string       `json:"text,omitempty"`
 	Refs     []string     `json:"refs,omitempty"`
 
-	raw []byte // the record as stored, for RawMessage
+	// raw is the record as stored, for RawMessage. It doubles what the monitor holds per message in
+	// memory (the parsed fields and the signed record), the price of serving it without a stream read.
+	raw []byte
 }
 
 // Channel is a conversation of the bus as the monitor lists it. A DM channel is the conversation of

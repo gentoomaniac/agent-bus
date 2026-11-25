@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -210,6 +213,115 @@ func TestHandlerRefusesAForeignHostHeader(t *testing.T) {
 		response.Body.Close()
 		if response.StatusCode != want {
 			t.Errorf("Host %q: status %d, want %d", host, response.StatusCode, want)
+		}
+	}
+}
+
+type rawAnswer struct {
+	Channel  string          `json:"channel"`
+	Sequence uint64          `json:"sequence"`
+	Status   Verification    `json:"status"`
+	Reason   string          `json:"reason"`
+	Size     int             `json:"size"`
+	Raw      json.RawMessage `json:"raw"`
+	RawText  string          `json:"raw_text"`
+}
+
+func TestRawMessageIsTheRecordAsStored(t *testing.T) {
+	alice := newTestAgent("api-client@alice")
+	fake := newFakeBus(t, alice)
+	record := alice.sign(t, bus.GeneralChannel(), "hello")
+	fake.store(bus.GeneralChannel(), 1, record)
+	fake.store(bus.GeneralChannel(), 2, []byte("not json"))
+	monitor := runMonitor(t, fake)
+	waitForMessages(t, monitor, "general", 2)
+	server := serve(monitor)
+	defer server.Close()
+
+	var signed rawAnswer
+	getJSON(t, server, "/api/v1/messages/raw?channel=general&sequence=1", &signed)
+	if signed.Channel != "general" || signed.Sequence != 1 || signed.Status != Verified || signed.Size != len(record) {
+		t.Errorf("answer = %+v", signed)
+	}
+	var got, want any
+	if err := json.Unmarshal(signed.Raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(record, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("raw = %s, want the published payload %s", signed.Raw, record)
+	}
+
+	var broken rawAnswer
+	getJSON(t, server, "/api/v1/messages/raw?channel=general&sequence=2", &broken)
+	if broken.Status != Rejected || broken.Reason == "" || broken.RawText != "not json" || broken.Raw != nil || broken.Size != len("not json") {
+		t.Errorf("answer = %+v", broken)
+	}
+}
+
+func TestRawMessageOfADirectChannelHasBothStreams(t *testing.T) {
+	alice, bob := newTestAgent("api-client@alice"), newTestAgent("lib-x@bob")
+	fake := newFakeBus(t, alice, bob)
+	toBob, toAlice := alice.sign(t, bus.DMChannel(bob.id), "ping"), bob.sign(t, bus.DMChannel(alice.id), "pong")
+	fake.store(bus.DMChannel(bob.id), 3, toBob)
+	fake.store(bus.DMChannel(alice.id), 5, toAlice)
+	monitor := runMonitor(t, fake)
+	const dm = "dm:api-client@alice:lib-x@bob"
+	waitForMessages(t, monitor, dm, 2)
+	server := serve(monitor)
+	defer server.Close()
+
+	for sequence, record := range map[int][]byte{3: toBob, 5: toAlice} {
+		var answer rawAnswer
+		path := "/api/v1/messages/raw?channel=" + url.QueryEscape(dm) + "&sequence=" + strconv.Itoa(sequence)
+		getJSON(t, server, path, &answer)
+		if answer.Channel != dm || answer.Size != len(record) || len(answer.Raw) == 0 {
+			t.Errorf("sequence %d: answer = %+v", sequence, answer)
+		}
+	}
+}
+
+func TestRawMessageErrors(t *testing.T) {
+	alice := newTestAgent("api-client@alice")
+	fake := newFakeBus(t, alice)
+	fake.store(bus.GeneralChannel(), 1, alice.sign(t, bus.GeneralChannel(), "hello"))
+	monitor := runMonitor(t, fake)
+	waitForMessages(t, monitor, "general", 1)
+	server := serve(monitor)
+	defer server.Close()
+
+	for path, want := range map[string]struct {
+		status int
+		code   string
+	}{
+		"/api/v1/messages/raw?channel=general&sequence=9":  {http.StatusNotFound, "unknown_message"},
+		"/api/v1/messages/raw?channel=nowhere&sequence=1":  {http.StatusNotFound, "unknown_message"},
+		"/api/v1/messages/raw?channel=general":             {http.StatusBadRequest, "bad_request"},
+		"/api/v1/messages/raw?channel=general&sequence=x":  {http.StatusBadRequest, "bad_request"},
+		"/api/v1/messages/raw?channel=general&sequence=-1": {http.StatusBadRequest, "bad_request"},
+	} {
+		response, body := call(t, server, "GET", path, "", nil)
+		if response.StatusCode != want.status || errorCode(body) != want.code {
+			t.Errorf("%s: %d %s, want %d %s", path, response.StatusCode, body, want.status, want.code)
+		}
+	}
+}
+
+func TestMessagesCarryNoRawBytes(t *testing.T) {
+	alice := newTestAgent("api-client@alice")
+	fake := newFakeBus(t, alice)
+	fake.store(bus.GeneralChannel(), 1, alice.sign(t, bus.GeneralChannel(), "hello"))
+	monitor := runMonitor(t, fake)
+	waitForMessages(t, monitor, "general", 1)
+	server := serve(monitor)
+	defer server.Close()
+
+	_, body := call(t, server, "GET", "/api/v1/messages?channel=general", "", nil)
+	for _, leaked := range []string{`"sig"`, `"envelope"`, `"raw"`, `"key_fp"`} {
+		if strings.Contains(body, leaked) {
+			t.Errorf("/messages leaks %s: %s", leaked, body)
 		}
 	}
 }
