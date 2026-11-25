@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { categorize, describeChannel } from "./channels";
-import { byOwner, dmAgents, dmByOwner, shortNames } from "./names";
+import { byOwner, dmAgents, dmByOwner, dmOwners, groupBy, ownerOf, shortName } from "./names";
 import { ago, describePresence, recentActivity } from "./presence";
 import { Session } from "./session";
 import { Agent, Channel, Presence } from "./types";
@@ -27,6 +27,21 @@ function stateIcon(state: string): vscode.ThemeIcon {
   return new vscode.ThemeIcon("circle-outline", color("disabledForeground"));
 }
 
+// Agents and DMs sit in a folding group per owner, by their short names; the tooltips keep the full
+// IDs. A group's id is what the monitor's prefs keep when it is folded.
+function agentGroups(agents: Agent[]): Node[] {
+  const sorted = [...agents].sort((a, b) => byOwner(a.id, b.id));
+  return groupBy(sorted, (agent) => ownerOf(agent.id)).map(({ key, items }) => ({
+    kind: "section", id: "agents@" + key, label: key || "(no owner)", children: items.map((agent): Node => ({ kind: "agent", agent })),
+  }));
+}
+
+function dmGroups(channels: Channel[]): Node[] {
+  return groupBy([...channels].sort(dmByOwner), dmOwners).map(({ key, items }) => ({
+    kind: "section", id: "dms@" + key, label: key || "(no owner)", children: items.map((channel): Node => ({ kind: "channel", channel })),
+  }));
+}
+
 export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
@@ -49,8 +64,8 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     return [
       ...favourites,
       { kind: "section", id: "channels", label: "Channels", children: channelNodes(categories.channels) },
-      { kind: "section", id: "dms", label: "Direct messages", children: channelNodes([...categories.directMessages].sort(dmByOwner)) },
-      { kind: "section", id: "agents", label: "Agents", children: agents.filter((agent) => agent.id !== this.model.self).sort((a, b) => byOwner(a.id, b.id)).map((agent) => ({ kind: "agent", agent })) },
+      { kind: "section", id: "dms", label: "Direct messages", children: dmGroups(categories.directMessages) },
+      { kind: "section", id: "agents", label: "Agents", children: agentGroups(agents.filter((agent) => agent.id !== this.model.self)) },
     ];
   }
 
@@ -76,17 +91,9 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     if (node.kind === "section") this.session.prefs.setCollapsed(node.id, collapsed);
   }
 
-  // Agents by their short name; the tooltips keep the full IDs. Worked out once per agent list.
-  private names?: { agents: readonly Agent[]; short: (id: string) => string };
-  private shortName(id: string): string {
-    const agents = this.model.agents;
-    if (this.names?.agents !== agents) this.names = { agents, short: shortNames(agents.map((agent) => agent.id)) };
-    return this.names.short(id);
-  }
-
   private channelItem(channel: Channel): vscode.TreeItem {
     const dm = channel.kind === "dm";
-    const item = new vscode.TreeItem(dm ? dmAgents(channel).map((id) => this.shortName(id)).join(" ↔ ") : describeChannel(channel));
+    const item = new vscode.TreeItem(dm ? dmAgents(channel).map(shortName).join(" ↔ ") : describeChannel(channel));
     const unread = this.model.unreadCount(channel.id);
     item.id = channel.id;
     const favourite = this.session.prefs.favourites.has(channel.id);
@@ -115,7 +122,7 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
   }
 
   private agentItem(agent: Agent): vscode.TreeItem {
-    const item = new vscode.TreeItem(this.shortName(agent.id));
+    const item = new vscode.TreeItem(shortName(agent.id));
     item.id = "agent:" + agent.id;
     // The menu offers "Message Agent" only for an agent the monitor can write to.
     const messageable = !agent.removed && this.model.status?.can_send === true;

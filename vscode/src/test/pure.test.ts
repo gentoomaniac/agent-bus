@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { ago, describePresence, presenceClass, recentActivity } from "../presence";
 import { matchTargets, mentionBefore, mentionText, resolveTarget } from "../completion";
 import { categorize, describeChannel, destinationOf, dmChannelId } from "../channels";
-import { byOwner, dmAgents, dmByOwner, shortNames } from "../names";
+import { byOwner, dmAgents, dmByOwner, dmOwners, groupBy, ownerOf, shortName } from "../names";
 import { parseFromWebview, parsePresenceMarks } from "../protocol";
 import { nextBackoff } from "../events";
 import { continuesGroup, insertMessage, isTargeted, unreadMessages } from "../messages";
@@ -99,16 +99,25 @@ test("byOwner sorts agents by owner, then by name", () => {
   assert.deepEqual(["b@zed", "watcher@alice", "api@zed", "lib@alice"].sort(byOwner), ["lib@alice", "watcher@alice", "api@zed", "b@zed"]);
 });
 
-test("shortNames drops the owner unless two owners share a name", () => {
-  const short = shortNames(["api@alice", "lib@alice", "api@bob"]);
-  assert.deepEqual(["api@alice", "lib@alice", "api@bob"].map(short), ["api@alice", "lib", "api@bob"]);
+test("shortName and ownerOf split an agent ID at its @", () => {
+  assert.deepEqual([shortName("api@alice"), ownerOf("api@alice")], ["api", "alice"]);
+  assert.deepEqual([shortName("plain"), ownerOf("plain")], ["plain", ""]);
+});
+
+test("groupBy keeps the order and splits it into runs", () => {
+  const ids = ["a@alice", "b@alice", "a@bob"];
+  assert.deepEqual(groupBy(ids, ownerOf), [{ key: "alice", items: ["a@alice", "b@alice"] }, { key: "bob", items: ["a@bob"] }]);
 });
 
 test("DMs list their agents in owner order and sort by them", () => {
   const dm = (a: string, b: string) => channel({ id: dmChannelId(a, b), kind: "dm", name: `${a} + ${b}`, agents: [a, b].sort() });
   assert.deepEqual(dmAgents(dm("zz@alice", "aa@bob")), ["zz@alice", "aa@bob"]);
-  const sorted = [dm("x@bob", "y@bob"), dm("b@alice", "x@bob"), dm("a@alice", "x@bob")].sort(dmByOwner);
-  assert.deepEqual(sorted.map(dmAgents), [["a@alice", "x@bob"], ["b@alice", "x@bob"], ["x@bob", "y@bob"]]);
+  assert.deepEqual([dmOwners(dm("a@alice", "b@alice")), dmOwners(dm("zz@alice", "aa@bob"))], ["alice", "alice ↔ bob"]);
+  // Same-owner and two-owner DMs of alice don't interleave, so each owner group is one run.
+  const sorted = [dm("c@alice", "d@alice"), dm("x@bob", "y@bob"), dm("b@alice", "x@bob"), dm("a@alice", "b@alice")].sort(dmByOwner);
+  assert.deepEqual(sorted.map(dmAgents), [["a@alice", "b@alice"], ["c@alice", "d@alice"], ["b@alice", "x@bob"], ["x@bob", "y@bob"]]);
+  const dmWithoutAgents = channel({ id: "dm:a@x:b@y", kind: "dm", name: "b@y + a@x" });
+  assert.deepEqual(dmAgents(dmWithoutAgents), ["a@x", "b@y"]);
 });
 
 test("continuesGroup joins as the web page does", () => {

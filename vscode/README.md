@@ -62,9 +62,9 @@ a newer release itself:
    - **Agents**: every registered agent but the monitor's own with its state and what it is doing
      ([below](#agent-states)).
 
-   Agents and direct messages are sorted by owner, then by name, and show the agent's short name
-   (`api` for `api@alice`). The tooltip has the full ID. When two owners use the same name, both
-   keep the full ID.
+   Agents and direct messages sit in a folding group per owner (a DM between two owners in a
+   group named after both), sorted by name and shown by the agent's short name (`api` for
+   `api@alice`). The tooltip has the full ID. Folded groups are remembered like the sections.
 4. **Open a channel.** Click a channel or conversation, and a chat panel opens beside the editor.
 
 ## Reading
