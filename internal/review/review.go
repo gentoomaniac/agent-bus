@@ -150,10 +150,13 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.listCmd(), refreshAfter())
 	case listedMsg:
 		if message.err != nil {
-			m.notice = "cannot read the queue: " + message.err.Error()
+			m.notice = "cannot read the queue: " + enroll.Printable(message.err.Error())
 			return m, nil
 		}
-		m.pending = message.pending
+		m.pending = make([]enroll.Pending, len(message.pending))
+		for i, request := range message.pending {
+			m.pending[i] = request.Printable() // what is shown comes from machines that are not trusted yet
+		}
 		request, _, ok := m.current()
 		if ok {
 			m.selected = request.RequestID
@@ -162,9 +165,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode, m.notice = browsing, "the request is gone (decided elsewhere, or expired): nothing was sent"
 		}
 	case actionDoneMsg:
-		m.notice = message.message
+		m.notice = enroll.Printable(message.message)
 		if message.err != nil {
-			m.notice = "failed: " + message.err.Error()
+			m.notice = "failed: " + enroll.Printable(message.err.Error())
 		}
 		return m, m.listCmd()
 	case tea.KeyMsg:

@@ -183,7 +183,7 @@ func (e *enrolment) run(ctx context.Context) error {
 				return e.finish(request, waiting.TLSKey, reply)
 			case enroll.StatusRejected:
 				_ = os.Remove(e.pendingPath())
-				return fmt.Errorf("the request %s was rejected: %s", request.Code(), reply.Message)
+				return fmt.Errorf("the request %s was rejected: %s", request.Code(), enroll.Printable(reply.Message))
 			case enroll.StatusPending:
 				if e.opts.Wait == 0 {
 					fmt.Fprintf(e.opts.Out, "waiting for the owner to approve %s; run the command again, or with --waitforcert, to collect the certificate\n", request.Code())
@@ -218,7 +218,7 @@ func (e *enrolment) ask(ctx context.Context, request enroll.Request, submit bool
 
 func believed(request enroll.Request, reply enroll.Reply, err error) (enroll.Reply, error) {
 	if err == nil && reply.RequestID != request.ID() {
-		err = fmt.Errorf("busd answered %q, which is no answer about this request: %s", reply.Status, reply.Message)
+		err = fmt.Errorf("busd answered %q, which is no answer about this request: %s", enroll.Printable(string(reply.Status)), enroll.Printable(reply.Message))
 	}
 	return reply, err
 }

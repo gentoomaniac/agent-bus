@@ -190,6 +190,21 @@ func TestARejectionEndsTheRequestWithItsReason(t *testing.T) {
 	}
 }
 
+func TestTextFromBusdIsPrintedWithoutControlCharacters(t *testing.T) {
+	f := newFixture(t)
+	f.busd.status, f.busd.message = enroll.StatusRejected, "no\x1b[2J\x1b]0;pwned\a\nreally"
+	err := f.run(0)
+	if err == nil || strings.ContainsAny(err.Error(), "\x1b\x07\n") || !strings.Contains(err.Error(), "really") {
+		t.Errorf("a rejection reason with control characters: %q", err)
+	}
+
+	f = newFixture(t)
+	f.busd.status, f.busd.message, f.busd.forceID = enroll.StatusRejected, "forged\x1b[2J", "someone-else"
+	if err := f.run(0); err == nil || strings.ContainsAny(err.Error(), "\x1b") {
+		t.Errorf("a refusal with control characters: %q", err)
+	}
+}
+
 func TestAnAnswerAboutAnotherRequestIsNotBelieved(t *testing.T) {
 	f := newFixture(t)
 	f.busd.status, f.busd.message, f.busd.forceID = enroll.StatusRejected, "forged", "someone-else"

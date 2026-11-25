@@ -1,7 +1,9 @@
 package enroll
 
 import (
+	"strings"
 	"time"
+	"unicode"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 )
@@ -90,4 +92,26 @@ type RejectCommand struct {
 type CommandReply struct {
 	Message string `json:"message,omitempty"`
 	Error   string `json:"error,omitempty"`
+}
+
+// Printable drops what is not printable (control characters such as the escape that starts a
+// terminal sequence, line breaks, bidirectional overrides) from text that came over the bus, so
+// printing it cannot move the cursor, rewrite the screen or fake a line. Everything that shows
+// busd's or a peer's text calls it.
+func Printable(text string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return -1
+	}, text)
+}
+
+// Printable is the request with every text field made printable; the ID, which names the request
+// in commands, is a digest and stays as it is.
+func (pending Pending) Printable() Pending {
+	pending.Code, pending.AgentID, pending.Hostname = Printable(pending.Code), Printable(pending.AgentID), Printable(pending.Hostname)
+	pending.SigningFingerprint, pending.TLSFingerprint = Printable(pending.SigningFingerprint), Printable(pending.TLSFingerprint)
+	pending.Identity = Printable(pending.Identity)
+	return pending
 }

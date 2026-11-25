@@ -36,7 +36,10 @@ func (client Client) List(ctx context.Context) ([]enroll.Pending, error) {
 		return nil, err
 	}
 	if reply.Error != "" {
-		return nil, errors.New(reply.Error)
+		return nil, errors.New(enroll.Printable(reply.Error))
+	}
+	for i, request := range reply.Pending {
+		reply.Pending[i] = request.Printable()
 	}
 	return reply.Pending, nil
 }
@@ -57,7 +60,7 @@ func (client Client) command(ctx context.Context, subject string, command any) (
 		return "", err
 	}
 	if reply.Error != "" {
-		return "", errors.New(reply.Error)
+		return "", errors.New(enroll.Printable(reply.Error))
 	}
-	return reply.Message, nil
+	return enroll.Printable(reply.Message), nil
 }

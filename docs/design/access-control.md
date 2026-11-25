@@ -184,7 +184,15 @@ What was built, and where it differs from the plan above it:
   at most 8 KiB each, 100 pending, 3 per agent ID, 10 requests a minute (burst 10), expiry after 24
   hours (the agent then hears "expired"), a decided request is kept 24 hours for the agent to
   collect, a request of the same agent ID and signing key supersedes the earlier one. Over a limit
-  the answer is `busy` and the agent retries.
+  the answer is `busy` and the agent retries. **The rate limit and the cap of 100 pending requests
+  are global, not per sender**: the login is shared, so one machine (or anyone with the enrollment
+  password) that asks in a loop can use them up and make others hear `busy` until it stops. That
+  is accepted on a trusted LAN; the owner's recourse is `enroll init --force` (a new password).
+- **Text from the network is cleaned before it is shown.** A request's fields, the reasons and
+  messages busd sends and the registry's errors can come from a machine that is not trusted yet.
+  `ca list`, `ca review` and `agent-bus enroll` strip control characters (escape sequences, line
+  breaks, bidirectional overrides) from them before printing; busd also accepts only printable
+  text in a request.
 - **Approval** is single-use: only a pending request can be approved. busd builds the certificate with
   `SignCSR` from the approved agent ID and the CSR's public key alone, the CSR's own names and
   usages are ignored (phase A code). A removed (tombstoned) ID is refused at request and at approval.
