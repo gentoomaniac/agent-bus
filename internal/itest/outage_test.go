@@ -135,7 +135,7 @@ func TestBrokerOutage(t *testing.T) {
 		if texts, _ := inbox(t, bobServer); !slices.Equal(texts, []string{"before the outage"}) {
 			t.Errorf("inbox during the outage = %v", texts)
 		}
-		for _, tool := range []string{"whoami", "list_channels"} {
+		for _, tool := range []string{"whoami", "channels"} {
 			if text, isError := bobServer.call(t, tool, nil); isError {
 				t.Errorf("%s: %s", tool, text)
 			}

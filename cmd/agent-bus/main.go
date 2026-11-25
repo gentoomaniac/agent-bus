@@ -395,7 +395,7 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 	}
 	session, err = adapter.Open(adapter.Config{
 		AgentID: cli.Agent, Dir: dir, Transport: transport, BrokerAddress: connection.Address, BrokerNote: brokerNote, Directory: trust.DirectoryPath(cli.ConfigDir),
-		DirectoryLink: transport, CACert: caPEM, Log: func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) },
+		DirectoryLink: transport, ChannelLink: transport, CACert: caPEM, Log: func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) },
 		Groups: cli.Groups, Deliver: cli.Deliver, AutoAccept: cli.AutoAccept,
 	})
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/channelapi"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -145,6 +146,22 @@ func (transport *Transport) RequestDirectory(ctx context.Context, request []byte
 		return nil, errors.New("busd is not running on the broker, so the directory cannot be synced (docs/troubleshooting.md)")
 	case err != nil:
 		return nil, fmt.Errorf("asking busd for the directory: %w", transport.session.explain(err))
+	}
+	return reply.Data, nil
+}
+
+// RequestChannel sends a signed channel request to busd on the agent's own channel subject
+// (channelapi.Subject); the answer comes back in the agent's own inbox space.
+func (transport *Transport) RequestChannel(ctx context.Context, request []byte) ([]byte, error) {
+	if err := transport.Unavailable(); err != nil {
+		return nil, err
+	}
+	reply, err := transport.session.conn.RequestWithContext(ctx, channelapi.Subject(transport.agentToken), request)
+	switch {
+	case errors.Is(err, nats.ErrNoResponders):
+		return nil, errors.New("busd is not running on the broker, so it cannot be asked about channels (docs/troubleshooting.md)")
+	case err != nil:
+		return nil, fmt.Errorf("asking busd about channels: %w", transport.session.explain(err))
 	}
 	return reply.Data, nil
 }

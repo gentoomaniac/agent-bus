@@ -33,8 +33,8 @@ broker is down. They retry forever: the wait starts at 1 s, doubles after each f
 (`--reconnect-initial` and `--reconnect-max` change it). Each outage and its end are
 logged once on stderr.
 
-- Keeps working: `inbox`, `wait_for_messages`, `whoami` and `list_channels`, from the messages
-  already buffered; the hooks serve that buffer too.
+- Keeps working: `inbox`, `wait_for_messages`, `whoami` and `channels` (its list, from the local
+  directory), from the messages already buffered; the hooks serve that buffer too.
 - Fails until the bus is back: `send`, `publish` and `mark_read`. Nothing is lost or half done: a failed
   `mark_read` leaves the message unread, so repeat it later.
 - The hooks say so once when an outage lasts a minute ([claude-code.md](claude-code.md#a-broker-that-stays-out-of-reach)),

@@ -55,7 +55,10 @@ type Config struct {
 	// DirectoryLink syncs a Directory that is a trust.FileDirectory with busd (SyncDirectory,
 	// RunDirectory). Nil: the directory only changes when someone copies files in.
 	DirectoryLink DirectoryLink
-	// CACert is the CA certificate (PEM) busd's directory must be signed by.
+	// ChannelLink sends channel requests to busd (RequestChannel). Nil: the session cannot create,
+	// join or manage channels.
+	ChannelLink ChannelLink
+	// CACert is the CA certificate (PEM) busd's directory and its answers must be signed by.
 	CACert []byte
 	// Log tells the owner what the adapter does not return as an error, such as a directory of a
 	// new epoch. Default: nothing is logged.
@@ -231,7 +234,7 @@ func (adapter *Adapter) load() (err error) {
 			return err
 		}
 	}
-	catalogue, err := adapter.catalogue()
+	catalogue, err := adapter.Catalogue()
 	if err != nil {
 		return err
 	}
@@ -257,9 +260,9 @@ func (adapter *Adapter) channelsFor(catalogue trust.Catalogue) []bus.Channel {
 	return channels
 }
 
-// catalogue reads the directory's snapshot of the group channels and their readers. A directory
+// Catalogue reads the directory's snapshot of the group channels and their readers. A directory
 // that has none (trust.FileDirectory is the only one that can) gives an empty catalogue.
-func (adapter *Adapter) catalogue() (trust.Catalogue, error) {
+func (adapter *Adapter) Catalogue() (trust.Catalogue, error) {
 	snapshotter, ok := adapter.config.Directory.(interface {
 		Catalogue() (trust.Catalogue, error)
 	})
@@ -415,7 +418,7 @@ func (adapter *Adapter) Publish(ctx context.Context, channelName string, message
 		return "", err
 	}
 	if !slices.Contains(adapter.Channels(), bus.GroupChannel(channelName)) {
-		catalogue, err := adapter.catalogue()
+		catalogue, err := adapter.Catalogue()
 		if err != nil {
 			return "", err
 		}
@@ -431,7 +434,7 @@ func (adapter *Adapter) Publish(ctx context.Context, channelName string, message
 // read by everyone, and a group the catalogue does not know (the agent reads it through --groups)
 // says nothing.
 func (adapter *Adapter) NonReaders(channelName string, targets []string) []string {
-	catalogue, err := adapter.catalogue()
+	catalogue, err := adapter.Catalogue()
 	readers, listed := catalogue[channelName]
 	if err != nil || !listed {
 		return nil

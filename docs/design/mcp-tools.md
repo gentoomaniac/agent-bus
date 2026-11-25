@@ -6,10 +6,12 @@ The tools the adapter offers to an agent session (an stdio MCP server, `agent-bu
 user-facing reference is [docs/agent-tools.md](../agent-tools.md).
 
 Status per tool: **implemented** are `whoami`, `send`, `publish`, `inbox`, `mark_read`,
-`wait_for_messages`, `list_agents` and `list_channels`. **Planned**: `join`, `leave`,
-`unsubscribe`, `create_private_channel`, `invite`, `remove_member`, `list_members`, `history`,
-`requests` and `set_request_status` (they need busd or the request lifecycle). The table is the
-full design.
+`wait_for_messages`, `list_agents` and `channels`. `channels` is one tool with an `action` for
+`list_channels`, `create_channel`, `join`, `leave`, `invite`, `remove_member`, `update_channel` and
+`list_members` on public group channels, to keep the tool descriptions within their token budget
+([agent channels](agent-channels.md#as-built)). **Planned**: `unsubscribe`, the private channels,
+`history`, `requests` and `set_request_status` (they need busd or the request lifecycle). The table
+is the full design.
 
 ## Tool table
 

@@ -3,16 +3,19 @@
 package mcpserver
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"slices"
 	"strings"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/channelapi"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -150,10 +153,11 @@ func New(session *adapter.Adapter) *mcp.Server {
 		Name:        "wait_for_messages",
 		Description: "Wait up to timeout_s (default 30, max 300) for messages not yet returned by inbox or wait.",
 	}, t.waitForMessages)
+	// One tool for every channel action: each tool's description costs tokens in every session.
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_channels",
-		Description: "The channels you read.",
-	}, t.listChannels)
+		Name:        "channels",
+		Description: "List/manage channels.",
+	}, t.channels)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_agents",
 		Description: "Agents you can send to (yourself too) with their state; detail adds activity and workers.",
@@ -219,15 +223,126 @@ func (t tools) whoami(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.Cal
 	return nil, out, nil
 }
 
-type channelsOut struct {
-	Channels []string `json:"channels"`
+type channelsIn struct {
+	Action      string `json:"action,omitempty" jsonschema:"list (default: every group channel), members, create, join, leave; channel owner: invite, remove_member, update"`
+	Channel     string `json:"channel,omitempty" jsonschema:"group channel name, for every action but list"`
+	Description string `json:"description,omitempty" jsonschema:"create, update: what the channel is for"`
+	Agent       string `json:"agent,omitempty" jsonschema:"invite, remove_member: agent ID"`
 }
 
-func (t tools) listChannels(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, channelsOut, error) {
+// channelEntry is a group channel in a listing. Members are left out: there may be many, and
+// action members gives them.
+type channelEntry struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Owner       string `json:"owner,omitempty"`
+	Joined      bool   `json:"joined"`
+}
+
+type channelsOut struct {
+	Channels []channelEntry `json:"channels,omitempty"` // list
+	// Channel, Owner and Members describe the one channel of members and of a change.
+	Channel string   `json:"channel,omitempty"`
+	Owner   string   `json:"owner,omitempty"`
+	Members []string `json:"members,omitempty"`
+	Result  string   `json:"result,omitempty"` // what a change did, in a line
+	Note    string   `json:"note,omitempty"`   // why a listing is only the local one
+	Warning string   `json:"warning,omitempty"`
+}
+
+// busOwner names the owner of a channel no agent owns.
+const busOwner = "bus owner"
+
+func (t tools) channels(ctx context.Context, _ *mcp.CallToolRequest, in channelsIn) (*mcp.CallToolResult, channelsOut, error) {
+	switch in.Action {
+	case "", channelapi.List:
+		return t.listChannels(ctx)
+	case "members":
+		return t.channelMembers(ctx, in.Channel)
+	case channelapi.Invite:
+		reply, warning, err := t.session.Invite(ctx, in.Channel, in.Agent)
+		if err != nil {
+			return nil, channelsOut{}, err
+		}
+		out := describeChannel(*reply.Channel)
+		out.Result, out.Warning = fmt.Sprintf("%s invited to %s and told so", in.Agent, in.Channel), warning
+		return nil, out, nil
+	}
+	reply, err := t.session.RequestChannel(ctx, channelapi.Request{Action: in.Action, Channel: in.Channel, Description: in.Description, Agent: in.Agent})
+	if err != nil {
+		return nil, channelsOut{}, err
+	}
+	out := describeChannel(*reply.Channel)
+	switch in.Action {
+	case channelapi.Create:
+		out.Result = createdLine(in.Channel, *reply.Limits)
+	case channelapi.Join:
+		out.Result = "you read " + in.Channel + " from now on"
+	case channelapi.Leave:
+		out.Result = "you no longer read " + in.Channel
+	case channelapi.RemoveMember:
+		out.Result = in.Agent + " no longer reads " + in.Channel
+	case channelapi.Update:
+		out.Result = "description of " + in.Channel + " updated"
+	}
+	return nil, out, nil
+}
+
+func describeChannel(channel channelapi.Channel) channelsOut {
+	return channelsOut{Channel: channel.Name, Owner: cmp.Or(channel.Owner, busOwner), Members: channel.Members}
+}
+
+// createdLine says in one line what a new channel lives under (docs/design/agent-channels.md).
+func createdLine(name string, limits channelapi.Limits) string {
+	line := "public channel " + name + " created, you own it"
+	if limits.MessageRetention != nil {
+		line += "; messages kept " + *limits.MessageRetention
+	}
+	if limits.ChannelsLeftToday != nil && limits.CreationLimitPerDay != nil {
+		line += fmt.Sprintf("; %d of %d channel creations left today", *limits.ChannelsLeftToday, *limits.CreationLimitPerDay)
+	}
+	return line
+}
+
+// listChannels is every group channel from busd. While busd cannot be asked it is the local
+// catalogue's, without descriptions and owners, and the note says why.
+func (t tools) listChannels(ctx context.Context) (*mcp.CallToolResult, channelsOut, error) {
 	if err := t.session.Ready(); err != nil {
 		return nil, channelsOut{}, err
 	}
-	return nil, channelsOut{t.channelNames()}, nil
+	self := t.session.AgentID()
+	reply, err := t.session.RequestChannel(ctx, channelapi.Request{Action: channelapi.List})
+	if err == nil {
+		out := channelsOut{Channels: []channelEntry{}}
+		for _, channel := range reply.Channels {
+			out.Channels = append(out.Channels, channelEntry{
+				Name: channel.Name, Description: channel.Description, Owner: cmp.Or(channel.Owner, busOwner), Joined: slices.Contains(channel.Members, self),
+			})
+		}
+		return nil, out, nil
+	}
+	catalogue, localErr := t.session.Catalogue()
+	if localErr != nil {
+		return nil, channelsOut{}, errors.Join(err, localErr)
+	}
+	out := channelsOut{Channels: []channelEntry{}, Note: "only the names this machine knows: " + err.Error()}
+	for _, name := range slices.Sorted(maps.Keys(catalogue)) {
+		out.Channels = append(out.Channels, channelEntry{Name: name, Joined: slices.Contains(catalogue[name], self)})
+	}
+	return nil, out, nil
+}
+
+func (t tools) channelMembers(ctx context.Context, name string) (*mcp.CallToolResult, channelsOut, error) {
+	reply, err := t.session.RequestChannel(ctx, channelapi.Request{Action: channelapi.List})
+	if err != nil {
+		return nil, channelsOut{}, err
+	}
+	for _, channel := range reply.Channels {
+		if channel.Name == name {
+			return nil, describeChannel(channel), nil
+		}
+	}
+	return nil, channelsOut{}, fmt.Errorf("there is no channel %s", name)
 }
 
 // unknownSenders says why mail is missing: its senders are not in the local directory.
