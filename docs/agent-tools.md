@@ -174,16 +174,16 @@ whether one agent can respond.
   answer and status replies count against a separate allowance of the same size. When it is hit
   the error says `retry_after` (seconds): keep the message and send it again then.
 - `publish` to a group that is neither read by the agent nor in the catalogue snapshot of its
-  directory (`channels`, written by `busctl channel create`) fails with "unknown channel". If
+  directory (`channels`, written by `agent-busctl channel create`) fails with "unknown channel". If
   an explicit target (or @mention) does not read the group according to the snapshot, the result
   carries a `warning` to DM it instead.
 
 ## Shell equivalents
 
-Build with `go build -o bin/ ./cmd/agent-bus`. After `busctl --direct register <agent-id>` (and
+Build with `go build -o bin/ ./cmd/agent-bus`. After `agent-busctl --direct register <agent-id>` (and
 `channel create` and `channel join` for groups), these act as that identity. The flags before the
 command (`--agent`, also `--identity` or `BUS_AGENT`; `--groups a,b`; `--config-dir`, `--broker`,
-`--ca-cert`, `--timeout`) work as for [busctl](busctl.md#global-flags).
+`--ca-cert`, `--timeout`) work as for [agent-busctl](agent-busctl.md#global-flags).
 
 | Command                                                              | Like tool | Output                      |
 |----------------------------------------------------------------------|-----------|-----------------------------|

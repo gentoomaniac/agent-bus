@@ -53,7 +53,7 @@ livePid() {
 up() {
   for file in broker.pem broker.key nats/auth.conf nats/control-auth.conf; do
     [[ -f "$BUS_CONFIG_DIR/$file" ]] || {
-      echo "missing $BUS_CONFIG_DIR/$file: run 'busctl tls init' and 'busctl admin init' first" >&2
+      echo "missing $BUS_CONFIG_DIR/$file: run 'agent-busctl tls init' and 'agent-busctl admin init' first" >&2
       exit 1
     }
   done

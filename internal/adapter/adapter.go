@@ -48,8 +48,8 @@ type Config struct {
 	Transport bus.Transport
 	Directory trust.Directory
 	// Groups are group channels to read besides the agent's DM channel, general and the groups the
-	// directory's catalogue snapshot lists the agent in (written by `busctl channel join`). Their
-	// read cursors must exist (busctl creates them).
+	// directory's catalogue snapshot lists the agent in (written by `agent-busctl channel join`). Their
+	// read cursors must exist (agent-busctl creates them).
 	Groups []string
 
 	// AutoAccept says the agent may act on a request aimed at it without asking its owner
@@ -101,7 +101,7 @@ type Adapter struct {
 	keyFP   string
 	trust   *trust.Store
 	handled *handledSet
-	// alertsPath is a plain log until busctl alerts exists.
+	// alertsPath is a plain log until agent-busctl alerts exists.
 	alertsPath string
 	channels   []bus.Channel
 
@@ -339,7 +339,7 @@ func (adapter *Adapter) Publish(ctx context.Context, channelName string, message
 			return "", err
 		}
 		if _, listed := catalogue[channelName]; !listed {
-			return "", fmt.Errorf("unknown channel %s: it is not in the catalogue (busctl channel create) of this machine's directory", channelName)
+			return "", fmt.Errorf("unknown channel %s: it is not in the catalogue (agent-busctl channel create) of this machine's directory", channelName)
 		}
 	}
 	return adapter.post(ctx, bus.GroupChannel(channelName), message)
@@ -767,7 +767,7 @@ func (adapter *Adapter) reject(ctx context.Context, channel bus.Channel, deliver
 	return errors.Join(alertErr, delivery.Ack(ctx))
 }
 
-// alert appends a line to alerts.log; busctl alerts will read it.
+// alert appends a line to alerts.log; agent-busctl alerts will read it.
 func (adapter *Adapter) alert(format string, args ...any) error {
 	line := fmt.Sprintf("%s %s\n", adapter.config.Now().UTC().Format(time.RFC3339), fmt.Sprintf(format, args...))
 	file, err := os.OpenFile(adapter.alertsPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, files.SecretMode)

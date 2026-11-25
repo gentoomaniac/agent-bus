@@ -2,7 +2,7 @@
 
 // Package itest starts a real nats-server with deploy/nats.sh and checks milestone 1a end to end
 // (design.md §4a, §11): the two accounts, the per-role grants, reply-subject redirection, the
-// consumers busctl creates, confirmed reloads and the ledger's compare-and-set. Run it with
+// consumers agent-busctl creates, confirmed reloads and the ledger's compare-and-set. Run it with
 // `make itest`, which builds the pinned nats-server first.
 package itest
 
@@ -41,15 +41,15 @@ const (
 
 // harness is a running nats-server with an initialised config directory.
 type harness struct {
-	configDir  string
-	port       int
-	busctl     string
-	address    string
-	monitorURL string
-	caCert     string
-	env        []string
-	socketDir  string // XDG_RUNTIME_DIR of the processes started here: where hook sockets go
-	server     broker.Server
+	configDir   string
+	port        int
+	agentBusctl string
+	address     string
+	monitorURL  string
+	caCert      string
+	env         []string
+	socketDir   string // XDG_RUNTIME_DIR of the processes started here: where hook sockets go
+	server      broker.Server
 }
 
 func startBus(t *testing.T) *harness {
@@ -61,12 +61,12 @@ func startBus(t *testing.T) *harness {
 	configDir := t.TempDir()
 	port, monitorPort := freePort(t), freePort(t)
 	h := &harness{
-		configDir:  configDir,
-		port:       port,
-		busctl:     filepath.Join(t.TempDir(), "busctl"),
-		address:    fmt.Sprintf("localhost:%d", port),
-		monitorURL: fmt.Sprintf("http://127.0.0.1:%d", monitorPort),
-		caCert:     filepath.Join(configDir, "ca.pem"),
+		configDir:   configDir,
+		port:        port,
+		agentBusctl: filepath.Join(t.TempDir(), "agent-busctl"),
+		address:     fmt.Sprintf("localhost:%d", port),
+		monitorURL:  fmt.Sprintf("http://127.0.0.1:%d", monitorPort),
+		caCert:      filepath.Join(configDir, "ca.pem"),
 	}
 	// Short, because unix socket paths are limited to about 100 bytes.
 	runtimeDir, err := os.MkdirTemp("", "bus")
@@ -101,15 +101,15 @@ func startBus(t *testing.T) *harness {
 		}
 	})
 
-	h.run(t, "go", "build", "-o", h.busctl, "../../cmd/busctl")
-	h.run(t, h.busctl, "tls", "init")
-	h.run(t, h.busctl, "admin", "init")
+	h.run(t, "go", "build", "-o", h.agentBusctl, "../../cmd/agent-busctl")
+	h.run(t, h.agentBusctl, "tls", "init")
+	h.run(t, h.agentBusctl, "admin", "init")
 	h.run(t, natsScript, "up")
-	h.run(t, h.busctl, "--direct", "init")
-	h.run(t, h.busctl, "--direct", "init") // a repeat keeps what exists
-	h.run(t, h.busctl, "--direct", "register", alice)
-	h.run(t, h.busctl, "--direct", "register", bob)
-	h.run(t, h.busctl, "--direct", "channel", "create", "lib-x", "--description", "discussion about lib-x")
+	h.run(t, h.agentBusctl, "--direct", "init")
+	h.run(t, h.agentBusctl, "--direct", "init") // a repeat keeps what exists
+	h.run(t, h.agentBusctl, "--direct", "register", alice)
+	h.run(t, h.agentBusctl, "--direct", "register", bob)
+	h.run(t, h.agentBusctl, "--direct", "channel", "create", "lib-x", "--description", "discussion about lib-x")
 	return h
 }
 
@@ -149,7 +149,7 @@ func timeout(t *testing.T) context.Context {
 // register adds one more agent for a test that needs its own consumer state.
 func (h *harness) register(t *testing.T, agentID string) {
 	t.Helper()
-	h.run(t, h.busctl, "--direct", "register", agentID)
+	h.run(t, h.agentBusctl, "--direct", "register", agentID)
 }
 
 func (h *harness) agentConnection(agentID string) broker.Connection {
@@ -465,7 +465,7 @@ func TestMilestone1a(t *testing.T) {
 		if err := json.Unmarshal(entry.Value(), &channel); err != nil || channel.Description != "discussion about lib-x" || entry.Revision() != 1 {
 			t.Errorf("catalogue entry of lib-x = %s, revision %d (%v)", entry.Value(), entry.Revision(), err)
 		}
-		h.run(t, h.busctl, "--direct", "channel", "create", "lib-x", "--description", "updated")
+		h.run(t, h.agentBusctl, "--direct", "channel", "create", "lib-x", "--description", "updated")
 		entry, _ = catalogue.Get(ctx, "lib-x")
 		if json.Unmarshal(entry.Value(), &channel); channel.Description != "updated" || entry.Revision() != 2 {
 			t.Errorf("after the second channel create: %s, revision %d, want the new description as revision 2", entry.Value(), entry.Revision())
@@ -499,7 +499,7 @@ func TestMilestone1a(t *testing.T) {
 			count++
 		}
 		if count != 4 {
-			t.Errorf("stream BUS has %d consumers, want the 4 busctl created", count)
+			t.Errorf("stream BUS has %d consumers, want the 4 agent-busctl created", count)
 		}
 	})
 
@@ -951,7 +951,7 @@ func TestMilestone1a(t *testing.T) {
 		agent.denyRequest(t, "$JS.API.CONSUMER.MSG.NEXT.BUS."+groupConsumer, `{"batch":1,"no_wait":true}`)
 
 		loadedBefore, generationBefore := h.configLoadTime(t), h.authGeneration(t)
-		h.run(t, h.busctl, "--direct", "channel", "create", "newchan", "--description", "reload test")
+		h.run(t, h.agentBusctl, "--direct", "channel", "create", "newchan", "--description", "reload test")
 		if loaded := h.configLoadTime(t); !loaded.After(loadedBefore) {
 			t.Errorf("config load time %v did not move past %v after the reload", loaded, loadedBefore)
 		}
@@ -1012,21 +1012,21 @@ func TestMilestone1a(t *testing.T) {
 		}
 	})
 
-	t.Run("busctl needs --direct, refuses a second registration and gives up on a dead broker", func(t *testing.T) {
-		if output, err := h.tryRun(h.busctl, "init"); err == nil {
+	t.Run("agent-busctl needs --direct, refuses a second registration and gives up on a dead broker", func(t *testing.T) {
+		if output, err := h.tryRun(h.agentBusctl, "init"); err == nil {
 			t.Errorf("init without --direct succeeded:\n%s", output)
 		}
-		if output, err := h.tryRun(h.busctl, "--direct", "register", alice); err == nil {
+		if output, err := h.tryRun(h.agentBusctl, "--direct", "register", alice); err == nil {
 			t.Errorf("second register succeeded:\n%s", output)
 		}
 		const limit = 2 * time.Second
 		start := time.Now()
-		output, err := h.tryRun(h.busctl, "--direct", "--broker", fmt.Sprintf("localhost:%d", freePort(t)), "--timeout", limit.String(), "init")
+		output, err := h.tryRun(h.agentBusctl, "--direct", "--broker", fmt.Sprintf("localhost:%d", freePort(t)), "--timeout", limit.String(), "init")
 		if err == nil {
 			t.Fatalf("init against a dead broker succeeded:\n%s", output)
 		}
 		if elapsed := time.Since(start); elapsed > limit+operationTimeout {
-			t.Errorf("busctl took %v to give up, want about %v", elapsed, limit)
+			t.Errorf("agent-busctl took %v to give up, want about %v", elapsed, limit)
 		}
 	})
 }

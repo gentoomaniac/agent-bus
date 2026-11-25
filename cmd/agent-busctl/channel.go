@@ -99,6 +99,6 @@ func (cmd *ChannelJoinCmd) Run(ctx context.Context, cli *CLI) error {
 		return err
 	}
 	fmt.Printf("%s reads %s from now on; its adapter picks that up at the next start, "+
-		"and other machines with the next copy of the directory (docs/busctl.md)\n", cmd.AgentID, cmd.Name)
+		"and other machines with the next copy of the directory (docs/agent-busctl.md)\n", cmd.AgentID, cmd.Name)
 	return nil
 }

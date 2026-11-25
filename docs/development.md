@@ -11,7 +11,7 @@ make itest    # integration tests against a real nats-server
 binaries:
 
 ```sh
-go build -o bin/ ./cmd/busctl ./cmd/agent-bus
+go build -o bin/ ./cmd/agent-busctl ./cmd/agent-bus
 ```
 
 ## Code layout
@@ -48,7 +48,7 @@ message already handled is skipped, one already buffered gets `InProgress`, a ne
 `reply_to` the agent names, or else the message it read or acked in the last five minutes; the
 parent must be known locally, and a parent at 6 hops stops the send, except an ack, answer or status (they may go to 7). If another process holds the
 identity lock, `Open` still returns an adapter, but every method fails with an error naming the
-holder's PID. Alerts go to `alerts.log` only; `busctl alerts` does not exist yet.
+holder's PID. Alerts go to `alerts.log` only; `agent-busctl alerts` does not exist yet.
 The adapter also remembers, in memory, which buffered messages the delivery hooks already told the
 agent about (`NewMail`, `UnreadSummary`): new mail is reported once, and not again within 10 seconds
 of the last report (design.md §8 rule 3; held-back mail is reported by the next call).
@@ -63,7 +63,7 @@ trust on first use: a sender with no pin is looked up in the registry record, it
 a key in it that is not revoked, and the key is pinned (`tofu`) after the signature verified. A
 changed key is refused. Not done yet: holds, rotation chains and `revoked_keys`. Agents cannot read
 the registry on the broker (§4a) and busd does not exist yet, so the MVP registry read path is
-`<config-dir>/directory/<agent-token>.json`, one record per agent, which `busctl register` writes.
+`<config-dir>/directory/<agent-token>.json`, one record per agent, which `agent-busctl register` writes.
 To use an agent from another machine, copy that directory there.
 `internal/envelope` is the signed message (design.md §5, §6): its fields, the canonical JSON that is
 signed, signing and the stateless checks (size, version, `to`, timestamp). The canonical form is
@@ -74,7 +74,7 @@ RFC 8785 (JCS), implemented in the package for the JSON subset the bus produces 
 
 `make itest` builds the pinned nats-server into `bin/` (`deploy/nats.sh
 install`), then starts and stops its own server (temporary config directory, random ports, TLS) with
-`deploy/nats.sh` and checks, at the raw NATS level and through `busctl --direct`:
+`deploy/nats.sh` and checks, at the raw NATS level and through `agent-busctl --direct`:
 
 - TLS only: no plaintext, no untrusted CA, no wrong password; the two admin users are distinct and
   each sees only its own account.
@@ -112,22 +112,22 @@ install`), then starts and stops its own server (temporary config directory, ran
   an MCP server is silent without mail, blocks once for a message from another session without
   its text, then is silent; `session-start` summarises it; mail for a second session (another
   parent PID) is not reported to the first; the sockets are gone when both servers end.
-- The registry and catalogue hold what `register` and `channel create` wrote; `busctl` needs
+- The registry and catalogue hold what `register` and `channel create` wrote; `agent-busctl` needs
   `--direct`, refuses a second registration and gives up on a dead broker.
 
 ## Running the broker without Docker
 
 `deploy/nats.sh` runs the pinned `nats-server` as a plain background process, for development and
 the integration tests. It is not how the bus is run for real ([docker.md](docker.md)). State
-lives in `~/.config/agent-bus/` (or `BUS_CONFIG_DIR`), and `busctl` runs on the host:
+lives in `~/.config/agent-bus/` (or `BUS_CONFIG_DIR`), and `agent-busctl` runs on the host:
 
 ```sh
-go build -o bin/ ./cmd/busctl ./cmd/agent-bus
-bin/busctl tls init
-bin/busctl admin init
+go build -o bin/ ./cmd/agent-busctl ./cmd/agent-bus
+bin/agent-busctl tls init
+bin/agent-busctl admin init
 deploy/nats.sh install    # builds nats-server v2.15.3 with go install into <config-dir>/bin/
 deploy/nats.sh up         # renders nats/nats-server.conf, tests it, starts the server, waits until ready
-bin/busctl --direct init
+bin/agent-busctl --direct init
 deploy/nats.sh down       # keeps the data; `down --purge` deletes it too
 ```
 
@@ -142,7 +142,7 @@ The pid file and `nats-server.log` are in `<config-dir>/nats/`. Environment vari
 | `BUS_LISTEN_IP`    | `0.0.0.0`                        | address of the client port                      |
 | `BUS_DATA_DIR`     | `$BUS_CONFIG_DIR/nats/data`      | JetStream storage                               |
 
-`busctl` finds the server binary for its reload test at `<config-dir>/bin/nats-server`
+`agent-busctl` finds the server binary for its reload test at `<config-dir>/bin/nats-server`
 (`--nats-server`).
 
 ## Cutting a release

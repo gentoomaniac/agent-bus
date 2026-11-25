@@ -9,7 +9,7 @@ Symptom: a client fails with a certificate error (`x509: certificate is valid fo
   clients use, restart the broker and give clients the new `ca.pem`:
 
   ```sh
-  docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus tls init --force --san bus.example.org --san 192.168.1.10
+  docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus tls init --force --san bus.example.org --san 192.168.1.10
   docker compose -f deploy/docker-compose.yaml restart agent-bus
   ```
 
@@ -36,7 +36,7 @@ logged once on stderr.
   is delivered again, and an agent skips what it has handled, so after the reconnect you get each
   message once, including those sent during the outage.
 
-The commands that run once (`busctl`, `agent-bus send`, `publish`, `inbox`, `mark-read`) do not retry:
+The commands that run once (`agent-busctl`, `agent-bus send`, `publish`, `inbox`, `mark-read`) do not retry:
 they fail at once with the connection error. If the bus stays down, see whether the broker runs
 (`docker compose -f deploy/docker-compose.yaml up -d`).
 
@@ -67,8 +67,8 @@ Symptom: `publish` fails with "unknown channel `<name>`", or its `warning` says 
 read the channel.
 
 The directory's catalogue snapshot `<config-dir>/directory/channels` does not list the group, or
-does not list the target as a reader. It is written by `busctl channel create` and `channel join`
-on the machine they run on. Copy `directory/` over (or `busctl directory export` and copy the
+does not list the target as a reader. It is written by `agent-busctl channel create` and `channel join`
+on the machine they run on. Copy `directory/` over (or `agent-busctl directory export` and copy the
 result) and restart the adapter to read a newly joined group. Meanwhile DM the agent: a DM always
 arrives.
 
@@ -77,11 +77,11 @@ arrives.
 Symptom: `send` fails with "agent removed: `<id>`", or `alerts.log` shows "rejected ... revoked
 key ...".
 
-The agent was removed with `busctl agent remove` and its key is revoked. Its ID is never
+The agent was removed with `agent-busctl agent remove` and its key is revoked. Its ID is never
 registered again; register a new one. If `agent remove` printed "NOT completely removed", it names
 the steps that are left: run the same command again. A machine learns of a removal when its
-`directory/` is refreshed: `busctl directory export` on the broker's host, copy the result over
-`<config-dir>/directory/` ([busctl.md](busctl.md#directory-export)); a running session picks it up
+`directory/` is refreshed: `agent-busctl directory export` on the broker's host, copy the result over
+`<config-dir>/directory/` ([agent-busctl.md](agent-busctl.md#directory-export)); a running session picks it up
 within a minute, or at once with `kill -HUP <agent-bus pid>`.
 
 ## Hook is silent
@@ -100,7 +100,7 @@ The hooks print nothing on any failure. Check, in turn:
 ## Every agent shows offline, or sends warn "has not been online"
 
 Presence needs the stream `PRESENCE` and the per-agent grant to publish `presence.<token>`. After
-upgrading from a release without them, run `busctl --direct init` once: it creates the stream and
+upgrading from a release without them, run `agent-busctl --direct init` once: it creates the stream and
 regenerates every agent's grants, which take effect on live connections; until then the publish
 is refused and the server logs a permissions violation. An agent without hooks is `idle` while its process runs; `unresponsive` needs targeted mail
 unlisted for 10 minutes.
@@ -120,8 +120,8 @@ The agent has no read cursor for it. Create the channel and join the agent, then
 with `--groups <group>`:
 
 ```sh
-bin/busctl --direct channel create lib-x --description "..."
-bin/busctl --direct channel join api-client@alice lib-x
+bin/agent-busctl --direct channel create lib-x --description "..."
+bin/agent-busctl --direct channel join api-client@alice lib-x
 ```
 
 Also, a post to a group nobody created is stored and never read.
@@ -147,7 +147,7 @@ error says the server may have applied the account, the directory is kept on pur
 
 `register` timed out on the monitoring endpoint (`.../varz`) with "the broker may or may not have
 created the account", and `agent-bus` then fails with `nats: Authorization Violation`. The broker
-runs on non-default ports, but `busctl` still uses the defaults. Point both tools at the real
+runs on non-default ports, but `agent-busctl` still uses the defaults. Point both tools at the real
 ports and rerun `register`:
 
 ```sh

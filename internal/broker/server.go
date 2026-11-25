@@ -69,7 +69,7 @@ func NewServer(configDir, binary, monitorURL string) Server {
 func (server Server) hasAgent(agentToken string) (bool, error) {
 	current, err := os.ReadFile(server.path(authFile))
 	if err != nil {
-		return false, fmt.Errorf("reading the authorization file (has `busctl admin init` run?): %w", err)
+		return false, fmt.Errorf("reading the authorization file (has `agent-busctl admin init` run?): %w", err)
 	}
 	_, listed := parseBusAuth(string(current)).agentHashes[agentToken]
 	return listed, nil
@@ -89,7 +89,7 @@ func (server Server) UpdateAuth(ctx context.Context, edit func(currentBody strin
 
 	current, err := os.ReadFile(server.path(authFile))
 	if err != nil {
-		return fmt.Errorf("reading the authorization file (has `busctl admin init` run?): %w", err)
+		return fmt.Errorf("reading the authorization file (has `agent-busctl admin init` run?): %w", err)
 	}
 	currentBody, generation := splitGeneration(string(current))
 	newBody, err := edit(currentBody)

@@ -37,7 +37,7 @@ func TestAgentRemoval(t *testing.T) {
 	}
 	aliceConnection := h.rawAgent(t, alice)
 
-	h.run(t, h.busctl, "--direct", "agent", "remove", alice)
+	h.run(t, h.agentBusctl, "--direct", "agent", "remove", alice)
 
 	t.Run("drops the connection and refuses a new one", func(t *testing.T) {
 		deadline := time.Now().Add(10 * time.Second)
@@ -62,11 +62,11 @@ func TestAgentRemoval(t *testing.T) {
 	})
 
 	t.Run("refuses to register the ID again and lists it as removed", func(t *testing.T) {
-		output, err := h.tryRun(h.busctl, "--direct", "register", alice)
+		output, err := h.tryRun(h.agentBusctl, "--direct", "register", alice)
 		if err == nil || !strings.Contains(output, "removed") {
 			t.Errorf("register of a removed ID: %v\n%s", err, output)
 		}
-		list := h.run(t, h.busctl, "--direct", "agent", "list")
+		list := h.run(t, h.agentBusctl, "--direct", "agent", "list")
 		statuses := map[string]string{}
 		for _, line := range strings.Split(strings.TrimSpace(list), "\n") {
 			if fields := strings.Fields(line); len(fields) >= 2 {
@@ -76,11 +76,11 @@ func TestAgentRemoval(t *testing.T) {
 		if statuses[alice] != "removed" || statuses[bob] != "active" {
 			t.Errorf("agent list:\n%s", list)
 		}
-		h.run(t, h.busctl, "--direct", "agent", "remove", alice) // a rerun is safe
+		h.run(t, h.agentBusctl, "--direct", "agent", "remove", alice) // a rerun is safe
 	})
 
 	t.Run("the other agent rejects the removed key after a directory refresh", func(t *testing.T) {
-		h.run(t, h.busctl, "--direct", "directory", "export", filepath.Join(h.configDir, "directory"))
+		h.run(t, h.agentBusctl, "--direct", "directory", "export", filepath.Join(h.configDir, "directory"))
 		if err := bobSession.RefreshDirectory(ctx); err != nil {
 			t.Fatal(err)
 		}

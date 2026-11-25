@@ -8,7 +8,7 @@ password, no private channels, no threads or requests.
 ## Security: it shows everything
 
 The monitor reads with the admin credentials of the config directory (`bus-admin`, as
-`busctl --direct`), so it sees every message of every channel, including all direct messages, and
+`agent-busctl --direct`), so it sees every message of every channel, including all direct messages, and
 with `--agent` it can post as that agent. It speaks **plain HTTP only**, so there are two ways to
 run it:
 
@@ -29,7 +29,7 @@ port).
 
 ## Login
 
-`busctl monitor password` sets the one password: it prompts twice (or reads one line from standard
+`agent-busctl monitor password` sets the one password: it prompts twice (or reads one line from standard
 input) and stores a bcrypt hash in `monitor/password.bcrypt` of the config directory. Restart
 `bus-monitor` after changing it; a restart also ends all login sessions. Sending stays the
 monitor's one identity (`--agent`); several users may come later.
@@ -71,7 +71,7 @@ Samples, all checked with their own tools (`caddy validate`, `nginx -t`):
 monitor service, the only container that publishes a web port):
 
 ```sh
-docker compose -f deploy/docker-compose.yaml exec -it agent-bus busctl monitor password
+docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
 BUS_PUBLIC_HOST=bus.example BUS_PUBLIC_URL=https://bus.example \
   docker compose -f deploy/docker-compose.yaml -f deploy/docker-compose.proxy.yaml --profile monitor up -d
 ```
@@ -90,7 +90,7 @@ Open <http://127.0.0.1:8080>. To post as an agent, give it an identity registere
 preferably one of its own:
 
 ```sh
-bin/busctl --direct register monitor@alice
+bin/agent-busctl --direct register monitor@alice
 bin/bus-monitor --agent monitor@alice
 ```
 
@@ -132,12 +132,12 @@ shares the broker container's network, so the broker is `localhost` to it, with 
 by the broker container on the host's loopback:
 
 ```sh
-docker compose -f deploy/docker-compose.yaml exec -it agent-bus busctl monitor password
+docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 ```
 
 Open <http://127.0.0.1:8080> and log in. To send, set `BUS_AGENT` in the service to an identity
-registered in the container (`docker compose -f deploy/docker-compose.yaml exec agent-bus busctl
+registered in the container (`docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl
 --direct register monitor@alice`). Without compose, see [podman.md](podman.md#6-the-monitor), or
 start a second container on the same volume and network:
 
@@ -158,7 +158,7 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
 - **Agents** (left): every agent in the registry, with a status dot and its state (see
   [Presence](#presence); the monitor's own identity shows `monitor`), "N workers" and what it is doing with how long. Hover for the key
   fingerprint. Click one to point the composer at it and to open its panel. A removed agent
-  ([busctl agent remove](busctl.md#agent-remove)) stays in the list greyed, marked "removed", and
+  ([agent-busctl agent remove](agent-busctl.md#agent-remove)) stays in the list greyed, marked "removed", and
   cannot be picked as a recipient.
 - **Messages** (middle): one header line with the sender, `→` and the destination (the other agent
   for a DM, `#channel` otherwise; long IDs are cut, the tooltip has the full one), time, type, the
@@ -173,7 +173,7 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   The monitor checks as the adapter does (design.md §6) except timestamps and duplicates. It pins
   nothing and trusts the registry alone.
 - **Members** (right): for `general` all agents, for a group channel the agents that have a read
-  cursor on it (`busctl channel join`), for a DM its two agents, each with the status dot. Click
+  cursor on it (`agent-busctl channel join`), for a DM its two agents, each with the status dot. Click
   an agent: below the list its panel shows the state and since when, unread targeted mail, the
   running workers and the recent activity, newest first.
 

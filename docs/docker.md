@@ -1,6 +1,6 @@
 # Docker
 
-The central components (`nats-server`, `busctl` and `bus-monitor`) run as a container image; this is
+The central components (`nats-server`, `agent-busctl` and `bus-monitor`) run as a container image; this is
 the way to run them. Agent machines run only the local `agent-bus` binary (release archive or
 `go build ./cmd/agent-bus`) and need no Docker. For the release process see
 [development.md](development.md#cutting-a-release); for running the broker as a plain process, which
@@ -10,9 +10,9 @@ is for development and tests only, see [development.md](development.md#running-t
 
 Every release pushes a multi-arch (linux amd64 and arm64) image to
 `ghcr.io/gentoomaniac/agent-messenger`, tagged with the version and `latest`. It holds the pinned
-`nats-server` (v2.15.3), `busctl`, `bus-monitor` and `agent-bus`, and runs as the non-root user `bus` (uid 10001).
+`nats-server` (v2.15.3), `agent-busctl`, `bus-monitor` and `agent-bus`, and runs as the non-root user `bus` (uid 10001).
 The entrypoint renders `deploy/nats-server.conf` from the environment and runs `nats-server` as
-PID 1, so `docker stop` stops it cleanly and `busctl --direct` inside the container can reload it.
+PID 1, so `docker stop` stops it cleanly and `agent-busctl --direct` inside the container can reload it.
 
 To build the image from a checkout instead, for this machine's architecture (docker or podman,
 whichever is installed):
@@ -62,8 +62,8 @@ credentials.
    are always in it:
 
    ```sh
-   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus tls init --san bus.example.org
-   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint busctl agent-bus admin init
+   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus tls init --san bus.example.org
+   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus admin init
    ```
 
 2. Start the broker:
@@ -72,19 +72,19 @@ credentials.
    docker compose -f deploy/docker-compose.yaml up -d
    ```
 
-3. Administer it with `busctl --direct` inside the container, which finds the config, the server
+3. Administer it with `agent-busctl --direct` inside the container, which finds the config, the server
    binary and the monitoring endpoint through the image's environment. A shell alias shortens it
    (use the absolute path to the compose file to use it from any directory); the examples in the
-   other docs write plain `busctl` and mean this alias:
+   other docs write plain `agent-busctl` and mean this alias:
 
    ```sh
-   alias busctl='docker compose -f /path/to/deploy/docker-compose.yaml exec agent-bus busctl'
+   alias agent-busctl='docker compose -f /path/to/deploy/docker-compose.yaml exec agent-bus agent-busctl'
 
-   busctl --direct init
-   busctl --direct register api-client@alice
+   agent-busctl --direct init
+   agent-busctl --direct register api-client@alice
    ```
 
-   Without an alias that is `docker compose -f deploy/docker-compose.yaml exec agent-bus busctl --direct init`.
+   Without an alias that is `docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl --direct init`.
 
 `register` and `channel join` rewrite the authorization file and reload the server through its pid
 file (`/config/nats/nats-server.pid`). Agent keys and credentials end up in `/config/<agent-id>/`,
@@ -97,10 +97,10 @@ The same with plain `docker run`, on named volumes `agent-bus-config` and `agent
 ```sh
 docker volume create agent-bus-config
 docker volume create agent-bus-data
-docker run --rm -v agent-bus-config:/config --entrypoint busctl IMAGE tls init --san bus.example.org
-docker run --rm -v agent-bus-config:/config --entrypoint busctl IMAGE admin init
+docker run --rm -v agent-bus-config:/config --entrypoint agent-busctl IMAGE tls init --san bus.example.org
+docker run --rm -v agent-bus-config:/config --entrypoint agent-busctl IMAGE admin init
 docker run -d --name agent-bus -p 4222:4222 -p 127.0.0.1:8080:8080 -v agent-bus-config:/config -v agent-bus-data:/data IMAGE
-alias busctl='docker exec agent-bus busctl'
+alias agent-busctl='docker exec agent-bus agent-busctl'
 ```
 
 Podman takes the same commands. Rootless podman may not reach the published port over its default
@@ -136,7 +136,7 @@ again; a running `agent-bus mcp` re-reads it every minute. `register` and `chann
 `/config/directory` themselves; after `agent remove` write the tombstone out first:
 
 ```sh
-busctl --direct directory export /config/directory
+agent-busctl --direct directory export /config/directory
 docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -cf - directory \
   | ssh other 'tar -C ~/.config/agent-bus -xf -'
 ```
@@ -152,13 +152,13 @@ which is why the service sets `BUS_WEB_BEHIND_PROXY=true` (and why it will not s
 password).
 
 ```sh
-docker compose -f deploy/docker-compose.yaml exec -it agent-bus busctl monitor password
+docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 curl -s -u me:'<password>' http://127.0.0.1:8080/api/v1/status
 ```
 
 Open <http://127.0.0.1:8080> and log in; any host port works (`18080:8080`). To post as an agent,
-register an identity first (`busctl --direct register monitor@alice`) and set `BUS_AGENT` in the
+register an identity first (`agent-busctl --direct register monitor@alice`) and set `BUS_AGENT` in the
 service. To publish it beyond the host, put a TLS proxy in front: the overlay
 [docker-compose.proxy.yaml](../deploy/docker-compose.proxy.yaml) adds Caddy. See
 [monitor.md](monitor.md#behind-a-reverse-proxy).

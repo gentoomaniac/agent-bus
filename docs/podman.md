@@ -19,8 +19,8 @@ IMG=agent-messenger:dev           # or ghcr.io/gentoomaniac/agent-messenger:late
 ```sh
 podman volume create agent-bus-config
 podman volume create agent-bus-data
-podman run --rm -v agent-bus-config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost --san <broker-host>
-podman run --rm -v agent-bus-config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" admin init
+podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost --san <broker-host>
+podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
 ```
 
 `tls init` must name every host name agents use to reach the broker (`--san`, repeatable).
@@ -40,27 +40,26 @@ Rootless Podman's default network may fail on some systems (`netavark: create ve
 
 ## 4. Set up the bus
 
-A short alias for `busctl` inside the container:
+A short alias for `agent-busctl` inside the container:
 
 ```sh
-alias busctl='podman exec agent-bus busctl'
-type busctl                       # must say: busctl is aliased to ...
+alias agent-busctl='podman exec agent-bus agent-busctl'
+type agent-busctl                       # must say: agent-busctl is aliased to ...
 ```
 
-The alias must be set in the shell you type in: systemd ships its own `busctl` (the D-Bus tool),
-and without the alias you run that one. Check with `type busctl`. This project's `busctl` is
-going to be renamed, so the clash goes away.
+The alias must be set in the shell you type in. Check with `type agent-busctl`. The name is `agent-busctl`
+and not `busctl` because systemd ships its own `busctl` (the D-Bus tool).
 
 ```sh
-busctl --direct init
-busctl --direct register lib-x@<owner>
-busctl --direct register api-client@<owner>
-busctl --direct register monitor@<owner>        # the monitor's identity, to send from the page
-busctl --direct channel create lib-x-help --description "questions about lib-x"
-busctl --direct channel join lib-x@<owner> lib-x-help
-busctl --direct channel join api-client@<owner> lib-x-help
-busctl --direct directory export /config/directory
-busctl --direct agent list
+agent-busctl --direct init
+agent-busctl --direct register lib-x@<owner>
+agent-busctl --direct register api-client@<owner>
+agent-busctl --direct register monitor@<owner>        # the monitor's identity, to send from the page
+agent-busctl --direct channel create lib-x-help --description "questions about lib-x"
+agent-busctl --direct channel join lib-x@<owner> lib-x-help
+agent-busctl --direct channel join api-client@<owner> lib-x-help
+agent-busctl --direct directory export /config/directory
+agent-busctl --direct agent list
 ```
 
 ## 5. Give an agent machine its files
@@ -87,8 +86,8 @@ First set the monitor's password. It is stored as a hash on the config volume (u
 asked, or pipe it in):
 
 ```sh
-podman exec -it agent-bus busctl monitor password
-# or: printf '%s\n' 'a long password' | podman exec -i agent-bus busctl monitor password
+podman exec -it agent-bus agent-busctl monitor password
+# or: printf '%s\n' 'a long password' | podman exec -i agent-bus agent-busctl monitor password
 ```
 
 The monitor shares the broker's network namespace, so it reaches the broker as `localhost`. Inside
@@ -120,8 +119,8 @@ rest are unchanged, and the alias of step 4 stays):
 mkdir -p ~/bus-trial/config ~/bus-trial/data
 U="--userns=keep-id:uid=10001,gid=10001"
 
-podman run --rm $U -v ~/bus-trial/config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
-podman run --rm $U -v ~/bus-trial/config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" admin init
+podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
+podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
 
 podman run -d --name agent-bus --network pasta $U \
   -p 4222:4222 -p 127.0.0.1:8080:8080 \

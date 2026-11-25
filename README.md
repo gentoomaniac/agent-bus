@@ -10,12 +10,12 @@ use, and the broker keeps the history. The spec is [design.md](design.md).
  central (one machine)                     each agent session
 ┌──────────────────────────────┐          ┌─────────────────────────────┐
 │ nats-server (TLS, JetStream) │◄─ TLS ───│ agent-bus mcp  (MCP server) │◄── Claude Code
-│ busctl  (admin CLI)          │          │ agent-bus pending (hooks)   │
+│ agent-busctl  (admin CLI)          │          │ agent-bus pending (hooks)   │
 └──────────────────────────────┘          └─────────────────────────────┘
 ```
 
-- `nats-server` is the broker. It runs in the Docker image, with `busctl` and `bus-monitor`.
-- `busctl` creates the certificates, the admin credentials, the streams, the agent identities and
+- `nats-server` is the broker. It runs in the Docker image, with `agent-busctl` and `bus-monitor`.
+- `agent-busctl` creates the certificates, the admin credentials, the streams, the agent identities and
   the channels. Until `busd` exists it runs inside the broker's container with `--direct`.
 - `bus-monitor` is a web page that shows every channel, the agents and their messages with their
   verification status, and can post as one agent ([monitor](docs/monitor.md)).
@@ -29,7 +29,7 @@ use, and the broker keeps the history. The spec is [design.md](design.md).
 This is the MVP, built for a trusted environment (design.md, "Decision: MVP first").
 
 - Built: direct messages, the `general` channel and open group channels; signing and trust on
-  first use; the MCP tools; the Claude Code hooks; `busctl --direct` for administration.
+  first use; the MCP tools; the Claude Code hooks; `agent-busctl --direct` for administration.
 - Also built: the web monitor (one password, plain HTTP on localhost or behind a TLS proxy; [monitor](docs/monitor.md), [API](docs/api.md)), agent
   presence (state, activity, workers) and an OpenCode plugin ([OpenCode](docs/opencode.md); not
   yet tried in a live OpenCode session).
@@ -58,20 +58,20 @@ machine. Run it from a checkout.
    ```sh
    podman volume create agent-bus-config
    podman volume create agent-bus-data
-   podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG tls init --san localhost --san bus.example.org
-   podman run --rm -v agent-bus-config:/config --entrypoint busctl $IMG admin init
+   podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl $IMG tls init --san localhost --san bus.example.org
+   podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl $IMG admin init
    ```
 
-3. Start the broker, create the streams and register the two agents. `busctl` runs inside the
+3. Start the broker, create the streams and register the two agents. `agent-busctl` runs inside the
    container; the alias shortens it:
 
    ```sh
    podman run -d --name agent-bus --network pasta -p 4222:4222 -p 127.0.0.1:8080:8080 \
      -v agent-bus-config:/config -v agent-bus-data:/data $IMG
-   alias busctl='podman exec agent-bus busctl'
-   busctl --direct init
-   busctl --direct register api-client@alice
-   busctl --direct register lib-x@bob
+   alias agent-busctl='podman exec agent-bus agent-busctl'
+   agent-busctl --direct init
+   agent-busctl --direct register api-client@alice
+   agent-busctl --direct register lib-x@bob
    ```
 
 4. Copy `ca.pem`, the directory and the agent folders from the container to the machine that runs
@@ -155,7 +155,7 @@ Without the event hooks the monitor still shows `offline` (no heartbeat for 90 s
 - [Docker](docs/docker.md): run the central components, set up, get files to agent machines.
 - [Broker](docs/broker.md): config directory, ports, TLS, reloads.
 - [Monitor](docs/monitor.md): the web interface, flags, what it shows, sending, limits.
-- [busctl](docs/busctl.md): every admin command, flags and the setup order.
+- [agent-busctl](docs/agent-busctl.md): every admin command, flags and the setup order.
 - [Claude Code](docs/claude-code.md): MCP registration, hooks, what the agent sees.
 - [OpenCode](docs/opencode.md): MCP registration and the plugin for presence and mail delivery.
 - [Agent guide](docs/agent-guide.md): what to put in a project's CLAUDE.md so its agent knows its role on the bus.

@@ -244,7 +244,7 @@ func writeAuthError(w http.ResponseWriter, err error) {
 func (g gate) serveLogin(w http.ResponseWriter, r *http.Request) {
 	view := g.access.clientOf(r)
 	if !g.auth.enabled() {
-		writeError(w, http.StatusConflict, "no_password_set", "the monitor has no password: set one with `busctl monitor password`")
+		writeError(w, http.StatusConflict, "no_password_set", "the monitor has no password: set one with `agent-busctl monitor password`")
 		return
 	}
 	if origin := r.Header.Get("Origin"); origin != "" && !view.sameOrigin(origin) {

@@ -92,7 +92,7 @@ func waitForMonitorMessages(t *testing.T, server *httptest.Server, channel strin
 func TestMonitor(t *testing.T) {
 	h := startBus(t)
 	h.register(t, monitorAgent)
-	h.run(t, h.busctl, "--direct", "channel", "join", bob, "lib-x")
+	h.run(t, h.agentBusctl, "--direct", "channel", "join", bob, "lib-x")
 	aliceSession, _ := h.startAdapter(t, alice)
 	bobSession, _ := h.startAdapter(t, bob, "lib-x")
 	ctx := timeout(t)

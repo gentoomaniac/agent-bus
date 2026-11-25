@@ -8,9 +8,9 @@ before:
     - go mod download
 
 builds:
-  - id: busctl
-    main: ./cmd/busctl
-    binary: busctl
+  - id: agent-busctl
+    main: ./cmd/agent-busctl
+    binary: agent-busctl
     env: [CGO_ENABLED=0]
     goos: [linux, darwin]
     goarch: [amd64, arm64]
@@ -55,7 +55,7 @@ release:
     owner: gentoomaniac
     name: agent-messenger
 
-# The central components (nats-server, busctl, bus-monitor); the image is multi-arch linux. The registry and
+# The central components (nats-server, agent-busctl, bus-monitor); the image is multi-arch linux. The registry and
 # image name come from the environment: IMAGE_NAME, by default ghcr.io/gentoomaniac/agent-messenger.
 dockers_v2:
   - images:
@@ -64,7 +64,7 @@ dockers_v2:
       - "{{ .Version }}"
       - latest
     dockerfile: deploy/Dockerfile
-    ids: [busctl, agent-bus, bus-monitor]
+    ids: [agent-busctl, agent-bus, bus-monitor]
     platforms: [linux/amd64, linux/arm64]
     extra_files:
       - deploy/entrypoint.sh

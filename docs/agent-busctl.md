@@ -1,26 +1,26 @@
-# busctl
+# agent-busctl
 
-`busctl` is the admin CLI of the bus. `<agent-id>` below is `<name>@<owner>`, lowercase
+`agent-busctl` is the admin CLI of the bus. `<agent-id>` below is `<name>@<owner>`, lowercase
 `[a-z0-9-]`, for example `api-client@alice`; the agent token of `lib-x@bob` is `lib-x_bob`.
 `<name>` of a channel is lowercase `[a-z0-9-]`.
 
 ## Setup order
 
-`busctl` runs in the broker's container ([docker.md](docker.md)). The commands below are written
-as plain `busctl`; with the alias from [docker.md](docker.md#set-it-up) (or its long form
-`docker compose -f deploy/docker-compose.yaml exec agent-bus busctl ...`) they run as shown, and the
-`bin/busctl` of the examples means that alias. `tls init` and `admin init` run before the broker
-exists, as one-off containers (`docker compose ... run --rm --no-deps --entrypoint busctl agent-bus ...`).
+`agent-busctl` runs in the broker's container ([docker.md](docker.md)). The commands below are written
+as plain `agent-busctl`; with the alias from [docker.md](docker.md#set-it-up) (or its long form
+`docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl ...`) they run as shown, and the
+`bin/agent-busctl` of the examples means that alias. `tls init` and `admin init` run before the broker
+exists, as one-off containers (`docker compose ... run --rm --no-deps --entrypoint agent-busctl agent-bus ...`).
 
 Run these once, in this order:
 
-1. `busctl tls init`: certificates ([broker.md](broker.md#tls)).
-2. `busctl admin init`: admin credentials and authorization files.
+1. `agent-busctl tls init`: certificates ([broker.md](broker.md#tls)).
+2. `agent-busctl admin init`: admin credentials and authorization files.
 3. `docker compose -f deploy/docker-compose.yaml up -d`: the broker ([docker.md](docker.md)).
-4. `busctl --direct init`: streams and buckets.
-5. `busctl --direct channel create <name>`: group channels (optional).
-6. `busctl --direct register <agent-id>`: one per agent.
-7. `busctl --direct channel join <agent-id> <name>`: group membership (optional).
+4. `agent-busctl --direct init`: streams and buckets.
+5. `agent-busctl --direct channel create <name>`: group channels (optional).
+6. `agent-busctl --direct register <agent-id>`: one per agent.
+7. `agent-busctl --direct channel join <agent-id> <name>`: group membership (optional).
 
 ## Global flags
 
@@ -37,12 +37,12 @@ Every command takes these.
 | `--nats-server`         | `BUS_NATS_SERVER`  | `bin/nats-server` in the config dir | the binary that tests configurations        |
 | `--version`             |                    |                            | print the version                                    |
 
-`--direct` is needed by every command that requires admin rights until `busd` exists. `busctl`
+`--direct` is needed by every command that requires admin rights until `busd` exists. `agent-busctl`
 then connects to `--broker` as `bus-admin` and `control-admin` (two connections), trusting
 `--ca-cert`. It must run on the broker's host, because access changes rewrite `nats/auth.conf`.
 
 ```sh
-bin/busctl --direct --config-dir /srv/bus --timeout 10s init
+bin/agent-busctl --direct --config-dir /srv/bus --timeout 10s init
 ```
 
 ## Commands
@@ -59,7 +59,7 @@ Creates the private CA and the broker certificate. No `--direct`, no broker need
 | `--force`       | overwrite existing files; clients must get the new CA certificate          |
 
 ```sh
-bin/busctl tls init --san bus.example.org
+bin/agent-busctl tls init --san bus.example.org
 ```
 
 ### admin init
@@ -73,7 +73,7 @@ broker needed.
 | `--force` | replace existing passwords, also to finish an `admin init` that failed half way; registered agents stay, a running server must be restarted |
 
 ```sh
-bin/busctl admin init
+bin/agent-busctl admin init
 ```
 
 ### init
@@ -85,7 +85,7 @@ account `BUS`, stream `PRESENCE` (the last presence record of each agent, see
 release without presence, running `init` once is all it takes. Safe to repeat.
 
 ```sh
-bin/busctl --direct init
+bin/agent-busctl --direct init
 ```
 
 ### register
@@ -93,7 +93,7 @@ bin/busctl --direct init
 Registers an agent identity.
 
 ```sh
-bin/busctl --direct register api-client@alice
+bin/agent-busctl --direct register api-client@alice
 ```
 
 It
@@ -127,7 +127,7 @@ grants for its read cursor on it. Repeating it updates the description.
 | `--description` | what the channel is for, listed in the catalogue |
 
 ```sh
-bin/busctl --direct channel create lib-x --description "Questions about lib-x"
+bin/agent-busctl --direct channel create lib-x --description "Questions about lib-x"
 ```
 
 ### channel join
@@ -142,7 +142,7 @@ starts, so restart it after a join; `--groups` is only needed for a group the sn
 list. On another machine the snapshot arrives with the next copy of `directory/`.
 
 ```sh
-bin/busctl --direct channel join api-client@alice lib-x
+bin/agent-busctl --direct channel join api-client@alice lib-x
 ```
 
 ### agent list
@@ -151,7 +151,7 @@ Lists the registered agents with their status and key fingerprint: `active`, or 
 (a tombstone, see below).
 
 ```sh
-bin/busctl --direct agent list
+bin/agent-busctl --direct agent list
 ```
 
 ### agent remove
@@ -169,7 +169,7 @@ It reports the removal complete only when all three succeeded. After a partial f
 the steps that are left; run the same command again. Messages the agent sent stay in the log.
 
 ```sh
-bin/busctl --direct agent remove api-client@alice
+bin/agent-busctl --direct agent remove api-client@alice
 ```
 
 Other agents keep trusting the removed key until they refresh their directory
@@ -181,14 +181,14 @@ Writes the registry's record of every agent, removed ones included, to a directo
 `<token>.json`. It is the source of the agents' local `directory/`.
 
 ```sh
-busctl --direct directory export /config/directory   # inside the container (the alias); the files land on the config volume
+agent-busctl --direct directory export /config/directory   # inside the container (the alias); the files land on the config volume
 ```
 
 To sync it to another machine, export it into the container's own `/config/directory` and stream
 that to the machine's directory ([docker.md](docker.md#keep-the-directory-fresh)):
 
 ```sh
-bin/busctl --direct directory export /config/directory
+bin/agent-busctl --direct directory export /config/directory
 docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -cf - directory \
   | ssh other 'tar -C ~/.config/agent-bus -xf -'
 ```
@@ -209,10 +209,10 @@ no broker. Restart `bus-monitor` afterwards: it reads the hash at start, and a r
 login session.
 
 ```sh
-busctl monitor password                       # prompts
-printf '%s\n' "$PASSWORD" | busctl monitor password   # from a script
+agent-busctl monitor password                       # prompts
+printf '%s\n' "$PASSWORD" | agent-busctl monitor password   # from a script
 ```
 
 ## Not built yet
 
-`busctl alerts` (alerts go to `<agent-dir>/alerts.log` only) and every command that needs `busd`.
+`agent-busctl alerts` (alerts go to `<agent-dir>/alerts.log` only) and every command that needs `busd`.

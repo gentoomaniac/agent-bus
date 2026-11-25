@@ -3,12 +3,12 @@
 Decisions taken with a default while the owner was away. Confirm or change them; answered entries
 move into design.md §13.
 
-## 2026-11-25: new name for `busctl`
+## 2026-11-25: new name for `busctl` (done with the default, still changeable)
 
 `busctl` clashes with systemd's `busctl` (the D-Bus tool, `/usr/bin/busctl` on every systemd
 machine): a shell without our alias runs systemd's tool ("unrecognized option '--direct'").
 
-Default taken: rename the admin CLI to **`agent-busctl`** (binary, image, release archives, docs).
+Default taken and done: renamed the admin CLI to **`agent-busctl`** (binary, image, release archives, docs, `cmd/agent-busctl`).
 Alternatives: `abctl` (short), or a subcommand of the existing binary, `agent-bus admin …` (one
 binary fewer). Tell us if you prefer one of those; the rename is mechanical either way.
 

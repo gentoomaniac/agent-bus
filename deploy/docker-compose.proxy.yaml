@@ -4,7 +4,7 @@
 #   docker compose -f deploy/docker-compose.yaml -f deploy/docker-compose.proxy.yaml --profile monitor up -d
 #
 # Needs Docker Compose 2.24 or newer (`!override`). Before the first start set the password:
-#   docker compose -f deploy/docker-compose.yaml exec -it agent-bus busctl monitor password
+#   docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
 #
 # BUS_PUBLIC_HOST   the host name clients use, for Caddy's certificate (default: localhost, a local CA)
 # BUS_PUBLIC_URL    how clients reach Caddy, e.g. https://bus.example (default: https://localhost)

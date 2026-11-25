@@ -20,7 +20,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/identity"
 )
 
-// Sources of a pin: the first contact, or the owner with `busctl pin`.
+// Sources of a pin: the first contact, or the owner with `agent-busctl pin`.
 const (
 	SourceTOFU   = "tofu"
 	SourcePinned = "pinned"

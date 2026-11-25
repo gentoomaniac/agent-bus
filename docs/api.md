@@ -11,7 +11,7 @@ breaks clients gets a new prefix (`/api/v2`).
 
 ## Authentication
 
-Without a password (`busctl monitor password` never ran) the monitor has no login and runs only on
+Without a password (`agent-busctl monitor password` never ran) the monitor has no login and runs only on
 loopback. Then every endpoint is open, `GET /api/v1/status` says `"password_set": false`, and the
 page shows a banner.
 

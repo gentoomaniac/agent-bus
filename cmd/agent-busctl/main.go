@@ -1,4 +1,4 @@
-// busctl is the admin CLI of the agent bus (design.md §10).
+// agent-busctl is the admin CLI of the agent bus (design.md §10).
 package main
 
 import (
@@ -77,7 +77,7 @@ func (cli *CLI) server() broker.Server {
 	return broker.NewServer(cli.ConfigDir, binary, cli.MonitorURL)
 }
 
-// adminClient connects as the two admin users created by `busctl admin init`, one connection per
+// adminClient connects as the two admin users created by `agent-busctl admin init`, one connection per
 // account. Without busd (milestone 3) every command that needs it goes this way, so --direct is
 // required.
 func (cli *CLI) adminClient() (bus.Admin, error) {
@@ -105,7 +105,7 @@ func (cli *CLI) adminClient() (bus.Admin, error) {
 
 func main() {
 	var cli CLI
-	kongCtx := kong.Parse(&cli, kong.Name("busctl"), kong.Vars{"version": version}, kong.Description("Admin CLI of the agent bus."))
+	kongCtx := kong.Parse(&cli, kong.Name("agent-busctl"), kong.Vars{"version": version}, kong.Description("Admin CLI of the agent bus."))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

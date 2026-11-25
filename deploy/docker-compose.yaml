@@ -18,7 +18,7 @@ services:
 
   # Optional: the web monitor (docs/monitor.md). It shares the broker's network, so it reaches the
   # broker as localhost, and the volume with the admin credentials. The page shows all traffic: set
-  # its password first (`busctl monitor password` in the agent-bus container) and publish it on the
+  # its password first (`agent-busctl monitor password` in the agent-bus container) and publish it on the
   # host's loopback only. It listens on 0.0.0.0 in the container, so it needs --behind-proxy, which
   # insists on the password. To publish it through a TLS proxy, see docker-compose.proxy.yaml.
   monitor:
@@ -33,7 +33,7 @@ services:
     environment:
       BUS_WEB_LISTEN: 0.0.0.0:8080
       BUS_WEB_BEHIND_PROXY: "true"
-      # BUS_AGENT: monitor@alice   # an identity registered with busctl, to send as
+      # BUS_AGENT: monitor@alice   # an identity registered with agent-busctl, to send as
     profiles: ["monitor"]
 
 volumes:

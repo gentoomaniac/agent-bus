@@ -176,7 +176,7 @@ func TestMilestone2(t *testing.T) {
 
 	t.Run("an agent joined to a group receives a post of another agent", func(t *testing.T) {
 		h := startBus(t)
-		h.run(t, h.busctl, "--direct", "channel", "join", bob, "lib-x")
+		h.run(t, h.agentBusctl, "--direct", "channel", "join", bob, "lib-x")
 		a, _ := h.startAdapter(t, alice)
 		b, _ := h.startAdapter(t, bob, "lib-x")
 

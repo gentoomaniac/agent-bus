@@ -140,7 +140,7 @@ func (cli *CLI) Run() error {
 	}()
 	log.Printf("bus-monitor %s: http://%s", version, listener.Addr())
 	if len(access.PasswordHash) == 0 {
-		log.Print("no password set: anyone who can reach the page sees all traffic (busctl monitor password)")
+		log.Print("no password set: anyone who can reach the page sees all traffic (agent-busctl monitor password)")
 	}
 	if err := server.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
 		return err

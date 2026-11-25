@@ -12,8 +12,8 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
-// remove marks the agent as removed in the registry directory, the way `busctl agent remove` and
-// `busctl directory export` leave it.
+// remove marks the agent as removed in the registry directory, the way `agent-busctl agent remove` and
+// `agent-busctl directory export` leave it.
 func (b *testBus) remove(agentID string) {
 	b.t.Helper()
 	directory := trust.DirectoryPath(b.configDir)

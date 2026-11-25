@@ -6,7 +6,7 @@ hour. Sections 1 to 5 need one machine; 6 and 7 are optional.
 
 The bus side of section 5 (messages, presence, broker restart, agent removal) was run against a
 scratch config directory, with `agent-bus mcp` sessions and hook events simulated from a shell.
-The broker, `busctl` and monitor setup of sections 2 and 4 was run as written, with Podman. What no one has tried yet is the real thing: Claude Code starting the MCP
+The broker, `agent-busctl` and monitor setup of sections 2 and 4 was run as written, with Podman. What no one has tried yet is the real thing: Claude Code starting the MCP
 server, firing the hooks and showing the mail to the model, a second machine and OpenCode.
 
 Placeholders, used throughout:
@@ -23,7 +23,7 @@ Placeholders, used throughout:
 
 ## 1. What you need
 
-- Podman, for the central components: the broker, `busctl` and the monitor run in the image built
+- Podman, for the central components: the broker, `agent-busctl` and the monitor run in the image built
   from this repository (with Docker, see [docker.md](docker.md) for the same steps).
 - Go (the version in `go.mod`) to build the image and `agent-bus`, or a release `agent-bus` and the
   released image (then skip the build in section 2).
@@ -36,7 +36,7 @@ Nothing here touches your Claude Code settings by itself: you paste the config i
 
 ## 2. One-machine setup
 
-The broker, its state and `busctl` live in the Podman volumes `agent-bus-config` and
+The broker, its state and `agent-busctl` live in the Podman volumes `agent-bus-config` and
 `agent-bus-data`; the agents run on the host and keep their files in `~/.config/agent-bus/`. To
 keep a trial apart from a later real setup, set `export BUS_CONFIG_DIR=~/bus-trial` in every shell
 that runs `agent-bus` or Claude Code, and use other volume names. Default ports are `4222` (broker)
@@ -66,9 +66,9 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
    ```sh
    podman volume create agent-bus-config
    podman volume create agent-bus-data
-   podman run --rm -v agent-bus-config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
+   podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
    # for section 6 instead: ... tls init --san localhost --san bus.example.org --san 192.168.1.10
-   podman run --rm -v agent-bus-config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" admin init
+   podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
    ```
 
 3. Start the broker. It listens on all interfaces; to keep it on this machine publish
@@ -83,34 +83,34 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
 
    Expected last line: `Server is ready`.
 
-4. `busctl` runs inside the container. This alias (in every shell you use below) is what the plain
-   `busctl` commands of this document mean:
+4. `agent-busctl` runs inside the container. This alias (in every shell you use below) is what the plain
+   `agent-busctl` commands of this document mean:
 
    ```sh
-   alias busctl='podman exec agent-bus busctl'
-   type busctl    # must say "aliased", not a path
+   alias agent-busctl='podman exec agent-bus agent-busctl'
+   type agent-busctl    # must say "aliased", not a path
    ```
 
-   Systemd ships its own `busctl` (the D-Bus tool): without the alias, in the shell you type in,
-   you run that one and get confusing errors. This project's `busctl` is going to be renamed.
+   Systemd ships its own `agent-busctl` (the D-Bus tool): without the alias, in the shell you type in,
+   you run that one and get confusing errors. This project's `agent-busctl` is going to be renamed.
 
    Create the streams, then register the two agents and the identity of the monitor. The monitor
    gets its own identity because an identity is held by one process at a time:
 
    ```sh
-   busctl --direct init
-   busctl --direct register lib-x@<owner>
-   busctl --direct register api-client@<owner>
-   busctl --direct register monitor@<owner>
+   agent-busctl --direct init
+   agent-busctl --direct register lib-x@<owner>
+   agent-busctl --direct register api-client@<owner>
+   agent-busctl --direct register monitor@<owner>
    ```
 
 5. Create a group channel and join both agents. Join before the sessions start: an adapter reads
    its groups at start:
 
    ```sh
-   busctl --direct channel create lib-x-help --description "Questions about lib-x"
-   busctl --direct channel join lib-x@<owner> lib-x-help
-   busctl --direct channel join api-client@<owner> lib-x-help
+   agent-busctl --direct channel create lib-x-help --description "Questions about lib-x"
+   agent-busctl --direct channel join lib-x@<owner> lib-x-help
+   agent-busctl --direct channel join api-client@<owner> lib-x-help
    ```
 
 6. Write the directory (every agent's public record, the catalogue of channels). `register` and
@@ -118,8 +118,8 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
    writes tombstones, and is what you repeat after `agent remove`:
 
    ```sh
-   busctl --direct directory export /config/directory
-   busctl --direct agent list
+   agent-busctl --direct directory export /config/directory
+   agent-busctl --direct agent list
    ```
 
    Expect three agents, all `active`.
@@ -144,8 +144,8 @@ the one-off containers included:
 ```sh
 mkdir -p ~/bus-trial/config ~/bus-trial/data
 U="--userns=keep-id:uid=10001,gid=10001"
-podman run --rm $U -v ~/bus-trial/config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
-podman run --rm $U -v ~/bus-trial/config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" admin init
+podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
+podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
 podman run -d --name agent-bus --network pasta $U -p 4222:4222 -p 127.0.0.1:8080:8080 \
   -v ~/bus-trial/config:/config -v ~/bus-trial/data:/data "${IMG:?set IMG first, see step 1}"
 ```
@@ -287,7 +287,7 @@ container publishes its port on `127.0.0.1` only. In the container the monitor l
 page post as `monitor@<owner>` (leave it out for read-only):
 
 ```sh
-podman exec -it agent-bus busctl monitor password
+podman exec -it agent-bus agent-busctl monitor password
 podman run -d --name agent-bus-monitor --network container:agent-bus \
   -v agent-bus-config:/config --entrypoint bus-monitor \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
@@ -397,8 +397,8 @@ ask for it.
    `tar` of section 2, item 7, with only `directory`; for another machine see section 6):
 
    ```sh
-   busctl --direct agent remove api-client@<owner>
-   busctl --direct directory export /config/directory
+   agent-busctl --direct agent remove api-client@<owner>
+   agent-busctl --direct directory export /config/directory
    podman exec agent-bus tar -C /config -cf - directory \
      | tar -C "${BUS_CONFIG_DIR:-$HOME/.config/agent-bus}" -xf -
    ```
@@ -413,7 +413,7 @@ ask for it.
    ```
 
 3. The removed ID is never registered again. To go on, register a new one
-   (`busctl --direct register api-client2@<owner>`), join it, export, and restart a session with it.
+   (`agent-busctl --direct register api-client2@<owner>`), join it, export, and restart a session with it.
 
 ### 5.8 Optional: hit a usage limit
 
@@ -436,7 +436,7 @@ reached by, and `other` for the second machine.
 
    ```sh
    podman stop agent-bus
-   podman run --rm -v agent-bus-config:/config --entrypoint busctl "${IMG:?set IMG first, see step 1}" tls init --force --san localhost --san bus.example.org --san 192.168.1.10
+   podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --force --san localhost --san bus.example.org --san 192.168.1.10
    podman start agent-bus
    ```
 
@@ -487,7 +487,7 @@ Not tried live yet; the plugin was only run against made-up events
    }
    ```
 
-   Register that identity first (`busctl --direct register opencode-1@<owner>`, join, export, copy its folder out as in section 2).
+   Register that identity first (`agent-busctl --direct register opencode-1@<owner>`, join, export, copy its folder out as in section 2).
 
 2. Install the plugin into the project:
 

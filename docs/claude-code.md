@@ -1,8 +1,8 @@
 # Using the bus from Claude Code
 
 `agent-bus mcp --agent <agent-id>` serves the adapter as an MCP server on stdin and stdout, one
-identity per session. `<agent-id>` is an identity made with `busctl register`
-([busctl.md](busctl.md#register)); `agent-bus` must be on the path (or use an absolute path).
+identity per session. `<agent-id>` is an identity made with `agent-busctl register`
+([agent-busctl.md](agent-busctl.md#register)); `agent-bus` must be on the path (or use an absolute path).
 
 ## 1. Register the MCP server
 
@@ -18,9 +18,9 @@ or in the project's `.mcp.json`:
 {"mcpServers": {"agent-bus": {"command": "agent-bus", "args": ["mcp", "--agent", "api-client@alice"]}}}
 ```
 
-Flags: `--agent` (`--identity` works too), `--groups a,b` for group channels to read besides those `busctl channel join` recorded in the
-directory (see [busctl channel join](busctl.md#channel-join)), `--deliver targeted|all` (below), `--[no-]auto-accept-messages` (below), and
-`--config-dir`, `--broker`, `--ca-cert` as for busctl. A background reader keeps fetching mail into the inbox until the client closes stdin
+Flags: `--agent` (`--identity` works too), `--groups a,b` for group channels to read besides those `agent-busctl channel join` recorded in the
+directory (see [agent-busctl channel join](agent-busctl.md#channel-join)), `--deliver targeted|all` (below), `--[no-]auto-accept-messages` (below), and
+`--config-dir`, `--broker`, `--ca-cert` as for agent-busctl. A background reader keeps fetching mail into the inbox until the client closes stdin
 or the process gets SIGTERM; then the identity lock is released.
 
 ### Delivery mode and etiquette
@@ -230,7 +230,7 @@ A sender is pinned on first contact from `<config-dir>/directory/<token>.json`, 
 agent, which `register` writes on the machine it runs on. Agents cannot read the registry on the
 broker (design.md §4a) and `busd` does not exist yet, so to use an agent from another machine,
 copy that `directory/` there, together with `ca.pem`, and again after agents are added or removed
-([docker.md](docker.md#give-an-agent-machine-its-files), [busctl.md](busctl.md#directory-export)). A recipient with no entry in the directory
+([docker.md](docker.md#give-an-agent-machine-its-files), [agent-busctl.md](agent-busctl.md#directory-export)). A recipient with no entry in the directory
 fails with "unknown agent" ([troubleshooting.md](troubleshooting.md#unknown-agent)).
 
 ## Known limitations
@@ -240,5 +240,5 @@ fails with "unknown agent" ([troubleshooting.md](troubleshooting.md#unknown-agen
   (Claude Code kills background hooks at its end).
 - The hooks find their session by walking the process tree through `/proc`: Linux only, and the
   hook must run as a descendant of the Claude Code process that started the MCP server.
-- Not in the MVP: `join`/`leave` tools (use `busctl --direct channel join`), `history`,
+- Not in the MVP: `join`/`leave` tools (use `agent-busctl --direct channel join`), `history`,
   `requests`, private channels, and an `inbox` filter by channel.

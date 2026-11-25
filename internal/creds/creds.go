@@ -82,7 +82,7 @@ func ReadMonitorPasswordHash(configDir string) ([]byte, error) {
 	}
 	hash := strings.TrimSpace(string(data))
 	if hash == "" {
-		return nil, errors.New("the monitor password file is empty: set a password again (busctl monitor password) or remove the file")
+		return nil, errors.New("the monitor password file is empty: set a password again (agent-busctl monitor password) or remove the file")
 	}
 	return []byte(hash), nil
 }

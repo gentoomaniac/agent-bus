@@ -82,7 +82,7 @@ func (cmd *AgentRemoveCmd) Run(ctx context.Context, cli *CLI) error {
 		return err
 	}
 	fmt.Printf("removed %s: account and consumers deleted, key revoked\n"+
-		"agents on other machines learn of it with `busctl directory export` and a copy (docs/busctl.md)\n", cmd.AgentID)
+		"agents on other machines learn of it with `agent-busctl directory export` and a copy (docs/agent-busctl.md)\n", cmd.AgentID)
 	return nil
 }
 

@@ -29,7 +29,7 @@ func (cmd *RegisterCmd) Run(ctx context.Context, cli *CLI) (err error) {
 		return err
 	}
 	if strings.HasPrefix(cmd.AgentID, "human@") {
-		return fmt.Errorf("%s needs a password-protected key, which busctl does not support yet", cmd.AgentID)
+		return fmt.Errorf("%s needs a password-protected key, which agent-busctl does not support yet", cmd.AgentID)
 	}
 	dir := creds.AgentDir(cli.ConfigDir, cmd.AgentID)
 	// Claiming the identity's directory with Mkdir makes concurrent runs for the same ID safe: only
@@ -56,7 +56,7 @@ func (cmd *RegisterCmd) Run(ctx context.Context, cli *CLI) (err error) {
 		}
 		if !registered {
 			return fmt.Errorf("an earlier registration of %s did not complete: %s exists but the broker has no such account; "+
-				"if no other busctl register for this ID is running, remove %s and run register again", cmd.AgentID, dir, dir)
+				"if no other agent-busctl register for this ID is running, remove %s and run register again", cmd.AgentID, dir, dir)
 		}
 		return fmt.Errorf("%s already has a key on this machine in %s", cmd.AgentID, dir)
 	} else if err != nil {
@@ -70,12 +70,12 @@ func (cmd *RegisterCmd) Run(ctx context.Context, cli *CLI) (err error) {
 		if accountRequested {
 			// The server may have applied the account although the confirmation failed; the key and
 			// password are then the only way in, so they stay.
-			fmt.Fprintf(os.Stderr, "busctl: the broker may or may not have created the account %s. The key and password are kept in %s; "+
+			fmt.Fprintf(os.Stderr, "agent-busctl: the broker may or may not have created the account %s. The key and password are kept in %s; "+
 				"if the broker has no such account, remove that directory before registering again.\n", cmd.AgentID, dir)
 			return
 		}
 		if rmErr := os.RemoveAll(dir); rmErr != nil {
-			fmt.Fprintf(os.Stderr, "busctl: could not remove %s after the failed registration: %v\n", dir, rmErr)
+			fmt.Fprintf(os.Stderr, "agent-busctl: could not remove %s after the failed registration: %v\n", dir, rmErr)
 		}
 	}()
 

@@ -40,7 +40,7 @@ var loopbackProxies = []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32"), neti
 func (access Access) Validate() error {
 	host, _ := splitHostPort(access.Listen)
 	if access.BehindProxy && len(access.PasswordHash) == 0 {
-		return errors.New("--behind-proxy needs a password: set one with `busctl monitor password`")
+		return errors.New("--behind-proxy needs a password: set one with `agent-busctl monitor password`")
 	}
 	if !access.BehindProxy {
 		if !isLoopbackHost(host) {

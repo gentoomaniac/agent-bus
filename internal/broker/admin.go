@@ -25,7 +25,7 @@ const (
 var busSubjects = []string{"dm.>", "general", "topic.>", "private.>"}
 
 // Admin is the administrator's access to the broker as the two admin users, one connection per
-// account, plus the server's authorization files (busctl --direct). It implements bus.Admin.
+// account, plus the server's authorization files (agent-busctl --direct). It implements bus.Admin.
 type Admin struct {
 	bus     *session // BUS, as bus-admin
 	control *session // CONTROL, as control-admin
@@ -113,7 +113,7 @@ func (admin *Admin) PutAgentRecord(ctx context.Context, record bus.AgentRecord) 
 		return err
 	}
 	if _, err := admin.putControlRecord(ctx, registryKV, bus.AgentToken(record.AgentID), value); err != nil {
-		return fmt.Errorf("writing the registry (has `busctl init` run?): %w", err)
+		return fmt.Errorf("writing the registry (has `agent-busctl init` run?): %w", err)
 	}
 	return nil
 }
@@ -151,7 +151,7 @@ func (admin *Admin) CreateGroupChannel(ctx context.Context, name, description st
 	}
 	created, err := admin.putControlRecord(ctx, catalogueKV, name, value)
 	if err != nil {
-		return false, fmt.Errorf("writing the catalogue (has `busctl init` run?): %w", err)
+		return false, fmt.Errorf("writing the catalogue (has `agent-busctl init` run?): %w", err)
 	}
 	// The grants are regenerated even for an existing channel, so a run that failed after the
 	// catalogue write finishes the job when it is repeated.
@@ -246,7 +246,7 @@ func (admin *Admin) updateAuth(ctx context.Context, change func(auth *busAuth) e
 func (admin *Admin) groupNames(ctx context.Context) ([]string, error) {
 	catalogue, err := admin.control.stream.KeyValue(ctx, catalogueKV)
 	if err != nil {
-		return nil, fmt.Errorf("opening the catalogue (has `busctl init` run?): %w", admin.control.explain(err))
+		return nil, fmt.Errorf("opening the catalogue (has `agent-busctl init` run?): %w", admin.control.explain(err))
 	}
 	names, err := catalogue.Keys(ctx)
 	if errors.Is(err, jetstream.ErrNoKeysFound) {
@@ -278,7 +278,7 @@ func (admin *Admin) putControlRecord(ctx context.Context, bucket, key string, va
 func listControlRecords[T any](ctx context.Context, admin *Admin, bucket string) ([]T, error) {
 	kv, err := admin.control.stream.KeyValue(ctx, bucket)
 	if err != nil {
-		return nil, fmt.Errorf("opening %s (has `busctl init` run?): %w", bucket, admin.control.explain(err))
+		return nil, fmt.Errorf("opening %s (has `agent-busctl init` run?): %w", bucket, admin.control.explain(err))
 	}
 	keys, err := kv.Keys(ctx)
 	if errors.Is(err, jetstream.ErrNoKeysFound) {
