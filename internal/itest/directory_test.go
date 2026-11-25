@@ -157,7 +157,7 @@ func TestTheDirectoryGrantsAndRepliesStayInTheirPlace(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
 			defer cancel()
 			request := directory.NewSyncRequest(directory.Version{})
-			answer, err := bobAgent.conn.RequestWithContext(ctx, directory.SubjectSync, request)
+			answer, err := bobAgent.conn.RequestWithContext(ctx, directory.SyncSubject(bus.AgentToken(bob)), request)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -170,6 +170,9 @@ func TestTheDirectoryGrantsAndRepliesStayInTheirPlace(t *testing.T) {
 			}
 		})
 		bobAgent.denyPublish(t, directory.SubjectHead)
+		// Only on its own sync subject: another agent's would let it use up that one's limit.
+		bobAgent.denyPublish(t, directory.SyncSubject(bus.AgentToken(alice)))
+		bobAgent.denyPublish(t, directory.SubjectSync)
 	})
 
 	t.Run("busd answers nowhere but into an agent's inbox", func(t *testing.T) {
@@ -179,8 +182,8 @@ func TestTheDirectoryGrantsAndRepliesStayInTheirPlace(t *testing.T) {
 			t.Fatal(err)
 		}
 		spy := h.rawAdmin(t, "bus-admin")
-		for _, reply := range []string{"general", "dm." + bus.AgentToken(bob), "_INBOX.>", "_INBOX." + bus.AgentToken(bob) + ".*"} {
-			if err := spy.conn.PublishRequest(directory.SubjectSync, reply, directory.NewSyncRequest(directory.Version{})); err != nil {
+		for _, reply := range []string{"general", "dm." + bus.AgentToken(alice), "_INBOX.>", "_INBOX." + bus.AgentToken(bob) + ".*"} {
+			if err := spy.conn.PublishRequest(directory.SyncSubject(bus.AgentToken(bob)), reply, directory.NewSyncRequest(directory.Version{})); err != nil {
 				t.Fatal(err)
 			}
 		}

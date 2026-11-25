@@ -28,10 +28,16 @@ const (
 	// directoryHistory is how many earlier projections are kept in memory to answer a sync with a
 	// diff. An agent further behind, or one asking after a restart of busd, gets the full directory.
 	directoryHistory = 16
-	// syncInterval and syncBurst bound the signatures busd makes for sync requests, which anyone in
-	// BUS may send: agents sync on a change all at once, then about once a minute.
-	syncInterval = 20 * time.Millisecond
-	syncBurst    = 50
+	// syncInterval and syncBurst bound the signatures busd makes for sync requests in all: agents
+	// sync on a change all at once, then about once a minute. callerSyncInterval and
+	// callerSyncBurst bound each agent on its own, beneath that, so that one agent cannot use up
+	// the others' share: a head, a miss and the backup round are a few syncs a minute.
+	syncInterval       = 20 * time.Millisecond
+	syncBurst          = 50
+	callerSyncInterval = time.Second
+	callerSyncBurst    = 5
+	// maxCallerLimiters bounds the limiters kept, one per agent that synced; past it they start over.
+	maxCallerLimiters = 10000
 )
 
 // DirectorySource is what the published directory is made of: the registry, the catalogue, the
@@ -65,6 +71,9 @@ type revision struct {
 type Directory struct {
 	config  DirectoryConfig
 	limiter *rate.Limiter
+
+	callersMu sync.Mutex
+	callers   map[string]*rate.Limiter // by agent ID
 
 	mu      sync.Mutex
 	current revision
@@ -166,11 +175,12 @@ func (published *Directory) signHead(changes []directory.Change) []byte {
 	return head
 }
 
-// HandleSync answers a sync request from anyone in BUS. It proves nothing about the asker and
-// holds public data only. The answer comes from the committed projection, signed and bound to the
-// request; past the rate limit busd answers unsigned, without spending a signature.
-func (published *Directory) HandleSync(request []byte) []byte {
-	if !published.limiter.Allow() {
+// HandleSync answers a sync request of caller, the agent whose sync subject it came on. It holds
+// public data only. The answer comes from the committed projection, signed and bound to the
+// request; past the caller's rate limit, or busd's, it answers unsigned, without spending a
+// signature.
+func (published *Directory) HandleSync(caller string, request []byte) []byte {
+	if !published.allow(caller) {
 		return directory.Unsigned("too many directory requests, try again in a moment")
 	}
 	reply := directory.SyncReply{RequestHash: directory.RequestHash(request)}
@@ -185,6 +195,21 @@ func (published *Directory) HandleSync(request []byte) []byte {
 		return directory.Unsigned("busd cannot sign the directory")
 	}
 	return signed
+}
+
+// allow takes a sync of caller from its own limit and then from busd's.
+func (published *Directory) allow(caller string) bool {
+	published.callersMu.Lock()
+	defer published.callersMu.Unlock()
+	limiter := published.callers[caller]
+	if limiter == nil {
+		if published.callers == nil || len(published.callers) >= maxCallerLimiters {
+			published.callers = map[string]*rate.Limiter{}
+		}
+		limiter = rate.NewLimiter(rate.Every(callerSyncInterval), callerSyncBurst)
+		published.callers[caller] = limiter
+	}
+	return limiter.Allow() && published.limiter.Allow()
 }
 
 func (published *Directory) answer(since directory.Version, requestHash string) directory.SyncReply {

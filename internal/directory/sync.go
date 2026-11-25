@@ -17,9 +17,13 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 )
 
-// SubjectSync is busd's sync endpoint in the BUS account: agents publish requests there, and busd
-// answers in their inbox space.
+// SubjectSync starts the subjects of busd's sync endpoint in the BUS account: each agent publishes
+// its requests on SyncSubject of its own token, the only one its grants allow, and busd answers in
+// that agent's inbox space.
 const SubjectSync = "busd.directory.sync"
+
+// SyncSubject is the subject the agent with this token asks busd for the directory on.
+func SyncSubject(agentToken string) string { return SubjectSync + "." + agentToken }
 
 // MaxSyncRequestBytes bounds what busd reads of a request; a real one is about 200 bytes.
 const MaxSyncRequestBytes = 1 << 10

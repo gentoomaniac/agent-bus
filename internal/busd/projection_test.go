@@ -36,7 +36,7 @@ func (f *fixture) directory() *Directory {
 func (f *fixture) syncFrom(published *Directory, since directory.Version) directory.SyncReply {
 	f.t.Helper()
 	request := directory.NewSyncRequest(since)
-	reply, err := directory.VerifySyncReply(mustRead(f.t, filepath.Join(f.dir, "ca.pem")), published.HandleSync(request), request)
+	reply, err := directory.VerifySyncReply(mustRead(f.t, filepath.Join(f.dir, "ca.pem")), published.HandleSync("bob@x", request), request)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -175,14 +175,14 @@ func TestASyncBeforeTheFirstProjectionAndAMalformedOneGetSignedErrors(t *testing
 	caPEM := mustRead(t, filepath.Join(f.dir, "ca.pem"))
 	request := directory.NewSyncRequest(directory.Version{})
 
-	if _, err := directory.VerifySyncReply(caPEM, published.HandleSync(request), request); err == nil || !strings.Contains(err.Error(), "not built") {
+	if _, err := directory.VerifySyncReply(caPEM, published.HandleSync("bob@x", request), request); err == nil || !strings.Contains(err.Error(), "not built") {
 		t.Errorf("a sync before the first projection: %v", err)
 	}
 	if _, err := published.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	garbage := []byte("not a request")
-	if _, err := directory.VerifySyncReply(caPEM, published.HandleSync(garbage), garbage); err == nil || !strings.Contains(err.Error(), "not a sync request") {
+	if _, err := directory.VerifySyncReply(caPEM, published.HandleSync("bob@x", garbage), garbage); err == nil || !strings.Contains(err.Error(), "not a sync request") {
 		t.Errorf("a malformed request: %v", err)
 	}
 }
@@ -197,7 +197,7 @@ func TestSyncsPastTheLimitAreAnsweredWithoutASignature(t *testing.T) {
 	f.syncFrom(published, directory.Version{})
 
 	request := directory.NewSyncRequest(directory.Version{})
-	_, err := directory.VerifySyncReply(mustRead(t, filepath.Join(f.dir, "ca.pem")), published.HandleSync(request), request)
+	_, err := directory.VerifySyncReply(mustRead(t, filepath.Join(f.dir, "ca.pem")), published.HandleSync("bob@x", request), request)
 	if err == nil || !strings.Contains(err.Error(), "too many") {
 		t.Errorf("a sync past the limit: %v", err)
 	}
@@ -311,5 +311,36 @@ func TestARepeatedApprovalStartsTheCursorsWhereTheFirstAttemptDid(t *testing.T) 
 
 	if want := []string{"new@x DM new@x after 42", "new@x general after 42"}; !slices.Equal(f.registry.cursors, want) {
 		t.Errorf("cursors %v, want %v", f.registry.cursors, want)
+	}
+}
+
+func TestEachAgentIsLimitedOnItsOwnBeneathBusdsLimit(t *testing.T) {
+	f := newFixture(t)
+	published := f.directory()
+	if _, err := published.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	caPEM := mustRead(t, filepath.Join(f.dir, "ca.pem"))
+	answered := func(caller string) bool {
+		request := directory.NewSyncRequest(directory.Version{})
+		_, err := directory.VerifySyncReply(caPEM, published.HandleSync(caller, request), request)
+		return err == nil
+	}
+
+	for range callerSyncBurst {
+		if !answered("greedy@x") {
+			t.Fatal("a sync within the agent's burst was refused")
+		}
+	}
+	if answered("greedy@x") {
+		t.Error("an agent past its own limit was answered")
+	}
+	if !answered("modest@x") {
+		t.Error("another agent was refused because of the first one")
+	}
+
+	published.limiter = rate.NewLimiter(rate.Every(time.Hour), 0)
+	if answered("fresh@x") {
+		t.Error("an agent within its own limit was answered past busd's")
 	}
 }

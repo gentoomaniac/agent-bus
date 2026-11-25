@@ -124,7 +124,7 @@ failed ("syncing the directory failed: ..."), and `agent-bus mcp` logs it. If it
 - "a rollback": busd was restored from a backup and offers an older revision of the same epoch.
   Delete `enroll/directory.json` in busd's config directory and restart busd: it starts a new
   epoch, which agents take in, keeping every pin and revoked key.
-- A permissions violation on `busd.directory.sync` or `directory.head`: the broker's auth files
+- A permissions violation on `busd.directory.sync.<token>` or `directory.head`: the broker's auth files
   predate directory v2; regenerate them (`agent-busctl --direct init`, or any `register`).
 - busd or the agent is of an older version.
 

@@ -424,31 +424,53 @@ func (admin *Admin) WatchPresence(handler func(agentID string, record []byte)) (
 // wherever busd may, into a registry key or a JetStream API subject among them. Such a request is
 // dropped; the first one is logged.
 func (admin *Admin) Serve(subject, replyPrefix string, handle func(request []byte) []byte) (stop func(), err error) {
-	return serve(admin.control, subject, replyPrefix+".*", func(reply string) bool { return isReplyBelow(reply, replyPrefix) }, handle)
+	return serve(admin.control, subject, replyPrefix+".*",
+		func(_, reply string) bool { return isReplyBelow(reply, replyPrefix) },
+		func(_ string, request []byte) []byte { return handle(request) })
 }
 
-// ServeAgents is Serve on a subject of BUS that every agent may call (busd.directory.sync). NATS
-// does not tell busd who sent a request, so the reply goes only to a literal subject in some
-// agent's own inbox space, _INBOX.<agent-token>.<token>..., which only that agent may subscribe to.
-// busd's BUS login may publish anywhere in BUS, a DM subject among them, so no other reply is made.
-func (admin *Admin) ServeAgents(subject string, handle func(request []byte) []byte) (stop func(), err error) {
-	return serve(admin.bus, subject, "_INBOX.<agent-token>.*", isAgentInbox, handle)
+// ServeAgents is Serve on the subjects prefix.<agent-token> of BUS (busd.directory.sync): each
+// agent may publish on its own one only, so the subject says who asks, and handle is told the
+// agent's ID. The reply goes only to a literal subject in that agent's own inbox space,
+// _INBOX.<agent-token>.<token>...: busd's BUS login may publish anywhere in BUS, a DM subject among
+// them, so no other reply is made.
+func (admin *Admin) ServeAgents(prefix string, handle func(agentID string, request []byte) []byte) (stop func(), err error) {
+	return serve(admin.bus, prefix+".*", "the caller's _INBOX.<agent-token>.*",
+		func(subject, reply string) bool {
+			_, allowed := callerOf(prefix, subject, reply)
+			return allowed
+		},
+		func(subject string, request []byte) []byte {
+			agentID, _ := callerOf(prefix, subject, "")
+			return handle(agentID, request)
+		})
 }
 
-func serve(session *session, subject, allowed string, allows func(reply string) bool, handle func(request []byte) []byte) (stop func(), err error) {
+// callerOf is the agent that asked on prefix.<agent-token>, and whether reply is a literal subject
+// in its inbox space. An empty reply is not checked.
+func callerOf(prefix, subject, reply string) (agentID string, allowed bool) {
+	token, found := strings.CutPrefix(subject, prefix+".")
+	agentID = bus.AgentIDFromToken(token)
+	if !found || bus.ValidateAgentID(agentID) != nil || bus.AgentToken(agentID) != token {
+		return "", false
+	}
+	return agentID, reply == "" || isReplyBelow(reply, "_INBOX."+token)
+}
+
+func serve(session *session, subject, allowed string, allows func(subject, reply string) bool, handle func(subject string, request []byte) []byte) (stop func(), err error) {
 	var dropped atomic.Int64
 	subscription, err := session.conn.Subscribe(subject, func(message *nats.Msg) {
 		if message.Reply == "" {
 			return
 		}
-		if !allows(message.Reply) {
+		if !allows(message.Subject, message.Reply) {
 			if dropped.Add(1) == 1 {
-				log.Printf("busd: dropping a request on %s whose reply subject %q is outside %s (further ones are not logged)", subject, message.Reply, allowed)
+				log.Printf("busd: dropping a request on %s whose reply subject %q is outside %s (further ones are not logged)", message.Subject, message.Reply, allowed)
 			}
 			return
 		}
-		if err := message.Respond(handle(message.Data)); err != nil {
-			log.Printf("busd: answering a request on %s: %v", subject, err)
+		if err := message.Respond(handle(message.Subject, message.Data)); err != nil {
+			log.Printf("busd: answering a request on %s: %v", message.Subject, err)
 		}
 	})
 	if err == nil {
@@ -458,14 +480,6 @@ func serve(session *session, subject, allowed string, allows func(reply string) 
 		return nil, err
 	}
 	return func() { _ = subscription.Unsubscribe() }, nil
-}
-
-// isAgentInbox says whether reply is a literal subject below the inbox prefix of a well-formed
-// agent token: _INBOX.<agent-token>.<token>[.<token>...].
-func isAgentInbox(reply string) bool {
-	rest, found := strings.CutPrefix(reply, "_INBOX.")
-	token, _, _ := strings.Cut(rest, ".")
-	return found && bus.ValidateAgentID(bus.AgentIDFromToken(token)) == nil && isReplyBelow(reply, "_INBOX."+token)
 }
 
 // isReplyBelow says whether reply is a literal subject (no wildcard, no empty token) of the form

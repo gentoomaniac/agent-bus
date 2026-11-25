@@ -133,13 +133,13 @@ func (transport *Transport) History(ctx context.Context, from bus.Channel, after
 	return records, transport.session.explain(batch.Error())
 }
 
-// RequestDirectory asks busd for the directory with a sync request (directory.SubjectSync); the
-// answer comes back in the agent's own inbox space.
+// RequestDirectory asks busd for the directory with a sync request on the agent's own sync subject
+// (directory.SyncSubject); the answer comes back in the agent's own inbox space.
 func (transport *Transport) RequestDirectory(ctx context.Context, request []byte) ([]byte, error) {
 	if err := transport.Unavailable(); err != nil {
 		return nil, err
 	}
-	reply, err := transport.session.conn.RequestWithContext(ctx, directory.SubjectSync, request)
+	reply, err := transport.session.conn.RequestWithContext(ctx, directory.SyncSubject(transport.agentToken), request)
 	switch {
 	case errors.Is(err, nats.ErrNoResponders):
 		return nil, errors.New("busd is not running on the broker, so the directory cannot be synced (docs/troubleshooting.md)")

@@ -51,11 +51,11 @@ busd persists the current projection and version together. A restart keeps both.
 | Subject | Who | Purpose |
 |---|---|---|
 | `directory.head` | busd publishes; agents and the monitor subscribe | Signed current version plus change hints |
-| `busd.directory.sync` | agents and the monitor publish (request); busd subscribes | Conditional sync: unchanged, diff or full |
+| `busd.directory.sync.<agent-token>` | each agent publishes on its own (request); busd subscribes `busd.directory.sync.*` | Conditional sync: unchanged, diff or full |
 
-- Agents: publish `busd.directory.sync`, subscribe `directory.head` and their existing
+- Agents: publish `busd.directory.sync.<own token>`, subscribe `directory.head` and their existing
   `_INBOX.<token>.>`. No KV write, no new JetStream API grants.
-- busd: subscribe `busd.directory.sync`, publish `directory.head` and replies to approved inbox
+- busd: subscribe `busd.directory.sync.*`, publish `directory.head` and replies to approved inbox
   prefixes only (no wildcards, no empty tokens, no reply outside the caller's inbox prefix).
 - Sync is a public read: no authorisation on a claimed caller identity.
 
@@ -191,7 +191,7 @@ Upgrade steps for the owner (also in [docker.md](../docker.md#upgrade)):
    old agent never syncs, and an old busd answers no sync (agents then log "busd is not running"
    and keep their local directory).
 2. Regenerate the auth files once: `agent-busctl --direct init` (with the retention flags, if they
-   were changed). It gives agents publish `busd.directory.sync` and subscribe `directory.head`, the
+   were changed). It gives agents publish `busd.directory.sync.<own token>` and subscribe `directory.head`, the
    monitor subscribe `directory.head`, and drops `busd.directory` from the enrollment login.
 3. Restart the agents' sessions. Each syncs the whole directory once at start, then diffs.
 4. Delete `<config-dir>/enroll/password` on agent machines, which v1's `enroll` left there.
@@ -248,16 +248,17 @@ Where the build refined or departed from the text above.
 
 **Sync (commit 2).**
 
-- busd serves `busd.directory.sync` on its `bus-admin` connection. NATS does not tell the receiver
-  who published a request, so busd cannot check "the caller's" inbox. It answers only on a literal
-  subject `_INBOX.<agent-token>.<token>...` whose token is a well-formed agent token: the inbox
-  space of some agent, which only that agent may subscribe to. Anything else (another account
-  subject, a wildcard, an empty token) is dropped, so a request cannot make busd's full-rights BUS
-  login publish anywhere else. A reply sent into another agent's inbox is public data bound to a
-  request that agent never made, and its client drops it.
-- The rate limit is global (a burst of 50, then one every 20 ms), not per connection: busd cannot
-  tell connections apart either. Past it busd answers unsigned (`{"error": …}`), which the agent
-  treats as a transport error, so a flood costs no signatures.
+- NATS does not tell the receiver who published a request, so each agent asks on a subject of
+  its own, `busd.directory.sync.<agent-token>`, the only sync subject its grants allow. busd
+  serves `busd.directory.sync.*` on its `bus-admin` connection and so knows the caller: it answers
+  only on a literal subject in that agent's inbox space, `_INBOX.<agent-token>.<token>...`.
+  Anything else (another agent's inbox, another account subject, a wildcard, an empty token) is
+  dropped, so a request cannot make busd's full-rights BUS login publish anywhere else. (Before the
+  review busd took one shared subject and any well-formed agent inbox.)
+- Each agent is limited on its own (a burst of 5, then one a second), and all of them together
+  beneath that (a burst of 50, then one every 20 ms), so one agent cannot use up the others'
+  share. Past a limit busd answers unsigned (`{"error": …}`), which the agent treats as a
+  transport error, so a flood costs no signatures.
 - A malformed request, and a request before busd's first projection, get a signed `error` reply.
 - Diffs come from a cache of the last 16 projections, kept in memory only.
 

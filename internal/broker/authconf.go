@@ -260,8 +260,9 @@ func agentPermissions(token string, groups []string) (publish, subscribe []strin
 		publish = append(publish, "busd."+method)
 	}
 	// The directory sync is the one busd call agents make today: a public read, answered in their
-	// inbox (docs/design/directory-v2.md).
-	publish = append(publish, directory.SubjectSync)
+	// inbox (docs/design/directory-v2.md). Each agent has a subject of its own, so busd knows who
+	// asks, to answer only there and to limit each agent on its own.
+	publish = append(publish, directory.SyncSubject(token))
 	return publish, []string{"_INBOX." + token + ".>", directory.SubjectHead}
 }
 

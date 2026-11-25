@@ -163,7 +163,7 @@ func (cli *CLI) Run() error {
 	}
 	stopSync, err := admin.ServeAgents(directory.SubjectSync, published.HandleSync)
 	if err != nil {
-		return fmt.Errorf("serving %s: %w", directory.SubjectSync, err)
+		return fmt.Errorf("serving %s.*: %w", directory.SubjectSync, err)
 	}
 	defer stopSync()
 	log.Printf("busd %s: serving enrollment, approval and the directory on the bus", version)

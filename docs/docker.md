@@ -198,7 +198,7 @@ Messages older than 90 days, or beyond the newest 1 GiB, are deleted at once.
 
 **Upgrading to directory v2** (agents sync the directory from busd with their own login,
 [design/directory-v2.md](design/directory-v2.md)). Deploy busd and the agents together, then
-regenerate the broker's auth files once, so agents may ask `busd.directory.sync` and hear
+regenerate the broker's auth files once, so agents may ask `busd.directory.sync.<own token>` and hear
 `directory.head`, and the monitor may hear it too:
 
 ```sh

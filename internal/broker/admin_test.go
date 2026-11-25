@@ -26,27 +26,30 @@ func TestIsReplyBelow(t *testing.T) {
 	}
 }
 
-func TestIsAgentInbox(t *testing.T) {
-	for reply, want := range map[string]bool{
-		"_INBOX.lib-x_bob.abc":      true,
-		"_INBOX.lib-x_bob.abc.1":    true,
-		"_INBOX.lib-x_bob":          false, // no token below the agent's prefix
-		"_INBOX.lib-x_bob.*":        false,
-		"_INBOX.lib-x_bob.>":        false,
-		"_INBOX.lib-x_bob..x":       false,
-		"_INBOX.lib-x_bob.a b":      false,
-		"_INBOX.enroll.abc":         false, // not an agent token
-		"_INBOX.bus-monitor.abc":    false,
-		"_INBOX.Lib_bob.abc":        false,
-		"_INBOX.*.abc":              false,
-		"dm.lib-x_bob":              false,
-		"directory.head":            false,
-		"$KV.registry.lib-x_bob":    false,
-		"$JS.API.STREAM.DELETE.BUS": false,
-		"":                          false,
+func TestCallerOf(t *testing.T) {
+	const prefix = "busd.directory.sync"
+	for _, test := range []struct {
+		subject, reply string
+		caller         string
+		allowed        bool
+	}{
+		{prefix + ".lib-x_bob", "_INBOX.lib-x_bob.abc", "lib-x@bob", true},
+		{prefix + ".lib-x_bob", "_INBOX.lib-x_bob.abc.1", "lib-x@bob", true},
+		{prefix + ".lib-x_bob", "_INBOX.other_bob.abc", "", false}, // another agent's inbox
+		{prefix + ".lib-x_bob", "_INBOX.lib-x_bob", "", false},     // no token below the prefix
+		{prefix + ".lib-x_bob", "_INBOX.lib-x_bob.*", "", false},
+		{prefix + ".lib-x_bob", "_INBOX.lib-x_bob.>", "", false},
+		{prefix + ".lib-x_bob", "_INBOX.lib-x_bob..x", "", false},
+		{prefix + ".lib-x_bob", "dm.lib-x_bob", "", false},
+		{prefix + ".lib-x_bob", "$JS.API.STREAM.DELETE.BUS", "", false},
+		{prefix + ".enroll", "_INBOX.enroll.abc", "", false}, // not an agent token
+		{prefix + ".Lib_bob", "_INBOX.Lib_bob.abc", "", false},
+		{prefix, "_INBOX.lib-x_bob.abc", "", false},
+		{"busd.other.lib-x_bob", "_INBOX.lib-x_bob.abc", "", false},
 	} {
-		if got := isAgentInbox(reply); got != want {
-			t.Errorf("isAgentInbox(%q) = %v, want %v", reply, got, want)
+		caller, allowed := callerOf(prefix, test.subject, test.reply)
+		if allowed != test.allowed || allowed && caller != test.caller {
+			t.Errorf("callerOf(%q, %q) = %q, %v; want %q, %v", test.subject, test.reply, caller, allowed, test.caller, test.allowed)
 		}
 	}
 }

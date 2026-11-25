@@ -22,7 +22,7 @@ directory of its own with read-only logins and no CA key ([access control](acces
 > give the monitor the registry and the catalogue as unsigned replies; busd also publishes the pending
 > count for the monitor. In `BUS` it publishes the directory: a versioned projection of the registry,
 > the catalogue and the readership (`enroll/directory.json`), announced on `directory.head` and served
-> on `busd.directory.sync` to every agent's own login, signed by the CA key
+> on `busd.directory.sync.<agent-token>` to every agent's own login, signed by the CA key
 > ([directory v2](directory-v2.md)). Every answer goes only into the caller's inbox space (the enrollment, admin
 > or monitor one, decision 42). busd has no HTTP interface. The container's entrypoint starts it in a
 > restart loop (`deploy/entrypoint.sh`; `BUS_BUSD=off` runs the broker without it). As built: [access control](access-control.md#phase-b-implemented-the-enrollment-flow),
