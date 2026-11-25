@@ -116,7 +116,6 @@ type Adapter struct {
 	handled *handledSet
 	// alertsPath is a plain log until agent-busctl alerts exists.
 	alertsPath string
-	channels   []bus.Channel
 
 	// syncMu makes directory syncs run one at a time; missMu does the same for the syncs that
 	// unknown recipients cause, with lastMissSync. Neither is ever taken while holding mu.
@@ -130,8 +129,10 @@ type Adapter struct {
 	installed directory.Snapshot
 	// lastSenderSync is when a message of an unknown sender last asked for a sync.
 	lastSenderSync time.Time
-	inbox          inbox
-	rate           rateLimiter
+	// channels are the channels the adapter reads. A sync that changes the catalogue changes them.
+	channels []bus.Channel
+	inbox    inbox
+	rate     rateLimiter
 	// closingRate limits ack, answer and status replies on their own.
 	closingRate rateLimiter
 
@@ -219,25 +220,35 @@ func (adapter *Adapter) load() (err error) {
 	adapter.inbox = inbox{maxMessages: config.InboxMessages, maxBytes: config.InboxBytes, maxContext: config.ContextMessages}
 	adapter.rate = rateLimiter{limit: config.RateLimit, window: rateWindow}
 	adapter.closingRate = rateLimiter{limit: config.RateLimit, window: rateWindow}
+	for _, group := range config.Groups {
+		if err := bus.ValidateGroupName(group); err != nil {
+			return err
+		}
+	}
 	catalogue, err := adapter.catalogue()
 	if err != nil {
 		return err
 	}
-	groups := slices.Clone(config.Groups)
+	adapter.channels = adapter.channelsFor(catalogue)
+	return nil
+}
+
+// channelsFor are the channels the agent reads with this catalogue: its DM channel, general, the
+// groups the catalogue lists it as a reader of, and those of Config.Groups. The catalogue's names
+// are valid: a file directory and a sync both check them.
+func (adapter *Adapter) channelsFor(catalogue trust.Catalogue) []bus.Channel {
+	groups := slices.Clone(adapter.config.Groups)
 	for name, readers := range catalogue {
-		if slices.Contains(readers, config.AgentID) {
+		if slices.Contains(readers, adapter.config.AgentID) {
 			groups = append(groups, name)
 		}
 	}
 	slices.Sort(groups)
-	adapter.channels = []bus.Channel{bus.DMChannel(config.AgentID), bus.GeneralChannel()}
+	channels := []bus.Channel{bus.DMChannel(adapter.config.AgentID), bus.GeneralChannel()}
 	for _, group := range slices.Compact(groups) {
-		if err := bus.ValidateGroupName(group); err != nil {
-			return err
-		}
-		adapter.channels = append(adapter.channels, bus.GroupChannel(group))
+		channels = append(channels, bus.GroupChannel(group))
 	}
-	return nil
+	return channels
 }
 
 // catalogue reads the directory's snapshot of the group channels and their readers. A directory
@@ -289,7 +300,11 @@ func (adapter *Adapter) AutoAccept() bool { return adapter.config.AutoAccept }
 func (adapter *Adapter) DeliversAll() bool { return adapter.config.Deliver == DeliverAll }
 
 // Channels are the channels the adapter reads: the agent's DM channel, general and its groups.
-func (adapter *Adapter) Channels() []bus.Channel { return slices.Clone(adapter.channels) }
+func (adapter *Adapter) Channels() []bus.Channel {
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	return slices.Clone(adapter.channels)
+}
 
 // directoryRecords reads every record of the local directory. Only a directory that can be listed
 // (trust.FileDirectory) supports it. Like FileDirectory.Records it returns the readable records
@@ -393,7 +408,7 @@ func (adapter *Adapter) Publish(ctx context.Context, channelName string, message
 	if err := bus.ValidateGroupName(channelName); err != nil {
 		return "", err
 	}
-	if !slices.Contains(adapter.channels, bus.GroupChannel(channelName)) {
+	if !slices.Contains(adapter.Channels(), bus.GroupChannel(channelName)) {
 		catalogue, err := adapter.catalogue()
 		if err != nil {
 			return "", err
@@ -619,7 +634,7 @@ func (adapter *Adapter) Poll(ctx context.Context) error {
 	adapter.pollMu.Lock()
 	defer adapter.pollMu.Unlock()
 	var errs []error
-	for _, channel := range adapter.channels {
+	for _, channel := range adapter.Channels() {
 		adapter.mu.Lock()
 		batch := adapter.inbox.fetchBatch()
 		adapter.mu.Unlock()

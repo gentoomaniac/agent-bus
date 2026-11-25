@@ -286,3 +286,11 @@ Where the build refined or departed from the text above.
 - A head with the same epoch and revision but another state hash is logged, and the sync that
   follows, asking from a version busd does not have, gets the full directory. A full reply of the
   same epoch at the agent's revision with another hash is accepted (it is signed and fresh).
+
+**Groups (commit 5).**
+
+- After every sync the adapter recomputes the channels it reads from the synced catalogue (plus
+  `--groups`), under its lock; the reader picks them up at its next poll. A join needs nothing
+  else on the agent's side: the read cursor exists (busd or agent-busctl made it, which is how the
+  catalogue lists the reader), and the grants for every catalogued group came with `channel
+  create`. A group left is dropped from the set.

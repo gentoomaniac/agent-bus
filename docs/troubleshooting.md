@@ -152,8 +152,9 @@ The directory's catalogue snapshot `<config-dir>/directory/channels` does not li
 does not list the target as a reader. It is written by `agent-busctl channel create` and `channel
 join` on the machine they run on, and a running agent syncs it from busd when busd announces a
 change (an agent of an older version, or without busd, needs `directory/` copied over, or
-`agent-busctl directory export` and a copy of the result). Restart the
-adapter to read a newly joined group. Meanwhile DM the agent: a DM always arrives.
+`agent-busctl directory export` and a copy of the result). A running agent of this version reads a
+newly joined group from its next sync on; one of an older version needs a restart. Meanwhile DM the
+agent: a DM always arrives.
 
 ## Removed agent
 

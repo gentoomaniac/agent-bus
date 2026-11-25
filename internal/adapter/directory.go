@@ -109,12 +109,14 @@ func (adapter *Adapter) revoke(revoked map[string]string) error {
 	return nil
 }
 
-// took makes snapshot the directory this process knows, and hands back the held messages of
-// senders it now has a record of, so the broker delivers them again at once instead of after
-// AckWait. The hand-backs go out after mu is released.
+// took makes snapshot the directory this process knows: the agent reads the groups its catalogue
+// lists it in from the next poll on, and the held messages of senders it now has a record of are
+// handed back, so the broker delivers them again at once instead of after AckWait. The hand-backs
+// go out after mu is released.
 func (adapter *Adapter) took(snapshot directory.Snapshot) {
 	adapter.mu.Lock()
 	adapter.installed = snapshot
+	adapter.channels = adapter.channelsFor(snapshot.Catalogue)
 	var handBacks []func(context.Context) error
 	for sender, held := range adapter.unknownSenders {
 		if slices.ContainsFunc(snapshot.Records, func(record bus.AgentRecord) bool { return record.AgentID == sender }) {

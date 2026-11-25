@@ -190,10 +190,11 @@ Lets a registered agent read a group channel from now on: creates the agent's re
 the cursor. The agent's grants came with `channel create`, and the group is not checked against
 the catalogue, so create the channel first. `channel create` and `channel join` also rewrite the
 catalogue snapshot `<config-dir>/directory/channels` (each group with the agents that read it), and
-`directory export` writes it too. The agent's adapter reads its groups from the snapshot when it
-starts, so restart it after a join; `--groups` is only needed for a group the snapshot does not
-list. On another machine the snapshot arrives with the next fetch of a running agent from busd, or
-with the next copy of `directory/` for an agent of an older version.
+`directory export` writes it too. The agent's adapter reads its groups from the snapshot: a running
+`agent-bus mcp` syncs the catalogue from busd within seconds of a join or a leave and reads the new
+set of groups from its next poll on, without a restart; `--groups` is only needed for a group the
+snapshot does not list. An agent of an older version reads its groups only when it starts, from the
+next copy of `directory/`.
 
 ```sh
 bin/agent-busctl --direct channel join api-client@alice lib-x
