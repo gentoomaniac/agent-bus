@@ -352,8 +352,10 @@ func (adapter *Adapter) fetchDirectoryOnMiss(ctx context.Context) error {
 	if now.Sub(adapter.lastMissFetch) < missFetchInterval {
 		return nil
 	}
-	adapter.lastMissFetch = now
-	return adapter.config.FetchDirectory(ctx)
+	// Stamped after the fetch, so that a busd that hangs leaves mu free for a whole interval.
+	err := adapter.config.FetchDirectory(ctx)
+	adapter.lastMissFetch = adapter.config.Now()
+	return err
 }
 
 // checkRecipient refuses an agent that has no directory record or was removed, as ErrBadTargets:
