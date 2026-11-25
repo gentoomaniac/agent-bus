@@ -52,6 +52,14 @@ every receiver rejects it and it never reaches an agent as mail (tested in
 channel with junk records but cannot inject messages. Narrowing the grant (for example serving
 presence through busd) would close it; not needed in the MVP.
 
+## Known limit: the monitor can disturb consumers
+
+`monitor-bus` can create, update and delete consumers of the `BUS` stream: JetStream grants cannot
+name a consumer prefix, and the monitor's ordered history reads need consumer create. A
+compromised monitor can therefore disrupt delivery or reset read cursors. It cannot read keys,
+impersonate an agent (it holds no signing key) or approve anything. Planned fix: busd serves the
+history and provisions the monitor's consumers; not needed in the MVP.
+
 ## See also
 
 - [Protocol](protocol.md): response-bearing types and the request lifecycle that rule 2 gates.

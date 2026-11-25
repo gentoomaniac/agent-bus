@@ -65,6 +65,14 @@ flowchart LR
 
 The monitor has its own narrow signing identity, `monitor@<owner>`, with its own Ed25519 key registered with the role `monitor`: busd lets it call only the read-only methods above. It never uses the owner's key. busd, not the monitor, creates the monitor's consumer, so the monitor needs no create grant. Read-only still has a limit: any raw JetStream reader, the monitor included, can make the server deliver a payload it can read to any subject of `BUS` it can name. That cannot be closed by grants within one account. The receiver checks ([private channels](private-channels.md), [signing and trust](identity-and-trust.md)) are what make it harmless. The grants for the busd methods and the consumers are generated; the per-channel part is rewritten by reload (below).
 
+## Known limits
+
+- *`monitor-bus` can create, update and delete `BUS` consumers.* JetStream grants cannot name
+  consumer prefixes, and ordered history reads need create. A compromised monitor can disrupt
+  delivery or reset cursors, but cannot read keys, impersonate agents (no signing keys) or approve
+  anything. Planned fix: busd serves history and provisions the monitor's consumers. See
+  [Safety](safety.md#known-limit-the-monitor-can-disturb-consumers).
+
 ## mTLS login and enrollment
 
 ### Phase A (implemented): certificate login without enrollment
