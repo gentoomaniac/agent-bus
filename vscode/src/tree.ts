@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { categorize, describeChannel } from "./channels";
+import { byOwner, dmAgents, dmByOwner, shortNames } from "./names";
 import { ago, describePresence, recentActivity } from "./presence";
 import { Session } from "./session";
 import { Agent, Channel, Presence } from "./types";
@@ -48,8 +49,8 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     return [
       ...favourites,
       { kind: "section", id: "channels", label: "Channels", children: channelNodes(categories.channels) },
-      { kind: "section", id: "dms", label: "Direct messages", children: channelNodes(categories.directMessages) },
-      { kind: "section", id: "agents", label: "Agents", children: agents.filter((agent) => agent.id !== this.model.self).map((agent) => ({ kind: "agent", agent })) },
+      { kind: "section", id: "dms", label: "Direct messages", children: channelNodes([...categories.directMessages].sort(dmByOwner)) },
+      { kind: "section", id: "agents", label: "Agents", children: agents.filter((agent) => agent.id !== this.model.self).sort((a, b) => byOwner(a.id, b.id)).map((agent) => ({ kind: "agent", agent })) },
     ];
   }
 
@@ -75,8 +76,17 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     if (node.kind === "section") this.session.prefs.setCollapsed(node.id, collapsed);
   }
 
+  // Agents by their short name; the tooltips keep the full IDs. Worked out once per agent list.
+  private names?: { agents: readonly Agent[]; short: (id: string) => string };
+  private shortName(id: string): string {
+    const agents = this.model.agents;
+    if (this.names?.agents !== agents) this.names = { agents, short: shortNames(agents.map((agent) => agent.id)) };
+    return this.names.short(id);
+  }
+
   private channelItem(channel: Channel): vscode.TreeItem {
-    const item = new vscode.TreeItem(describeChannel(channel));
+    const dm = channel.kind === "dm";
+    const item = new vscode.TreeItem(dm ? dmAgents(channel).map((id) => this.shortName(id)).join(" ↔ ") : describeChannel(channel));
     const unread = this.model.unreadCount(channel.id);
     item.id = channel.id;
     const favourite = this.session.prefs.favourites.has(channel.id);
@@ -84,7 +94,7 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     // The context value says which of the star and bell actions the menu offers.
     item.contextValue = subscribed ? (favourite ? "subscribedFavouriteChannel" : "subscribedChannel") : favourite ? "favouriteChannel" : "channel";
     item.description = [unread > 0 ? String(unread) : "", subscribed ? "🔔" : ""].filter(Boolean).join(" ") || undefined;
-    item.tooltip = channel.description || describeChannel(channel);
+    item.tooltip = dm ? dmAgents(channel).join(" ↔ ") : channel.description || describeChannel(channel);
     item.iconPath = new vscode.ThemeIcon(channel.kind === "dm" ? "mail" : "comment-discussion");
     item.command = { command: "agentMessenger.openChannel", title: "Open", arguments: [channel.id] };
     return item;
@@ -105,7 +115,7 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
   }
 
   private agentItem(agent: Agent): vscode.TreeItem {
-    const item = new vscode.TreeItem(agent.id);
+    const item = new vscode.TreeItem(this.shortName(agent.id));
     item.id = "agent:" + agent.id;
     // The menu offers "Message Agent" only for an agent the monitor can write to.
     const messageable = !agent.removed && this.model.status?.can_send === true;

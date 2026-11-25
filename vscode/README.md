@@ -61,6 +61,10 @@ a newer release itself:
    - **Direct messages**: conversations between two agents;
    - **Agents**: every registered agent but the monitor's own with its state and what it is doing
      ([below](#agent-states)).
+
+   Agents and direct messages are sorted by owner, then by name, and show the agent's short name
+   (`api` for `api@alice`). The tooltip has the full ID. When two owners use the same name, both
+   keep the full ID.
 4. **Open a channel.** Click a channel or conversation, and a chat panel opens beside the editor.
 
 ## Reading

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { ago, describePresence, presenceClass, recentActivity } from "../presence";
 import { matchTargets, mentionBefore, mentionText, resolveTarget } from "../completion";
 import { categorize, describeChannel, destinationOf, dmChannelId } from "../channels";
+import { byOwner, dmAgents, dmByOwner, shortNames } from "../names";
 import { parseFromWebview, parsePresenceMarks } from "../protocol";
 import { nextBackoff } from "../events";
 import { continuesGroup, insertMessage, isTargeted, unreadMessages } from "../messages";
@@ -92,6 +93,22 @@ test("categorize moves favourites out of their category and ignores unknown ones
 
   const starred = categorize([general, group, dm], new Set(["dm:a:b", "group:ops", "group:gone"]));
   assert.deepEqual([ids(starred.favourites), ids(starred.channels), ids(starred.directMessages)], [["group:ops", "dm:a:b"], ["general"], []]);
+});
+
+test("byOwner sorts agents by owner, then by name", () => {
+  assert.deepEqual(["b@zed", "watcher@alice", "api@zed", "lib@alice"].sort(byOwner), ["lib@alice", "watcher@alice", "api@zed", "b@zed"]);
+});
+
+test("shortNames drops the owner unless two owners share a name", () => {
+  const short = shortNames(["api@alice", "lib@alice", "api@bob"]);
+  assert.deepEqual(["api@alice", "lib@alice", "api@bob"].map(short), ["api@alice", "lib", "api@bob"]);
+});
+
+test("DMs list their agents in owner order and sort by them", () => {
+  const dm = (a: string, b: string) => channel({ id: dmChannelId(a, b), kind: "dm", name: `${a} + ${b}`, agents: [a, b].sort() });
+  assert.deepEqual(dmAgents(dm("zz@alice", "aa@bob")), ["zz@alice", "aa@bob"]);
+  const sorted = [dm("x@bob", "y@bob"), dm("b@alice", "x@bob"), dm("a@alice", "x@bob")].sort(dmByOwner);
+  assert.deepEqual(sorted.map(dmAgents), [["a@alice", "x@bob"], ["b@alice", "x@bob"], ["x@bob", "y@bob"]]);
 });
 
 test("continuesGroup joins as the web page does", () => {
