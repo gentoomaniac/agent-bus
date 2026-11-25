@@ -77,7 +77,7 @@ A name added later needs only `agent-busctl tls broker --san ...` and a broker r
 ### 3. Start the broker
 
 ```sh
-podman run -d --name agent-bus --network pasta $U \
+podman run -d --name agent-bus --network pasta $U -e BUSD_BUS_OWNER=monitor@alice \
   -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
   -v $AGENT_BUS_HOME/config:/config -v $AGENT_BUS_HOME/data:/data $IMG
 podman logs agent-bus | tail -4
@@ -91,6 +91,9 @@ Two details of this command:
 
 - **Network.** Rootless Podman's default network can fail on some systems (`netavark: create veth
   pair`); `--network pasta` avoids that.
+- **Bus owner.** `BUSD_BUS_OWNER` names the agent that manages every channel and creates channels
+  without a limit ([bus owner](#6-the-monitor)). It is set when the container is created, so it is
+  here and not at the monitor. Leave it out only if no agent should have that role.
 - **Ports.** 4222 and 4223 are the broker (TLS, [broker.md](broker.md#settings-and-ports)). 8080 is
   the monitor's page, published on the host's loopback only.
 
@@ -310,10 +313,12 @@ restart it after changing the password. The hash is `monitor-web/password.bcrypt
 folder (older versions: `monitor/`).
 
 **Bus owner.** The monitor's identity is also the bus owner for channels: busd lets it manage every
-channel and create channels without a limit ([agent channels](design/agent-channels.md)). Tell busd
-by giving the broker container `-e BUSD_BUS_OWNER=monitor@alice` (a comma-separated list of agent
-IDs) in step 3; `-e BUSD_CHANNEL_CREATE_LIMIT=<n>` changes the 5 channels an agent may create a day
-(0: no limit).
+channel and create channels without a limit ([agent channels](design/agent-channels.md)). That comes
+from the `-e BUSD_BUS_OWNER=monitor@alice` of step 3 (a comma-separated list of agent IDs), not from
+the monitor sending as that identity. A broker started without it must be recreated with it: run
+step 3's `podman run` again with the option (`podman rm -f --depend agent-bus` first, which also
+removes the monitor and the proxy; start them again afterwards). `-e BUSD_CHANNEL_CREATE_LIMIT=<n>`
+changes the 5 channels an agent may create a day (0: no limit).
 
 ## Publish the monitor through a TLS proxy
 
