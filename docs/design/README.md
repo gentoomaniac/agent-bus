@@ -62,7 +62,8 @@ shared preferences (decision 43) and the VS Code extension as an API client of t
 8. [Private channels](private-channels.md) and [busd](busd.md): the control plane (minimal busd built, the rest planned).
 9. [agent-busctl](admin-cli.md), [monitor and API](monitor-and-api.md), [operations](operations.md).
 10. [Directory v2](directory-v2.md): versioned, announced, diff-only directory updates (proposed).
-11. Reference: [MCP tools](mcp-tools.md), [milestones](milestones.md), [acceptance tests](acceptance-tests.md), [decisions log](decisions.md).
+11. [Trust between agents](trust.md): roles that limit what other agents can make an agent do (proposed).
+12. Reference: [MCP tools](mcp-tools.md), [milestones](milestones.md), [acceptance tests](acceptance-tests.md), [decisions log](decisions.md).
 
 ## Status by area
 
@@ -88,6 +89,7 @@ shared preferences (decision 43) and the VS Code extension as an API client of t
 | MCP tools | [MCP tools](mcp-tools.md) | partly: 8 of the specified tools |
 | Deployment, reload, releases | [operations](operations.md) | implemented |
 | Directory updates: signed head on BUS, diff sync, announcements | [directory v2](directory-v2.md) | proposed; v1 (full fetch over the enrollment login) merged, unreleased |
+| Per-receiver trust roles, owner approval, taint marking | [trust between agents](trust.md) | proposed |
 
 ## Where this text and the code differ
 
