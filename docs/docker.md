@@ -101,7 +101,7 @@ docker volume create agent-bus-config
 docker volume create agent-bus-data
 docker run --rm -v agent-bus-config:/config --entrypoint agent-busctl IMAGE tls init --san bus.example.org
 docker run --rm -v agent-bus-config:/config --entrypoint agent-busctl IMAGE admin init
-docker run -d --name agent-bus -p 4222:4222 -p 127.0.0.1:8080:8080 -v agent-bus-config:/config -v agent-bus-data:/data IMAGE
+docker run -d --name agent-bus -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 -v agent-bus-config:/config -v agent-bus-data:/data IMAGE
 alias agent-busctl='docker exec agent-bus agent-busctl'
 ```
 

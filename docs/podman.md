@@ -87,8 +87,8 @@ has a second port for it, `4223` (published in step 3 as `-p 4223:4223`). Nothin
 you already run: password logins stay on `4222`, and a certificate login is a per-agent switch.
 
 **An existing setup** started without `-p 4223:4223` keeps working. To use certificates, recreate
-the broker container with the extra `-p 4223:4223` (same volumes; `podman rm -f agent-bus`, then
-the `podman run` of step 3). The image reads `ca.pem` from the config volume at start, where
+the broker container with the extra `-p 4223:4223` (same volumes; `podman rm -f --depend agent-bus`,
+then the `podman run` of step 3; `--depend` also removes the monitor, which you then start again with step 6). The image reads `ca.pem` from the config volume at start, where
 `tls init` put it. Then, in this order:
 
 1. Admin users first. The tools switch at once (the monitor does not log in as them, see step 6;
@@ -133,6 +133,9 @@ podman exec -it agent-bus agent-busctl monitor password
 # or: printf '%s\n' 'a long password' | podman exec -i agent-bus agent-busctl monitor password
 ```
 
+On a broker volume from before busd, run `agent-busctl --direct service init` first and restart the
+broker (see step 9, "An existing setup"); `monitor init` stops without the monitor's logins.
+
 The monitor gets a config volume of its own, with only what it needs: the CA certificate (not its
 key), the passwords of its two read-only logins (it cannot approve a request or write the registry),
 the web password, the directory snapshot and the key of the agent it sends as. It never sees
@@ -165,8 +168,9 @@ move it once: `service init` and a restart of the broker (see step 9, "An existi
 two commands above, then `podman rm -f agent-bus-monitor` and the `podman run` above with the new
 volume.
 
-Open <http://localhost:8080> (or `127.0.0.1`, on any published port) and log in. Without the
-password the monitor refuses to start (`--behind-proxy needs the web login password`; see
+Open <http://localhost:8080> (or `127.0.0.1`, on any published port) and log in. The password hash is
+`monitor-web/password.bcrypt` in the monitor's config volume (older versions: `monitor/`; see
+[monitor.md](monitor.md#security-it-shows-everything)). Without it the monitor refuses to start (`--behind-proxy needs the web login password`; see
 `podman logs agent-bus-monitor`). Restart it after changing the password. To reach it from other
 machines, put a TLS proxy in front instead ([monitor.md](monitor.md#behind-a-reverse-proxy)).
 
@@ -179,14 +183,14 @@ Do steps 2, 3 and 6 like this instead (`IMG` as in step 1; the commands of steps
 rest are unchanged, and the alias of step 4 stays):
 
 ```sh
-mkdir -p ~/bus-trial/config ~/bus-trial/data
+mkdir -p ~/bus-trial/config ~/bus-trial/data ~/bus-trial/monitor-config
 U="--userns=keep-id:uid=10001,gid=10001"
 
 podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
 podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
 
 podman run -d --name agent-bus --network pasta $U \
-  -p 4222:4222 -p 127.0.0.1:8080:8080 \
+  -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
   -v ~/bus-trial/config:/config -v ~/bus-trial/data:/data \
   "${IMG:?set IMG first, see step 1}"
 
@@ -221,7 +225,7 @@ from a file `env` next to them ([upgrade-test-run.md](upgrade-test-run.md#7-repl
 podman restart agent-bus                      # reload after an upgrade (agents reconnect on their own)
 podman logs -f agent-bus                      # broker log
 podman stop agent-bus-monitor agent-bus       # stop
-podman rm -f agent-bus-monitor agent-bus      # remove containers (volumes keep all state)
+podman rm -f --depend agent-bus               # remove the broker and the monitor (volumes keep all state)
 ```
 
 ## 9. Enrolling a new machine

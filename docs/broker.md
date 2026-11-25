@@ -1,7 +1,7 @@
 # The broker
 
 The broker is a plain `nats-server` with JetStream. It runs in the Docker image ([docker.md](docker.md)),
-together with `agent-busctl`; agent machines hold only the files they copy out of its config volume. The server has two accounts, `BUS` (the agents) and `CONTROL`
+together with `busd` (enrollment) and `agent-busctl`; agent machines hold only the files they copy out of its config volume. The server has two accounts, `BUS` (the agents) and `CONTROL`
 (registry, catalogue and ledger), with no import or export between them ([design/jetstream-binding.md](design/jetstream-binding.md)).
 
 ## Config directory
@@ -16,13 +16,19 @@ it with `--config-dir` (or `BUS_CONFIG_DIR`) for `agent-bus`. The layout, the sa
 ├── broker.pem, broker.key     broker certificate (tls init)
 ├── bus-admin/password         admin of account BUS (admin init, mode 0600)
 ├── control-admin/password     admin of account CONTROL (admin init, mode 0600)
+├── busd/password              busd's login (admin init)
+├── monitor-bus/password       the monitor's read-only logins (admin init)
+├── monitor-control/password
+├── monitor-web/password.bcrypt  the monitor's web password (monitor password)
+├── enroll/                    busd's enrollment password and state (enroll init)
 ├── nats/
 │   ├── auth.conf              generated, account BUS (never edit by hand)
 │   ├── control-auth.conf      generated, account CONTROL (never edit by hand)
 │   ├── nats-server.conf       rendered from deploy/nats-server.conf at container start
 │   └── nats-server.pid        (outside Docker also nats-server.log, data/ and bin/nats-server)
 ├── directory/                 registry records, one per agent (register)
-└── <agent-id>/                key, password, lock, handled.jsonl, alerts.log (register)
+└── <agent-id>/                key, password, client.pem, client.key, lock, handled.jsonl, alerts.log
+                               (register, cert issue); replaced files are kept as *.retired
 ```
 
 ## Running it
@@ -45,6 +51,7 @@ Environment variables of the container (set them in the compose file):
 | `BUS_MAPPED_PORT`  | `4223`       | client port, certificate login (TLS, `wss://`)  |
 | `BUS_MONITOR_PORT` | `8222`       | monitoring port, 127.0.0.1 only                 |
 | `BUS_LISTEN_IP`    | `0.0.0.0`    | address of the client ports                     |
+| `BUS_BUSD`         | `on`         | `off` runs the broker without busd              |
 
 `BUS_CONFIG_DIR`, `BUS_DATA_DIR` and `BUS_NATS_SERVER` are fixed by the image (`/config`, `/data`,
 the bundled server).
@@ -101,7 +108,8 @@ restarted (`docker compose -f deploy/docker-compose.yaml restart agent-bus`).
 
 ## Reloads
 
-`register` and `channel join` change `nats/auth.conf`. Each change is one operation:
+Every command that changes access changes `nats/auth.conf` (`register`, `channel join`, `cert issue`,
+`cert switch`, `service init`, `enroll init`, and busd's approvals). Each change is one operation:
 
 1. lock the file,
 2. test the new configuration with `nats-server -t`,
