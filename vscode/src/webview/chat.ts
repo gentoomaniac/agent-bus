@@ -8,6 +8,7 @@ import { presenceClass } from "../presence";
 import { shortTime } from "../time";
 import { isSeen } from "../viewport";
 import { ThreadRow, ThreadSummary, summarizeThreads, threadRows } from "../threads";
+import { shownMessages, toggleType, typeCounts } from "../typeFilter";
 import { ALL, DEFAULT_TYPE, MESSAGE_TYPES, Message } from "../types";
 
 declare function acquireVsCodeApi(): { postMessage(message: FromWebview): void };
@@ -46,6 +47,7 @@ const searchInput = document.getElementById("searchInput") as HTMLInputElement;
 const searchField = document.getElementById("searchField") as HTMLElement;
 const scopeToggle = document.getElementById("scope") as HTMLButtonElement;
 const results = document.getElementById("results") as HTMLElement;
+const typeBar = document.getElementById("types") as HTMLElement;
 
 for (const type of MESSAGE_TYPES) typeSelect.append(new Option(type, type));
 
@@ -205,12 +207,30 @@ function markVisibleRows(): void {
 // only then do the rows in view now count as seen.
 function activate(): void {
   if (!isActive()) return;
-  const unseen = messages.filter(isUnseen);
+  const unseen = shown().filter(isUnseen); // a message the filter hides cannot have been seen
   if (unseen.length > 0 && unseen.every((message) => seen.has(message.sequence))) {
     dividerAfter = Number.POSITIVE_INFINITY;
     render();
   }
   markVisibleRows();
+}
+
+const shown = (): Message[] => shownMessages(messages, state?.shownTypes ?? []);
+
+// One chip per message type with its count, and "all". No chip pressed means every type is shown.
+function renderTypeFilter(): void {
+  const chosen = state?.shownTypes ?? [];
+  const chip = (label: string, pressed: boolean, count: number | undefined, types: string[]): HTMLElement => {
+    const button = el("button", count === 0 ? "pill empty-type" : "pill", count === undefined ? label : `${label} ${count}`);
+    button.type = "button";
+    button.setAttribute("aria-pressed", String(pressed));
+    button.addEventListener("click", () => host.postMessage({ type: "shownTypes", value: types }));
+    return button;
+  };
+  typeBar.replaceChildren(
+    chip("all", chosen.length === 0, undefined, []),
+    ...[...typeCounts(messages)].map(([type, count]) => chip(type, chosen.includes(type), count, toggleType(chosen, type))),
+  );
 }
 
 // A hidden list loses its scroll position: the distance from the bottom is kept for the next drawing.
@@ -232,8 +252,12 @@ function render(first = false): void {
     older.addEventListener("click", () => host.postMessage({ type: "older" }));
     list.append(older);
   }
-  const firstUnseen = messages.find(isUnseen);
-  const rows: ThreadRow[] = threaded ? threadRows(messages) : messages.map((message) => ({ message, depth: 0 }));
+  // The divider, the thread tree and the groups go by the messages the type filter lets through.
+  renderTypeFilter();
+  const visible = shown();
+  if (visible.length === 0) list.append(el("div", "empty", messages.length > 0 ? "No message of these types." : "No messages yet."));
+  const firstUnseen = visible.find(isUnseen);
+  const rows: ThreadRow[] = threaded ? threadRows(visible) : visible.map((message) => ({ message, depth: 0 }));
   const summaries = threaded ? summarizeThreads(rows, isUnseen) : undefined;
   let marked: HTMLElement | undefined;
   let previous: Message | undefined;
@@ -415,13 +439,13 @@ let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
 function hideList(): void {
   if (!list.hidden) heldFromBottom = list.scrollHeight - list.scrollTop;
-  list.hidden = true;
+  list.hidden = typeBar.hidden = true;
   results.hidden = false;
 }
 
 function showList(): void {
   results.hidden = true;
-  list.hidden = false;
+  list.hidden = typeBar.hidden = false;
   render();
 }
 

@@ -90,6 +90,12 @@ HTML.
 - **Verification:** a small check mark with the tooltip "verified". `unknown sender` and
   `rejected` show as a visible warning, with the reason.
 - **History:** "Load older messages" at the top fetches more.
+- **Type filter:** a row of chips under the header, "all" and one per message type with how many of
+  the loaded messages have it. Press one or more types to show only those; "all" (no chip pressed)
+  shows everything. The choice is kept in the editor and holds for every panel. The "New" divider,
+  the thread view and the grouping go by the messages the filter lets through, so a filter that
+  hides every unseen message hides the divider too. Opening a message the filter hides (a search
+  result, a notification) clears the filter.
 - **Threads:** the "Threads" button in the panel header switches between the flat list and a
   thread view. The choice is kept in the editor, not shared with the monitor. In the thread view
   a root with replies has a muted "N replies" line ("1 reply"; the whole subtree is counted)

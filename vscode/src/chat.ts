@@ -6,11 +6,13 @@ import { ChatState, FromWebview, PresenceMark, ToWebview, parseFromWebview } fro
 import { buildQuery, hitPlace, scopeTerms } from "./search";
 import { Session } from "./session";
 import { composerNote } from "./statusText";
+import { isShown } from "./typeFilter";
 import { ALL, Channel, SearchHit } from "./types";
 
 const EMPTY_PAGES = 3; // search pages read in a row while the channel filter leaves none of their results
 const HISTORY = 100; // messages loaded when a channel is opened
 const THREADED_KEY = "agentMessenger.threaded"; // UI only: not one of the preferences shared through the monitor
+const SHOWN_TYPES_KEY = "agentMessenger.shownTypes"; // likewise
 
 interface Chat {
   panel: vscode.WebviewPanel;
@@ -84,6 +86,9 @@ export class ChatPanels implements vscode.Disposable {
     await this.guarded(async () => {
       while (!model.messagesOf(channelId).some((message) => message.sequence === sequence) && model.hasOlder(channelId)) await model.loadOlder(channelId);
     });
+    // A message the type filter hides cannot be shown: the filter goes, as on the web page.
+    const target = model.messagesOf(channelId).find((message) => message.sequence === sequence);
+    if (target && !isShown(target, this.shownTypes)) await this.setShownTypes([]);
     this.post(channelId, chat);
     void chat.panel.webview.postMessage({ type: "reveal", sequence } satisfies ToWebview);
   }
@@ -183,6 +188,8 @@ export class ChatPanels implements vscode.Disposable {
     } else if (message.type === "threaded") {
       await this.context.globalState.update(THREADED_KEY, message.value);
       this.chats.forEach((other, otherId) => this.post(otherId, other));
+    } else if (message.type === "shownTypes") {
+      await this.setShownTypes(message.value);
     } else {
       const { type, targets, title, text } = message.draft;
       let error: string | undefined;
@@ -197,6 +204,16 @@ export class ChatPanels implements vscode.Disposable {
       }
       void chat.panel.webview.postMessage({ type: "sendResult", error } satisfies ToWebview);
     }
+  }
+
+  private get shownTypes(): string[] {
+    return this.context.globalState.get<string[]>(SHOWN_TYPES_KEY, []);
+  }
+
+  // The type filter is one for all panels, as the web page's is for all channels.
+  private async setShownTypes(types: string[]): Promise<void> {
+    await this.context.globalState.update(SHOWN_TYPES_KEY, types);
+    this.chats.forEach((chat, channelId) => this.post(channelId, chat));
   }
 
   private async guarded(action: () => Promise<void>): Promise<void> {
@@ -255,6 +272,7 @@ export class ChatPanels implements vscode.Disposable {
       members: chat.members,
       subscribed: chat.subscribed,
       threaded: this.context.globalState.get<boolean>(THREADED_KEY, false),
+      shownTypes: this.shownTypes,
       presence: this.presenceMarks(),
       defaultTarget: channel.kind === "dm" && destination ? destination.name : ALL,
     };
@@ -296,11 +314,14 @@ export class ChatPanels implements vscode.Disposable {
   .tag:not(.badge) { color: inherit; padding: 0; }
   .tag:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); text-decoration: underline; }
   .tag:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
-  #searchbar .pill { color: var(--vscode-descriptionForeground); background: transparent; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 10px; font-size: 0.85em; padding: 1px 8px; white-space: nowrap; }
-  #searchbar .pill:hover:not(:disabled) { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground); }
-  #searchbar .pill[aria-pressed="true"] { color: var(--vscode-foreground); border-color: var(--vscode-focusBorder); }
+  #types { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+  #types:empty { display: none; }
+  .empty-type { opacity: 0.6; }
+  #types .pill, #searchbar .pill { color: var(--vscode-descriptionForeground); background: transparent; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 10px; font-size: 0.85em; padding: 1px 8px; white-space: nowrap; }
+  #types .pill:hover:not(:disabled), #searchbar .pill:hover:not(:disabled) { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground); }
+  #types .pill[aria-pressed="true"], #searchbar .pill[aria-pressed="true"] { color: var(--vscode-foreground); border-color: var(--vscode-focusBorder); }
   #searchbar .link { color: var(--vscode-foreground); background: transparent; padding: 0 6px; font-size: 1.1em; }
-  #searchbar button:focus-visible, header .link:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
+  #types button:focus-visible, #searchbar button:focus-visible, header .link:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
   .hit { display: block; width: 100%; box-sizing: border-box; text-align: left; padding: 6px 12px; color: var(--vscode-foreground); background: transparent; border-bottom: 1px solid var(--vscode-panel-border); }
   .hit:hover:not(:disabled), .hit:focus-visible { background: var(--vscode-list-hoverBackground); }
   .hit-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 0.9em; }
@@ -393,6 +414,7 @@ export class ChatPanels implements vscode.Disposable {
   <button id="scope" class="pill" type="button" title="Search all channels, not only this one" aria-pressed="false">All channels</button>
   <button id="searchClose" class="link" type="button" title="Close search (Esc)" aria-label="Close search">×</button>
 </div>
+<div id="types" role="group" aria-label="Message types"></div>
 <main id="results" hidden></main>
 <main id="messages"></main>
 <div id="note"></div>

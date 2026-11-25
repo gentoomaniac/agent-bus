@@ -21,6 +21,7 @@ export interface ChatState {
   defaultTarget: string; // @all in a channel, the recipient in a direct message
   subscribed: boolean; // every message of the channel notifies (shared through the monitor)
   threaded: boolean; // the thread view is on (a UI choice, kept per editor)
+  shownTypes: string[]; // the list is limited to these message types; none means all (kept per editor, for every panel)
   presence: Record<string, PresenceMark>; // by agent; a plain object, as a Map does not survive postMessage
 }
 
@@ -52,6 +53,7 @@ export type FromWebview =
   | { type: "older" }
   | { type: "send"; draft: Draft }
   | { type: "threaded"; value: boolean }
+  | { type: "shownTypes"; value: string[] }
   | { type: "subscribe"; value: boolean } // subscribe the channel or unsubscribe it
   | { type: "raw"; sequence: number } // open the record as stored
   | { type: "search"; run: number; chips: Chip[]; text: string; allChannels: boolean; cursor?: string }
@@ -82,6 +84,7 @@ export function parseFromWebview(raw: unknown): FromWebview | undefined {
     return typeof channel === "string" && channel !== "" && Number.isSafeInteger(sequence) && (sequence as number) >= 0 ? { type: "jump", channel, sequence: sequence as number } : undefined;
   }
   if (message.type === "threaded" || message.type === "subscribe") return typeof message.value === "boolean" ? { type: message.type, value: message.value } : undefined;
+  if (message.type === "shownTypes") return Array.isArray(message.value) && message.value.every((type) => typeof type === "string") ? { type: "shownTypes", value: message.value } : undefined;
   if (message.type !== "send" || typeof message.draft !== "object" || message.draft === null) return undefined;
   const { type, targets, title, text } = message.draft as Record<string, unknown>;
   if (typeof type !== "string" || typeof title !== "string" || typeof text !== "string") return undefined;
