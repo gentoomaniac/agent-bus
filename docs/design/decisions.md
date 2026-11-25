@@ -345,7 +345,7 @@ configuration plus the start script are the only runtime-specific files
 
 ### 32. Control plane isolation and busd-provisioned consumers
 
-*Partly built: the `CONTROL` account, and busd's enrollment and registry reads on it, exist. Signed `busd.<method>` responses, operation intents and supervised restart are planned ([busd](busd.md)).*
+*Partly built: the `CONTROL` account, and busd's enrollment and registry reads on it, exist. Signed `busd.<method>` responses and operation intents are planned. A restart loop in the container entrypoint is built; further supervision is planned ([busd](busd.md)).*
 
 **Isolation.**
 
