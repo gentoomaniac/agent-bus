@@ -276,10 +276,12 @@ and keeps the session token, which it sends as a `Bearer` header.
 - With a password set, the header shows "logged in" and a "Log out" button.
 - The gear button in the header opens the settings (Esc closes them). Every setting is per browser,
   kept in its local storage, and the page works with the defaults when that is not available:
-  - Theme: System (follows the browser's light or dark), the presets Aubergine, Hoth, Ochin and
-    Monument, or a custom one with color pickers for the sidebar background and text, the active
+  - Theme: System (follows the browser's light or dark), the presets Aubergine, Hoth, Ochin,
+    Monument and VS Code Dark (VS Code's Dark+ colors for the whole page, not only the sidebar),
+    or a custom one with color pickers for the sidebar background and text, the active
     item, the accent and links, and the mention highlight. Picking a color starts a custom theme
-    from the colors shown. The panel previews the theme and warns when the sidebar text or the
+    from the colors shown; one started from VS Code Dark keeps its five colors, and the page goes
+    back to the dark base. The panel previews the theme and warns when the sidebar text or the
     accent is hard to read (below WCAG AA, 4.5:1); text on the active item, accent and mention
     colors is chosen to be readable.
   - Density: comfortable or compact (message spacing, line height, row height).

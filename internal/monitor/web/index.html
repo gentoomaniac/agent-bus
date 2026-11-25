@@ -459,12 +459,16 @@ const THEMES = {
   hoth: { label: "Hoth", base: "light", sideBg: "#f2f2f4", sideText: "#1d1c1d", active: "#1164a3", accent: "#1264a3", mention: "#cd2553" },
   ochin: { label: "Ochin", base: "light", sideBg: "#19447d", sideText: "#dfeaf8", active: "#0b6bcb", accent: "#0b5cad", mention: "#c2255c" },
   monument: { label: "Monument", base: "dark", sideBg: "#0f2f33", sideText: "#d3eceb", active: "#0e7c74", accent: "#4fd1c5", mention: "#ff8a65" },
+  // VS Code's Dark+ colors. A theme with a palette also sets the page's own colors, not only the sidebar's.
+  vscode: { label: "VS Code Dark", base: "dark", sideBg: "#252526", sideText: "#cccccc", active: "#094771", accent: "#3794ff", mention: "#007acc",
+    palette: { bg: "#1e1e1e", panel: "#1e1e1e", text: "#cccccc", muted: "#9d9d9d", border: "#3c3c3c", hover: "#2a2d2e" } },
 };
 const COLOR_FIELDS = [
   ["sideBg", "Sidebar background"], ["sideText", "Sidebar text"], ["active", "Active item"],
   ["accent", "Accent and links"], ["mention", "Mention highlight"],
 ];
-const THEME_PROPS = ["--side-bg", "--side-text", "--side-muted", "--side-hover", "--side-active", "--side-active-text", "--accent", "--accent-text", "--mention", "--mention-text"];
+const PALETTE_KEYS = ["bg", "panel", "text", "muted", "border", "hover"];
+const THEME_PROPS = [...PALETTE_KEYS.map((key) => "--" + key), "--side-bg", "--side-text", "--side-muted", "--side-hover", "--side-active", "--side-active-text", "--accent", "--accent-text", "--mention", "--mention-text"];
 
 const isChoice = (...choices) => (value) => choices.includes(value);
 const isHex = (value) => typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
@@ -560,6 +564,7 @@ function applyTheme() {
     "--accent": colors.accent, "--accent-text": readableOn(colors.accent),
     "--mention": colors.mention, "--mention-text": readableOn(colors.mention),
   };
+  for (const key of PALETTE_KEYS) if (colors.palette) props["--" + key] = colors.palette[key];
   for (const [property, value] of Object.entries(props)) root.style.setProperty(property, value);
 }
 
@@ -655,8 +660,15 @@ function syncSettingsPanel() {
 
 // Editing a color or the base makes the theme a custom one that starts from the colors shown.
 function changeCustomColor(key, value) {
-  const { label, ...colors } = themeColors();
+  // A custom theme has the five colors only: the page's own colors come from its base again.
+  const { label, palette, ...colors } = themeColors();
   changeSettings({ theme: "custom", custom: { ...colors, [key]: value } });
+}
+
+// The page color a theme's swatch shows next to its sidebar.
+function pagePanel(theme) {
+  if (theme.palette) return theme.palette.panel;
+  return theme.base === "dark" ? "#1a1e28" : "#ffffff";
 }
 
 function buildSettingsPanel() {
@@ -668,7 +680,7 @@ function buildSettingsPanel() {
   const split = (left, right) => `linear-gradient(90deg, ${left} 38%, ${right} 38%)`;
   $("theme-choices").replaceChildren(
     themeChoice("system", "System", `linear-gradient(90deg, ${THEMES.hoth.sideBg} 25%, #ffffff 25% 50%, ${THEMES.monument.sideBg} 50% 75%, #1a1e28 75%)`),
-    ...Object.entries(THEMES).map(([value, theme]) => themeChoice(value, theme.label, split(theme.sideBg, theme.base === "dark" ? "#1a1e28" : "#ffffff"))),
+    ...Object.entries(THEMES).map(([value, theme]) => themeChoice(value, theme.label, split(theme.sideBg, pagePanel(theme)))),
     themeChoice("custom", "Custom", split("#888888", "#cccccc")));
 
   $("custom-colors").replaceChildren(
