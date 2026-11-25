@@ -399,7 +399,11 @@ Steps that only one release needs are in the upgrade guides, in order:
 | From | Guide | What changes |
 |---|---|---|
 | 0.1.0 | [upgrade-0.2.md](upgrade-0.2.md) | directory v2, message retention, per-identity broker; the named volumes became folders |
-| 0.2 | [upgrade-0.3.md](upgrade-0.3.md) | agent channels, the bus owner; busd's and the monitor's own logins (`service init`) |
+| 0.2 | [upgrade-0.3.md](upgrade-0.3.md) | agent channels, the bus owner |
+
+A setup from before 0.1.0 has no logins of its own for busd and the monitor: everything keeps
+working on the admin logins (and logs a warning). `agent-busctl service init` creates them
+([agent-busctl.md](agent-busctl.md#service-init)); then refresh the monitor's folder with `monitor-init`.
 
 ## Build the image locally
 
