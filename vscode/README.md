@@ -115,7 +115,8 @@ HTML.
 
 **Unread mail works as in the web page:**
 - A channel with messages you have not seen shows a count in the tree.
-- Opening it draws a **New** line above the first unseen message, and marks the channel read.
+- Opening it always shows the latest message, draws a **New** line above the first unseen
+  message, and marks the channel read.
 - The status bar counts unread messages aimed at the monitor's agent, that is, messages whose
   targets include its ID or `@all`. Click it to open the first channel with such mail.
 

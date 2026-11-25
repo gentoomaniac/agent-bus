@@ -244,9 +244,9 @@ function renderTypeFilter(): void {
 let heldFromBottom: number | undefined;
 
 // Draws the list again. It keeps the distance from the bottom, so new messages at the end and
-// older ones at the top leave what the reader looks at in place; the first drawing goes to the
-// first unseen message, or to the end. The flat list marks it with a "New" divider above it; the
-// thread view, whose order is not the stream's, with a "New" tag in its header.
+// older ones at the top leave what the reader looks at in place; the first drawing always goes to
+// the end, the latest message. The flat list marks the first unseen message with a "New" divider
+// above it; the thread view, whose order is not the stream's, with a "New" tag in its header.
 function render(first = false): void {
   if (!state || list.hidden) return; // a search shows its results instead; the list is drawn again when it closes
   const { threaded } = state;
@@ -266,25 +266,22 @@ function render(first = false): void {
   const firstUnseen = visible.find(isUnseen);
   const rows: ThreadRow[] = threaded ? threadRows(visible) : visible.map((message) => ({ message, depth: 0 }));
   const summaries = threaded ? summarizeThreads(rows, isUnseen) : undefined;
-  let marked: HTMLElement | undefined;
   let previous: ThreadRow | undefined;
   for (const row of rows) {
     const isNew = row.message === firstUnseen;
     if (isNew && !threaded) {
-      marked = el("div", "divider", "New");
-      list.append(marked);
+      list.append(el("div", "divider", "New"));
     }
     const summary = summaries?.get(row.message);
     // A divider, or a thread with unseen mail (its "new" badge sits in the header), is not grouped.
     const grouped = state.groupMessages && !isNew && !summary?.unseen && continuesGroup(previous, row);
     const item = renderMessage(row, grouped, isNew && threaded, summary?.unseen === true);
-    if (isNew && threaded) marked = item;
     list.append(item);
     seenObserver.observe(item);
     if (summary?.replies) list.append(renderReplies(summary));
     previous = row;
   }
-  if (first) (marked ?? list.lastElementChild)?.scrollIntoView({ block: marked ? "start" : "end" });
+  if (first) list.lastElementChild?.scrollIntoView({ block: "end" });
   else list.scrollTop = list.scrollHeight - fromBottom;
   markVisibleRows();
 }
