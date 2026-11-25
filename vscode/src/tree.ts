@@ -12,7 +12,7 @@ const RECENT_TOOLTIP = 10; // and in its tooltip
 export type Node =
   | { kind: "section"; id: string; label: string; children: Node[] }
   | { kind: "channel"; channel: Channel }
-  | { kind: "agent"; agent: Agent }
+  | { kind: "agent"; agent: Agent; within?: string } // within: the channel it is listed under as a member
   | { kind: "agentDetail"; id: string; label: string; description: string; icon: string }; // a worker or a recent activity
 
 // The icon and color of an agent, by presence state. Every error:<kind> looks the same.
@@ -54,8 +54,9 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     return this.session.model;
   }
 
-  getChildren(node?: Node): Node[] {
-    if (node?.kind === "agent") return this.agentChildren(node.agent);
+  getChildren(node?: Node): Node[] | Promise<Node[]> {
+    if (node?.kind === "agent") return this.agentChildren(node.agent, node.within);
+    if (node?.kind === "channel") return this.memberNodes(node.channel);
     if (node) return node.kind === "section" ? node.children : [];
     const { channels, agents } = this.model;
     const categories = categorize(channels, this.session.prefs.favourites);
@@ -71,7 +72,7 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
 
   getTreeItem(node: Node): vscode.TreeItem {
     if (node.kind === "channel") return this.channelItem(node.channel);
-    if (node.kind === "agent") return this.agentItem(node.agent);
+    if (node.kind === "agent") return this.agentItem(node.agent, node.within);
     if (node.kind === "agentDetail") {
       const item = new vscode.TreeItem(node.label);
       item.id = node.id;
@@ -104,26 +105,45 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     item.tooltip = dm ? dmAgents(channel).join(" ↔ ") : channel.description || describeChannel(channel);
     item.iconPath = new vscode.ThemeIcon(channel.kind === "dm" ? "mail" : "comment-discussion");
     item.command = { command: "agentMessenger.openChannel", title: "Open", arguments: [channel.id] };
+    // A channel unfolds into its members; a DM's two agents are in its name.
+    if (!dm) item.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
     return item;
   }
 
+  // The agents that read a channel, by owner, as rows like those under Agents.
+  private async memberNodes(channel: Channel): Promise<Node[]> {
+    let members: string[];
+    try {
+      members = await this.model.api.members(channel.id);
+    } catch (error) {
+      return [{ kind: "agentDetail", id: `members:${channel.id}`, label: "couldn't load the members", description: (error as Error).message, icon: "warning" }];
+    }
+    // Fetched again at every refresh while unfolded: simple, and cheap at this size.
+    const known = new Map(this.model.agents.map((agent) => [agent.id, agent]));
+    const unregistered = (id: string): Agent => ({ id, fingerprint: "", removed: false });
+    return [...members].sort(byOwner).map((id): Node => ({ kind: "agent", agent: known.get(id) ?? unregistered(id), within: channel.id }));
+  }
+
   // An agent's workers and its latest activities.
-  private agentChildren(agent: Agent): Node[] {
+  // The ids carry the row's place, as the same agent can be listed under Agents and channels.
+  private agentChildren(agent: Agent, within?: string): Node[] {
     const view = this.model.presence.get(agent.id);
     if (agent.removed || !view) return [];
     const now = Date.now();
+    const place = within ? `member:${within}:` : "";
     const workers = (view.workers ?? []).map((worker, index): Node => ({
-      kind: "agentDetail", id: `worker:${agent.id}:${worker.id ?? index}`, label: worker.description, description: ago(worker.since, now), icon: "person",
+      kind: "agentDetail", id: `${place}worker:${agent.id}:${worker.id ?? index}`, label: worker.description, description: ago(worker.since, now), icon: "person",
     }));
     const recent = recentActivity(view, RECENT_CHILDREN).map((entry, index): Node => ({
-      kind: "agentDetail", id: `recent:${agent.id}:${index}:${entry.at}`, label: entry.text, description: ago(entry.at, now) + " ago", icon: "history",
+      kind: "agentDetail", id: `${place}recent:${agent.id}:${index}:${entry.at}`, label: entry.text, description: ago(entry.at, now) + " ago", icon: "history",
     }));
     return [...workers, ...recent];
   }
 
-  private agentItem(agent: Agent): vscode.TreeItem {
+  // Under Agents the owner is the group; a channel's members show it before the state.
+  private agentItem(agent: Agent, within?: string): vscode.TreeItem {
     const item = new vscode.TreeItem(shortName(agent.id));
-    item.id = "agent:" + agent.id;
+    item.id = (within ? `member:${within}:` : "agent:") + agent.id;
     // The menu offers "Message Agent" only for an agent the monitor can write to.
     const messageable = !agent.removed && this.model.status?.can_send === true;
     item.contextValue = messageable ? "agent" : "agentNoMessage";
@@ -137,7 +157,7 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
       return item;
     }
     const view = this.model.presence.get(agent.id);
-    item.description = describePresence(view, Date.now());
+    item.description = [within ? ownerOf(agent.id) : "", describePresence(view, Date.now())].filter(Boolean).join(" · ");
     item.tooltip = this.agentTooltip(agent, view);
     item.iconPath = stateIcon(view?.state ?? "offline");
     const expandable = (view?.workers?.length ?? 0) + (view?.recent?.length ?? 0) > 0;
