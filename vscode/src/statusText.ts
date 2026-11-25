@@ -20,8 +20,20 @@ export function composerNote(status: Pick<Status, "agent" | "can_send" | "note">
   return "Sending as " + status.agent;
 }
 
-// The status bar item's text: what is wrong with the connection, then the unread mail for the
-// monitor's agent. Empty when there is nothing to say.
-export function statusBarText(connection: Connection, mail: number): string {
-  return [connection.ok ? "" : `$(debug-disconnect) Agent bus: ${connection.text}`, mail > 0 ? `$(mail) ${mail}` : ""].filter(Boolean).join("  ");
+// "2 pending enrollments", empty for none. The monitor never approves: that is done in the terminal.
+export function describePending(status: Pick<Status, "pending_enrollments"> | undefined): string {
+  const count = status?.pending_enrollments ?? 0;
+  return count > 0 ? `${count} pending enrollment${count === 1 ? "" : "s"}` : "";
+}
+
+export const APPROVE_HINT = "Approve with agent-busctl ca review";
+
+// The status bar item's text: what is wrong with the connection, the unread mail for the monitor's
+// agent and the agents waiting for approval. Empty when there is nothing to say.
+export function statusBarText(connection: Connection, mail: number, pending: number): string {
+  return [
+    connection.ok ? "" : `$(debug-disconnect) Agent bus: ${connection.text}`,
+    mail > 0 ? `$(mail) ${mail}` : "",
+    pending > 0 ? `$(person-add) ${pending}` : "",
+  ].filter(Boolean).join("  ");
 }

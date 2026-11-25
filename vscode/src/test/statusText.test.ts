@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { composerNote, describeConnection, statusBarText } from "../statusText";
+import { composerNote, describeConnection, describePending, statusBarText } from "../statusText";
 
 test("describeConnection tells a closed event stream from a bus that is down", () => {
   assert.deepEqual(describeConnection(true, { bus: "live" }), { ok: true, text: "live" });
@@ -21,8 +21,16 @@ test("composerNote says who sends, or why nobody can", () => {
 test("statusBarText is empty when all is well and there is no mail", () => {
   const live = { ok: true, text: "live" };
   const down = { ok: false, text: "reconnecting" };
-  assert.equal(statusBarText(live, 0), "");
-  assert.equal(statusBarText(live, 3), "$(mail) 3");
-  assert.equal(statusBarText(down, 0), "$(debug-disconnect) Agent bus: reconnecting");
-  assert.equal(statusBarText(down, 2), "$(debug-disconnect) Agent bus: reconnecting  $(mail) 2");
+  assert.equal(statusBarText(live, 0, 0), "");
+  assert.equal(statusBarText(live, 3, 0), "$(mail) 3");
+  assert.equal(statusBarText(down, 0, 0), "$(debug-disconnect) Agent bus: reconnecting");
+  assert.equal(statusBarText(down, 2, 1), "$(debug-disconnect) Agent bus: reconnecting  $(mail) 2  $(person-add) 1");
+});
+
+test("describePending counts the agents waiting for approval, and says nothing for none or an older monitor", () => {
+  assert.equal(describePending({ pending_enrollments: 1 }), "1 pending enrollment");
+  assert.equal(describePending({ pending_enrollments: 3 }), "3 pending enrollments");
+  assert.equal(describePending({ pending_enrollments: 0 }), "");
+  assert.equal(describePending({}), "");
+  assert.equal(describePending(undefined), "");
 });

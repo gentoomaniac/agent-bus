@@ -123,6 +123,11 @@ status bar shows the same, as `Agent bus: reconnecting` with a warning icon, nex
 count, and hides again when all is well and there is no mail. Nothing is shown while a login is
 needed.
 
+**Pending enrollments.** When agents have asked to join and wait for approval, the view shows "N
+pending enrollments. Approve with agent-busctl ca review" under its title, and the status bar shows
+the count with a person icon (the same text is in its tooltip). The monitor never approves: that is
+done in the terminal. The count comes from the monitor's status, read every 5 seconds.
+
 ## Searching
 
 Press Ctrl+F (Cmd+F on macOS) in a chat panel, or click "Search" in its header, to open the

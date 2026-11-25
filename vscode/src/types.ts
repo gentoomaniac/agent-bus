@@ -35,6 +35,7 @@ export interface Status {
   can_send: boolean;
   note: string;
   password_set: boolean;
+  pending_enrollments?: number; // agents waiting for approval (agent-busctl ca review); missing from an older monitor
 }
 
 export type MessageStatus = "verified" | "unknown_sender" | "rejected";
