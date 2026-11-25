@@ -24,8 +24,8 @@ const SubjectSync = "busd.directory.sync"
 // MaxSyncRequestBytes bounds what busd reads of a request; a real one is about 200 bytes.
 const MaxSyncRequestBytes = 1 << 10
 
-// Domain prefixes of what the CA key signs, so that a signature made for one kind of message (or
-// a certificate) never passes for another.
+// syncDomain is prefixed to what the CA key signs for a sync reply (headDomain for a head), so
+// that a signature made for one kind of message, or a certificate, never passes for another.
 const syncDomain = "agent-bus/directory-sync/v1\n"
 
 // Signed carries a payload the CA key signed: Payload is exactly the bytes Signature covers, after

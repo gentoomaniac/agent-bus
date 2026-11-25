@@ -193,3 +193,29 @@ func TestSyncsPastTheLimitAreAnsweredWithoutASignature(t *testing.T) {
 		t.Errorf("a sync past the limit: %v", err)
 	}
 }
+
+func TestTheHeadAnnouncesTheCurrentVersionWithTheLastChanges(t *testing.T) {
+	f := newFixture(t)
+	published := f.directory()
+	if published.Head() != nil {
+		t.Error("a head before the first projection")
+	}
+	caPEM := mustRead(t, filepath.Join(f.dir, "ca.pem"))
+	ctx := context.Background()
+	if _, err := published.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.register("alice@x", f.newKey())
+	if _, err := published.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	head, err := directory.VerifyHead(caPEM, published.Head())
+	if err != nil || head.Version != published.Version() || len(head.Changes) != 1 || head.Changes[0].AgentID != "alice@x" {
+		t.Errorf("head = %+v, %v; want version %+v with alice joined", head, err, published.Version())
+	}
+	restarted, err := directory.VerifyHead(caPEM, f.directory().Head())
+	if err != nil || restarted.Version != published.Version() || len(restarted.Changes) != 0 {
+		t.Errorf("after a restart the head is %+v, %v; want the same version without hints", restarted, err)
+	}
+}

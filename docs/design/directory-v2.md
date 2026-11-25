@@ -246,3 +246,12 @@ Where the build refined or departed from the text above.
   treats as a transport error, so a flood costs no signatures.
 - A malformed request, and a request before busd's first projection, get a signed `error` reply.
 - Diffs come from a cache of the last 16 projections, kept in memory only.
+
+**Heads (commit 3).**
+
+- busd signs a head once per revision and publishes it after every reconcile round, changed or
+  not: right after a change (an approval) and then every 5 s. A head after a restart of busd
+  carries no hints, since they were about a revision before it.
+- Hints are agent IDs with `joined`, `removed` or `rekeyed`, and `channels` with the channel's
+  name only (never its readers), at most 20 per head with `truncated` set beyond.
+- Agents may only subscribe to `directory.head`; publishing it needs busd's `bus-admin` login.

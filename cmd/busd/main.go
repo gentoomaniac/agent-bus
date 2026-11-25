@@ -169,7 +169,7 @@ func (cli *CLI) Run() error {
 	defer stopSync()
 	log.Printf("busd %s: serving enrollment, approval and the directory on the bus", version)
 
-	reconcile := directoryReconciler(ctx, published)
+	reconcile := directoryReconciler(ctx, published, admin)
 	reconcile()
 	// The count is all the monitor learns; announcing it often means it also hears a restart of
 	// busd or of its own connection.
@@ -191,9 +191,12 @@ func (cli *CLI) Run() error {
 	}
 }
 
-// directoryReconciler rebuilds the published directory once per call. A failure is logged when it
-// differs from the last one: a broker that is down would otherwise fill the log every few seconds.
-func directoryReconciler(ctx context.Context, published *busd.Directory) func() {
+// directoryReconciler rebuilds the published directory once per call and announces its head,
+// changed or not: the repetition is how an agent that missed a head, or reconnected, learns the
+// version. A publish that fails is simply repeated by the next call. A failure to rebuild is logged
+// when it differs from the last one: a broker that is down would otherwise fill the log every few
+// seconds.
+func directoryReconciler(ctx context.Context, published *busd.Directory, admin *broker.Admin) func() {
 	var lastErr string
 	return func() {
 		reconcileCtx, cancel := context.WithTimeout(ctx, handlerTimeout)
@@ -207,6 +210,9 @@ func directoryReconciler(ctx context.Context, published *busd.Directory) func() 
 			log.Printf("busd: rebuilding the directory: %v", err)
 		}
 		lastErr = message
+		if head := published.Head(); head != nil {
+			_ = admin.PublishDirectoryHead(head)
+		}
 	}
 }
 

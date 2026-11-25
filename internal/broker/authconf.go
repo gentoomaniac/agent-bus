@@ -262,7 +262,7 @@ func agentPermissions(token string, groups []string) (publish, subscribe []strin
 	// The directory sync is the one busd call agents make today: a public read, answered in their
 	// inbox (docs/design/directory-v2.md).
 	publish = append(publish, directory.SubjectSync)
-	return publish, []string{"_INBOX." + token + ".>"}
+	return publish, []string{"_INBOX." + token + ".>", directory.SubjectHead}
 }
 
 // userEntry is one line of a users list. The line format is what userLine reads back.

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -480,6 +481,11 @@ func isReplyBelow(reply, prefix string) bool {
 		}
 	}
 	return true
+}
+
+// PublishDirectoryHead announces busd's signed directory head to BUS (directory.SubjectHead).
+func (admin *Admin) PublishDirectoryHead(head []byte) error {
+	return admin.bus.conn.Publish(directory.SubjectHead, head)
 }
 
 // pendingEnrollments is the body of a message on enroll.SubjectPending.

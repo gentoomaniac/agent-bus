@@ -67,6 +67,7 @@ type Directory struct {
 	mu      sync.Mutex
 	current revision
 	earlier []revision // oldest first, at most directoryHistory
+	head    []byte     // the signed head of current, made once per revision
 }
 
 // NewDirectory reads the projection and version a former run left. State that cannot be read
@@ -136,8 +137,31 @@ func (published *Directory) Reconcile(ctx context.Context) ([]directory.Change, 
 	}
 	published.current = next
 	changes := directory.Changes(previous.Projection, projection)
+	published.head = published.signHead(changes)
 	log.Printf("busd: directory %s: %d changes", next.Version, len(changes))
 	return changes, nil
+}
+
+// Head is the signed head of the current version, to announce on directory.head; nil before the
+// first projection. After a restart it carries no hints: they were about a revision before it.
+func (published *Directory) Head() []byte {
+	published.mu.Lock()
+	defer published.mu.Unlock()
+	if published.head == nil && !published.current.Version.IsZero() {
+		published.head = published.signHead(nil)
+	}
+	return published.head
+}
+
+// signHead signs the head of the current version. A failure is logged and leaves no head: the
+// next call tries again. The caller holds mu.
+func (published *Directory) signHead(changes []directory.Change) []byte {
+	head, err := directory.SignHead(published.config.CA, published.current.Version, changes)
+	if err != nil {
+		log.Printf("busd: signing the directory head: %v", err)
+		return nil
+	}
+	return head
 }
 
 // HandleSync answers a sync request from anyone in BUS. It proves nothing about the asker and
