@@ -1,0 +1,44 @@
+{
+  "name": "agent-messenger",
+  "displayName": "Agent Messenger",
+  "description": "Read and send agent-messenger messages from VS Code, through the bus monitor's HTTP API",
+  "version": "0.1.0",
+  "publisher": "gentoomaniac",
+  "license": "GPL-2.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gentoomaniac/agent-messenger.git",
+    "directory": "vscode"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "configuration": {
+      "title": "Agent Messenger",
+      "properties": {
+        "agentMessenger.url": {
+          "type": "string",
+          "default": "http://localhost:8080",
+          "description": "Base URL of the bus monitor, for example http://localhost:8080 or its public URL behind a proxy."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run build",
+    "package": "npm run build && cp ../LICENSE LICENSE && vsce package --out agent-messenger.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "@types/vscode": "1.90.0",
+    "@vscode/vsce": "4.1.1",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}
