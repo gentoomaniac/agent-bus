@@ -12,15 +12,15 @@ type TLSInitCmd struct {
 	CAKey      string        `help:"CA private key. Default: ca.key in the config directory." type:"path"`
 	BrokerCert string        `help:"Broker certificate. Default: broker.pem in the config directory." type:"path"`
 	BrokerKey  string        `help:"Broker private key. Default: broker.key in the config directory." type:"path"`
-	SAN        []string      `help:"DNS name or IP the broker certificate is valid for; repeatable. Default: localhost, 127.0.0.1, ::1 and this machine's hostname."`
+	SAN        []string      `help:"DNS name or IP the broker certificate is valid for; repeatable, added to localhost, 127.0.0.1 and ::1. Without it: those and this machine's hostname."`
 	Validity   time.Duration `help:"How long the broker certificate is valid." default:"17520h"`
 	Force      bool          `help:"Overwrite existing files. Clients must then be given the new CA certificate."`
 }
 
 func (cmd *TLSInitCmd) Run(cli *CLI) error {
-	sans := cmd.SAN
-	if len(sans) == 0 {
-		sans = tlsinit.DefaultSANs()
+	sans := tlsinit.DefaultSANs()
+	if len(cmd.SAN) > 0 {
+		sans = tlsinit.WithLocalSANs(cmd.SAN)
 	}
 	opts := tlsinit.Options{
 		CACertPath:     cli.caCertPath(),
@@ -51,7 +51,7 @@ type TLSBrokerCmd struct {
 	BrokerCert string        `help:"Broker certificate. Default: broker.pem in the config directory." type:"path"`
 	BrokerKey  string        `help:"Broker private key. Default: broker.key in the config directory." type:"path"`
 	CAKey      string        `help:"CA private key. Default: ca.key in the config directory." type:"path"`
-	SAN        []string      `help:"DNS name or IP the broker certificate is valid for; repeatable. Name every one clients use: the list replaces the old one." required:""`
+	SAN        []string      `help:"DNS name or IP the broker certificate is valid for; repeatable, added to localhost, 127.0.0.1 and ::1. Name every other one clients use: the list replaces the old one." required:""`
 	Validity   time.Duration `help:"How long the broker certificate is valid." default:"17520h"`
 }
 
@@ -63,13 +63,13 @@ func (cmd *TLSBrokerCmd) Run(cli *CLI) error {
 		CAKeyPath:      orDefault(cmd.CAKey, cli.ConfigDir, "ca.key"),
 		BrokerCertPath: orDefault(cmd.BrokerCert, cli.ConfigDir, "broker.pem"),
 		BrokerKeyPath:  orDefault(cmd.BrokerKey, cli.ConfigDir, "broker.key"),
-		SANs:           cmd.SAN,
+		SANs:           tlsinit.WithLocalSANs(cmd.SAN),
 		BrokerValidity: cmd.Validity,
 	}
 	if err := tlsinit.RenewBroker(opts); err != nil {
 		return err
 	}
 	fmt.Printf("Broker certificate: %s\nBroker key:         %s\nBroker valid for:   %v\nSame CA: clients need nothing new. Restart the broker to use it.\n",
-		opts.BrokerCertPath, opts.BrokerKeyPath, cmd.SAN)
+		opts.BrokerCertPath, opts.BrokerKeyPath, opts.SANs)
 	return nil
 }

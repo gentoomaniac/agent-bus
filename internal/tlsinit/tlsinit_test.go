@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -93,6 +94,16 @@ func TestDefaultSANsCoverLocalhost(t *testing.T) {
 	sans := DefaultSANs()
 	if sans[0] != "localhost" || sans[1] != "127.0.0.1" {
 		t.Errorf("DefaultSANs() = %v, want localhost and 127.0.0.1 first", sans)
+	}
+}
+
+// Names given with --san add to the local ones instead of replacing them, so the broker's own tools
+// still reach it on localhost.
+func TestWithLocalSANsKeepsTheLocalNames(t *testing.T) {
+	got := WithLocalSANs([]string{"bus.example.org", "127.0.0.1"})
+	want := []string{"localhost", "127.0.0.1", "::1", "bus.example.org"}
+	if !slices.Equal(got, want) {
+		t.Errorf("WithLocalSANs = %v, want %v", got, want)
 	}
 }
 

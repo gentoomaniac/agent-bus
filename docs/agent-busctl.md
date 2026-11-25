@@ -60,7 +60,7 @@ Creates the private CA and the broker certificate. No `--direct`, no broker need
 
 | Flag            | Meaning                                                                    |
 |-----------------|----------------------------------------------------------------------------|
-| `--san`         | DNS name or IP the certificate is valid for, repeatable. Default: `localhost`, `127.0.0.1`, `::1` and this machine's hostname |
+| `--san`         | DNS name or IP the certificate is valid for, repeatable, added to `localhost`, `127.0.0.1` and `::1`. Without it: those and this machine's hostname |
 | `--validity`    | validity of the broker certificate, default `17520h`                       |
 | `--ca-key`, `--broker-cert`, `--broker-key` | file locations, defaults `ca.key`, `broker.pem`, `broker.key` in the config dir |
 | `--force`       | overwrite existing files; clients must get the new CA certificate          |
@@ -80,7 +80,7 @@ keep their `ca.pem` and their certificates; the broker uses the new one from its
 
 | Flag            | Meaning                                                                    |
 |-----------------|----------------------------------------------------------------------------|
-| `--san`         | DNS name or IP the certificate is valid for, repeatable and required. The list replaces the old one, so name all of them |
+| `--san`         | DNS name or IP the certificate is valid for, repeatable and required, added to `localhost`, `127.0.0.1` and `::1`. The list replaces the old one, so name all the others |
 | `--validity`    | validity of the broker certificate, default `17520h`                       |
 | `--ca-key`, `--broker-cert`, `--broker-key` | file locations, as for `tls init`                  |
 

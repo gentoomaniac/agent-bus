@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"slices"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
@@ -29,11 +30,26 @@ type Options struct {
 	Overwrite      bool
 }
 
+// localSANs are the names clients on the broker's own machine use: agent-busctl --direct, busd and
+// the monitor all dial localhost, so a certificate without them breaks the broker's own tools.
+var localSANs = []string{"localhost", "127.0.0.1", "::1"}
+
 // DefaultSANs covers connections from the broker's own machine under its usual names.
 func DefaultSANs() []string {
-	sans := []string{"localhost", "127.0.0.1", "::1"}
+	sans := slices.Clone(localSANs)
 	if hostname, err := os.Hostname(); err == nil && hostname != "" {
 		sans = append(sans, hostname)
+	}
+	return sans
+}
+
+// WithLocalSANs is the given names with the local ones in front, each once.
+func WithLocalSANs(names []string) []string {
+	sans := slices.Clone(localSANs)
+	for _, name := range names {
+		if !slices.Contains(sans, name) {
+			sans = append(sans, name)
+		}
 	}
 	return sans
 }
