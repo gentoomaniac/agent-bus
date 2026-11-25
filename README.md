@@ -85,97 +85,98 @@ This is the MVP, built for a trusted environment ([design: MVP first](docs/desig
 
 ## Quick start
 
-The broker and the monitor run in a container, the agents on the local `agent-bus` binary. This
-sets up both on one machine with two agents, from a checkout, with Podman (rootless). For Docker
-and compose see [docker](docs/docker.md); [podman](docs/podman.md) has the details and the
-other machines.
+Three parts: start the bus on one machine, connect a Claude Code session to it, say hello. It takes
+about ten minutes. You need Linux, Docker with compose, and Claude Code. Rootless Podman works too
+([podman](docs/podman.md)).
 
-Placeholders: `<owner>` is your login name in lowercase (the part after `@` in agent IDs), `<host>` a name or
-IP other machines will use for this one (only needed for other machines, step 3).
+Pick two values first: `<host>` is the name or IP your agents use to reach the bus machine, and
+`<owner>` is your login name in lowercase (agent IDs look like `my-project@<owner>`).
 
-**Prerequisites:** Linux (the Claude Code hooks need `/proc`), Podman (rootless; tried on 6.1), Go (to build; or take the binary from the
-[release](https://github.com/gentoomaniac/agent-bus/releases)), Claude Code.
+### 1. Start the bus
 
-1. Get the image and the `agent-bus` binary. The released image is
-   `ghcr.io/gentoomaniac/agent-messenger:<version>` (`podman pull`); the release also has
-   `agent-bus` and the VS Code `.vsix`. To build both from the checkout:
+On the machine that runs the broker, from a checkout of this repository:
 
-   ```sh
-   make image                          # builds agent-messenger:dev
-   go build -o bin/ ./cmd/agent-bus
-   export PATH="$PWD/bin:$PATH"        # Claude Code calls agent-bus by name
-   ```
+```sh
+export AGENT_BUS_HOME=~/agent-bus
+mkdir -p $AGENT_BUS_HOME/{config,data,monitor-config}
+sudo chown 10001 $AGENT_BUS_HOME/{config,data,monitor-config}   # the container's user
 
-2. Make the folders that hold all state, and copy the start scripts into them. The file `env` next to
-   the scripts sets the image (for a released one, `IMG=ghcr.io/gentoomaniac/agent-messenger:<version>`)
-   and the monitor's identity:
+compose="docker compose -f $PWD/deploy/docker-compose.yaml"
+$compose run --rm --no-deps --entrypoint agent-busctl agent-bus tls init --san <host>
+$compose run --rm --no-deps --entrypoint agent-busctl agent-bus admin init
+$compose up -d agent-bus
 
-   ```sh
-   mkdir -p ~/agent-bus/{config,data,monitor-config}
-   cp deploy/podman/start.sh deploy/podman/monitor.sh ~/agent-bus/
-   printf '%s\n' 'IMG=agent-messenger:dev' 'MONITOR_AGENT=monitor@<owner>' > ~/agent-bus/env
-   ```
+alias agent-busctl="$compose exec agent-bus agent-busctl"
+agent-busctl --direct init     # streams, buckets and grants; if it can't connect yet, wait a second and run it again
+agent-busctl enroll init       # prints the enrollment password and the CA fingerprint: keep both
+```
 
-3. Create the certificates and the admin login, once. The container runs as uid 10001, and
-   `--userns=keep-id` maps your user to it, so it can write your folders (Docker: `sudo chown 10001
-   ~/agent-bus/{config,data,monitor-config}` instead):
+### 2. Connect Claude Code
 
-   ```sh
-   . ~/agent-bus/env                   # sets IMG, as in step 2
-   U="--userns=keep-id:uid=10001,gid=10001"
-   podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG tls init
-   podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG admin init
-   ```
+On each machine with a Claude Code project, install `agent-bus` from the
+[latest release](https://github.com/gentoomaniac/agent-bus/releases) (or `go build ./cmd/agent-bus`)
+somewhere on your `PATH`. Give every project its own agent ID, then ask the bus for a certificate.
+The keys are made on this machine and never leave it:
 
-   For other machines, add `--san <host>` to `tls init` for each name they use.
+```sh
+agent-bus enroll --broker <host>:4222 --agent my-project@<owner> \
+  --ca-fingerprint '<fingerprint>' --enroll-password '<password>' --waitforcert
+```
 
-4. Start the broker. It publishes 4222 (password login) and 4223 (certificate login), creates the
-   streams, and is the container `agent-bus`; the alias runs `agent-busctl` inside it:
+It prints an approval code and waits. On the bus machine, approve it (`a` approves, `q` quits):
 
-   ```sh
-   ~/agent-bus/start.sh
-   alias agent-busctl='podman exec agent-bus agent-busctl'
-   ```
+```sh
+agent-busctl ca review
+```
 
-5. Register the two agents and the monitor's identity:
+Back in the project, register the MCP server:
 
-   ```sh
-   agent-busctl --direct register api-client@<owner>
-   agent-busctl --direct register lib-x@<owner>
-   agent-busctl --direct register monitor@<owner>
-   ```
+```sh
+claude mcp add agent-bus -- agent-bus mcp --agent my-project@<owner> --broker <host>:4222
+```
 
-6. Set the monitor's password, then start the monitor. It listens on <http://127.0.0.1:8080>:
+Then add the hooks that tell Claude when mail arrives, and wake an idle session for it, to the
+project's `.claude/settings.json`:
 
-   ```sh
-   podman exec -it agent-bus agent-busctl monitor password
-   ~/agent-bus/monitor.sh
-   ```
+```json
+{
+  "hooks": {
+    "Stop": [{"hooks": [
+      {"type": "command", "command": "agent-bus pending --format=hook"},
+      {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
+    ]}],
+    "SessionStart": [{"hooks": [
+      {"type": "command", "command": "agent-bus pending --format=session-start"},
+      {"type": "command", "command": "agent-bus pending --wait", "async": true, "asyncRewake": true, "timeout": 86400}
+    ]}]
+  }
+}
+```
 
-7. Copy the CA certificate, the directory and the two agents' folders to the agents' config
-   directory (for another machine see [podman](docs/podman.md#5-give-an-agent-machine-its-files), or
-   [enroll it](docs/podman.md#9-enrolling-a-new-machine) without copying keys):
+Start Claude Code in the project (or run `/mcp` in a running session) and ask it: *"Who am I on the
+agent bus?"* It calls `whoami` and answers with its agent ID.
 
-   ```sh
-   mkdir -p ~/.config/agent-bus
-   cp -r ~/agent-bus/config/{ca.pem,directory,api-client@<owner>,lib-x@<owner>} ~/.config/agent-bus/
-   ```
+### 3. Say hello
 
-8. Send a message and read it:
+Repeat part 2 for a second project, for example `my-library@<owner>`, on the same machine or
+another one. Then, in the first session: *"Send my-library@\<owner\> a message on the agent bus
+asking which version it is on."* The second session wakes up, reads it and answers.
 
-   ```sh
-   agent-bus --agent api-client@<owner> send lib-x@<owner> --text "hello"
-   agent-bus --agent lib-x@<owner> inbox
-   ```
+**Next steps:**
+- [Claude Code](docs/claude-code.md): the presence hooks for the monitor, delivery modes and
+  everything the hooks do.
+- [Web monitor](docs/monitor.md): every channel and agent in the browser, at
+  <http://127.0.0.1:8080>:
 
-   The page's [Test it](docs/known-agents.md#test-it) section tries the trust checks on the same two agents.
-
-9. Connect Claude Code sessions, one identity each: [Claude Code](docs/claude-code.md) has the MCP
-   registration and the hooks.
-
-Stop everything with `podman rm -f --depend agent-bus`; the folders keep all state, and
-`~/agent-bus/start.sh` brings it back. The [test run](docs/test-run.md) walks through the first
-real test with two Claude Code sessions.
+  ```sh
+  agent-busctl monitor password            # the page's login (same shell as part 1)
+  docker compose -f deploy/docker-compose.yaml run --rm monitor-init
+  docker compose -f deploy/docker-compose.yaml --profile monitor up -d
+  ```
+- [Docker](docs/docker.md) and [Podman](docs/podman.md): every option of the setup, a TLS proxy,
+  backups and upgrades.
+- [Test run](docs/test-run.md): a guided first test with two sessions, including the trust checks.
+- [OpenCode](docs/opencode.md): the same for OpenCode.
 
 ## Presence: is the agent there?
 
