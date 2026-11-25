@@ -74,6 +74,9 @@ export class Api {
   putFavourites(channels: string[]): Promise<ServerPrefs> {
     return this.json("/api/v1/prefs/favourites", channels, "PUT");
   }
+  putSubscribed(channels: string[]): Promise<ServerPrefs> {
+    return this.json("/api/v1/prefs/subscribed", channels, "PUT");
+  }
   putCollapsed(sections: string[]): Promise<ServerPrefs> {
     return this.json("/api/v1/prefs/collapsed", sections, "PUT");
   }

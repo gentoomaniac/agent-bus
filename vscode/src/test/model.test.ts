@@ -73,6 +73,16 @@ test("an event for a message that a refresh already loaded is a duplicate", asyn
   assert.equal(model.unreadCount("general"), 3);
 });
 
+test("the first message of a channel the model did not know is new, though the refresh it causes loads it", async () => {
+  const store = [message("general", 1)];
+  const { model } = newModel(store, memoryStore({ general: 1 }));
+  await model.refresh();
+  store.push(message("group:new", 1));
+  const added = await model.apply({ event: "message", data: JSON.stringify(message("group:new", 1)) });
+  assert.equal(added?.channel, "group:new");
+  assert.equal(await model.apply({ event: "message", data: JSON.stringify(message("group:new", 1)) }), undefined);
+});
+
 test("loadHistory walks back through older messages until there are enough", async () => {
   const all = [1, 2, 3, 900, 1400].map((sequence) => message("general", sequence));
   const { model } = newModel(all);

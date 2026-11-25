@@ -4,6 +4,7 @@ import { Session } from "./session";
 import { searchMessages } from "./searchPicker";
 import { AgentMessengerTree, Node } from "./tree";
 import { UpdateChecker } from "./updates";
+import { showNotifications } from "./notifications";
 import { openUnreadMail, showUnreadIndicators } from "./unread";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -21,6 +22,7 @@ export function activate(context: vscode.ExtensionContext): void {
     treeView.onDidCollapseElement((event) => tree.setCollapsed(event.element, true)),
     treeView.onDidExpandElement((event) => tree.setCollapsed(event.element, false)),
     showUnreadIndicators(session, treeView),
+    showNotifications(session, chats),
     vscode.commands.registerCommand("agentMessenger.openUnreadMail", () => openUnreadMail(session)),
     vscode.commands.registerCommand("agentMessenger.login", () => session.login()),
     vscode.commands.registerCommand("agentMessenger.searchMessages", () => searchMessages(session, chats)),

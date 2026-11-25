@@ -7,6 +7,7 @@ export interface PrefsApi {
   prefs(): Promise<ServerPrefs>;
   postRead(updates: Record<string, number>): Promise<Record<string, number>>; // answers the merged markers
   putFavourites(channels: string[]): Promise<ServerPrefs>; // answer the new prefs
+  putSubscribed(channels: string[]): Promise<ServerPrefs>;
   putCollapsed(sections: string[]): Promise<ServerPrefs>;
 }
 
@@ -17,16 +18,17 @@ export interface LegacyPrefs {
   collapsed: string[];
 }
 
-// The owner's read markers, favourites and folded sections, shared with every client through the
+// The owner's read markers, favourites, subscriptions and folded sections, shared with every client through the
 // monitor. They are kept in memory too, so the extension still works against a monitor without
 // prefs (an older one): nothing is sent then.
 export class Prefs implements ReadStore {
   readonly favourites = new Set<string>();
+  readonly subscribed = new Set<string>(); // channels whose messages notify
   readonly collapsed = new Set<string>();
   private readonly read = new Map<string, number>();
   private readonly unsent = new Map<string, number>();
   private flushing: Promise<void> | undefined;
-  private replacing: Promise<unknown> = Promise.resolve(); // favourites and collapsed go out in the order they were changed
+  private replacing: Promise<unknown> = Promise.resolve(); // favourites, subscriptions and collapsed go out in the order they were changed
   private replacements = 0; // changes not yet on the server: its echo must not undo them
   private online = false;
 
@@ -72,6 +74,14 @@ export class Prefs implements ReadStore {
     this.onChange();
   }
 
+  setSubscribed(channelId: string, subscribed: boolean): void {
+    if (this.subscribed.has(channelId) === subscribed) return;
+    if (subscribed) this.subscribed.add(channelId);
+    else this.subscribed.delete(channelId);
+    this.replace(() => this.api.putSubscribed([...this.subscribed]));
+    this.onChange();
+  }
+
   setCollapsed(section: string, collapsed: boolean): void {
     if (this.collapsed.has(section) === collapsed) return;
     if (collapsed) this.collapsed.add(section);
@@ -96,6 +106,7 @@ export class Prefs implements ReadStore {
     }
     if (this.replacements === 0) {
       replaceAll(this.favourites, server.favourites);
+      replaceAll(this.subscribed, server.subscribed ?? []);
       replaceAll(this.collapsed, server.collapsed);
     }
     this.onChange();

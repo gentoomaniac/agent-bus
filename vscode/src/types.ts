@@ -96,9 +96,10 @@ export interface SendRequest {
   text: string;
 }
 
-// The shared preferences (docs/api.md): read markers by channel, favourite channels and folded sections.
+// The shared preferences (docs/api.md): read markers by channel, favourite and subscribed channels and folded sections.
 export interface ServerPrefs {
   read: Record<string, number>;
   favourites: string[];
+  subscribed: string[]; // missing from a monitor older than subscriptions
   collapsed: string[]; // favourites, channels, dms, agents
 }

@@ -132,7 +132,7 @@ export class Model {
   }
 
   // Applies one event of the stream. A message that is already known (same channel and
-  // sequence) changes nothing; the answer says whether the message was new.
+  // sequence) changes nothing; the answer is the message when it was new.
   async apply(event: SseEvent): Promise<Message | undefined> {
     if (event.event === "presence") {
       const view = JSON.parse(event.data) as Presence;
@@ -142,11 +142,12 @@ export class Model {
     }
     if (event.event !== "message") return undefined;
     const message = JSON.parse(event.data) as Message;
+    const known = this.messagesOf(message.channel).some((other) => other.sequence === message.sequence);
     if (!this.channels.some((channel) => channel.id === message.channel)) await this.refresh();
     const channel = this.channels.find((c) => c.id === message.channel);
     if (channel) channel.last_sequence = Math.max(channel.last_sequence, message.sequence);
     const [added] = this.insert(message.channel, [message]);
     if (added) this.changed();
-    return added;
+    return added ?? (known ? undefined : message); // the refresh above may have loaded a new channel's first message
   }
 }

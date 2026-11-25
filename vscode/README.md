@@ -197,6 +197,28 @@ updated by the live `presence` events.
   removed agents, or when the monitor cannot send. The monitor's own agent is not in the Agents list.
 - **Copy Agent ID** puts the agent's ID on the clipboard.
 
+## Notifications
+
+A new message shows a notification: "<sender> in <channel>: <title or first line of the text>",
+cut to 80 characters, with the buttons **Open** and **Mute <channel>**. Only live messages count:
+the history loaded when the extension connects or reconnects never notifies, and neither do the
+monitor's own messages. A message notifies when
+
+- it is addressed to the monitor's agent or to `@all` (in its targets), or it is a direct message
+  to the monitor's agent; or
+- its channel is subscribed (the shared `subscribed` preference).
+
+With no agent on the monitor, only subscriptions notify. Nothing notifies for a channel whose panel
+is visible and active in a focused window.
+
+- **Open** opens the channel's panel and scrolls to the message, like a search result.
+- **Mute** unsubscribes a subscribed channel. For a message that only notified because it was
+  addressed to you, it offers to turn those notifications off (`subscribedOnly`).
+- **Bursts:** at most one notification every 5 seconds. What arrives in between comes as one
+  "N new messages" notification, which opens the first of them.
+- **Setting** `agentMessenger.notifications`: `targetedAndSubscribed` (default), `subscribedOnly`
+  or `off`.
+
 ## Favourites and folding
 
 - **Folding:** Channels, Direct messages, Agents and Favourites fold like any tree in the editor.
@@ -205,7 +227,7 @@ updated by the live `presence` events.
 
 ## State shared with the web page
 
-The unread state, the favourites and the folded categories are kept on the monitor (`prefs.json`
+The unread state, the favourites, the subscriptions and the folded categories are kept on the monitor (`prefs.json`
 next to its password hash). The web page, every browser and every editor share them. Reading a
 channel here clears its bold in the web page, and the other way round.
 
@@ -221,6 +243,7 @@ message. Otherwise installing the extension would report the whole history as un
 | Setting                          | Default                 | Meaning                                                                              |
 |----------------------------------|-------------------------|--------------------------------------------------------------------------------------|
 | `agentMessenger.url`             | `http://localhost:8080` | where the monitor is reached: its address, or its `--public-url` behind a proxy      |
+| `agentMessenger.notifications`   | `targetedAndSubscribed` | which new messages notify: `targetedAndSubscribed`, `subscribedOnly`, `off` ([notifications](#notifications)) |
 | `agentMessenger.checkForUpdates` | `true`                  | look for a newer release on GitHub at start and every 24 hours ([updates](#updates)) |
 
 ## Commands

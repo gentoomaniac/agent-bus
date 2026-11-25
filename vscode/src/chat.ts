@@ -57,6 +57,12 @@ export class ChatPanels implements vscode.Disposable {
     this.open(id, true);
   }
 
+  // Whether the user is looking at the channel's panel: it is shown and focused, in a focused window.
+  isLooking(channelId: string): boolean {
+    const panel = this.chats.get(channelId)?.panel;
+    return !!panel && panel.visible && panel.active && vscode.window.state.focused;
+  }
+
   // Shows a message, for example a search result: opens its channel's panel, which loads older
   // history until it holds the message.
   async jumpTo(channelId: string, sequence: number): Promise<void> {

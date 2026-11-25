@@ -25,6 +25,17 @@
           "default": "http://localhost:8080",
           "description": "Base URL of the bus monitor, for example http://localhost:8080 or its public URL behind a proxy."
         },
+        "agentMessenger.notifications": {
+          "type": "string",
+          "enum": ["targetedAndSubscribed", "subscribedOnly", "off"],
+          "enumDescriptions": [
+            "Notify for new messages addressed to the monitor's agent or to @all, and for messages in subscribed channels.",
+            "Notify only for messages in subscribed channels.",
+            "Never notify."
+          ],
+          "default": "targetedAndSubscribed",
+          "description": "Which new messages show a notification. A channel whose panel you are looking at never does."
+        },
         "agentMessenger.checkForUpdates": {
           "type": "boolean",
           "default": true,
