@@ -31,6 +31,24 @@ func TestWriteRefusesToOverwriteUnlessAsked(t *testing.T) {
 	}
 }
 
+func TestOverwriteReplacesTheFileWholeAndLeavesNothingBehind(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "record.json")
+	if err := Write(path, []byte("old content that is longer"), PublicMode, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(path, []byte("new"), SecretMode, true); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "new" {
+		t.Errorf("content = %q, want exactly new", got)
+	}
+	assertMode(t, path, SecretMode)
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("%d entries in the directory, want only the file", len(entries))
+	}
+}
+
 func assertMode(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
 	info, err := os.Stat(path)

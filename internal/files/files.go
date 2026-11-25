@@ -27,11 +27,10 @@ func Write(path string, data []byte, mode os.FileMode, overwrite bool) error {
 	if err := os.MkdirAll(filepath.Dir(path), DirMode); err != nil {
 		return err
 	}
-	flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
 	if overwrite {
-		flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		return replace(path, data, mode)
 	}
-	file, err := os.OpenFile(path, flags, mode)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if errors.Is(err, os.ErrExist) {
 		return fmt.Errorf("%s already exists", path)
 	}
@@ -47,6 +46,28 @@ func Write(path string, data []byte, mode os.FileMode, overwrite bool) error {
 		return err
 	}
 	return file.Close()
+}
+
+// replace writes a temporary file next to path and renames it over path, so a reader (the
+// directory of agents is read while two fetches may write it) sees the old content or the new,
+// never a truncated file.
+func replace(path string, data []byte, mode os.FileMode) error {
+	temporary, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temporary.Name())
+	defer temporary.Close()
+	if err := temporary.Chmod(mode); err != nil {
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporary.Name(), path)
 }
 
 // Lock takes an exclusive lock on the file at path, creating it (and its directories) if needed. It
