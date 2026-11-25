@@ -29,7 +29,7 @@ func TestServicePrincipalsHaveNarrowGrants(t *testing.T) {
 			t.Errorf("the monitor login %s can write: %s", user, entries[user])
 		}
 	}
-	if !strings.Contains(entries[MonitorControlUser], `subscribe: {allow: ["_INBOX.>", "busd.enroll.pending"]}`) {
+	if !strings.Contains(entries[MonitorControlUser], `subscribe: {allow: ["_INBOX.bus-monitor.>", "busd.enroll.pending"]}`) {
 		t.Errorf("the control monitor hears more than the pending count: %s", entries[MonitorControlUser])
 	}
 	if strings.Contains(entries[MonitorControlUser], "$JS") {

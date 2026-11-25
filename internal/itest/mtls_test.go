@@ -208,7 +208,12 @@ func TestCertificateLogin(t *testing.T) {
 		t.Cleanup(func() { _ = aliceSession.Close() })
 		bobSession, _ := h.startAdapter(t, bob)
 
+		dir := creds.AgentDir(h.configDir, alice)
+		oldCert, oldKey := copyPair(t, filepath.Join(dir, "client.pem"), filepath.Join(dir, "client.key"))
 		h.run(t, h.agentBusctl, "--direct", "cert", "issue", alice) // the broker drops the old login
+		// The old pair no longer logs in, so a send that works afterwards went over a new login
+		// made with the renewed pair, read from disk at the reconnect.
+		h.expectLogin(t, "the old certificate", oldCert, oldKey, false)
 		deadline := time.Now().Add(20 * time.Second)
 		for {
 			_, err := aliceSession.Send(ctx, bob, say("after the renewal"))

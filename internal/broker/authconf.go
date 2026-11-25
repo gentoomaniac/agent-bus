@@ -315,7 +315,8 @@ func busdPermissions() string {
 // lets its holder name a reply subject that writes, and NATS only rejects $JS.* ones.
 func monitorControlPermissions() string {
 	publish := []string{enroll.SubjectMonitorRegistry, enroll.SubjectMonitorCatalogue}
-	return allowOnly(publish, []string{"_INBOX.>", enroll.SubjectPending})
+	// Only its own reply inbox: other replies in CONTROL (busd.ca.list) carry approval codes.
+	return allowOnly(publish, []string{enroll.MonitorInboxPrefix + ".>", enroll.SubjectPending})
 }
 
 // monitorBusPermissions let the monitor read every channel through consumers of its own, list who
