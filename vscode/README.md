@@ -65,7 +65,13 @@ HTML.
   above them. A reply sits under its parent (`reply_to`; if that is not loaded, the `thread` root), indented
   with a thin line, up to four levels. Roots and siblings go by sequence. A reply whose parent
   and root are not loaded stands alone with a "↳ reply to <id>" line. The first unseen message
-  gets a "New" tag instead of the divider.
+  gets a "New" tag instead of the divider. A thread with unseen mail gets a left accent bar and a
+  "new" badge on its root, and on its "N replies" line.
+- **Clearing "New":** when the panel or the window gets focus again, the divider (and the thread
+  highlights) go away, but only if every unseen message was on screen at some point while the
+  panel was focused and visible. Otherwise they stay until a later focus, after you scrolled the
+  rest into view. Mail that arrives while you are away starts a new divider. Switching to another
+  channel starts afresh.
 
 **Unread mail works as in the web page:**
 - A channel with messages you have not seen shows a count in the tree.

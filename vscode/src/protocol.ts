@@ -19,7 +19,8 @@ export type ToWebview =
   | { type: "state"; state: ChatState }
   | { type: "message"; message: Message }
   | { type: "sendResult"; error?: string }
-  | { type: "focusComposer" };
+  | { type: "focusComposer" }
+  | { type: "activated" }; // the panel became visible and active
 
 export interface Draft {
   type: string;

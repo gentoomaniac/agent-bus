@@ -71,7 +71,12 @@ export class ChatPanels implements vscode.Disposable {
       this.chats.delete(channelId);
       this.emptyDirects.delete(channelId);
     });
-    panel.onDidChangeViewState(() => panel.visible && void this.show(channelId, chat));
+    panel.onDidChangeViewState(() => {
+      if (!panel.visible) return;
+      // The page decides, by what it showed, whether the divider goes: it is kept here.
+      void this.show(channelId, chat, true);
+      if (panel.active) void panel.webview.postMessage({ type: "activated" } satisfies ToWebview);
+    });
     panel.webview.onDidReceiveMessage((message: FromWebview) => void this.handle(channelId, chat, message));
   }
 
@@ -180,6 +185,7 @@ export class ChatPanels implements vscode.Disposable {
   .depth-2 { margin-left: 24px; }
   .depth-3 { margin-left: 36px; }
   .depth-4 { margin-left: 48px; }
+  .has-new { border-left: 3px solid var(--vscode-focusBorder); }
   #description { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #messages { flex: 1; overflow-y: auto; padding: 4px 0; }
   .message { padding: 4px 12px; font-family: var(--vscode-editor-font-family, var(--vscode-font-family)); font-size: var(--vscode-editor-font-size, inherit); }

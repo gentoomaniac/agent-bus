@@ -69,12 +69,14 @@ function renderHeader(message: Message): HTMLElement {
 }
 
 // `row` carries the thread view's depth and the "reply to" line of a reply whose parent is missing.
-function renderMessage(row: ThreadRow, continued: boolean, isNew: boolean): HTMLElement {
+// A thread root whose subtree has unseen mail is `highlighted`.
+function renderMessage(row: ThreadRow, continued: boolean, isNew: boolean, highlighted: boolean): HTMLElement {
   const { message } = row;
-  const item = el("div", (continued ? "message continued" : "message") + (row.depth > 0 ? " depth-" + row.depth : ""));
+  const item = el("div", (continued ? "message continued" : "message") + (row.depth > 0 ? " depth-" + row.depth : "") + (highlighted ? " has-new" : ""));
+  item.dataset.sequence = String(message.sequence);
   if (row.replyTo) item.append(el("div", "reply-to muted", "↳ reply to " + row.replyTo.slice(0, ID_PREFIX)));
   if (!continued) item.append(renderHeader(message));
-  if (isNew && !continued) item.firstElementChild?.append(el("span", "new", "New"));
+  if (!continued && (isNew || highlighted)) item.lastElementChild?.append(el("span", "new", isNew ? "New" : "new"));
   if (message.title) item.append(el("div", "title", message.title));
   if (message.text) item.append(el("div", "text", message.text));
   if (message.reason && message.status !== "verified") item.append(el("div", "warning", message.reason));
@@ -88,23 +90,54 @@ function renderReplies(summary: ThreadSummary): HTMLElement {
   return line;
 }
 
+// The "New" divider and the thread highlights go by `dividerAfter`: the first drawing takes it from
+// the host. Mail that came in unseen while the page was away moves it; clearing it (to infinity)
+// takes the markers away once everything below it was seen.
+let dividerAfter = 0;
+let hostDividerAfter: number | undefined;
+const seen = new Set<number>(); // sequences that were on screen while the page was focused and visible
+let checkOnObserve = false; // the page was just activated: clear the markers once the rows are measured
+
+const isUnseen = (message: Message): boolean => message.sequence > dividerAfter && message.from !== state?.self;
+const isActive = (): boolean => document.hasFocus() && document.visibilityState === "visible";
+
+const seenObserver = new IntersectionObserver((entries) => {
+  if (isActive()) for (const entry of entries) if (entry.isIntersecting) seen.add(Number((entry.target as HTMLElement).dataset.sequence));
+  if (!checkOnObserve) return;
+  checkOnObserve = false;
+  const unseen = messages.filter(isUnseen);
+  if (unseen.length > 0 && unseen.every((message) => seen.has(message.sequence))) {
+    dividerAfter = Number.POSITIVE_INFINITY;
+    render();
+  }
+}, { root: list });
+
+// The page got focus or became visible: measure the rows again, then clear what was seen.
+function activate(): void {
+  if (!isActive()) return;
+  checkOnObserve = true;
+  seenObserver.disconnect();
+  for (const row of list.querySelectorAll<HTMLElement>("[data-sequence]")) seenObserver.observe(row);
+}
+
 // Draws the list again. It keeps the distance from the bottom, so new messages at the end and
 // older ones at the top leave what the reader looks at in place; the first drawing goes to the
 // first unseen message, or to the end. The flat list marks it with a "New" divider above it; the
 // thread view, whose order is not the stream's, with a "New" tag in its header.
 function render(first = false): void {
   if (!state) return;
-  const { threaded, dividerAfter, self } = state;
+  const { threaded } = state;
   const fromBottom = list.scrollHeight - list.scrollTop;
+  seenObserver.disconnect();
   list.replaceChildren();
   if (state.hasOlder) {
     const older = el("button", "older", "Load older messages");
     older.addEventListener("click", () => host.postMessage({ type: "older" }));
     list.append(older);
   }
-  const firstUnseen = messages.find((message) => message.sequence > dividerAfter && message.from !== self);
+  const firstUnseen = messages.find(isUnseen);
   const rows: ThreadRow[] = threaded ? threadRows(messages) : messages.map((message) => ({ message, depth: 0 }));
-  const summaries = threaded ? summarizeThreads(rows, (message) => message.sequence > dividerAfter && message.from !== self) : undefined;
+  const summaries = threaded ? summarizeThreads(rows, isUnseen) : undefined;
   let marked: HTMLElement | undefined;
   let previous: Message | undefined;
   for (const row of rows) {
@@ -114,10 +147,11 @@ function render(first = false): void {
       list.append(marked);
       previous = undefined;
     }
-    const item = renderMessage(row, !threaded && continuesGroup(previous, row.message), isNew && threaded);
+    const summary = summaries?.get(row.message);
+    const item = renderMessage(row, !threaded && continuesGroup(previous, row.message), isNew && threaded, summary?.unseen === true);
     if (isNew && threaded) marked = item;
     list.append(item);
-    const summary = summaries?.get(row.message);
+    seenObserver.observe(item);
     if (summary?.replies) list.append(renderReplies(summary));
     previous = row.message;
   }
@@ -227,6 +261,11 @@ function completeMention(): void {
 function showState(next: ChatState): void {
   const first = state === undefined || state.title !== next.title;
   state = next;
+  if (first || next.dividerAfter !== hostDividerAfter) {
+    dividerAfter = next.dividerAfter;
+    seen.clear();
+  }
+  hostDividerAfter = next.dividerAfter;
   document.getElementById("heading")!.textContent = next.title;
   document.getElementById("description")!.textContent = next.description;
   threadsToggle.setAttribute("aria-pressed", String(next.threaded));
@@ -249,8 +288,18 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
   const data = event.data;
   if (data.type === "state") showState(data.state);
   else if (data.type === "focusComposer") textInput.focus();
+  else if (data.type === "activated") activate();
   else if (data.type === "message") {
-    if (insertMessage(messages, data.message)) render();
+    // Mail that arrives while nobody looks, with nothing unseen before it, starts a new unseen block.
+    const lastBefore = messages.length > 0 ? messages[messages.length - 1].sequence : 0;
+    const startsBlock = !isActive() && !messages.some(isUnseen);
+    if (insertMessage(messages, data.message)) {
+      if (startsBlock && data.message.sequence > lastBefore) {
+        dividerAfter = lastBefore;
+        seen.clear();
+      }
+      render();
+    }
   } else {
     sendButton.disabled = false;
     problem.textContent = data.error ?? "";
@@ -261,6 +310,9 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
     }
   }
 });
+
+window.addEventListener("focus", activate);
+document.addEventListener("visibilitychange", activate);
 
 composer.addEventListener("submit", (event) => {
   event.preventDefault();
