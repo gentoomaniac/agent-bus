@@ -71,7 +71,7 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsc -p tsconfig.test.json && node --test out/test/",
+    "test": "tsc -p tsconfig.test.json && node --test \"out/test/*.test.js\"",
     "check": "npm run typecheck && npm test && npm run build",
     "package": "npm run build && cp ../LICENSE LICENSE && vsce package --out agent-messenger.vsix"
   },
