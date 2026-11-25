@@ -39,7 +39,7 @@ const (
 	requestInterval    = 6 * time.Second
 	requestBurst       = 10
 	// directoryInterval and directoryBurst bound the directory reads (each reads the registry and the
-	// catalogue); agents ask once a minute and on a miss.
+	// catalogue); agents ask about once a minute, and at once for an agent they do not know.
 	directoryInterval = 200 * time.Millisecond
 	directoryBurst    = 20
 
@@ -218,8 +218,9 @@ func (service *Service) Groups(ctx context.Context) enroll.CatalogueReply {
 	return enroll.CatalogueReply{Groups: groups}
 }
 
-// Directory is the public snapshot enrolled agents keep their local directory up to date with. It
-// proves nothing about the asker and holds public data only, like the snapshot of an approval.
+// Directory is the public snapshot enrolled agents keep their local directory up to date with,
+// signed with the CA key, so that nobody else who has the shared login can make one. It proves
+// nothing about the asker and holds public data only, like the snapshot of an approval.
 func (service *Service) Directory(ctx context.Context) enroll.DirectoryReply {
 	if !service.directoryLimiter.Allow() {
 		return enroll.DirectoryReply{Error: "too many directory requests, try again in a moment"}
@@ -228,7 +229,11 @@ func (service *Service) Directory(ctx context.Context) enroll.DirectoryReply {
 	if err != nil {
 		return enroll.DirectoryReply{Error: err.Error()}
 	}
-	return enroll.DirectoryReply{Directory: directory}
+	reply, err := enroll.SignDirectory(service.config.CA, directory, service.config.Now())
+	if err != nil {
+		return enroll.DirectoryReply{Error: err.Error()}
+	}
+	return reply
 }
 
 func (service *Service) directory(ctx context.Context) (enroll.Directory, error) {

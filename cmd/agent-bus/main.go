@@ -292,7 +292,10 @@ func main() {
 // when it is copied in, which a long-running session says once instead of failing every round.
 func (cli *CLI) directoryFetcher(caCert string, longRunning bool) func(context.Context) error {
 	var saidNoPassword sync.Once
+	var fetching sync.Mutex // the refresh loop and a fetch on a miss would otherwise write the directory together
 	return func(ctx context.Context) error {
+		fetching.Lock()
+		defer fetching.Unlock()
 		err := enrollclient.FetchDirectory(ctx, enrollclient.DirectoryOptions{ConfigDir: cli.ConfigDir, Broker: cli.Broker, CACertPath: caCert})
 		if errors.Is(err, enrollclient.ErrNoEnrollPassword) {
 			if longRunning {

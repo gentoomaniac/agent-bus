@@ -49,12 +49,6 @@ type Directory struct {
 	Channels map[string][]string `json:"channels"`
 }
 
-// DirectoryReply is busd's answer to SubjectDirectory.
-type DirectoryReply struct {
-	Directory
-	Error string `json:"error,omitempty"`
-}
-
 // What the registry says about the ID of a pending request.
 const (
 	IdentityNew      = "new"      // not registered: approval registers it

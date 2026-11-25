@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
@@ -127,6 +128,32 @@ func (dir FileDirectory) WriteCatalogue(catalogue Catalogue) error {
 		return err
 	}
 	return files.Write(filepath.Join(string(dir), catalogueFile), data, files.PublicMode, true)
+}
+
+// issuedAtFile holds when busd made the newest directory this machine took in (no `.json` suffix,
+// so Records does not take it for an agent).
+const issuedAtFile = "issued_at"
+
+// IssuedAt is when busd made the newest directory fetched into this one; the zero time if none
+// was.
+func (dir FileDirectory) IssuedAt() (time.Time, error) {
+	data, err := os.ReadFile(filepath.Join(string(dir), issuedAtFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	issuedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(data)))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("reading %s: %w", issuedAtFile, err)
+	}
+	return issuedAt, nil
+}
+
+// WriteIssuedAt records when busd made the directory that was just taken in.
+func (dir FileDirectory) WriteIssuedAt(issuedAt time.Time) error {
+	return files.Write(filepath.Join(string(dir), issuedAtFile), []byte(issuedAt.UTC().Format(time.RFC3339Nano)+"\n"), files.PublicMode, true)
 }
 
 // Write stores a record, replacing an earlier one.
