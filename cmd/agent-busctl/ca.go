@@ -40,6 +40,7 @@ type CACmd struct {
 	Sign        CASignCmd        `cmd:"" help:"Approve a request: busd builds its certificate and sets the agent up."`
 	Reject      CARejectCmd      `cmd:"" help:"Reject a request."`
 	Fingerprint CAFingerprintCmd `cmd:"" help:"Print the CA certificate's SHA-256 fingerprint, for a new machine to check its CA against."`
+	Review      CAReviewCmd      `cmd:"" help:"Review and approve requests on a screen, updated live (run with podman exec -it)."`
 }
 
 type CAListCmd struct{}
