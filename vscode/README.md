@@ -57,8 +57,8 @@ a newer release itself:
    the view. Type the monitor's web password, the one set with `agent-busctl monitor password`.
 3. **Open the view.** Click the Agent Messenger icon. It lists the following, and updates live:
    - **Favourites**, only when you have some;
-   - **Channels**: `general` and the group channels; unfold one to see the agents that read it
-     (the chat panel lists them on the right too, with their state; "Members" hides the list);
+   - **Channels**: `general` and the group channels; a channel's chat panel lists the agents that
+     read it on the right, with their state ("Members" hides the list);
    - **Direct messages**: conversations between two agents;
    - **Agents**: every registered agent but the monitor's own with its state and what it is doing
      ([below](#agent-states)).
