@@ -158,6 +158,10 @@
   .message .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
   .message .reason { color: var(--muted); font-size: var(--font-s); margin-top: 2px; }
   .pill { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; font-size: var(--font-xs); border: 1px solid var(--border); border-radius: 9px; padding: 0 7px; color: var(--muted); }
+  button.tag { background: transparent; font-family: inherit; cursor: pointer; }
+  button.from.tag { border: 0; padding: 0; color: inherit; font-size: inherit; text-align: left; }
+  button.tag:hover { text-decoration: underline; }
+  button.tag:focus-visible { outline: 2px solid var(--accent); }
   .pill.target { color: var(--accent); border-color: var(--accent); }
   .pill.me { background: var(--mention); color: var(--mention-text); border-color: var(--mention); font-weight: 600; }
   .pill.all { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); font-weight: 600; }
@@ -1312,20 +1316,26 @@ function repliesLine({ replies, unseen }) {
     replies + (replies === 1 ? " reply" : " replies"), ...(unseen ? [newBadge()] : []));
 }
 
+// A sender, type or target in a message is a button that adds its filter to the search box.
+function tagButton(className, key, value, text) {
+  const term = searchTerm(key, value);
+  return el("button", { class: className + " tag", type: "button", title: "Search " + term, onclick: () => addSearchTerm(term) }, text);
+}
+
 function renderMessage(message, grouped, depth, orphanOf, thread) {
   const sequence = el("span", { class: "muted seq" }, "#" + message.sequence);
   const header = grouped
     ? el("div", { class: "meta slim" }, timeSpan(message.time))
     : el("div", { class: "meta" },
       timeSpan(message.time),
-      el("span", { class: "from cut", title: message.from || "" }, message.from || "unknown sender"),
+      message.from ? tagButton("from cut", "from", message.from, message.from) : el("span", { class: "from cut" }, "unknown sender"),
       ...(message.to ? [destination(message)] : []),
-      ...(message.type ? [el("span", { class: "pill" }, message.type)] : []),
+      ...(message.type ? [tagButton("pill", "type", message.type, message.type)] : []),
       el("span", { class: "badge " + message.status }, STATUS_LABEL[message.status] || message.status),
       sequence);
   const targets = (message.targets || []).map((target) => {
     const mine = target === state.status.agent;
-    return el("span", { class: "pill " + (target === ALL ? "all" : mine ? "me" : "target"), title: target }, target);
+    return tagButton("pill " + (target === ALL ? "all" : mine ? "me" : "target"), "targets", target, target);
   });
   // A thread with replies shows its badge on the replies line.
   if (thread && thread.unseen && thread.replies === 0) header.append(newBadge());
@@ -1674,6 +1684,22 @@ function renderHit(hit) {
       el("span", { class: "muted" }, "#" + hit.sequence)),
     ...(hit.title && hit.snippet.field !== "title" ? [el("div", { class: "title" }, hit.title)] : []),
     el("div", { class: "snippet" }, ...highlighted(hit.snippet)));
+}
+
+// One filter term of the query; a value with white space is quoted, as the API reads it (from:"a b").
+function searchTerm(key, value) {
+  const plain = value.replaceAll('"', "");
+  return /\s/.test(plain) ? `${key}:"${plain}"` : `${key}:${plain}`;
+}
+
+// A click on a tag puts its term into the search box, after what is typed there, and searches at once.
+// The box holds plain text, so the term can be edited or deleted like the rest of the query.
+function addSearchTerm(term) {
+  const box = $("search");
+  if (!` ${box.value} `.includes(` ${term} `)) box.value = (box.value.trim() + " " + term).trim();
+  box.focus();
+  clearTimeout(searchTimer);
+  runSearch();
 }
 
 async function runSearch(cursor) {
