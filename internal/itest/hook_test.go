@@ -156,7 +156,7 @@ func TestMilestone5(t *testing.T) {
 	bobSession.client.Close()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		sockets, _ := os.ReadDir(h.socketDir)
+		sockets, _ := filepath.Glob(filepath.Join(h.socketDir, "*.sock")) // the session markers stay by design
 		if len(sockets) == 0 {
 			return
 		}
