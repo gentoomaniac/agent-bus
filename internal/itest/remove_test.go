@@ -97,8 +97,9 @@ func TestAgentRemoval(t *testing.T) {
 
 	t.Run("the monitor shows it as removed", func(t *testing.T) {
 		sender, _ := h.startAdapter(t, monitorAgent)
+		monitorAdmin, monitorHistory := h.monitorReads(t)
 		web := monitor.New(monitor.Config{
-			Admin: h.admin(t), History: h.transportOnAdmin(t), Sender: sender,
+			Admin: monitorAdmin, History: monitorHistory, Sender: sender,
 			Report: func(err error) { t.Errorf("monitor: %v", err) },
 		})
 		runCtx, stop := context.WithCancel(context.Background())

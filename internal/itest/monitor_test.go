@@ -7,8 +7,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -18,6 +22,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/identity"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/monitor"
@@ -130,8 +135,9 @@ func TestMonitor(t *testing.T) {
 	before := h.consumerPositions(t)
 
 	sender, _ := h.startAdapter(t, monitorAgent)
+	monitorAdmin, monitorHistory := h.monitorReads(t)
 	web := monitor.New(monitor.Config{
-		Admin: h.admin(t), History: h.transportOnAdmin(t), Sender: sender,
+		Admin: monitorAdmin, History: monitorHistory, Sender: sender,
 		Report: func(err error) { t.Errorf("monitor: %v", err) },
 	})
 	runCtx, stop := context.WithCancel(context.Background())
@@ -243,6 +249,79 @@ func TestMonitor(t *testing.T) {
 		sent := waitForMonitorMessages(t, server, "dm:"+bob+":"+monitorAgent, 1)
 		if sent[0].Status != monitor.Verified || sent[0].From != monitorAgent {
 			t.Errorf("sent message = %+v, want verified from %s", sent[0], monitorAgent)
+		}
+	})
+
+	t.Run("the monitor's logins cannot approve, write CONTROL, publish a message or touch the auth files", func(t *testing.T) {
+		control := h.rawAdmin(t, broker.MonitorControlUser)
+		for _, subject := range []string{
+			enroll.SubjectSign, enroll.SubjectReject, enroll.SubjectList, enroll.SubjectRequest, enroll.SubjectPending,
+			"$KV.registry." + bus.AgentToken(alice), "$KV.catalogue.x", "ledger.x",
+			"$JS.API.STREAM.DELETE.LEDGER", "$JS.API.STREAM.PURGE.KV_registry", "$SYS.REQ.SERVER.PING",
+		} {
+			control.denyPublish(t, subject)
+		}
+		for _, subject := range []string{">", "busd.>", enroll.SubjectSign, "$KV.>"} {
+			control.denySubscribe(t, subject)
+		}
+		control.expectNoViolation(t, "reading the registry and the pending count", func() {
+			if _, err := control.conn.Request("$JS.API.STREAM.INFO.KV_registry", nil, 2*time.Second); err != nil {
+				t.Error(err)
+			}
+			control.conn.SubscribeSync(enroll.SubjectPending)
+		})
+
+		messages := h.rawAdmin(t, broker.MonitorBusUser)
+		for _, subject := range []string{
+			"general", "dm." + alice, "topic.lib-x", "presence." + alice,
+			"$JS.API.STREAM.DELETE.BUS", "$JS.API.STREAM.PURGE.BUS", "$JS.API.STREAM.UPDATE.BUS",
+			"$JS.API.CONSUMER.DURABLE.CREATE.BUS." + alice + "__dm.dm." + alice,
+		} {
+			messages.denyPublish(t, subject)
+		}
+		for _, subject := range []string{">", "dm.>", "general", "$JS.API.>"} {
+			messages.denySubscribe(t, subject)
+		}
+	})
+
+	t.Run("the monitor binary runs from the config directory `monitor init` makes, which holds no CA key or admin login", func(t *testing.T) {
+		monitorDir := filepath.Join(t.TempDir(), "monitor-config")
+		h.run(t, h.agentBusctl, "monitor", "init", monitorDir, "--agent", monitorAgent)
+		for _, secret := range []string{"ca.key", "bus-admin", "control-admin", "busd"} {
+			if _, err := os.Stat(filepath.Join(monitorDir, secret)); err == nil {
+				t.Errorf("the monitor's config directory has %s", secret)
+			}
+		}
+		binary := filepath.Join(t.TempDir(), "bus-monitor")
+		h.run(t, "go", "build", "-o", binary, "../../cmd/bus-monitor")
+		listen := fmt.Sprintf("127.0.0.1:%d", freePort(t))
+		cmd := exec.Command(binary, "--listen", listen, "--config-dir", monitorDir, "--agent", monitorAgent)
+		cmd.Env = h.env
+		output := &lockedBuffer{}
+		cmd.Stdout, cmd.Stderr = output, output
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			response, err := http.Get("http://" + listen + "/api/v1/messages?channel=general")
+			if err == nil {
+				var messages []monitor.Message
+				decodeErr := json.NewDecoder(response.Body).Decode(&messages)
+				response.Body.Close()
+				if decodeErr == nil && len(messages) >= 2 {
+					break
+				}
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the monitor from its own config never showed general; it said:\n%s", output)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		if strings.Contains(output.String(), "uses the admin logins") {
+			t.Errorf("the monitor fell back to the admin logins:\n%s", output)
 		}
 	})
 }

@@ -1059,6 +1059,22 @@ func (h *harness) transportOnAdmin(t *testing.T) bus.Transport {
 	return transport
 }
 
+// monitorReads is what the monitor reads with: its own two read-only logins, not the admin's.
+func (h *harness) monitorReads(t *testing.T) (bus.Admin, bus.Transport) {
+	t.Helper()
+	admin, err := broker.NewAdmin(h.adminConnection(broker.MonitorBusUser), h.adminConnection(broker.MonitorControlUser), broker.Server{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(admin.Close)
+	history, err := broker.NewTransport(h.adminConnection(broker.MonitorBusUser), broker.MonitorBusUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(history.Close)
+	return admin, history
+}
+
 // configLoadTime is what the server's monitoring endpoint says about its last configuration load.
 func (h *harness) configLoadTime(t *testing.T) time.Time {
 	t.Helper()

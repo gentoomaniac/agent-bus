@@ -60,6 +60,7 @@ type CLI struct {
 
 	Monitor struct {
 		Password MonitorPasswordCmd `cmd:"" help:"Set the password of the web monitor: prompts, or reads one line from standard input."`
+		Init     MonitorInitCmd     `cmd:"" help:"Create or refresh the monitor's own config directory: no CA key, no admin or busd login."`
 	} `cmd:"" help:"The web monitor."`
 
 	TLS struct {

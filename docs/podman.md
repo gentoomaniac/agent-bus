@@ -91,10 +91,10 @@ the broker container with the extra `-p 4223:4223` (same volumes; `podman rm -f 
 the `podman run` of step 3). The image reads `ca.pem` from the config volume at start, where
 `tls init` put it. Then, in this order:
 
-1. Admin users and monitor first (the monitor logs in as them). The tools switch at once:
+1. Admin users first. The tools switch at once (the monitor does not log in as them, see step 6;
+   busd does until `service init`, and needs `podman exec agent-bus pkill busd` to read the new login):
    ```sh
    agent-busctl --direct cert issue --admin
-   podman restart agent-bus-monitor        # it read its login at start
    ```
 2. Per agent, issue and switch, then copy the files to the agent's machine:
    ```sh
@@ -111,7 +111,7 @@ the `podman run` of step 3). The image reads `ca.pem` from the config volume at 
 
 **Rollback:** `agent-busctl --direct cert switch lib-x@<owner> --password`, delete
 `client.pem` and `client.key` in the agent's folder on its machine, restart it. For the admin
-users: `agent-busctl --direct cert switch --admin --password` and restart the monitor. This works
+users: `agent-busctl --direct cert switch --admin --password`. This works
 from any half-finished `cert issue --admin` as well; that command can also simply be run again.
 
 Every command that changes access runs in the broker container, as in this guide (`podman exec
@@ -128,6 +128,20 @@ podman exec -it agent-bus agent-busctl monitor password
 # or: printf '%s\n' 'a long password' | podman exec -i agent-bus agent-busctl monitor password
 ```
 
+The monitor gets a config volume of its own, with only what it needs: the CA certificate (not its
+key), the passwords of its two read-only logins (it cannot approve a request or write the registry),
+the web password, the directory snapshot and the key of the agent it sends as. It never sees
+`ca.key`, the admin logins or busd's. `monitor init` fills the volume, from a one-off container
+that reads the broker's volume read-only; run it again after registering or enrolling agents, or
+after changing the password, to refresh it:
+
+```sh
+podman volume create agent-bus-monitor-config
+podman run --rm -v agent-bus-config:/config:ro -v agent-bus-monitor-config:/monitor-config \
+  --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" \
+  monitor init /monitor-config --agent monitor@<owner>
+```
+
 The monitor shares the broker's network namespace, so it reaches the broker as `localhost`. Inside
 the container it must listen on `0.0.0.0`, which is not a loopback address: that is what
 `--behind-proxy` is for, and it insists on the password. The host still publishes the port on its
@@ -135,10 +149,16 @@ loopback only (step 3), so no proxy is needed here:
 
 ```sh
 podman run -d --name agent-bus-monitor --network container:agent-bus \
-  -v agent-bus-config:/config --entrypoint bus-monitor \
+  -v agent-bus-monitor-config:/config --entrypoint bus-monitor \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
   "${IMG:?set IMG first, see step 1}"
 ```
+
+**An existing monitor** that mounts `agent-bus-config` keeps working, with the admin logins, and
+logs a warning. It can then approve enrollments and read `ca.key`, which decision 41 rules out, so
+move it once: `service init` and a restart of the broker (see step 9, "An existing setup"), then the
+two commands above, then `podman rm -f agent-bus-monitor` and the `podman run` above with the new
+volume.
 
 Open <http://localhost:8080> (or `127.0.0.1`, on any published port) and log in. Without the
 password the monitor refuses to start (`--behind-proxy needs the web login password`; see
@@ -165,8 +185,11 @@ podman run -d --name agent-bus --network pasta $U \
   -v ~/bus-trial/config:/config -v ~/bus-trial/data:/data \
   "${IMG:?set IMG first, see step 1}"
 
+podman run --rm $U -v ~/bus-trial/config:/config:ro -v ~/bus-trial/monitor-config:/monitor-config \
+  --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" monitor init /monitor-config --agent monitor@<owner>
+
 podman run -d --name agent-bus-monitor --network container:agent-bus $U \
-  -v ~/bus-trial/config:/config --entrypoint bus-monitor \
+  -v ~/bus-trial/monitor-config:/config --entrypoint bus-monitor \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
   "${IMG:?set IMG first, see step 1}"
 ```
@@ -204,8 +227,8 @@ broker without it. busd holds the CA key, keeps the pending requests and makes t
 authorization file and the reloads, all inside this container. It has no HTTP port. Its log is
 part of `podman logs agent-bus` (lines starting `busd:`). `podman exec agent-bus pkill busd` makes
 the entrypoint start it afresh, which busd needs once after `cert issue --admin` to read the
-admin certificates. The web monitor only shows "N pending enrollments"; it holds no CA key and
-cannot approve.
+admin certificates. The web monitor only shows "N pending enrollments"; it has no CA key (its
+config volume is separate, step 6) and cannot approve.
 
 **An existing setup** needs nothing: after the image is updated, busd starts by itself and does
 nothing until `enroll init` ran. One step is recommended: busd and the monitor get logins of their
@@ -216,8 +239,8 @@ podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?se
 podman restart agent-bus          # the broker reads the new logins, busd uses its own
 ```
 
-Nothing else changes: the monitor keeps its admin login until it gets a config of its own
-(step 6). Password logins, certificate logins and the monitor go on as
+Nothing else changes: a monitor that mounts the broker's volume keeps its admin login until it
+gets a config of its own (step 6). Password logins, certificate logins and the monitor go on as
 they were. One optional step, for `--ca-fingerprint` below: a broker certificate made by an older
 `tls init` lacks the CA after it, which is what a new machine reads to check the CA against your
 fingerprint. Without it, copy `ca.pem` to the new machine instead (no step needed), or add the CA once:

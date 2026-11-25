@@ -79,6 +79,19 @@ func (cli *CLI) access() (monitor.Access, error) {
 	return access, access.Validate()
 }
 
+// readingUsers are the broker logins the monitor reads with: its own two read-only ones, which
+// `agent-busctl monitor init` copies into a config directory of its own. A config directory made
+// before they existed has only the admins' logins, which the monitor then uses, with a warning:
+// it can then approve enrollments, and read the CA key if it can see it.
+func (cli *CLI) readingUsers() (busUser, controlUser string) {
+	if _, err := creds.ReadPassword(creds.AdminDir(cli.ConfigDir, broker.MonitorBusUser)); err == nil {
+		return broker.MonitorBusUser, broker.MonitorControlUser
+	}
+	log.Printf("bus-monitor: no read-only login in %s, so it uses the admin logins; "+
+		"`agent-busctl monitor init` makes a config directory without them (docs/monitor.md)", cli.ConfigDir)
+	return broker.BusAdminUser, broker.ControlAdminUser
+}
+
 func (cli *CLI) Run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -91,11 +104,12 @@ func (cli *CLI) Run() error {
 	if caCert == "" {
 		caCert = filepath.Join(cli.ConfigDir, "ca.pem")
 	}
-	busConn, err := cli.connection(caCert, broker.BusAdminUser, creds.AdminDir(cli.ConfigDir, broker.BusAdminUser))
+	busUser, controlUser := cli.readingUsers()
+	busConn, err := cli.connection(caCert, busUser, creds.AdminDir(cli.ConfigDir, busUser))
 	if err != nil {
 		return err
 	}
-	controlConn, err := cli.connection(caCert, broker.ControlAdminUser, creds.AdminDir(cli.ConfigDir, broker.ControlAdminUser))
+	controlConn, err := cli.connection(caCert, controlUser, creds.AdminDir(cli.ConfigDir, controlUser))
 	if err != nil {
 		return err
 	}
@@ -104,7 +118,7 @@ func (cli *CLI) Run() error {
 		return err
 	}
 	defer admin.Close()
-	history, err := broker.NewTransport(busConn, broker.BusAdminUser)
+	history, err := broker.NewTransport(busConn, busUser)
 	if err != nil {
 		return err
 	}

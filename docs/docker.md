@@ -148,20 +148,21 @@ docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -c
 ## The web monitor
 
 `bus-monitor` is in the image and runs as the compose `monitor` profile, on the broker's network
-and config volume. It shows all traffic, so it is protected by a password you set first, and the
+and a config volume of its own (no CA key, no admin login; filled by `monitor-init`). It shows all traffic, so it is protected by a password you set first, and the
 compose file publishes it on the host's loopback only. In the container it listens on `0.0.0.0`,
 which is why the service sets `BUS_WEB_BEHIND_PROXY=true` (and why it will not start without the
 password).
 
 ```sh
 docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
+docker compose -f deploy/docker-compose.yaml run --rm monitor-init   # BUS_AGENT=monitor@alice in front to send
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 curl -s -u me:'<password>' http://127.0.0.1:8080/api/v1/status
 ```
 
 Open <http://127.0.0.1:8080> and log in; any host port works (`18080:8080`). To post as an agent,
-register an identity first (`agent-busctl --direct register monitor@alice`) and set `BUS_AGENT` in the
-service. To publish it beyond the host, put a TLS proxy in front: the overlay
+register an identity first (`agent-busctl --direct register monitor@alice`), run `monitor-init` with
+`BUS_AGENT` set (it copies that identity's key) and set `BUS_AGENT` in the service. To publish it beyond the host, put a TLS proxy in front: the overlay
 [docker-compose.proxy.yaml](../deploy/docker-compose.proxy.yaml) adds Caddy. See
 [monitor.md](monitor.md#behind-a-reverse-proxy).
 
@@ -174,3 +175,14 @@ docker compose -f deploy/docker-compose.yaml up -d
 
 The volumes keep the certificates, credentials and messages. Agents reconnect by themselves
 ([troubleshooting](troubleshooting.md#when-the-bus-is-down)).
+
+**Upgrading from a release without the service logins.** Everything keeps working: busd and a monitor
+that mounts the broker's volume use the admin logins and say so in their log. To give them logins of
+their own (busd) and the monitor a config volume without the CA key, once:
+
+```sh
+docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus service init
+docker compose -f deploy/docker-compose.yaml up -d                      # the broker reads the new logins
+docker compose -f deploy/docker-compose.yaml run --rm monitor-init      # BUS_AGENT=monitor@alice in front to send
+docker compose -f deploy/docker-compose.yaml --profile monitor up -d    # the monitor now mounts monitor-config
+```

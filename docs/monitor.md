@@ -7,9 +7,13 @@ password, no private channels, no threads or requests.
 
 ## Security: it shows everything
 
-The monitor reads with the admin credentials of the config directory (`bus-admin`, as
-`agent-busctl --direct`), so it sees every message of every channel, including all direct messages, and
-with `--agent` it can post as that agent. It speaks **plain HTTP only**, so there are two ways to
+The monitor reads with two read-only logins of its own (`monitor-bus` and `monitor-control`: no
+write, no approval, no auth file), so it sees every message of every channel, including all direct
+messages, and with `--agent` it can post as that agent. Give it a config directory of its own
+(`agent-busctl monitor init <dir>`), so it never sees `ca.key` or the admin logins; a monitor that
+mounts the broker's config directory can read the CA key, which decision 41 rules out. A config
+directory made before the read-only logins existed has only the admin logins, which the monitor
+then uses and says so in its log (migration: [podman.md](podman.md#6-the-monitor)). It speaks **plain HTTP only**, so there are two ways to
 run it:
 
 - **On loopback** (the default, `127.0.0.1:8080`). It refuses any other `--listen` address unless
@@ -79,12 +83,15 @@ BUS_PUBLIC_HOST=bus.example BUS_PUBLIC_URL=https://bus.example \
 
 ## Start it locally
 
-The monitor needs the config directory of the broker's host (`ca.pem`, `bus-admin/` and
-`control-admin/`), and a running broker ([broker.md](broker.md)). Read-only:
+The monitor needs a config directory (`ca.pem`, `monitor-bus/` and `monitor-control/`; `agent-busctl
+monitor init <dir>` makes it from the broker's, see below), and a running broker
+([broker.md](broker.md)). Read-only:
 
 ```sh
 go build -o bin/ ./cmd/bus-monitor
-bin/bus-monitor
+bin/agent-busctl service init                    # once, on a setup older than the monitor's logins
+bin/agent-busctl monitor init ~/.config/agent-bus-monitor --agent monitor@alice
+bin/bus-monitor --config-dir ~/.config/agent-bus-monitor
 ```
 
 Open <http://127.0.0.1:8080>. To post as an agent, give it an identity registered on this machine,
@@ -121,7 +128,8 @@ from the last sequence it stored, so nothing is missed or shown twice
 
 ## Docker
 
-The image contains `bus-monitor`. It needs the `/config` volume of the broker and a route to it.
+The image contains `bus-monitor`. It needs its own `/config` volume (made from the broker's by
+`monitor init`, below) and a route to the broker.
 Inside a container the monitor must listen on `0.0.0.0`, which is not loopback, so a containerized
 monitor runs with `--behind-proxy` (`BUS_WEB_BEHIND_PROXY=true`) and therefore needs a password,
 even when the host publishes the port on its loopback only and no proxy exists. Without
@@ -134,16 +142,21 @@ by the broker container on the host's loopback:
 
 ```sh
 docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
+BUS_AGENT=monitor@alice docker compose -f deploy/docker-compose.yaml run --rm monitor-init
 docker compose -f deploy/docker-compose.yaml --profile monitor up -d
 ```
 
-Open <http://127.0.0.1:8080> and log in. To send, set `BUS_AGENT` in the service to an identity
-registered in the container (`docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl
---direct register monitor@alice`). Without compose, see [podman.md](podman.md#6-the-monitor), or
+`monitor-init` copies into the monitor's volume the CA certificate, the monitor's logins, the web
+password, the directory snapshot and the key of `BUS_AGENT`, which must be registered in the
+container (`docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl --direct
+register monitor@alice`). Run it again to refresh the snapshot after agents are registered or
+enrolled, or after a password change, and restart the monitor.
+
+Open <http://127.0.0.1:8080> and log in. To send, set `BUS_AGENT` in the service as well. Without compose, see [podman.md](podman.md#6-the-monitor), or
 start a second container on the same volume and network:
 
 ```sh
-docker run -d --name bus-monitor --network container:agent-bus -v agent-bus-config:/config \
+docker run -d --name bus-monitor --network container:agent-bus -v agent-bus-monitor-config:/config \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true --entrypoint bus-monitor IMAGE
 ```
 

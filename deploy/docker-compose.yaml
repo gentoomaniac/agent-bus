@@ -19,7 +19,8 @@ services:
 
 
   # Optional: the web monitor (docs/monitor.md). It shares the broker's network, so it reaches the
-  # broker as localhost, and the volume with the admin credentials. The page shows all traffic: set
+  # broker as localhost, and has a config volume of its own: no CA key, no admin login, only its
+  # read-only logins (fill it with the monitor-init service, below). The page shows all traffic: set
   # its password first (`agent-busctl monitor password` in the agent-bus container) and publish it on the
   # host's loopback only. It listens on 0.0.0.0 in the container, so it needs --behind-proxy, which
   # insists on the password. To publish it through a TLS proxy, see docker-compose.proxy.yaml.
@@ -31,13 +32,27 @@ services:
     depends_on:
       - agent-bus
     volumes:
-      - config:/config
+      - monitor-config:/config
     environment:
       BUS_WEB_LISTEN: 0.0.0.0:8080
       BUS_WEB_BEHIND_PROXY: "true"
       # BUS_AGENT: monitor@alice   # an identity registered with agent-busctl, to send as
     profiles: ["monitor"]
 
+  # Fills and refreshes the monitor's config volume from the broker's, which it reads only:
+  #   docker compose -f deploy/docker-compose.yaml run --rm monitor-init
+  # Run it again after registering or enrolling agents, or after changing the web password.
+  monitor-init:
+    image: ${AGENT_BUS_IMAGE:-ghcr.io/gentoomaniac/agent-messenger:latest}
+    entrypoint: ["agent-busctl", "monitor", "init", "/monitor-config"]
+    environment:
+      BUS_AGENT: ${BUS_AGENT:-} # the identity to send as, copied with its key
+    volumes:
+      - config:/config:ro
+      - monitor-config:/monitor-config
+    profiles: ["monitor-init"]
+
 volumes:
   config:
   data:
+  monitor-config:
