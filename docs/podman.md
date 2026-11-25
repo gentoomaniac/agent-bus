@@ -6,7 +6,7 @@ lives in plain folders on the host, mounted into the containers (bind mounts): y
 back it up and delete it with `rm -rf`. The [README](../README.md#quick-start) has the short
 version of sections 1 to 6; every step here was run as written on Podman 6.1 (rootless).
 
-Placeholders: `<owner>` is your owner name in agent IDs (lowercase, e.g. `gentoomaniac`),
+Placeholders: `<owner>` is your owner name in agent IDs (lowercase, e.g. `alice`),
 `<broker-host>` is the name or IP other machines use to reach this one.
 
 ## 1. Build or pull the image

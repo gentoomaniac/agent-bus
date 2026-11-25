@@ -6,12 +6,12 @@ Symptom: a client fails with a certificate error (`x509: certificate is valid fo
 `unknown authority`).
 
 - The host in `--broker` must be in the broker certificate (`cannot validate certificate for
-  10.1.1.107 because it doesn't contain any IP SANs` means that IP is missing). See what it holds
+  192.0.2.10 because it doesn't contain any IP SANs` means that IP is missing). See what it holds
   with `openssl x509 -in broker.pem -noout -ext subjectAltName`, then reissue it with every name
   or IP clients use, keeping the CA, and restart the broker. Clients need nothing new:
 
   ```sh
-  podman exec agent-bus agent-busctl tls broker --san localhost --san 127.0.0.1 --san bus.example.org --san 192.168.1.10
+  podman exec agent-bus agent-busctl tls broker --san localhost --san 127.0.0.1 --san bus.example.com --san 192.0.2.10
   podman restart agent-bus     # in the bind-mount setup instead: start.sh, then monitor.sh
   ```
 
@@ -129,7 +129,7 @@ failed ("syncing the directory failed: ..."), and `agent-bus mcp` logs it. If it
 - busd or the agent is of an older version.
 
 Until it works, `register` writes the file on the machine it runs on; copy that `directory/` to
-this one, for example `rsync -a other:~/.config/agent-bus/directory/ ~/.config/agent-bus/directory/`
+this one, for example `rsync -a bob@laptop.example.com:~/.config/agent-bus/directory/ ~/.config/agent-bus/directory/`
 ([claude-code.md](claude-code.md#other-machines)). The waiting mail is read within a minute of the
 copy.
 

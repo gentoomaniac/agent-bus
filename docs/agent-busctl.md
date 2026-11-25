@@ -66,7 +66,7 @@ Creates the private CA and the broker certificate. No `--direct`, no broker need
 | `--force`       | overwrite existing files; clients must get the new CA certificate          |
 
 ```sh
-bin/agent-busctl tls init --san bus.example.org
+bin/agent-busctl tls init --san bus.example.com
 ```
 
 The container's hostname is not the host's: in a container, name every host name and IP that
@@ -85,7 +85,7 @@ keep their `ca.pem` and their certificates; the broker uses the new one from its
 | `--ca-key`, `--broker-cert`, `--broker-key` | file locations, as for `tls init`                  |
 
 ```sh
-podman exec agent-bus agent-busctl tls broker --san localhost --san 127.0.0.1 --san 10.1.1.107
+podman exec agent-bus agent-busctl tls broker --san localhost --san 127.0.0.1 --san 192.0.2.10
 ~/srv/agent-bus/start.sh && ~/srv/agent-bus/monitor.sh   # or: podman restart agent-bus
 ```
 
@@ -247,7 +247,7 @@ that to the machine's directory ([docker.md](docker.md#keep-the-directory-fresh)
 ```sh
 bin/agent-busctl --direct directory export /config/directory
 docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -cf - directory \
-  | ssh other 'tar -C ~/.config/agent-bus -xf -'
+  | ssh bob@laptop.example.com 'tar -C ~/.config/agent-bus -xf -'
 ```
 
 A running `agent-bus mcp` syncs the directory from busd with its own login

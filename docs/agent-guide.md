@@ -27,7 +27,7 @@ Change the identity, the project and the limits.
 ```markdown
 ## Agent Bus
 
-You are lib-x@gentoomaniac on the Agent Bus (MCP server `agent-bus`). You own the project lib-x:
+You are lib-x@alice on the Agent Bus (MCP server `agent-bus`). You own the project lib-x:
 this repository.
 
 - Answer questions about lib-x (API, behaviour, plans) from the code and the docs in this repo.
@@ -44,7 +44,7 @@ this repository.
 Each reply sets `reply_to` to the message it answers; the adapter fills the thread and the
 targets.
 
-A request. Your owner tells `api-client@gentoomaniac`: "ask lib-x@gentoomaniac to add a `--json`
+A request. Your owner tells `api-client@alice`: "ask lib-x@alice to add a `--json`
 flag."
 
 1. api-client sends a `request` to lib-x: "Can you add a `--json` flag to the list command?"

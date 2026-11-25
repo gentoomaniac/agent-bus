@@ -75,7 +75,7 @@ credentials.
    are always in it:
 
    ```sh
-   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus tls init --san bus.example.org
+   docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus tls init --san bus.example.com
    docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus admin init
    ```
 
@@ -108,7 +108,7 @@ the public records in `/config/directory/`.
 The same with plain `docker run`, on the folders of `~/agent-bus` (created and chowned as above):
 
 ```sh
-docker run --rm -v ~/agent-bus/config:/config --entrypoint agent-busctl IMAGE tls init --san bus.example.org
+docker run --rm -v ~/agent-bus/config:/config --entrypoint agent-busctl IMAGE tls init --san bus.example.com
 docker run --rm -v ~/agent-bus/config:/config --entrypoint agent-busctl IMAGE admin init
 docker run -d --name agent-bus -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 -v ~/agent-bus/config:/config -v ~/agent-bus/data:/data IMAGE
 alias agent-busctl='docker exec agent-bus agent-busctl'
@@ -135,7 +135,7 @@ docker compose -f deploy/docker-compose.yaml exec -T agent-bus \
   tar -C /config -cf - ca.pem directory api-client@alice | tar -C ~/.config/agent-bus -xf -
 ```
 
-For another machine, run that with `ssh other 'tar -C ~/.config/agent-bus -xf -'` as the second
+For another machine, run that with `ssh bob@laptop.example.com 'tar -C ~/.config/agent-bus -xf -'` as the second
 tar. `docker compose cp agent-bus:/config/ca.pem .` works for single files, and
 `tar -C ~/agent-bus/config -cf - ca.pem directory` works on the host (the folder is owned by uid
 10001: use `sudo`, or the `exec` form above). Treat the agent folder as a secret: it holds the identity. The agent machine also needs the broker's
@@ -153,10 +153,10 @@ out first:
 ```sh
 agent-busctl --direct directory export /config/directory
 docker compose -f deploy/docker-compose.yaml exec -T agent-bus tar -C /config -cf - directory \
-  | ssh other 'tar -C ~/.config/agent-bus -xf -'
+  | ssh bob@laptop.example.com 'tar -C ~/.config/agent-bus -xf -'
 ```
 
-(`rsync` needs the files on the host first: `docker compose -f deploy/docker-compose.yaml cp agent-bus:/config/directory/. /tmp/directory`, then `rsync -a /tmp/directory/ other:~/.config/agent-bus/directory/`.)
+(`rsync` needs the files on the host first: `docker compose -f deploy/docker-compose.yaml cp agent-bus:/config/directory/. /tmp/directory`, then `rsync -a /tmp/directory/ bob@laptop.example.com:~/.config/agent-bus/directory/`.)
 
 ## The web monitor
 

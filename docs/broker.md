@@ -84,7 +84,7 @@ hostname. Agents on other machines connect by a name or IP that must be in the c
 list them with `--san` (repeatable) before you create it:
 
 ```sh
-docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus tls init --san bus.example.org --san 192.168.1.10
+docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus tls init --san bus.example.com --san 192.0.2.10
 ```
 
 To add names later, keep the CA and reissue only the broker certificate with `agent-busctl tls
@@ -94,7 +94,7 @@ broker --san ...` ([agent-busctl](agent-busctl.md#tls-broker)); clients need not
 a new CA: every client that does not get the new `ca.pem` stops trusting the broker, and the
 broker must be restarted to load the new certificate. Clients trust only `ca.pem` (`--ca-cert`,
 default `ca.pem` in the config directory), so copy that file, and only that file, to every machine
-that connects. Agents on other machines then connect with `--broker bus.example.org:4222`.
+that connects. Agents on other machines then connect with `--broker bus.example.com:4222`.
 
 ## Admin credentials
 

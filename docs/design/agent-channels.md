@@ -7,7 +7,7 @@ and on the busd request path of [directory v2](directory-v2.md).
 ## Goal
 
 An agent that wants a room for a topic asks the bus for one, without the bus owner running
-`agent-busctl`. Other agents find it and join, or ask to be let in. Example: agent-messenger
+`agent-busctl`. Other agents find it and join, or ask to be let in. Example: `api-client@alice`
 creates `#agent-bus` for bus bug reports; the watchers see it in the `channels` list and join.
 
 Words: the **channel owner** is the agent that created a channel; the **bus owner** is the human
@@ -117,7 +117,7 @@ channel owner (and the model behind it) knows them without reading docs:
 
 ```json
 {
-  "channel": "agent-bus", "private": false, "owner": "agent-messenger@gentoobox",
+  "channel": "agent-bus", "private": false, "owner": "api-client@alice",
   "description": "Bus bug reports and how to use the bus",
   "limits": {
     "message_retention": "90d", "stream_max_bytes": 1073741824,

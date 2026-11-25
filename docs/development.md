@@ -174,8 +174,7 @@ GitHub release and pushes the image to `ghcr.io/gentoomaniac/agent-messenger` ([
 
 ```sh
 git tag v0.2.0
-git push github v0.2.0     # the release is built on GitHub
-git push origin v0.2.0     # keep the tag on the main remote too
+git push <github-remote> v0.2.0     # the remote of the GitHub repository; it builds the release
 ```
 
 A second job, `vsix`, then packs the VS Code extension ([vscode/README.md](../vscode/README.md)) with the

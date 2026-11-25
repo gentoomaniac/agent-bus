@@ -11,15 +11,15 @@ server, firing the hooks and showing the mail to the model, a second machine and
 
 Placeholders, used throughout:
 
-- `<owner>`: your owner name in agent IDs, lowercase `[a-z0-9-]`, for example `marco`. Agent IDs
+- `<owner>`: your owner name in agent IDs, lowercase `[a-z0-9-]`, for example `alice`. Agent IDs
   are `<name>@<owner>`.
 - `<repo>`: the path of this repository's checkout.
 - `<lib-x>`, `<api-client>`: two project folders (any two repositories, or empty folders). The
   agents are named after them, `lib-x@<owner>` and `api-client@<owner>`; the group channel is
   `lib-x-help`, so a channel and an agent never share a name.
 - `<broker-host>`: the name or IP of the machine that runs the broker (this one, in sections 2 to
-  5). Section 6 uses `bus.example.org` and `192.168.1.10` as examples for it, and `other` for the
-  second machine (an SSH host name).
+  5). Section 6 uses `bus.example.com` and `192.0.2.10` as examples for it, and `bob@laptop.example.com` for the
+  second machine (an SSH destination).
 
 ## 1. What you need
 
@@ -69,7 +69,7 @@ and `8080` (monitor page). If `4222` is taken, publish another host port (`-p 14
    mkdir -p ~/bus-trial-broker/{config,data,monitor-config}
    U="--userns=keep-id:uid=10001,gid=10001"
    podman run --rm $U -v ~/bus-trial-broker/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
-   # for section 6 instead: ... tls init --san localhost --san bus.example.org --san 192.168.1.10
+   # for section 6 instead: ... tls init --san localhost --san bus.example.com --san 192.0.2.10
    podman run --rm $U -v ~/bus-trial-broker/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
    ```
 
@@ -406,8 +406,8 @@ Do not run up a limit on purpose.
 ## 6. Add a second machine (optional)
 
 The machine needs `agent-bus` and a route to the broker's port (Docker only on the broker's
-host). Examples below use `bus.example.org` and `192.168.1.10` for the names the broker is
-reached by, and `other` for the second machine.
+host). Examples below use `bus.example.com` and `192.0.2.10` for the names the broker is
+reached by, and `bob@laptop.example.com` for the second machine.
 
 1. The broker certificate must be valid for the name or IP the second machine uses. If you made it
    without `--san` in section 2, make a new one and restart the broker. `--force` creates a new
@@ -416,11 +416,11 @@ reached by, and `other` for the second machine.
 
    ```sh
    podman stop agent-bus
-   podman run --rm $U -v ~/bus-trial-broker/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --force --san localhost --san bus.example.org --san 192.168.1.10
+   podman run --rm $U -v ~/bus-trial-broker/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --force --san localhost --san bus.example.com --san 192.0.2.10
    podman start agent-bus
    ```
 
-2. Copy into `other:~/.config/agent-bus/` (or its `BUS_CONFIG_DIR`):
+2. Copy into `bob@laptop.example.com:~/.config/agent-bus/` (or its `BUS_CONFIG_DIR`):
 
    - `ca.pem` and nothing else of the CA (never `ca.key`),
    - `directory/` with every agent record and the `channels` snapshot (export first, as in
@@ -431,9 +431,9 @@ reached by, and `other` for the second machine.
      machine only. The copy is untested.
 
    ```sh
-   ssh other 'mkdir -p ~/.config/agent-bus'
+   ssh bob@laptop.example.com 'mkdir -p ~/.config/agent-bus'
    podman exec agent-bus tar -C /config -cf - ca.pem directory api-client@<owner> \
-     | ssh other 'tar -C ~/.config/agent-bus -xf -'
+     | ssh bob@laptop.example.com 'tar -C ~/.config/agent-bus -xf -'
    ```
 
    The same pipe later refreshes only the directory (`... tar -C /config -cf - directory`).
@@ -442,7 +442,7 @@ reached by, and `other` for the second machine.
    CLAUDE.md as in section 3:
 
    ```sh
-   claude mcp add agent-bus -- agent-bus mcp --agent api-client@<owner> --broker bus.example.org:4222
+   claude mcp add agent-bus -- agent-bus mcp --agent api-client@<owner> --broker bus.example.com:4222
    ```
 
    Check with `whoami` and a DM in both directions. If it says "unknown agent", the directory is

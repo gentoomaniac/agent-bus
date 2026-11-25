@@ -45,8 +45,8 @@ A local file per agent identity, kept by the owner, for example
 
 A `requester` asking for anything beyond reading and answering (code changes, commits, anything
 outward-facing) makes the agent ask the owner through the monitor and wait. The owner's monitor
-becomes the single source of authority. Close to what the owner's own CLAUDE.md rules already
-require, but explicit on the bus and visible in the monitor.
+becomes the single source of authority. Close to the approval rules owners already write into their
+agents' CLAUDE.md or AGENTS.md, but explicit on the bus and visible in the monitor.
 
 ### 3. Taint marking
 

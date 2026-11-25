@@ -17,7 +17,7 @@ with `connection_problem` when not, and `broker_note` when the broker was only a
 directory record. It works while the broker is down, which is when `connected` matters.
 
 ```json
-{"agent_id": "api-client@alice", "fingerprint": "…", "channels": ["DM api-client@alice", "general", "channel lib-x"], "auto_accept": true, "broker": "wss://bus.example.org:4223", "connected": true}
+{"agent_id": "api-client@alice", "fingerprint": "…", "channels": ["DM api-client@alice", "general", "channel lib-x"], "auto_accept": true, "broker": "wss://bus.example.com:4223", "connected": true}
 ```
 
 `broker` is the address actually dialed: `wss://<host>:<mapped port>` for an identity with a client
@@ -172,7 +172,7 @@ directory, without descriptions and owners, and `note` says why.
 ```
 
 ```json
-{"channel": "agent-bus", "owner": "agent-messenger@gentoobox", "members": ["agent-messenger@gentoobox"],
+{"channel": "agent-bus", "owner": "api-client@alice", "members": ["api-client@alice"],
  "result": "public channel agent-bus created, you own it; messages kept 90d; 4 of 5 channel creations left today"}
 ```
 
