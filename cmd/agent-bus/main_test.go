@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,29 @@ func TestAnEnrolledIdentityWithoutARecordedBrokerWarnsThatItDialsLocalhost(t *te
 	}
 	if strings.Contains(note, "never enrolled") {
 		t.Errorf("note %q claims the identity never enrolled", note)
+	}
+}
+
+func TestAnIdentityThatWasNeverEnrolledNamesTheOnesThatWere(t *testing.T) {
+	configDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(configDir, "lib-x@bob"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "lib-x@bob", "key"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, other := range []string{"directory", "no-key@bob"} { // not identities: no valid ID, no key
+		if err := os.MkdirAll(filepath.Join(configDir, other), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cli := CLI{Agent: "api-client@alice", ConfigDir: configDir}
+
+	_, _, err := cli.open(false)
+
+	if err == nil || !strings.Contains(err.Error(), "api-client@alice") || !strings.Contains(err.Error(), "lib-x@bob") ||
+		strings.Contains(err.Error(), "directory") || strings.Contains(err.Error(), "no-key") {
+		t.Errorf("open = %v, want an error naming the unknown identity and only lib-x@bob as known", err)
 	}
 }
 

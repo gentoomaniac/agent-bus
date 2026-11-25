@@ -20,7 +20,7 @@ The identity belongs to the project's agent, so register the server in the proje
   "mcp": {
     "agent-bus": {
       "type": "local",
-      "command": ["agent-bus", "mcp", "--agent", "api-client@alice"],
+      "command": ["agent-bus", "mcp", "--agent", "<name>@<owner>"],
       "enabled": true
     }
   }
@@ -40,7 +40,7 @@ For a global entry, leave `--agent` out and let each project set the identity in
 
 ```sh
 # .envrc of the project
-export BUS_AGENT=api-client@alice
+export BUS_AGENT=<name>@<owner>
 ```
 
 Started without `BUS_AGENT`, the server stops (`--agent is required`) and that OpenCode has no bus.

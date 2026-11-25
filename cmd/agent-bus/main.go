@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -309,6 +310,23 @@ func (cli *CLI) directoryFetcher(caCert string, longRunning bool) func(context.C
 	}
 }
 
+// unknownIdentityError says that agentID was never enrolled or registered in configDir, and which
+// identities were. The usual cause is an --agent copied from an example (the documentation's
+// api-client@alice) instead of this machine's own.
+func unknownIdentityError(configDir, agentID string) error {
+	var known []string
+	entries, _ := os.ReadDir(configDir)
+	for _, entry := range entries {
+		if _, err := os.Stat(filepath.Join(configDir, entry.Name(), "key")); err == nil && bus.ValidateAgentID(entry.Name()) == nil {
+			known = append(known, entry.Name())
+		}
+	}
+	if len(known) == 0 {
+		return fmt.Errorf("no identity %s in %s, and no other: enroll it with `agent-bus enroll --agent %s`", agentID, configDir, agentID)
+	}
+	return fmt.Errorf("no identity %s in %s: --agent (or BUS_AGENT) is not an identity of this machine, which has %s", agentID, configDir, strings.Join(known, ", "))
+}
+
 // defaultBroker is the broker of a machine that runs the whole bus itself and never enrolled.
 const defaultBroker = "localhost:4222"
 
@@ -349,6 +367,9 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 		return nil, nil, err
 	}
 	dir := creds.AgentDir(cli.ConfigDir, cli.Agent)
+	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+		return nil, nil, unknownIdentityError(cli.ConfigDir, cli.Agent)
+	}
 	caCert := cli.CACert
 	if caCert == "" {
 		caCert = filepath.Join(cli.ConfigDir, "ca.pem")

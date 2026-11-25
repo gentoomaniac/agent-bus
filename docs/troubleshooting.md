@@ -96,6 +96,18 @@ starts it in), or drop both to use the enrolled broker, then reconnect with `/mc
 this file existed, or copied from another machine without it, has none: pass `--broker` once, or run `agent-bus enroll` again.
 A `broker` file that is empty or not `host:port` is an error naming the file.
 
+## No identity ... in the config directory
+
+Symptom: `agent-bus mcp` fails with "no identity `<id>` in `<config-dir>`: --agent (or BUS_AGENT) is not an
+identity of this machine, which has `<ids>`" (older builds: "reading credentials: .../`<id>`/password: no
+such file").
+
+`--agent` names an identity that was never enrolled or registered on this machine. `agent-bus` has no default
+identity, so the value came from the MCP entry or from `BUS_AGENT` in the environment Claude Code runs in.
+The documentation's examples used to name `api-client@alice`, which is the identity of the test setup: a
+copied command picks it. Use one of the listed identities, or enroll the new one
+([claude-code.md](claude-code.md#other-machines)).
+
 ## Unknown agent
 
 Symptom: `inbox` or `whoami` shows `unknown_senders` ("N messages from unknown senders are waiting")

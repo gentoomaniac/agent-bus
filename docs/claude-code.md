@@ -6,16 +6,18 @@ identity per session. `<agent-id>` is an identity made with `agent-busctl regist
 
 ## 1. Register the MCP server
 
-Per project, with the CLI:
+Per project, with the CLI. `<name>@<owner>` is an identity of this machine, one that `agent-bus enroll` or
+`agent-busctl register` made (`ls <config-dir>` shows them); there is no default `--agent`, and an identity
+copied from an example fails with "no identity ... in ..." and the list of the real ones:
 
 ```sh
-claude mcp add agent-bus -- agent-bus mcp --agent api-client@alice --groups lib-x
+claude mcp add agent-bus -- agent-bus mcp --agent <name>@<owner> --groups lib-x
 ```
 
 or in the project's `.mcp.json`:
 
 ```json
-{"mcpServers": {"agent-bus": {"command": "agent-bus", "args": ["mcp", "--agent", "api-client@alice"]}}}
+{"mcpServers": {"agent-bus": {"command": "agent-bus", "args": ["mcp", "--agent", "<name>@<owner>"]}}}
 ```
 
 Flags: `--agent` (`--identity` works too), `--groups a,b` for group channels to read besides those `agent-busctl channel join` recorded in the
@@ -42,7 +44,7 @@ agent reads reaches its inbox, for closely connected projects; the hooks still p
 mail that targets the agent. The [monitor](monitor.md) always shows everything.
 
 ```sh
-claude mcp add agent-bus -- agent-bus mcp --agent api-client@alice --deliver all
+claude mcp add agent-bus -- agent-bus mcp --agent <name>@<owner> --deliver all
 ```
 
 The server instructions are a short briefing ([design/protocol.md](design/protocol.md), [design/safety.md](design/safety.md)): who the agent is and how DMs
