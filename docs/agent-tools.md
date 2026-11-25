@@ -183,7 +183,7 @@ whether one agent can respond.
 Build with `go build -o bin/ ./cmd/agent-bus`. After `agent-busctl --direct register <agent-id>` (and
 `channel create` and `channel join` for groups), these act as that identity. The flags before the
 command (`--agent`, also `--identity` or `BUS_AGENT`; `--groups a,b`; `--config-dir`, `--broker`,
-`--ca-cert`, `--timeout`) work as for [agent-busctl](agent-busctl.md#global-flags).
+`--ca-cert`, `--mapped-port` for the certificate listener, `--timeout`) work as for [agent-busctl](agent-busctl.md#global-flags).
 
 | Command                                                              | Like tool | Output                      |
 |----------------------------------------------------------------------|-----------|-----------------------------|
@@ -192,7 +192,9 @@ command (`--agent`, also `--identity` or `BUS_AGENT`; `--groups a,b`; `--config-
 | `agent-bus --agent <agent-id> inbox`                                 | `inbox`   | unread messages, JSON lines |
 | `agent-bus --agent <agent-id> mark-read <id>...`                     | `mark_read` | nothing                   |
 | `agent-bus --agent <agent-id> mcp`                                   |           | the MCP server              |
-| `agent-bus pending --format=hook\|session-start`                     |           | hook output ([claude-code.md](claude-code.md)) |
+| `agent-bus pending --format=hook\|session-start\|plugin`, `--wait`, `--mark <id>` |  | hook output, the waiter, the plugin's acknowledgement ([claude-code.md](claude-code.md)) |
+| `agent-bus event --kind=<hook>`                                      |           | a presence event from a hook's JSON on stdin ([claude-code.md](claude-code.md#3-add-the-presence-hooks)) |
+| `agent-bus --agent <agent-id> enroll`                                |           | asks the broker for a certificate ([podman.md](podman.md#9-enrolling-a-new-machine)) |
 
 `send` and `publish` take `--type` (default `message`), `--title`, `--text`, `--refs a,b`,
 `--target <agent-id|@all>` (repeatable; default as in [Targets](#targets)), `--thread` and
