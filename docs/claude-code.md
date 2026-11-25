@@ -112,7 +112,13 @@ wakes the session at once even when it is idle ([hooks reference](https://code.c
   entry asks for 86400 seconds (24 hours), longer than `--max`. If your Claude Code caps it lower, the
   waiter ends then and the next `Stop` or `SessionStart` arms it again.
 - The same mail is never delivered twice: whichever of the `Stop` hook and the waiter reports a
-  message first marks it, and the reports keep the 10 second cooldown.
+  message first marks it, and the reports keep the 10 second cooldown. A plain `agent-bus pending`
+  run by hand or from a polling loop is the `Stop` hook's command and marks mail too, so it takes
+  messages away from the hooks and the other way round. To look without marking, use
+  `agent-bus pending --format=plugin`.
+- Claude Code labels a waiter's wake as a hook "blocking error" (for example "Stop hook blocking
+  error from command SessionStart:resume"). That is how it shows the exit code 2 that wakes the
+  session; the text after the label is the mail notice.
 
 ### How a hook finds its session
 
