@@ -16,9 +16,14 @@ exposure only) is in [identity and trust](identity-and-trust.md#key-storage).
 | 4. Rate limits (30 per 10 minutes, separate allowance for closing replies) | implemented; **no `--rate-limit` flag** yet |
 | 5. Secret scan of outgoing bodies | implemented |
 
-The `--max-hops`, `--rate-limit`, `--inbox-buffer`, `--[no-]auto-accept-new-keys` and
-`--owner-identity` flags named in this design are not on the `agent-bus` command line today; the adapter has
-the limits as configuration fields. `--[no-]auto-accept-messages` and `--deliver` are flags.
+Two kinds of gap, not one:
+
+- **Unexposed limits.** `--max-hops`, `--rate-limit` and `--inbox-buffer` exist as adapter
+  configuration fields but are not on the `agent-bus` command line yet.
+- **Planned features.** `--[no-]auto-accept-new-keys` and `--owner-identity` have no code behind
+  them at all (no setting in the adapter): holds and the pinned owner are planned.
+
+`--[no-]auto-accept-messages` and `--deliver` are flags today.
 
 Defaults at a glance:
 
