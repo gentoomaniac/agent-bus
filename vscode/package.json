@@ -30,7 +30,8 @@
     "commands": [
       { "command": "agentMessenger.login", "title": "Log In", "category": "Agent Messenger" },
       { "command": "agentMessenger.logout", "title": "Log Out", "category": "Agent Messenger" },
-      { "command": "agentMessenger.openChannel", "title": "Open Channel", "category": "Agent Messenger" }
+      { "command": "agentMessenger.openChannel", "title": "Open Channel", "category": "Agent Messenger" },
+      { "command": "agentMessenger.openUnreadMail", "title": "Open Unread Mail", "category": "Agent Messenger" }
     ],
     "menus": {
       "commandPalette": [{ "command": "agentMessenger.openChannel", "when": "false" }]
