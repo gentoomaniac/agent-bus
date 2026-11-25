@@ -80,6 +80,43 @@ Repeat the `directory` part after every `register`, `channel join` or `agent rem
 Agents on this machine reach the broker at the default `localhost:4222`; on other machines set
 `BUS_BROKER=<broker-host>:4222`.
 
+## 5a. Certificate login (optional)
+
+Agents and the admin tools can log in with a client certificate instead of a password. The broker
+has a second port for it, `4223` (published in step 3 as `-p 4223:4223`). Nothing changes for what
+you already run: password logins stay on `4222`, and a certificate login is a per-agent switch.
+
+**An existing setup** started without `-p 4223:4223` keeps working. To use certificates, recreate
+the broker container with the extra `-p 4223:4223` (same volumes; `podman rm -f agent-bus`, then
+the `podman run` of step 3). The image reads `ca.pem` from the config volume at start, where
+`tls init` put it. Then, in this order:
+
+1. Admin users and monitor first (the monitor logs in as them). The tools switch at once:
+   ```sh
+   agent-busctl --direct cert issue --admin
+   podman restart agent-bus-monitor        # it read its login at start
+   ```
+2. Per agent, issue and switch, then copy the files to the agent's machine:
+   ```sh
+   agent-busctl --direct cert issue lib-x@<owner> --switch
+   podman run --rm -v agent-bus-config:/config:ro --entrypoint tar "${IMG:?set IMG first, see step 1}" \
+     -C /config -cf - lib-x@<owner>/client.pem lib-x@<owner>/client.key \
+     | tar -xf - -C ~/.config/agent-bus
+   ```
+   Restart the agent's `agent-bus`. It finds `client.pem` and picks certificate login by itself,
+   on port `4223` of the `--broker` host (`BUS_MAPPED_PORT` if you published another one). Until
+   the files are on the agent's machine it cannot log in, so copy them promptly.
+3. Check it with `agent-busctl --direct agent list` and a message. Only then forget the agent's password
+   file; it is harmless to keep.
+
+**Rollback:** `agent-busctl --direct cert switch lib-x@<owner> --password`, delete
+`client.pem` and `client.key` in the agent's folder on its machine, restart it. For the admin
+users: `agent-busctl --direct cert switch --admin --password` and restart the monitor.
+
+Every command that changes access runs in the broker container, as in this guide (`podman exec
+agent-bus`). The monitor container only reads the volume and is never asked to reload
+([broker.md](broker.md#reloads)).
+
 ## 6. The monitor
 
 First set the monitor's password. It is stored as a hash on the config volume (use `-it` to be

@@ -126,6 +126,24 @@ bin/agent-busctl --direct channel join api-client@alice lib-x
 
 Also, a post to a group nobody created is stored and never read.
 
+## Certificate login fails
+
+Symptom: `agent-bus` or `agent-busctl` reports `nats: Authorization Violation`, or a TLS error such
+as `bad certificate`, on a machine whose agent folder has `client.pem` and `client.key`.
+
+- Those files make the client use the certificate listener (`wss://<broker-host>:4223`, or
+  `BUS_MAPPED_PORT`). The port must be published and reachable, and the broker must know the
+  certificate: `agent-busctl --direct cert switch <agent-id>` ran (or `cert issue --switch`).
+  Until then delete the two files to use the password again, or switch the agent.
+- The certificate is for one agent ID and one CA. Files copied from another agent, or from before a
+  `tls init --force`, are refused; issue again. An expired certificate (one year by default) is
+  refused: `cert issue` again, copy the files.
+- A removed agent's certificate never works again.
+- After `cert switch <agent-id> --password` (rollback) the password is back, but a machine that
+  still has `client.pem` and `client.key` keeps trying the certificate: delete both files.
+- The password port (`4222`) refuses a certificate agent, and the certificate port refuses
+  everything without a client certificate; that is intended.
+
 ## Reload failed
 
 Symptom: `register` or `channel join` fails while testing or reloading the server.

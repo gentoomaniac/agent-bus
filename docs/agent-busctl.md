@@ -32,6 +32,7 @@ Every command takes these.
 | `--broker`              | `BUS_BROKER`       | `localhost:4222`           | NATS address; the host must be in the broker certificate |
 | `--ca-cert`             | `BUS_CA_CERT`      | `ca.pem` in the config dir | the CA clients trust                                 |
 | `--timeout`             | `BUS_TIMEOUT`      | `30s`                      | give up after this long (also on Ctrl-C)             |
+| `--mapped-port`         | `BUS_MAPPED_PORT`  | `4223`                     | the certificate listener, on the host of `--broker`; used by an identity that has `client.pem` and `client.key` |
 | `--direct`              |                    | off                        | act as the admin users of the config directory       |
 | `--monitor-url`         | `BUS_MONITOR_URL`  | `http://127.0.0.1:8222`    | the server's monitoring endpoint, confirms reloads   |
 | `--nats-server`         | `BUS_NATS_SERVER`  | `bin/nats-server` in the config dir | the binary that tests configurations        |
@@ -39,7 +40,7 @@ Every command takes these.
 
 `--direct` is needed by every command that requires admin rights until `busd` exists. `agent-busctl`
 then connects to `--broker` as `bus-admin` and `control-admin` (two connections), trusting
-`--ca-cert`. It must run on the broker's host, because access changes rewrite `nats/auth.conf`.
+`--ca-cert`, with their passwords, or with their certificates once `cert issue --admin` has run. It must run on the broker's host, because access changes rewrite `nats/auth.conf`.
 
 ```sh
 bin/agent-busctl --direct --config-dir /srv/bus --timeout 10s init
@@ -199,6 +200,58 @@ rejects messages signed by them, even from a pinned key ("revoked key" in `alert
 a removed agent fails with "agent removed", and `list_agents` leaves it out. Run the export again
 after every `agent remove` and `register`. An automatic refresh over the bus comes with `busd`
 and enrollment (design.md §4c).
+
+### cert issue
+
+Client certificates replace passwords as an agent's or admin's login (design.md §4c, phase A).
+They are used on the broker's second port, `4223` ([broker.md](broker.md#settings-and-ports)), and
+are signed by the bus CA (`ca.key` in the config directory, which never leaves it).
+
+`cert issue <agent-id>` creates a key and a certificate for a registered agent and writes
+`client.pem` and `client.key` (0644, 0600) into `<config-dir>/<agent-id>/`. The certificate is
+built from the agent ID alone: client authentication only, not a CA, valid for one year
+(`--validity`), with exactly one URI SAN, `agentbus:agent/<agent-token>` (admin users:
+`agentbus:admin/bus-admin` and `agentbus:admin/control-admin`). nats-server maps that URI to the
+user of the same name. It does not log in until `cert switch` (or `--switch`) tells the broker to
+accept it. Run it again to renew. A removed ID gets none.
+
+| Flag         | Meaning                                                                       |
+|--------------|-------------------------------------------------------------------------------|
+| `--switch`   | also switch the agent to certificate login (below)                            |
+| `--admin`    | instead of an agent: issue for `bus-admin` and `control-admin` and switch both at once. The tools in this config directory log in with the new files from then on; restart `bus-monitor`, which logs in as these users |
+| `--validity` | how long the certificate is valid, default `8760h`                            |
+
+The `agent-bus` and `bus-monitor` of this machine, and `agent-busctl`, use `client.pem` and
+`client.key` as soon as the identity's directory has them, and the password otherwise. So an agent
+running on this machine must be switched right after the issue (`--switch`); for an agent on
+another machine, copy both files into its folder on that machine, then switch.
+
+### cert sign
+
+`cert sign <agent-id> --csr <file> [--out <file>]` signs a certificate request made on the agent's
+machine (`openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout
+client.key -out client.csr -subj /CN=x`), so the key never leaves it. The request's signature is
+checked and only its public key is used: names, usages and CA rights in it are ignored. The
+certificate goes to standard output or `--out`; put it into the agent's folder as `client.pem`,
+next to `client.key`, then switch.
+
+### cert switch
+
+`cert switch <agent-id>` moves an agent from its password to certificate login in `auth.conf`
+and returns once the server has confirmed the reload; the agent's connections close and it logs in
+with the certificate. Its ID, signing key, consumers and registry record stay. Its old password no
+longer works.
+
+`cert switch <agent-id> --password` is the rollback: the agent gets its password back (the one in
+its folder, or a new one if the file is gone) and the certificate files in this config directory
+are deleted. Delete `client.pem` and `client.key` in the agent's folder on every other machine too,
+or `agent-bus` there keeps trying the certificate. The certificate itself stays valid until it
+expires, but nothing maps it any more. `cert switch --admin --password` does the same for the two
+admin users.
+
+`agent remove` deletes the agent's certificate mapping together with its account, and the ID is
+never registered or certified again, so a certificate issued before the removal cannot log in
+as, or under the name of, a later agent.
 
 ### monitor password
 

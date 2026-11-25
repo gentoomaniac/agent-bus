@@ -300,7 +300,41 @@ So a former member's message, whatever its `ts` and whether newly written or rep
 
 ---
 
-## 4c. Agent enrollment with mTLS (planned)
+## 4c. Agent enrollment with mTLS (phase A built, phase B planned)
+
+**Phase A (built): certificate login without enrollment.** The owner issues the certificates at
+the broker's host (`agent-busctl --direct cert issue|sign|switch`, docs/agent-busctl.md) and
+copies them to the agent's machine; no request or approval flow. What differs from the plan below:
+
+- *The second listener is nats-server's WebSocket listener.* nats-server has one client port and
+  allows `verify_and_map` once per listener, which then demands a client certificate from every
+  client of it. So the password listener (`BUS_NATS_PORT`, 4222) is unchanged, and certificate users
+  log in on a `websocket` listener with its own TLS block and `verify_and_map` (`BUS_MAPPED_PORT`,
+  4223; clients use a `wss://` address). Users of certificate mode carry
+  `allowed_connection_types: ["WEBSOCKET"]`.
+- *Mapping.* The certificate has exactly one URI SAN, `agentbus:<role>/<name>`: `agentbus:agent/<agent
+  token>`, `agentbus:admin/bus-admin`, `agentbus:admin/control-admin`. nats-server matches
+  email, DNS and URI SANs against user names before the subject DN, and the NATS user of a
+  certificate login is named exactly that URI; the permissions are those of the role (agent grants
+  use the token). Verified in nats-server v2.15.3 (`checkClientTLSCertSubject`, `canTLSMap`).
+- *Certificates* are built by `tlsinit.CA.IssueClientCert` from the approved identity only: client
+  auth, not a CA, one year by default, no names from a CSR (`SignCSR` checks the request's signature
+  and uses only its public key).
+- *Roles and modes.* The authorization files model agent, admin, monitor and enrollment users, each
+  in password or certificate mode, and are rewritten without losing any entry (the role is a trailing
+  comment; older files are still read). Monitor and enrollment are reserved with no access. The web
+  monitor has no user of its own yet: it logs in as the two admin users, so `cert issue --admin`
+  covers it.
+- *Rollback and removal.* `cert switch <id> --password` goes back; `agent remove` drops the
+  mapping with the account and the tombstone keeps the ID from being certified again.
+- *Reload topology.* Only the broker's container reloads nats-server; the monitor container never
+  signals (docs/broker.md).
+
+**Phase B (planned): the enrollment flow.** Everything below that phase A did not build:
+the request/approval flow, `ca list|sign|reject`, the monitor's pending list and CA key, the
+enrollment login and its limits, autosigning, `--waitforcert`, the CA fingerprint check, and the
+monitor reloading nats-server through a helper in the broker container. The enrollment login needs
+no listener of its own: it stays a password user of the password listener.
 
 **Decision** (owner, 2026-11-24, after a design review): agents get client certificates from the bus CA through a Puppet-style enrollment flow, replacing agent passwords. Planned after agent removal, the protocol fixes and the minimal monitor API.
 
