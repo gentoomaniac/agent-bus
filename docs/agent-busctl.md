@@ -140,7 +140,9 @@ It
 - generates an Ed25519 key pair and a password in `<config-dir>/<agent-id>/` (`key`, `password`;
   directory 0700, files 0600),
 - creates the agent's read cursors `<token>__dm` and `<token>__general` (durable pull consumers
-  with the fixed configuration of [design/jetstream-binding.md](design/jetstream-binding.md)),
+  with the fixed configuration of [design/jetstream-binding.md](design/jetstream-binding.md)) at
+  the current end of the log: a new agent does not see what was posted before it registered,
+  `general`'s history included,
 - writes the `AgentRecord` (with its `keys` list) to the `registry` under the agent token, and a
   copy to `<config-dir>/directory/<token>.json` ([claude-code.md](claude-code.md#other-machines)),
 - adds the agent's user and grants to `auth.conf` and reloads the server

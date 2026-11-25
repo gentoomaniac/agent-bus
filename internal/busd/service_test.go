@@ -11,9 +11,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +34,7 @@ type fakeRegistry struct {
 	accounts []string
 	certIDs  map[string]string // the certificate each account logs in with
 	cursors  []string
+	last     uint64 // the sequence LastSequence reports
 	down     error
 }
 
@@ -46,10 +49,11 @@ func (fake *fakeRegistry) PutAgentRecord(_ context.Context, record bus.AgentReco
 	fake.records[record.AgentID] = record
 	return nil
 }
-func (fake *fakeRegistry) CreateReadCursor(_ context.Context, agentID string, channel bus.Channel, _ uint64) error {
-	fake.cursors = append(fake.cursors, agentID+" "+channel.String())
+func (fake *fakeRegistry) CreateReadCursor(_ context.Context, agentID string, channel bus.Channel, afterSequence uint64) error {
+	fake.cursors = append(fake.cursors, fmt.Sprintf("%s %s after %d", agentID, channel, afterSequence))
 	return nil
 }
+func (fake *fakeRegistry) LastSequence(context.Context) (uint64, error) { return fake.last, nil }
 func (fake *fakeRegistry) EnsureCertAccount(_ context.Context, agentID, certID string) error {
 	fake.accounts = append(fake.accounts, agentID)
 	fake.certIDs[agentID] = certID
@@ -154,6 +158,7 @@ func parseCert(t *testing.T, certPEM string) *x509.Certificate {
 
 func TestRequestWaitsForTheOwnerAndSigningIssuesTheCertificate(t *testing.T) {
 	f := newFixture(t)
+	f.registry.last = 42
 	pending := f.submit("lib-x@bob", f.newKey(), "")
 	if pending.Status != enroll.StatusPending || pending.Code == "" || pending.Certificate != "" {
 		t.Fatalf("first reply %+v", pending)
@@ -178,8 +183,8 @@ func TestRequestWaitsForTheOwnerAndSigningIssuesTheCertificate(t *testing.T) {
 	if len(cert.URIs) != 1 || certID == "" || cert.URIs[0].String() != "agentbus:agent/lib-x_bob/"+certID {
 		t.Errorf("certificate URIs %v, the account logs in with certificate %q", cert.URIs, certID)
 	}
-	if len(f.registry.accounts) != 1 || f.registry.accounts[0] != "lib-x@bob" || len(f.registry.cursors) != 2 {
-		t.Errorf("accounts %v, cursors %v", f.registry.accounts, f.registry.cursors)
+	if len(f.registry.accounts) != 1 || f.registry.accounts[0] != "lib-x@bob" || !slices.Equal(f.registry.cursors, []string{"lib-x@bob DM lib-x@bob after 42", "lib-x@bob general after 42"}) {
+		t.Errorf("accounts %v, cursors %v, want both after the log's end", f.registry.accounts, f.registry.cursors)
 	}
 	record := f.registry.records["lib-x@bob"]
 	if len(record.Keys) != 1 || record.PublicKey == "" || len(approved.Directory.Records) != 1 {

@@ -75,7 +75,7 @@ type Admin interface {
 	// existing one, and gives every agent access to it. It says whether the channel is new.
 	CreateGroupChannel(ctx context.Context, name, description string) (created bool, err error)
 	// CreateReadCursor makes the agent's read cursor on a channel, starting after the given
-	// sequence (0: at the beginning). A cursor that exists is left as it is.
+	// sequence (0: at the beginning). A cursor that exists is left as it is, with its position.
 	CreateReadCursor(ctx context.Context, agentID string, channel Channel, afterSequence uint64) error
 	// DeleteReadCursor removes the agent's read cursor on a channel.
 	DeleteReadCursor(ctx context.Context, agentID string, channel Channel) error

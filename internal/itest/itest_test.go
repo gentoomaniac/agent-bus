@@ -728,6 +728,28 @@ func TestMilestone1a(t *testing.T) {
 		})
 	})
 
+	t.Run("a newly registered agent starts at the end of general", func(t *testing.T) {
+		ctx := timeout(t)
+		bobTransport := h.transport(t, bob)
+		if _, err := bobTransport.Publish(ctx, bus.GeneralChannel(), "old-news", []byte("before the newcomer")); err != nil {
+			t.Fatal(err)
+		}
+		const newcomer = "newcomer@alice"
+		h.register(t, newcomer)
+		newcomerTransport := h.transport(t, newcomer)
+		if deliveries, err := newcomerTransport.Fetch(ctx, bus.GeneralChannel(), 10); err != nil || len(deliveries) != 0 {
+			t.Fatalf("the newcomer fetched %d records (%v) of general's history, want none", len(deliveries), err)
+		}
+		after, err := bobTransport.Publish(ctx, bus.GeneralChannel(), "fresh-news", []byte("after the newcomer"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		deliveries, err := newcomerTransport.Fetch(ctx, bus.GeneralChannel(), 10)
+		if err != nil || len(deliveries) != 1 || deliveries[0].Sequence != after {
+			t.Fatalf("the newcomer fetched %v (%v), want only the record %d published after it registered", deliveries, err, after)
+		}
+	})
+
 	t.Run("the stream sequence reaches the reader, a group cursor starts after its boundary and history moves no cursor", func(t *testing.T) {
 		ctx := timeout(t)
 		admin := h.admin(t)

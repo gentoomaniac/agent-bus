@@ -55,6 +55,7 @@ type Registry interface {
 	Agents(ctx context.Context) ([]bus.AgentRecord, error)
 	PutAgentRecord(ctx context.Context, record bus.AgentRecord) error
 	CreateReadCursor(ctx context.Context, agentID string, channel bus.Channel, afterSequence uint64) error
+	LastSequence(ctx context.Context) (uint64, error)
 	EnsureCertAccount(ctx context.Context, agentID, certID string) error
 }
 
@@ -476,8 +477,14 @@ func (service *Service) approve(ctx context.Context, request *entry, replace boo
 	if err := trust.DirectoryPath(service.config.ConfigDir).Write(record); err != nil {
 		return "", err
 	}
+	// A new agent starts at the end of the log, not in the history of `general`. An agent that
+	// enrolls again keeps its cursors, and with them its position.
+	last, err := registry.LastSequence(ctx)
+	if err != nil {
+		return "", err
+	}
 	for _, channel := range []bus.Channel{bus.DMChannel(agentID), bus.GeneralChannel()} {
-		if err := registry.CreateReadCursor(ctx, agentID, channel, 0); err != nil {
+		if err := registry.CreateReadCursor(ctx, agentID, channel, last); err != nil {
 			return "", fmt.Errorf("creating the read cursor of %s: %w", channel, err)
 		}
 	}

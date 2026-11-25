@@ -109,8 +109,13 @@ func (cmd *RegisterCmd) Run(ctx context.Context, cli *CLI) (err error) {
 
 	// A rerun after a failure before the account finds the cursors in place and replaces the
 	// registry entry.
+	// The agent starts at the end of the log, not in the history of `general`.
+	last, err := admin.LastSequence(ctx)
+	if err != nil {
+		return err
+	}
 	for _, channel := range []bus.Channel{bus.DMChannel(cmd.AgentID), bus.GeneralChannel()} {
-		if err := admin.CreateReadCursor(ctx, cmd.AgentID, channel, 0); err != nil {
+		if err := admin.CreateReadCursor(ctx, cmd.AgentID, channel, last); err != nil {
 			return fmt.Errorf("creating the read cursor of %s: %w", channel, err)
 		}
 	}
