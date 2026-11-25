@@ -16,11 +16,12 @@ design: which commands exist, how they reach the broker, and the recovery path.
 | Broker | `init`, `register`, `channel create`, `channel join` | `--direct`, as the admin users |
 | Agents | `agent list`, `agent remove`, `directory export` | `--direct` (added for the MVP: removal and the copied directory) |
 | Certificates | `cert issue`, `cert sign`, `cert switch` | `--direct` (mTLS phase A, [access control](access-control.md)) |
-| Enrollment | `ca list`, `ca sign`, `ca reject`, `ca fingerprint`, `ca review`, `enroll init`, `enroll autosign` | Through busd as `control-admin` (decision 41) |
+| Enrollment, asks busd | `ca list`, `ca sign`, `ca reject`, `ca review` | Through busd as `control-admin` (decision 41) |
+| Enrollment, local | `ca fingerprint`, `enroll autosign`; `enroll init` also changes the authorization file and reloads locally | Files in the config directory; no busd |
 | Monitor | `monitor password` | Local file ([monitor](monitor-and-api.md)) |
 
 `--direct` means the admin credentials of the owner's config directory, acting as `bus-admin` and
-`control-admin` without busd. Of the commands above, only the `ca` group asks busd. `service init`
+`control-admin` without busd. Of the commands above, only `ca list`, `ca sign`, `ca reject` and `ca review` ask busd. `service init`
 and `monitor init` came with decision 42.
 
 ### Planned
@@ -39,7 +40,7 @@ existing CA).
 
 ## The design (planned)
 
-Not built: the commands below exist only in this design.
+Not built. The commands below are either only in this design, or built today and planned to go through busd (`register`, `channel create`, `channel join`, `agent remove`).
 
 - `register <agent-id>` and `register --monitor` (`monitor@<owner>`,
   [monitor](monitor-and-api.md)).
