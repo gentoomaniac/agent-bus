@@ -187,7 +187,8 @@ later.
 *Amended by [30](#30-nats-jetstream-replaces-kafkaredpanda).*
 
 `agent-busctl tls reissue` renews the broker certificate from the existing CA (originally busd's
-too, before decision 30). Part of milestone 7 ([admin CLI](admin-cli.md)).
+too, before decision 30). Part of milestone 7 ([admin CLI](admin-cli.md)). Built as
+`agent-busctl tls broker`.
 
 ### 19. Delivery and recovery
 
