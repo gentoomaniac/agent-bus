@@ -22,6 +22,10 @@ Run these once, in this order:
 6. `agent-busctl --direct register <agent-id>`: one per agent.
 7. `agent-busctl --direct channel join <agent-id> <name>`: group membership (optional).
 
+Every `--direct` command holds a lock on the config directory (`nats/mutations.lock`) while it runs,
+and so does each approval of busd, so they wait for one another; a command that cannot get the lock
+within `--timeout` fails with "another process holds ...".
+
 ## Global flags
 
 Every command takes these.

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
+	"time"
 )
 
 const (
@@ -15,6 +17,8 @@ const (
 	SecretMode = 0o600
 	// PublicMode is for certificates and public keys.
 	PublicMode = 0o644
+
+	lockPollInterval = 25 * time.Millisecond
 )
 
 // Write creates the file with exactly the given mode, and its parent directories with DirMode.
@@ -43,4 +47,32 @@ func Write(path string, data []byte, mode os.FileMode, overwrite bool) error {
 		return err
 	}
 	return file.Close()
+}
+
+// Lock takes an exclusive lock on the file at path, creating it (and its directories) if needed. It
+// waits at most wait for whoever holds it, which can be another process. The lock ends with
+// unlock, or with the process.
+func Lock(path string, wait time.Duration) (unlock func(), err error) {
+	if err := os.MkdirAll(filepath.Dir(path), DirMode); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, SecretMode)
+	if err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			return func() { file.Close() }, nil
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) || time.Now().After(deadline) {
+			file.Close()
+			if errors.Is(err, syscall.EWOULDBLOCK) {
+				return nil, fmt.Errorf("another process holds %s (an approval in busd, or another agent-busctl); try again", path)
+			}
+			return nil, err
+		}
+		time.Sleep(lockPollInterval)
+	}
 }

@@ -119,7 +119,19 @@ func (cli *CLI) brokerAdmin() (*broker.Admin, error) {
 	if err != nil {
 		return nil, err
 	}
-	return broker.NewAdmin(busConn, controlConn, cli.server())
+	// Held until the command ends, so that busd's approvals and other agent-busctl runs do not
+	// interleave with it (Server.LockMutations).
+	unlock, err := cli.server().LockMutations(cli.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	admin, err := broker.NewAdmin(busConn, controlConn, cli.server())
+	if err != nil {
+		unlock()
+		return nil, err
+	}
+	admin.ReleaseOnClose(unlock)
+	return admin, nil
 }
 
 func main() {

@@ -33,6 +33,7 @@ type Admin struct {
 	bus     *session // BUS, as bus-admin
 	control *session // CONTROL, as control-admin
 	server  Server
+	release func() // see ReleaseOnClose
 }
 
 var _ bus.Admin = (*Admin)(nil)
@@ -54,7 +55,13 @@ func NewAdmin(busConn, controlConn Connection, server Server) (*Admin, error) {
 func (admin *Admin) Close() {
 	admin.bus.close()
 	admin.control.close()
+	if admin.release != nil {
+		admin.release()
+	}
 }
+
+// ReleaseOnClose makes Close call release, for a lock the caller holds as long as it administers.
+func (admin *Admin) ReleaseOnClose(release func()) { admin.release = release }
 
 func (admin *Admin) Setup(ctx context.Context) error {
 	_, err := admin.bus.stream.CreateOrUpdateStream(ctx, jetstream.StreamConfig{

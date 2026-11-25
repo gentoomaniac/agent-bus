@@ -27,6 +27,7 @@ const (
 	controlAuthFile = "control-auth.conf"
 	pidFile         = "nats-server.pid"
 	lockFile        = "auth.lock"
+	mutationsFile   = "mutations.lock"
 
 	reloadPollInterval = 50 * time.Millisecond
 )
@@ -208,6 +209,16 @@ func (server Server) lock() (unlock func(), err error) {
 		return nil, err
 	}
 	return func() { lock.Close() }, nil
+}
+
+// LockMutations takes the lock that every change to the registry and the accounts holds from its
+// first check to its last step: busd's approval and agent-busctl --direct, which are separate
+// processes. Without it an approval can recreate the account of an agent that was removed after
+// the approval looked. The lock is released by unlock or when the process ends. It waits at most
+// wait for the process that holds it. The authorization-file lock of UpdateAuth is taken inside
+// it, never the other way round.
+func (server Server) LockMutations(wait time.Duration) (unlock func(), err error) {
+	return files.Lock(server.path(mutationsFile), wait)
 }
 
 // testConfig runs `nats-server -t` on a copy of the server's configuration in which the

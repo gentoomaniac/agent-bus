@@ -370,6 +370,46 @@ func TestEnrollment(t *testing.T) {
 		}
 	})
 
+	t.Run("an approval and agent-busctl --direct never run at the same time", func(t *testing.T) {
+		e := h.startEnrollee(t, agentBus, "locked@carol", "--waitforcert", "--ca-fingerprint", h.caFingerprint(t))
+		code := h.pendingCode(t, "locked@carol")
+
+		unlock, err := h.server.LockMutations(time.Second) // what a running agent-busctl --direct holds
+		if err != nil {
+			t.Fatal(err)
+		}
+		type result struct {
+			output string
+			err    error
+		}
+		signed := make(chan result, 1)
+		go func() {
+			output, err := h.tryRun(h.agentBusctl, "ca", "sign", code)
+			signed <- result{output, err}
+		}()
+		if output, err := h.tryRun(h.agentBusctl, "--timeout", "1s", "--direct", "agent", "list"); err == nil || !strings.Contains(output, "another process holds") {
+			t.Errorf("agent-busctl --direct ran while the lock was held: %v\n%s", err, output)
+		}
+		select {
+		case r := <-signed:
+			t.Fatalf("the approval ran while the lock was held: %v\n%s", r.err, r.output)
+		case <-time.After(1500 * time.Millisecond):
+		}
+
+		unlock()
+		select {
+		case r := <-signed:
+			if r.err != nil {
+				t.Fatalf("the approval after the release: %v\n%s", r.err, r.output)
+			}
+		case <-time.After(20 * time.Second):
+			t.Fatal("the approval never ran after the release")
+		}
+		if err := e.wait(t); err != nil {
+			t.Fatalf("%v\n%s", err, e.output)
+		}
+	})
+
 	t.Run("an enrollee never receives a certificate for an ID the owner did not approve for it", func(t *testing.T) {
 		spy := h.connectRaw(t, broker.Connection{User: enroll.EnrollUser, Password: password}, enroll.InboxPrefix+".spy")
 		overheard := make(chan *nats.Msg, 64)

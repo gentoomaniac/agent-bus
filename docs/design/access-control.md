@@ -192,7 +192,13 @@ What was built, and where it differs from the plan above it:
   registered *with another key* is flagged `replaces` and needs an explicit confirmation (`ca sign
   --replace`, a yes in the screen); then its current key is revoked and the new one added. Steps: the
   registry record, the read cursors of DM and `general`, the account in certificate mode (one confirmed
-  reload), `<config>/directory` updated; each repeatable, so a failed approval stays pending.
+  reload), `<config>/directory` updated; each repeatable, so a failed approval stays pending. An
+  approval holds the config directory's `nats/mutations.lock` (flock) from the check of the registry
+  to the last step, and so does every `agent-busctl --direct` command for its whole run, so a
+  removal and an approval, which are separate processes, never interleave: an approval that
+  waited for a removal sees the tombstone and refuses, instead of recreating the account. A
+  waiter gives up after its timeout (`--timeout`, one minute for busd) with "another process holds
+  ...". The authorization-file lock of each reload is taken inside it.
 - **Autosign** (off by default): `agent-busctl enroll autosign` writes `enroll/autosign`, which busd reads on
   every request; a request with the matching secret (constant-time compare) is approved at once, never
   for an ID that would be replaced, and logged. An empty or missing file means off.

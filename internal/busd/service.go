@@ -56,12 +56,15 @@ type Registry interface {
 
 // Config is what a Service is made of.
 type Config struct {
-	Registry     Registry
-	CA           *tlsinit.CA
-	CACertPEM    []byte // handed to approved agents, who compare it with the CA they trust
-	ConfigDir    string // holds enroll/ (state, autosign secret) and directory/
-	CertValidity time.Duration
-	Now          func() time.Time // default time.Now
+	Registry  Registry
+	CA        *tlsinit.CA
+	CACertPEM []byte // handed to approved agents, who compare it with the CA they trust
+	ConfigDir string // holds enroll/ (state, autosign secret) and directory/
+	// LockMutations takes the lock shared with agent-busctl --direct for as long as an approval
+	// changes the registry and the accounts. Nil: no lock, for tests.
+	LockMutations func() (unlock func(), err error)
+	CertValidity  time.Duration
+	Now           func() time.Time // default time.Now
 }
 
 // Service is the enrollment and approval logic. One mutex serialises everything, a certificate
@@ -371,7 +374,15 @@ func (service *Service) findPending(ref string) (*entry, error) {
 // certificate is built from the approved agent ID and the CSR's public key alone. Every step can
 // be repeated, so a failure leaves the request pending and the owner approves again.
 func (service *Service) approve(ctx context.Context, request *entry, replace bool, how string) (string, error) {
+	if service.config.LockMutations != nil {
+		unlock, err := service.config.LockMutations()
+		if err != nil {
+			return "", err
+		}
+		defer unlock()
+	}
 	registry := service.config.Registry
+	// Classified under the lock: an agent removed meanwhile has its tombstone by now, and is refused.
 	identity, err := service.classify(ctx, request.verified)
 	if err != nil {
 		return "", err

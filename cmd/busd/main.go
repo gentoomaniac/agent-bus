@@ -91,13 +91,17 @@ func (cli *CLI) Run() error {
 	if natsServer == "" {
 		natsServer = filepath.Join(cli.ConfigDir, "bin", "nats-server")
 	}
-	admin, err := broker.NewAdmin(busConn, controlConn, broker.NewServer(cli.ConfigDir, natsServer, cli.MonitorURL))
+	server := broker.NewServer(cli.ConfigDir, natsServer, cli.MonitorURL)
+	admin, err := broker.NewAdmin(busConn, controlConn, server)
 	if err != nil {
 		return err
 	}
 	defer admin.Close()
 
-	service, err := busd.New(busd.Config{Registry: admin, CA: ca, CACertPEM: caPEM, ConfigDir: cli.ConfigDir, CertValidity: cli.CertValidity})
+	service, err := busd.New(busd.Config{
+		Registry: admin, CA: ca, CACertPEM: caPEM, ConfigDir: cli.ConfigDir, CertValidity: cli.CertValidity,
+		LockMutations: func() (func(), error) { return server.LockMutations(handlerTimeout) },
+	})
 	if err != nil {
 		return err
 	}
