@@ -145,6 +145,11 @@
   .meta.slim { position: absolute; left: 0; top: 0; opacity: 0; }
   .message:hover .meta.slim { opacity: 1; }
   .message.grouped:hover { background: var(--hover); }
+  /* The raw message button sits at the row's right edge, for grouped rows too. Hidden by opacity so the keyboard still reaches it. */
+  button.raw-button { all: unset; position: absolute; right: 0; top: 2px; cursor: pointer; opacity: 0; padding: 0 4px; font: var(--font-s) ui-monospace, monospace; color: var(--muted); border-radius: 4px; }
+  .message:hover button.raw-button, .message:focus-within button.raw-button { opacity: 1; }
+  button.raw-button:focus-visible { outline: 2px solid var(--accent); }
+  @media (hover: none) { button.raw-button { opacity: .6; } }
   .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
   .meta > * { white-space: nowrap; }
   .meta > .cut { max-width: min(30ch, 100%); }
@@ -227,6 +232,11 @@
   #theme-preview .side .unread { display: inline-block; margin-left: 6px; }
   #theme-preview .main { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 10px; padding: 8px 10px; align-content: start; }
   #theme-preview .link { color: var(--accent); text-decoration: underline; }
+  #raw-dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0; width: min(760px, 94vw); max-height: 90vh; }
+  #raw-dialog::backdrop { background: rgb(0 0 0 / .5); }
+  #raw-dialog .settings-box { display: flex; flex-direction: column; max-height: calc(90vh - 20px); }
+  #raw-facts { margin: 6px 0 0; font-size: var(--font-s); color: var(--muted); overflow-wrap: anywhere; }
+  #raw-json { flex: 1; overflow: auto; margin: 8px 0 0; padding: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font: var(--font-s)/1.4 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
   #settings-json { font: var(--font-s)/1.4 ui-monospace, monospace; min-height: 90px; margin-top: 6px; }
   #settings-note { font-size: var(--font-s); min-height: 1.4em; margin-top: 4px; }
   .settings-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -338,6 +348,19 @@
       </div>
       <div id="settings-note" role="status"></div>
     </fieldset>
+  </div>
+</dialog>
+<dialog id="raw-dialog" aria-labelledby="raw-title">
+  <div class="settings-box">
+    <div class="settings-head">
+      <h1 id="raw-title">Raw message</h1>
+      <span class="settings-actions">
+        <button class="toggle" id="copy-raw" type="button">Copy</button>
+        <button class="toggle" id="close-raw" type="button">Close</button>
+      </span>
+    </div>
+    <p id="raw-facts" role="status"></p>
+    <pre id="raw-json" tabindex="0"></pre>
   </div>
 </dialog>
 <script>
@@ -1311,6 +1334,7 @@ function renderMessage(message, grouped, depth, orphanOf, thread) {
   return el("div", attributes,
     grouped ? el("span", { class: "avatar-gap" }) : avatarFor(message.from),
     el("div", { class: "body" },
+      el("button", { class: "raw-button", type: "button", title: "Raw message", "aria-label": "Raw message", "aria-haspopup": "dialog", onclick: () => showRawMessage(message) }, "{ }"),
       ...(orphanOf ? [el("div", { class: "reply-to", title: orphanOf }, "\u21b3 reply to " + orphanOf.slice(-8))] : []),
       header,
       ...(targets.length ? [el("div", { class: "targets-row" }, ...targets)] : []),
@@ -1318,6 +1342,39 @@ function renderMessage(message, grouped, depth, orphanOf, thread) {
       ...(message.text ? [el("div", { class: "text" }, message.text)] : []),
       ...(message.reason ? [el("div", { class: "reason" }, message.reason)] : [])));
 }
+
+// The signed record as the monitor stored it, in a dialog. Its text is set as text only.
+async function showRawMessage(message) {
+  $("raw-facts").textContent = "Loading...";
+  $("raw-json").textContent = "";
+  $("copy-raw").textContent = "Copy";
+  if (!$("raw-dialog").open) $("raw-dialog").showModal();
+  try {
+    const answer = await api(`/api/v1/messages/raw?channel=${encodeURIComponent(message.channel)}&sequence=${message.sequence}`);
+    $("raw-facts").textContent = [answer.channel, "#" + answer.sequence, answer.status, answer.reason, answer.size + " bytes"].filter(Boolean).join(" \u00b7 ");
+    $("raw-json").textContent = answer.raw === undefined ? answer.raw_text : JSON.stringify(answer.raw, null, 2);
+  } catch (error) {
+    $("raw-facts").textContent = "Could not load the raw message: " + error.message;
+  }
+}
+
+async function copyRawMessage() {
+  const text = $("raw-json").textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    $("copy-raw").textContent = "Copied";
+  } catch (error) {
+    const range = document.createRange();
+    range.selectNodeContents($("raw-json"));
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    $("copy-raw").textContent = "Selected, press Ctrl+C";
+  }
+}
+
+$("copy-raw").addEventListener("click", copyRawMessage);
+$("close-raw").addEventListener("click", () => $("raw-dialog").close());
+$("raw-dialog").addEventListener("click", (event) => { if (event.target === $("raw-dialog")) $("raw-dialog").close(); });
 
 // One chip per message type, with how many of the open channel's messages have it. No chip
 // pressed means every type is shown, and so does the "all" chip.

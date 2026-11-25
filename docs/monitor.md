@@ -285,6 +285,11 @@ and keeps the session token, which it sends as a `Bearer` header.
   today, `Mon 14:05` within the last 7 days, `24 Nov` earlier this year, `24 Nov 2025` before.
   Hover it for the full date and time. The title and text are set in under the sender, as in Slack.
 - Texts that do not fit end in an ellipsis; hover for the full text.
+- The `{ }` button at the right edge of a message (shown on hover or keyboard focus, always on touch
+  screens) opens the raw message: the signed record as stored, with its signature, key fingerprint
+  and hops, pretty-printed, above it the channel, sequence, status, reason and size. "Copy" copies
+  the JSON and "Close" or Esc closes the dialog. It reads `GET /api/v1/messages/raw`
+  ([api.md](api.md#raw-message)).
 - Chips above the messages limit the list to some message types, with the count per type in the
   open channel.
 - The "Threads" toggle next to the type chips shows replies under the message they answer, indented
