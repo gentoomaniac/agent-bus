@@ -1,43 +1,60 @@
 # Running the central components with Podman
 
 The same image as [docker.md](docker.md), started with plain `podman` commands. Use this when you
-have Podman but no compose provider (`podman compose` / `docker compose` not installed). Every step
-below was run as written on Podman 6.1 (rootless).
+have Podman but no compose provider (`podman compose` / `docker compose` not installed). All state
+lives in plain folders on the host, mounted into the containers (bind mounts): you can look at it,
+back it up and delete it with `rm -rf`. The [README](../README.md#quick-start) has the short
+version of sections 1 to 6; every step here was run as written on Podman 6.1 (rootless).
 
-Placeholders: `<owner>` is your owner name in agent IDs (e.g. `gentoomaniac`), `<broker-host>` is
-the name or IP other machines use to reach this one.
+Placeholders: `<owner>` is your owner name in agent IDs (lowercase, e.g. `gentoomaniac`),
+`<broker-host>` is the name or IP other machines use to reach this one.
 
 ## 1. Build or pull the image
 
 ```sh
 make image                        # builds agent-messenger:dev with podman (docker if its daemon runs)
-IMG=agent-messenger:dev           # or ghcr.io/gentoomaniac/agent-messenger:latest after a release
 ```
 
-## 2. Volumes and one-time setup
+The image runs as uid 10001. A bind-mounted folder keeps its host owner, so every `podman run`
+below carries `$U`, which maps your own user to uid 10001 and lets the container write your
+folders. It must be on the one-off containers too, or the files end up owned by another uid. Set
+both variables in every shell you use for this guide:
 
 ```sh
-podman volume create agent-bus-config
-podman volume create agent-bus-data
-podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost --san <broker-host>
-podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
+IMG=agent-messenger:dev           # or ghcr.io/gentoomaniac/agent-messenger:<version> after a release
+U="--userns=keep-id:uid=10001,gid=10001"
 ```
+
+## 2. Folders and one-time setup
+
+```sh
+mkdir -p ~/agent-bus/{config,data,monitor-config}
+podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG tls init --san localhost --san <broker-host>
+podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG admin init
+```
+
+`config` holds the certificates, the logins and every agent's key (never share it), `data` the
+messages, `monitor-config` the monitor's own, smaller config (section 6).
 
 `tls init` must name every host name agents use to reach the broker (`--san`, repeatable). A name
 added later needs only `agent-busctl tls broker --san ...` and a broker restart: the CA stays.
 
+Named volumes (`podman volume create agent-bus-config`, `-v agent-bus-config:/config`, no `$U`)
+work as well, but their files are hidden in Podman's storage and every step that copies a file
+needs a one-off container. The rest of this guide assumes folders.
+
 ## 3. Start the broker
 
 ```sh
-podman run -d --name agent-bus --network pasta \
+podman run -d --name agent-bus --network pasta $U \
   -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
-  -v agent-bus-config:/config -v agent-bus-data:/data \
-  "${IMG:?set IMG first, see step 1}"
+  -v ~/agent-bus/config:/config -v ~/agent-bus/data:/data $IMG
 podman logs agent-bus             # "Server is ready"
 ```
 
 Rootless Podman's default network may fail on some systems (`netavark: create veth pair`);
 `--network pasta` avoids that. Port 8080 is published on the host's loopback only, for the monitor.
+`~/agent-bus/start.sh` does this and the `init` of section 4 (see section 7).
 
 ## 4. Set up the bus
 
@@ -65,17 +82,23 @@ agent-busctl --direct agent list
 
 ## 5. Give an agent machine its files
 
-Each agent machine needs `ca.pem`, `directory/` and its own agent folder from the config volume
+Each agent machine needs `ca.pem`, `directory/` and its own agent folder from `~/agent-bus/config`
 (this copies the agent's key. To keep keys on the machine that uses them, enroll the machine instead: [section 9](#9-enrolling-a-new-machine)).
+
+On this machine copy them:
 
 ```sh
 mkdir -p ~/.config/agent-bus
-podman run --rm -v agent-bus-config:/config:ro --entrypoint tar "${IMG:?set IMG first, see step 1}" \
-  -C /config -cf - ca.pem directory lib-x@<owner> | tar -xf - -C ~/.config/agent-bus
+cp -r ~/agent-bus/config/{ca.pem,directory,lib-x@<owner>} ~/.config/agent-bus/
 ```
 
-On another machine, run the same `podman run … tar -cf -` on the broker host and pipe it over SSH:
-`… | ssh <machine> 'mkdir -p ~/.config/agent-bus && tar -xf - -C ~/.config/agent-bus'`.
+To another machine, stream them over SSH:
+
+```sh
+tar -C ~/agent-bus/config -cf - ca.pem directory lib-x@<owner> \
+  | ssh <machine> 'mkdir -p ~/.config/agent-bus && tar -xf - -C ~/.config/agent-bus'
+```
+
 Repeat the `directory` part after every `register`, `channel join` or `agent remove`.
 
 Agents on this machine reach the broker at the default `localhost:4222`; on other machines set
@@ -84,26 +107,24 @@ Agents on this machine reach the broker at the default `localhost:4222`; on othe
 ## 5a. Certificate login (optional)
 
 Agents and the admin tools can log in with a client certificate instead of a password. The broker
-has a second port for it, `4223` (published in step 3 as `-p 4223:4223`). Nothing changes for what
+has a second port for it, `4223` (published in section 3 as `-p 4223:4223`). Nothing changes for what
 you already run: password logins stay on `4222`, and a certificate login is a per-agent switch.
 
-**An existing setup** started without `-p 4223:4223` keeps working. To use certificates, recreate
-the broker container with the extra `-p 4223:4223` (same volumes; `podman rm -f --depend agent-bus`,
-then the `podman run` of step 3). `--depend` also removes the monitor; start it again with step 6.
-The image reads `ca.pem` from the config volume at start, where
-`tls init` put it. Then, in this order:
+**A broker** started without `-p 4223:4223` keeps working. To use certificates, recreate
+the broker container with the extra `-p 4223:4223` (same folders; `podman rm -f --depend agent-bus`,
+then the `podman run` of section 3). `--depend` also removes the monitor; start it again with
+section 6. The image reads `ca.pem` from the config folder at start, where `tls init` put it.
+Then, in this order:
 
-1. Admin users first. The tools switch at once (the monitor does not log in as them, see step 6;
+1. Admin users first. The tools switch at once (the monitor does not log in as them, see section 6;
    busd does until `service init`, and needs `podman exec agent-bus pkill busd` to read the new login):
    ```sh
    agent-busctl --direct cert issue --admin
    ```
-2. Per agent, issue and switch, then copy the files to the agent's machine:
+2. Per agent, issue and switch, then copy the files to the agent's machine (as in section 5):
    ```sh
    agent-busctl --direct cert issue lib-x@<owner> --switch
-   podman run --rm -v agent-bus-config:/config:ro --entrypoint tar "${IMG:?set IMG first, see step 1}" \
-     -C /config -cf - lib-x@<owner>/client.pem lib-x@<owner>/client.key \
-     | tar -xf - -C ~/.config/agent-bus
+   cp ~/agent-bus/config/lib-x@<owner>/client.{pem,key} ~/.config/agent-bus/lib-x@<owner>/
    ```
    Restart the agent's `agent-bus`. It finds `client.pem` and picks certificate login by itself,
    on port `4223` of the `--broker` host (`BUS_MAPPED_PORT` if you published another one). Until
@@ -122,12 +143,12 @@ users: `agent-busctl --direct cert switch --admin --password`. This works
 from any half-finished `cert issue --admin` as well; that command can also simply be run again.
 
 Every command that changes access runs in the broker container, as in this guide (`podman exec
-agent-bus`). The monitor container only reads the volume and is never asked to reload
+agent-bus`). The monitor container only reads its own folder and is never asked to reload
 ([broker.md](broker.md#reloads)).
 
 ## 6. The monitor
 
-First set the monitor's password. It is stored as a hash on the config volume (use `-it` to be
+First set the monitor's password. It is stored as a hash in the config folder (use `-it` to be
 asked, or pipe it in):
 
 ```sh
@@ -135,91 +156,57 @@ podman exec -it agent-bus agent-busctl monitor password
 # or: printf '%s\n' 'a long password' | podman exec -i agent-bus agent-busctl monitor password
 ```
 
-On a broker volume from before busd, run `agent-busctl service init` first and restart the
-broker (see step 9, "An existing setup"); `monitor init` stops without the monitor's logins.
+A broker folder from before busd needs `agent-busctl service init` and a restart of the broker
+first (section 9, "An existing setup"); `monitor init` stops without the monitor's logins.
 
-The monitor gets a config volume of its own, with only what it needs: the CA certificate (not its
+The monitor gets a config folder of its own, with only what it needs: the CA certificate (not its
 key), the passwords of its two read-only logins (it cannot approve a request or write the registry),
 the web password, the directory snapshot and the key of the agent it sends as. It never sees
-`ca.key`, the admin logins or busd's. `monitor init` fills the volume, from a one-off container
-that reads the broker's volume read-only; run it again after registering or enrolling agents, or
+`ca.key`, the admin logins or busd's. `monitor init` fills the folder, from a one-off container
+that reads the broker's folder read-only; run it again after registering or enrolling agents, or
 after changing the password, to refresh it:
 
 ```sh
-podman volume create agent-bus-monitor-config
-podman run --rm -v agent-bus-config:/config:ro -v agent-bus-monitor-config:/monitor-config \
-  --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" \
-  monitor init /monitor-config --agent monitor@<owner>
+podman run --rm $U -v ~/agent-bus/config:/config:ro -v ~/agent-bus/monitor-config:/monitor-config \
+  --entrypoint agent-busctl $IMG monitor init /monitor-config --agent monitor@<owner>
 ```
 
 The monitor shares the broker's network namespace, so it reaches the broker as `localhost`. Inside
 the container it must listen on `0.0.0.0`, which is not a loopback address: that is what
 `--behind-proxy` is for, and it insists on the password. The host still publishes the port on its
-loopback only (step 3), so no proxy is needed here:
+loopback only (section 3), so no proxy is needed here:
 
 ```sh
-podman run -d --name agent-bus-monitor --network container:agent-bus \
-  -v agent-bus-monitor-config:/config --entrypoint bus-monitor \
+podman run -d --name agent-bus-monitor --network container:agent-bus $U \
+  -v ~/agent-bus/monitor-config:/config --entrypoint bus-monitor \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
-  "${IMG:?set IMG first, see step 1}"
+  $IMG
 ```
 
-**An existing monitor** that mounts `agent-bus-config` keeps working, with the admin logins, and
-logs a warning. It can then approve enrollments and read `ca.key`, which decision 41 rules out, so
-move it once: `service init` and a restart of the broker (see step 9, "An existing setup"), then the
-two commands above, then `podman rm -f agent-bus-monitor` and the `podman run` above with the new
-volume.
-
-Open <http://localhost:8080> (or `127.0.0.1`, on any published port) and log in. The password hash is
-`monitor-web/password.bcrypt` in the monitor's config volume (older versions: `monitor/`; see
+A monitor that still mounts the broker's whole config folder keeps working with the admin logins
+and logs a warning; move it to its own folder as above. Open <http://localhost:8080> (or
+`127.0.0.1`, on any published port) and log in. The password hash is
+`monitor-web/password.bcrypt` in the monitor's config folder (older versions: `monitor/`; see
 [monitor.md](monitor.md#security-it-shows-everything)). Without it the monitor refuses to start (`--behind-proxy needs the web login password`; see
 `podman logs agent-bus-monitor`). Restart it after changing the password. To reach it from other
 machines, put a TLS proxy in front instead ([monitor.md](monitor.md#behind-a-reverse-proxy)).
 
-## 7. A test setup with a bind mount
+## 7. The start scripts
 
-For a trial it is handier to keep the state in plain folders than in volumes: you can look at it,
-copy it and delete it with `rm -rf`. The image runs as uid 10001, so every `podman run` below
-maps your own user to it (`--userns=keep-id`), which lets the container write the folders you own.
-Do steps 2, 3 and 6 like this instead (`IMG` as in step 1; the commands of steps 4, 5 and the
-rest are unchanged, and the alias of step 4 stays):
-
-```sh
-mkdir -p ~/bus-trial/config ~/bus-trial/data ~/bus-trial/monitor-config
-U="--userns=keep-id:uid=10001,gid=10001"
-
-podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" tls init --san localhost
-podman run --rm $U -v ~/bus-trial/config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
-
-podman run -d --name agent-bus --network pasta $U \
-  -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 \
-  -v ~/bus-trial/config:/config -v ~/bus-trial/data:/data \
-  "${IMG:?set IMG first, see step 1}"
-
-podman run --rm $U -v ~/bus-trial/config:/config:ro -v ~/bus-trial/monitor-config:/monitor-config \
-  --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" monitor init /monitor-config --agent monitor@<owner>
-
-podman run -d --name agent-bus-monitor --network container:agent-bus $U \
-  -v ~/bus-trial/monitor-config:/config --entrypoint bus-monitor \
-  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true -e BUS_AGENT=monitor@<owner> \
-  "${IMG:?set IMG first, see step 1}"
-```
-
-`$U` must be on every one of them, the one-off containers too, or the files end up owned by
-another uid. The config folder is then the one the agents read, so on this one machine skip the
-copy of step 5 and point the agents at it:
+For day-to-day starts, `deploy/podman/start.sh` does the `podman run` of section 3 (and the
+`init` of section 4 once the broker is up) and `deploy/podman/monitor.sh` does `monitor init` and
+the monitor's `podman run` of section 6. Copy them into the folder that holds `config/`, `data/`
+and `monitor-config/` (`~/agent-bus` above); they use the folder they are in, or `AGENT_BUS_HOME`.
+They replace an old container of the same name, so they also restart. `IMG` (default
+`agent-messenger:dev`) and `MONITOR_AGENT` (default `monitor@$USER`) come from the environment or
+from an optional file `env` next to them, in shell syntax:
 
 ```sh
-export BUS_CONFIG_DIR=~/bus-trial/config
+cp deploy/podman/start.sh deploy/podman/monitor.sh ~/agent-bus/
+echo 'IMG=ghcr.io/gentoomaniac/agent-messenger:<version>' > ~/agent-bus/env
+~/agent-bus/start.sh
+~/agent-bus/monitor.sh
 ```
-
-Only for this machine: other machines still get their files as in step 5, and the folder holds
-every agent's key, so do not share it.
-
-For day-to-day starts, `deploy/podman/start.sh` and `deploy/podman/monitor.sh` do the last two
-`podman run`s (and `monitor init` before the monitor). Copy them into the folder; they use the
-folder they are in, or `AGENT_BUS_HOME`. `IMG` and `MONITOR_AGENT` come from the environment or
-from a file `env` next to them.
 
 ## 8. Day to day
 
@@ -227,7 +214,7 @@ from a file `env` next to them.
 podman restart agent-bus                      # reload after an upgrade (agents reconnect on their own)
 podman logs -f agent-bus                      # broker log
 podman stop agent-bus-monitor agent-bus       # stop
-podman rm -f --depend agent-bus               # remove the broker and the monitor (volumes keep all state)
+podman rm -f --depend agent-bus               # remove the broker and the monitor (the folders keep all state)
 ```
 
 ## 9. Enrolling a new machine
@@ -237,26 +224,26 @@ copied by hand and the agent's private keys never leave the machine it runs on
 ([design/access-control.md](design/access-control.md), phase B).
 
 **What runs where.** The image has a second program, `busd`. The entrypoint starts it in the broker
-container next to `nats-server` when the config volume has the CA key (`ca.key`, made by `tls init`)
+container next to `nats-server` when the config folder has the CA key (`ca.key`, made by `tls init`)
 and starts it again if it stops; `BUS_BUSD=off` (an environment variable of the container) runs the
 broker without it. busd holds the CA key, keeps the pending requests and makes the changes to the
 authorization file and the reloads, all inside this container. It has no HTTP port. Its log is
 part of `podman logs agent-bus` (lines starting `busd:`). `podman exec agent-bus pkill busd` makes
 the entrypoint start it afresh, which busd needs once after `cert issue --admin` to read the
 admin certificates. The web monitor only shows "N pending enrollments"; it has no CA key (its
-config volume is separate, step 6) and cannot approve.
+config folder is separate, section 6) and cannot approve.
 
 **An existing setup** needs nothing: after the image is updated, busd starts by itself and does
 nothing until `enroll init` ran. One step is recommended: busd and the monitor get logins of their
 own with narrow rights instead of the admin logins (busd logs a warning until then):
 
 ```sh
-podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" service init
+podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG service init
 podman restart agent-bus          # the broker reads the new logins, busd uses its own
 ```
 
-Nothing else changes: a monitor that mounts the broker's volume keeps its admin login until it
-gets a config of its own (step 6). Password logins, certificate logins and the monitor go on as
+Nothing else changes: a monitor that mounts the broker's folder keeps its admin login until it
+gets a config of its own (section 6). Password logins, certificate logins and the monitor go on as
 they were. One optional step, for `--ca-fingerprint` below: a broker certificate made by an older
 `tls init` lacks the CA after it, which is what a new machine reads to check the CA against your
 fingerprint. Without it, copy `ca.pem` to the new machine instead (no step needed), or add the CA once:
@@ -309,7 +296,7 @@ creates its read cursors, switches its account to certificate login with a confi
 the new machine installs the certificate, `ca.pem` and the directory of agents. It then reaches the
 broker on port `4223` as any certificate agent does: publish that port ([5a](#5a-certificate-login-optional)).
 Agents that already run need the new agent in their `directory/` (`agent-busctl --direct
-directory export`, copied as in step 5) until busd serves it over the bus.
+directory export`, copied as in section 5) until busd serves it over the bus.
 
 - **An ID that exists.** A machine that enrolls an ID that is already registered *with its own key*
   (the agent's `key` file is there) only gets a certificate; its password stops working. An ID
@@ -321,7 +308,7 @@ directory export`, copied as in step 5) until busd serves it over the bus.
   autosign --off` ends it. Use it only on a network where whoever knows the secret is trusted.
 - **Limits.** At most 100 requests wait (3 per agent ID), 10 requests a minute are taken, a request
   expires after 24 hours, and a repeated request of the same machine replaces its earlier one.
-  Pending requests survive a restart of busd (`enroll/state.json` in the config volume).
+  Pending requests survive a restart of busd (`enroll/state.json` in the config folder).
 - **The shared password** is only a ticket to ask. Everyone who has it can send requests, see the
   (public) answers meant for others and keep the queue busy, but cannot get a certificate you did
   not approve or touch the bus. Change it with `enroll init --force`.
