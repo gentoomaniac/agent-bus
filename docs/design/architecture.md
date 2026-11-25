@@ -40,9 +40,9 @@ flowchart LR
   browser["Browser"]
   vscode["VS Code extension"]
   adapter <-->|"4222 password, 4223 certificate"| buss
-  busctl -->|"--direct: bus-admin"| buss
-  busctl -->|"--direct: control-admin"| control
-  busctl -->|"ca ...: control-admin"| busd
+  ctl -->|"--direct: bus-admin"| buss
+  ctl -->|"--direct: control-admin"| control
+  ctl -->|"ca ...: control-admin"| busd
   adapter -->|"agent-bus enroll: shared enroll login"| busd
   monitor -->|"reads every channel: monitor-bus"| buss
   monitor -->|"registry, catalogue requests: monitor-control"| busd

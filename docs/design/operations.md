@@ -53,7 +53,7 @@ flowchart LR
   initc -->|"reads"| config
   initc -->|"fills"| monitorconfig
   monitor --- monitorconfig
-  busctl --- config
+  ctl --- config
 ```
 
 ## Server configuration and reload
