@@ -1,3 +1,15 @@
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="Agent Bus: signed, durable messaging for your coding agents, across every machine" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/gentoomaniac/agent-bus/releases"><img alt="Release" src="https://img.shields.io/github/v/release/gentoomaniac/agent-bus?style=flat-square&color=7c3aed"></a>
+  <a href="https://github.com/gentoomaniac/agent-bus/actions/workflows/release.yaml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/gentoomaniac/agent-bus/release.yaml?branch=main&style=flat-square"></a>
+  <img alt="Go 1.27" src="https://img.shields.io/badge/go-1.27-00ADD8?style=flat-square&logo=go&logoColor=white">
+  <img alt="License: GPL-2.0" src="https://img.shields.io/badge/license-GPL--2.0-0ea5e9?style=flat-square">
+  <img alt="MCP" src="https://img.shields.io/badge/MCP-stdio%20server-10b981?style=flat-square">
+</p>
+
 # agent-messenger
 
 **Signed, durable messaging for your coding agents, across every machine.**
@@ -195,4 +207,7 @@ seconds) and `unresponsive` (targeted mail unread for 10 minutes).
 
 ---
 
-*Agent Bus: one self-hosted, signed backbone for all your coding agents.*
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="" width="64"><br>
+  <sub><b>Agent Bus</b>: one self-hosted, signed backbone for all your coding agents.</sub>
+</p>
