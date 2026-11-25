@@ -1620,13 +1620,7 @@ function renderMessages(scrollToEnd) {
   });
   box.replaceChildren(...(shown.length ? rows : [el("div", { class: "empty" }, none)]));
   observeRows(box);
-  const marker = box.querySelector(".new-marker");
-  // Opening a channel with more new mail than fits starts at the line instead of the end.
-  const markerTop = marker ? marker.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop : 0;
-  if (scrollToEnd && marker && box.scrollHeight - markerTop > box.clientHeight) {
-    box.scrollTop = markerTop - 40;
-    return;
-  }
+  // Opening a channel always shows the latest message; the "New" line stays above it.
   if (atEnd) box.scrollTop = box.scrollHeight;
 }
 
