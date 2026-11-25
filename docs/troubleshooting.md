@@ -138,7 +138,10 @@ as `bad certificate`, on a machine whose agent folder has `client.pem` and `clie
 - The certificate is for one agent ID and one CA. Files copied from another agent, or from before a
   `tls init --force`, are refused; issue again. An expired certificate (one year by default) is
   refused: `cert issue` again, copy the files.
-- A removed agent's certificate never works again.
+- A removed agent's certificate never works again, and neither does one that was replaced: `cert
+  issue` again, `cert sign`, `ca sign --replace` or a switch back to the password leave only the
+  newest certificate valid, so a machine with an older `client.pem` is refused until it gets the
+  current one.
 - After `cert switch <agent-id> --password` (rollback) the password is back, but a machine that
   still has `client.pem` and `client.key` keeps trying the certificate: delete both files.
 - A client refuses to start with an error naming `client.pem` and `client.key` when they are not a

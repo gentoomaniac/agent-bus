@@ -2,6 +2,8 @@ package broker
 
 import (
 	"cmp"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"slices"
@@ -73,14 +75,38 @@ const (
 )
 
 // certIdentityScheme starts the one URI SAN of every client certificate, which is also the NATS
-// user name of its entry: agentbus:<role>/<name>, with the agent token or the admin user's name
-// as name. nats-server maps the certificate to the user of that name (verify_and_map).
+// user name of its entry: agentbus:<role>/<name>/<certID>, with the agent token or the admin
+// user's name as name. nats-server maps the certificate to the user of that name
+// (verify_and_map).
+//
+// The certID makes a certificate revocable. nats-server's pinned_certs is not applied to a
+// WebSocket login in v2.15.3, and it has no revocation list, so the only way to take a
+// certificate back is for its identity to name no user. A principal has one entry, which names
+// the certID of its current certificate: issuing another one, replacing the identity, removing it
+// or switching it back to the password rewrites the entry, and every earlier certificate maps to
+// nothing. An entry written before certIDs has none (agentbus:<role>/<name>) and keeps working
+// until its certificate is issued again.
 const certIdentityScheme = "agentbus:"
 
-// certIdentity is the URI SAN, and NATS user name, of a certificate login.
+// certIdentity is the identity a certificate login of the role and name carries, without the
+// certID: what a client checks its certificate against (creds.MatchesIdentity).
 func certIdentity(role authRole, name string) string {
 	return certIdentityScheme + string(role) + "/" + name
 }
+
+// NewCertID makes the ID of a certificate: the one thing that tells it from an earlier one of
+// the same principal.
+func NewCertID() string {
+	raw := make([]byte, 8)
+	if _, err := rand.Read(raw); err != nil {
+		panic(err) // the system's random source is broken
+	}
+	return hex.EncodeToString(raw)
+}
+
+// WithCertID is the URI SAN of the certificate with the given ID, for the principal whose
+// identity is AgentCertIdentity or AdminCertIdentity.
+func WithCertID(identity, certID string) string { return identity + "/" + certID }
 
 // authUser is one entry of an authorization file. name is the agent token or the admin user's
 // name; the NATS user name follows from it and the mode.
@@ -89,13 +115,17 @@ type authUser struct {
 	name         string
 	mode         authMode
 	passwordHash string // modePassword only
+	certID       string // modeCert only: the current certificate; empty for one made before certIDs
 }
 
 func (user authUser) natsName() string {
-	if user.mode == modeCert {
+	if user.mode != modeCert {
+		return user.name
+	}
+	if user.certID == "" {
 		return certIdentity(user.role, user.name)
 	}
-	return user.name
+	return WithCertID(certIdentity(user.role, user.name), user.certID)
 }
 
 // userTable is the users of one authorization file. The file is the only place the password
@@ -158,11 +188,12 @@ func parseUser(natsName, passwordHash string, role authRole) (authUser, error) {
 	if passwordHash != "" {
 		return authUser{role: role, name: natsName, mode: modePassword, passwordHash: passwordHash}, nil
 	}
-	name, found := strings.CutPrefix(natsName, certIdentityScheme+string(role)+"/")
+	rest, found := strings.CutPrefix(natsName, certIdentityScheme+string(role)+"/")
 	if !found {
 		return authUser{}, fmt.Errorf("user %q has no password and is not a certificate identity of role %s", natsName, role)
 	}
-	return authUser{role: role, name: name, mode: modeCert}, nil
+	name, certID, _ := strings.Cut(rest, "/")
+	return authUser{role: role, name: name, mode: modeCert, certID: certID}, nil
 }
 
 // render writes the users of an authorization file, by role and name (admins first). An agent

@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
 	"github.com/nats-io/nats.go"
 )
 
@@ -173,9 +175,13 @@ func TestCertificateLogin(t *testing.T) {
 		caPEM, _ := os.ReadFile(h.caCert)
 		pool.AppendCertsFromPEM(caPEM)
 		secure := nats.Secure(&tls.Config{RootCAs: pool, Certificates: []tls.Certificate{pair}})
+		mappedName, err := creds.ClientCertIdentity(certPath)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for name, option := range map[string]nats.Option{
 			"by certificate alone":      nats.Name("no password"),
-			"by its mapped name":        nats.UserInfo(broker.AgentCertIdentity(alice), "anything"),
+			"by its mapped name":        nats.UserInfo(mappedName, "anything"),
 			"by its token and password": nats.UserInfo(bus.AgentToken(alice), "anything"),
 		} {
 			if conn, err := nats.Connect(h.address, secure, option, nats.NoReconnect(), nats.Timeout(5*time.Second)); err == nil {
@@ -267,4 +273,114 @@ func TestAdminCertificateLogin(t *testing.T) {
 	if has, _ := creds.HasClientCert(creds.AdminDir(h.configDir, broker.BusAdminUser)); has {
 		t.Error("the admin certificate files were not removed by the rollback")
 	}
+}
+
+// copyPair saves a certificate and its key, which the next `cert issue` replaces.
+func copyPair(t *testing.T, certPath, keyPath string) (savedCert, savedKey string) {
+	t.Helper()
+	dir := t.TempDir()
+	savedCert, savedKey = filepath.Join(dir, "c.pem"), filepath.Join(dir, "k.pem")
+	for from, to := range map[string]string{certPath: savedCert, keyPath: savedKey} {
+		data, err := os.ReadFile(from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(to, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return savedCert, savedKey
+}
+
+func (h *harness) expectLogin(t *testing.T, what, certPath, keyPath string, want bool) {
+	t.Helper()
+	conn, err := h.connectMapped(t, certPath, keyPath)
+	if conn != nil {
+		conn.Close()
+	}
+	if (err == nil) != want {
+		t.Errorf("%s: logged in = %v (%v), want %v", what, err == nil, err, want)
+	}
+}
+
+func TestCertificateRevocation(t *testing.T) {
+	h := startBus(t)
+	dir := creds.AgentDir(h.configDir, alice)
+	certPath, keyPath := creds.ClientCertPaths(dir)
+
+	t.Run("a certificate that is issued but not switched is unknown to the broker", func(t *testing.T) {
+		h.run(t, h.agentBusctl, "--direct", "cert", "issue", alice)
+		h.expectLogin(t, "before the switch", certPath, keyPath, false)
+		h.run(t, h.agentBusctl, "--direct", "cert", "switch", alice)
+		h.expectLogin(t, "after the switch", certPath, keyPath, true)
+	})
+
+	t.Run("issuing again replaces the certificate, and the old one cannot log in any more", func(t *testing.T) {
+		oldCert, oldKey := copyPair(t, certPath, keyPath)
+		live, err := h.connectMapped(t, oldCert, oldKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.run(t, h.agentBusctl, "--direct", "cert", "issue", alice)
+		h.expectLogin(t, "the old certificate", oldCert, oldKey, false)
+		h.expectLogin(t, "the new certificate", certPath, keyPath, true)
+		for deadline := time.Now().Add(10 * time.Second); !live.IsClosed() && time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		}
+		if !live.IsClosed() {
+			t.Error("the connection made with the old certificate is still open")
+		}
+	})
+
+	t.Run("a certificate signed from a request replaces the current one", func(t *testing.T) {
+		before, beforeKey := copyPair(t, certPath, keyPath)
+		keyPEM, csrPEM, err := tlsinit.NewClientKeyAndCSR()
+		if err != nil {
+			t.Fatal(err)
+		}
+		work := t.TempDir()
+		csr, signed, key := filepath.Join(work, "csr.pem"), filepath.Join(work, "cert.pem"), filepath.Join(work, "key.pem")
+		for path, data := range map[string][]byte{csr: csrPEM, key: keyPEM} {
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		h.run(t, h.agentBusctl, "--direct", "cert", "sign", alice, "--csr", csr, "--out", signed)
+		h.expectLogin(t, "the signed certificate", signed, key, true)
+		h.expectLogin(t, "the certificate it replaced", before, beforeKey, false)
+	})
+
+	t.Run("an agent that logs in with a password has a signed certificate only once it is switched to it", func(t *testing.T) {
+		keyPEM, csrPEM, err := tlsinit.NewClientKeyAndCSR()
+		if err != nil {
+			t.Fatal(err)
+		}
+		work := t.TempDir()
+		csr, signed, key := filepath.Join(work, "csr.pem"), filepath.Join(work, "cert.pem"), filepath.Join(work, "key.pem")
+		for path, data := range map[string][]byte{csr: csrPEM, key: keyPEM} {
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		h.run(t, h.agentBusctl, "--direct", "cert", "sign", bob, "--csr", csr, "--out", signed)
+		h.expectLogin(t, "bob's certificate before the switch", signed, key, false)
+		h.run(t, h.agentBusctl, "--direct", "cert", "switch", bob, "--cert", signed)
+		h.expectLogin(t, "bob's certificate after the switch", signed, key, true)
+	})
+
+	t.Run("reissuing the admin certificates takes the old ones away", func(t *testing.T) {
+		h.run(t, h.agentBusctl, "--direct", "cert", "issue", "--admin")
+		adminCert, adminKey := creds.ClientCertPaths(creds.AdminDir(h.configDir, broker.ControlAdminUser))
+		oldCert, oldKey := copyPair(t, adminCert, adminKey)
+		h.expectLogin(t, "the first admin certificate", oldCert, oldKey, true)
+		h.run(t, h.agentBusctl, "--direct", "cert", "issue", "--admin")
+		h.expectLogin(t, "the old admin certificate", oldCert, oldKey, false)
+		h.expectLogin(t, "the new admin certificate", adminCert, adminKey, true)
+		h.run(t, h.agentBusctl, "--direct", "agent", "list") // the tools use the new ones
+	})
+
+	t.Run("switching back to the password takes the certificate away", func(t *testing.T) {
+		oldCert, oldKey := copyPair(t, certPath, keyPath)
+		h.run(t, h.agentBusctl, "--direct", "cert", "switch", alice, "--password")
+		h.expectLogin(t, "alice's certificate after the rollback", oldCert, oldKey, false)
+	})
 }

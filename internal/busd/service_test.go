@@ -30,6 +30,7 @@ import (
 type fakeRegistry struct {
 	records  map[string]bus.AgentRecord
 	accounts []string
+	certIDs  map[string]string // the certificate each account logs in with
 	cursors  []string
 	down     error
 }
@@ -49,8 +50,9 @@ func (fake *fakeRegistry) CreateReadCursor(_ context.Context, agentID string, ch
 	fake.cursors = append(fake.cursors, agentID+" "+channel.String())
 	return nil
 }
-func (fake *fakeRegistry) EnsureCertAccount(_ context.Context, agentID string) error {
+func (fake *fakeRegistry) EnsureCertAccount(_ context.Context, agentID, certID string) error {
 	fake.accounts = append(fake.accounts, agentID)
+	fake.certIDs[agentID] = certID
 	return nil
 }
 func (*fakeRegistry) GroupChannels(context.Context) ([]bus.TopicRecord, error) { return nil, nil }
@@ -82,7 +84,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	caPEM, _ := os.ReadFile(filepath.Join(dir, "ca.pem"))
-	f := &fixture{t: t, registry: &fakeRegistry{records: map[string]bus.AgentRecord{}}, dir: dir, now: time.Now()}
+	f := &fixture{t: t, registry: &fakeRegistry{records: map[string]bus.AgentRecord{}, certIDs: map[string]string{}}, dir: dir, now: time.Now()}
 	f.service, err = New(Config{Registry: f.registry, CA: ca, CACertPEM: caPEM, ConfigDir: dir, CertValidity: time.Hour, Now: func() time.Time { return f.now }})
 	if err != nil {
 		t.Fatal(err)
@@ -172,8 +174,9 @@ func TestRequestWaitsForTheOwnerAndSigningIssuesTheCertificate(t *testing.T) {
 		t.Fatalf("status after signing %+v", approved)
 	}
 	cert := parseCert(t, approved.Certificate)
-	if len(cert.URIs) != 1 || cert.URIs[0].String() != "agentbus:agent/lib-x_bob" {
-		t.Errorf("certificate URIs %v", cert.URIs)
+	certID := f.registry.certIDs["lib-x@bob"]
+	if len(cert.URIs) != 1 || certID == "" || cert.URIs[0].String() != "agentbus:agent/lib-x_bob/"+certID {
+		t.Errorf("certificate URIs %v, the account logs in with certificate %q", cert.URIs, certID)
 	}
 	if len(f.registry.accounts) != 1 || f.registry.accounts[0] != "lib-x@bob" || len(f.registry.cursors) != 2 {
 		t.Errorf("accounts %v, cursors %v", f.registry.accounts, f.registry.cursors)
@@ -207,9 +210,10 @@ func TestACertificateIsBuiltFromTheApprovedIDNotFromTheCSR(t *testing.T) {
 		t.Fatal(r.Error)
 	}
 	cert := parseCert(t, f.status(reply.RequestID).Certificate)
-	if len(cert.URIs) != 1 || cert.URIs[0].String() != "agentbus:agent/lib-x_bob" ||
+	want := "agentbus:agent/lib-x_bob/" + f.registry.certIDs["lib-x@bob"]
+	if len(cert.URIs) != 1 || cert.URIs[0].String() != want ||
 		len(cert.DNSNames) != 0 || len(cert.EmailAddresses) != 0 || cert.IsCA ||
-		cert.Subject.CommonName != "agentbus:agent/lib-x_bob" || len(cert.Subject.Organization) != 0 {
+		cert.Subject.CommonName != want || len(cert.Subject.Organization) != 0 {
 		t.Errorf("the certificate took something from the CSR: %+v", cert)
 	}
 	if cert.ExtKeyUsage[0] != x509.ExtKeyUsageClientAuth || len(cert.ExtKeyUsage) != 1 {

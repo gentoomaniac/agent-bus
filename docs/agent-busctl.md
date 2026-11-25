@@ -222,14 +222,18 @@ are signed by the bus CA (`ca.key` in the config directory, which never leaves i
 `cert issue <agent-id>` creates a key and a certificate for a registered agent and writes
 `client.pem` and `client.key` (0644, 0600) into `<config-dir>/<agent-id>/`. The certificate is
 built from the agent ID alone: client authentication only, not a CA, valid for one year
-(`--validity`), with exactly one URI SAN, `agentbus:agent/<agent-token>` (admin users:
-`agentbus:admin/bus-admin` and `agentbus:admin/control-admin`). nats-server maps that URI to the
-user of the same name. It does not log in until `cert switch` (or `--switch`) tells the broker to
-accept it. Run it again to renew. A removed ID gets none. Renewing does not revoke the old
-certificate: it stays valid until it expires, until `agent remove`, or until the agent is switched
-back to password (the mapping is per agent, not per certificate). The pair is written atomically
-(both files, or the old pair stays); a directory with only one of the two files is an error, not a
-silent fall back to the password.
+(`--validity`), with exactly one URI SAN, `agentbus:agent/<agent-token>/<certID>` (admin users:
+`agentbus:admin/bus-admin/<certID>` and `agentbus:admin/control-admin/<certID>`), where the certID is
+random and new for every certificate. nats-server maps that URI to the user of the same name, and
+the authorization file names one certID per agent. The certificate does not log in until `cert
+switch` (or `--switch`) tells the broker to accept it. Run it again to renew: an agent that logs in
+with a certificate already is switched to the new one at once (a running `agent-bus` on this machine
+picks it up when it reconnects), and **the old certificate stops working**, as does one replaced by
+`cert sign --switch`, an approval with `--replace` or `agent remove`; switching back to the password
+takes the current one away too. (A certificate made before certIDs, with the URI SAN
+`agentbus:agent/<agent-token>`, works until the next issue.) A removed ID gets none. The pair is
+written atomically (both files, or the old pair stays); a directory with only one of the two files is
+an error, not a silent fall back to the password.
 
 | Flag         | Meaning                                                                       |
 |--------------|-------------------------------------------------------------------------------|
@@ -242,7 +246,7 @@ the pair as `client.pem.new` and `client.key.new`, switches the server entry and
 confirmed reload, and only then renames the pair to `client.pem` and `client.key`. If a step fails,
 the error names the admin and the tools keep the login that worked until then (the password). Run
 the same command again to resume; the next `cert issue --admin` or `cert switch --admin
---password` first activates a staged pair of an admin whom `nats/auth.conf` already maps to a
+--password` first activates a staged pair of an admin whom `nats/auth.conf` already maps to that
 certificate. If the server did not confirm a reload, restart it (or run the command again) so it
 reads the file. A staged pair is only activated, and a client only uses a certificate, after it is
 checked: the files form a pair, the certificate is for that identity and it is valid now. A broken
@@ -261,25 +265,27 @@ another machine, copy both files into its folder on that machine, then switch.
 
 ### cert sign
 
-`cert sign <agent-id> --csr <file> [--out <file>]` signs a certificate request made on the agent's
+`cert sign <agent-id> --csr <file> [--out <file>] [--switch]` signs a certificate request made on the agent's
 machine (`openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout
 client.key -out client.csr -subj /CN=x`), so the key never leaves it. The request's signature is
 checked and only its public key is used: names, usages and CA rights in it are ignored. The
 certificate goes to standard output or `--out`; put it into the agent's folder as `client.pem`,
-next to `client.key`, then `cert switch --force` (nothing was issued in this config directory).
+next to `client.key`. The broker accepts it once `--switch` was given, the agent logged in with a
+certificate already (it is then switched to this one, and the old one stops working), or `cert switch
+<agent-id> --cert <that file>` ran.
 
 ### cert switch
 
 `cert switch <agent-id>` moves an agent from its password to certificate login in `auth.conf`
 and returns once the server has confirmed the reload; the agent's connections close and it logs in
 with the certificate. Its ID, signing key, consumers and registry record stay. Its old password no
-longer works. It refuses when this config directory holds no certificate for the agent (`cert issue` makes one); for a certificate made on the agent's machine with `cert sign`, pass `--force`, and copy the files before the agent restarts.
+longer works. It switches to the certificate in the agent's folder here, which `cert issue` made, or to the one in `--cert <file>` (made with `cert sign`); it refuses when there is none, or the certificate is for another agent. Every other certificate of the agent stops working. Copy the files before the agent restarts.
 
 `cert switch <agent-id> --password` is the rollback: the agent gets its password back (the one in
 its folder, or a new one if the file is gone) and the certificate files in this config directory
 are deleted. Delete `client.pem` and `client.key` in the agent's folder on every other machine too,
 or `agent-bus` there keeps trying the certificate. The certificate itself stays valid until it
-expires, but nothing maps it any more. `cert switch --admin --password` does the same for the two
+expires, but nothing maps it any more, and it is refused at login. `cert switch --admin --password` does the same for the two
 admin users.
 
 `agent remove` deletes the agent's certificate mapping together with its account, and the ID is

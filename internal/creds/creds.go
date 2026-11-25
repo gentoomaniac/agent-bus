@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log"
@@ -92,9 +93,42 @@ func exists(path string) (bool, error) {
 	return err == nil, err
 }
 
-// ValidateClientCert checks that the pair loads, that the certificate is for identity (its one
-// URI SAN) and that it is valid now. A client must not start with a pair that cannot log in as
-// that identity: it would fail at the server with a message that names nothing.
+// MatchesIdentity says whether a certificate's URI SAN belongs to the principal: it is the
+// principal's identity, or the identity followed by "/" and a certID (broker.WithCertID).
+func MatchesIdentity(uri, identity string) bool {
+	return uri == identity || strings.HasPrefix(uri, identity+"/") && len(uri) > len(identity)+1
+}
+
+// CertID is the part of a URI SAN after the principal's identity: the ID of the certificate, empty
+// for one made before certIDs.
+func CertID(uri, identity string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(uri, identity), "/")
+}
+
+// ClientCertIdentity is the one URI SAN of the certificate in the PEM file.
+func ClientCertIdentity(certPath string) (string, error) {
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return "", err
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return "", fmt.Errorf("%s holds no PEM certificate", certPath)
+	}
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", certPath, err)
+	}
+	if len(leaf.URIs) != 1 {
+		return "", fmt.Errorf("%s has %d URI names, want one", certPath, len(leaf.URIs))
+	}
+	return leaf.URIs[0].String(), nil
+}
+
+// ValidateClientCert checks that the pair loads, that the certificate is for the principal with
+// the given identity (its one URI SAN, see MatchesIdentity) and that it is valid now. A client must
+// not start with a pair that cannot log in as that principal: it would fail at the server with a
+// message that names nothing.
 func ValidateClientCert(certPath, keyPath, identity string) error {
 	fail := func(reason string) error {
 		return fmt.Errorf("the client certificate %s and %s %s; issue it again with `agent-busctl --direct cert issue`, "+
@@ -108,7 +142,7 @@ func ValidateClientCert(certPath, keyPath, identity string) error {
 	if err != nil {
 		return fail("cannot be read (" + err.Error() + ")")
 	}
-	if len(leaf.URIs) != 1 || leaf.URIs[0].String() != identity {
+	if len(leaf.URIs) != 1 || !MatchesIdentity(leaf.URIs[0].String(), identity) {
 		return fail("is not for " + identity)
 	}
 	if now := time.Now(); now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
@@ -135,6 +169,12 @@ func StageClientCert(dir string, certPEM, keyPEM []byte) error {
 // HasStagedClientCert says whether a staged pair waits in dir.
 func HasStagedClientCert(dir string) (bool, error) {
 	return hasPair(stagedClientCertPaths(dir))
+}
+
+// StagedClientCertIdentity is ClientCertIdentity of the staged certificate.
+func StagedClientCertIdentity(dir string) (string, error) {
+	stagedCert, _ := stagedClientCertPaths(dir)
+	return ClientCertIdentity(stagedCert)
 }
 
 // ValidateStagedClientCert is ValidateClientCert for the staged pair.

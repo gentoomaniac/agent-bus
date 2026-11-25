@@ -109,6 +109,11 @@ the `podman run` of step 3). The image reads `ca.pem` from the config volume at 
 3. Check it with `agent-busctl --direct agent list` and a message. Only then forget the agent's password
    file; it is harmless to keep.
 
+**Renewing and revoking.** `cert issue` again (or an enrollment with `--replace`) replaces an
+agent's certificate, and the old one stops working at once: copy the new files to the agent's
+machine promptly. A certificate you issued before this release keeps working until you issue it
+again; nothing needs doing for an existing setup.
+
 **Rollback:** `agent-busctl --direct cert switch lib-x@<owner> --password`, delete
 `client.pem` and `client.key` in the agent's folder on its machine, restart it. For the admin
 users: `agent-busctl --direct cert switch --admin --password`. This works

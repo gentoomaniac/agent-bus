@@ -199,6 +199,9 @@ func TestEnrollment(t *testing.T) {
 	agentBus := h.buildAgentBus(t)
 	password, _ := creds.ReadPassword(filepath.Join(h.configDir, "enroll"))
 
+	testRun := t                           // outlives the subtests, whose temporary files are removed when each ends
+	var firstCertPath, firstKeyPath string // the certificate that enrolled carol first, for the replacement below
+
 	t.Run("a new machine enrolls with the owner's CA fingerprint, is approved and talks to an existing agent", func(t *testing.T) {
 		e := h.startEnrollee(t, agentBus, carol, "--waitforcert", "--ca-fingerprint", h.caFingerprint(t))
 		code := h.pendingCode(t, carol)
@@ -215,7 +218,7 @@ func TestEnrollment(t *testing.T) {
 
 		agentDir := creds.AgentDir(e.configDir, carol)
 		certPath, keyPath := creds.ClientCertPaths(agentDir)
-		if uris := certURIs(t, certPath); len(uris) != 1 || uris[0] != "agentbus:agent/newcomer_carol" {
+		if uris := certURIs(t, certPath); len(uris) != 1 || !creds.MatchesIdentity(uris[0], "agentbus:agent/newcomer_carol") || uris[0] == "agentbus:agent/newcomer_carol" {
 			t.Errorf("the certificate names %v", uris)
 		}
 		if err := creds.ValidateClientCert(certPath, keyPath, broker.AgentCertIdentity(carol)); err != nil {
@@ -233,6 +236,7 @@ func TestEnrollment(t *testing.T) {
 			t.Error("the pending request file is left behind")
 		}
 
+		firstCertPath, firstKeyPath = copyPair(testRun, certPath, keyPath)
 		carolSession := h.agentAt(t, e.configDir, carol)
 		aliceSession, _ := h.startAdapter(t, alice)
 		if _, err := aliceSession.Send(timeout(t), carol, say("welcome, newcomer")); err != nil {
@@ -341,6 +345,31 @@ func TestEnrollment(t *testing.T) {
 		}
 	})
 
+	t.Run("enrolling an ID again with --replace takes the old machine's certificate away", func(t *testing.T) {
+		oldCert, oldKey := firstCertPath, firstKeyPath
+		if conn, err := h.connectMapped(t, oldCert, oldKey); err != nil {
+			t.Fatalf("the first certificate does not log in before the replacement: %v", err)
+		} else {
+			conn.Close()
+		}
+		second := h.startEnrollee(t, agentBus, carol, "--waitforcert", "--ca-fingerprint", h.caFingerprint(t))
+		code := h.pendingCode(t, carol)
+		h.run(t, h.agentBusctl, "ca", "sign", code, "--replace")
+		if err := second.wait(t); err != nil {
+			t.Fatalf("%v\n%s", err, second.output)
+		}
+		newCert, newKey := creds.ClientCertPaths(creds.AgentDir(second.configDir, carol))
+		if conn, err := h.connectMapped(t, newCert, newKey); err != nil {
+			t.Errorf("the replacement's certificate does not log in: %v", err)
+		} else {
+			conn.Close()
+		}
+		if conn, err := h.connectMapped(t, oldCert, oldKey); err == nil {
+			conn.Close()
+			t.Error("the replaced machine's certificate still logs in")
+		}
+	})
+
 	t.Run("an enrollee never receives a certificate for an ID the owner did not approve for it", func(t *testing.T) {
 		spy := h.connectRaw(t, broker.Connection{User: enroll.EnrollUser, Password: password}, enroll.InboxPrefix+".spy")
 		overheard := make(chan *nats.Msg, 64)
@@ -381,7 +410,7 @@ func TestEnrollment(t *testing.T) {
 			t.Error("mallory's enrollment succeeded")
 		}
 		victimCert, _ := creds.ClientCertPaths(creds.AgentDir(victim.configDir, "victim@carol"))
-		if uris := certURIs(t, victimCert); len(uris) != 1 || uris[0] != "agentbus:agent/victim_carol" {
+		if uris := certURIs(t, victimCert); len(uris) != 1 || !creds.MatchesIdentity(uris[0], "agentbus:agent/victim_carol") {
 			t.Errorf("the victim's certificate names %v", uris)
 		}
 	})

@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
 )
@@ -111,24 +112,38 @@ func (server Server) hasAgent(agentToken string) (bool, error) {
 	return listed, nil
 }
 
-// AdminUsesCert says whether the authorization file lets the admin user in with a certificate.
-// It reads the file, not the running server: a reload that did not take is still to be finished.
-func (server Server) AdminUsesCert(adminUser string) (bool, error) {
+// AdminCertID is the ID of the certificate the authorization file lets the admin user in with:
+// usesCert says whether it is a certificate login at all, and certID is empty for a certificate
+// made before certIDs. It reads the file, not the running server: a reload that did not take is
+// still to be finished.
+func (server Server) AdminCertID(adminUser string) (certID string, usesCert bool, err error) {
 	name := authFile
 	if adminUser == ControlAdminUser {
 		name = controlAuthFile
 	}
-	current, err := os.ReadFile(server.path(name))
+	return server.certLogin(name, roleAdmin, adminUser)
+}
+
+// AgentCertID is AdminCertID for a registered agent.
+func (server Server) AgentCertID(agentID string) (certID string, usesCert bool, err error) {
+	return server.certLogin(authFile, roleAgent, bus.AgentToken(agentID))
+}
+
+func (server Server) certLogin(file string, role authRole, name string) (certID string, usesCert bool, err error) {
+	current, err := os.ReadFile(server.path(file))
 	if err != nil {
-		return false, fmt.Errorf("reading the authorization file (has `agent-busctl admin init` run?): %w", err)
+		return "", false, fmt.Errorf("reading the authorization file (has `agent-busctl admin init` run?): %w", err)
 	}
 	body, _ := splitGeneration(string(current))
 	table, err := parseUserTable(body)
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
-	index, found := table.find(roleAdmin, adminUser)
-	return found && table[index].mode == modeCert, nil
+	index, found := table.find(role, name)
+	if !found || table[index].mode != modeCert {
+		return "", false, nil
+	}
+	return table[index].certID, true, nil
 }
 
 // UpdateAuth changes auth.conf as one serialised operation: lock, let edit produce the new file

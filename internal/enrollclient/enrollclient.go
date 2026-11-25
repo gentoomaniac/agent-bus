@@ -343,7 +343,7 @@ func checkCertificate(certPEM, tlsKeyPEM string, caPEM []byte, agentID string) e
 	if !key.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(cert.PublicKey) {
 		return errors.New("it is for another key than this machine's")
 	}
-	if want := broker.AgentCertIdentity(agentID); len(cert.URIs) != 1 || cert.URIs[0].String() != want ||
+	if want := broker.AgentCertIdentity(agentID); len(cert.URIs) != 1 || !creds.MatchesIdentity(cert.URIs[0].String(), want) ||
 		len(cert.DNSNames) != 0 || len(cert.EmailAddresses) != 0 || len(cert.IPAddresses) != 0 {
 		return fmt.Errorf("it is not for exactly %s", want)
 	}

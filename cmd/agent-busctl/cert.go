@@ -41,13 +41,14 @@ func requireActiveAgent(ctx context.Context, admin bus.Admin, agentID string) er
 type CertIssueCmd struct {
 	AgentID  string        `arg:"" optional:"" name:"agent-id" help:"The registered agent to issue a certificate for."`
 	Admin    bool          `help:"Issue for the two admin users instead of an agent, and switch them to certificate login: the admin tools use the files at once. The web monitor logs in as these users and must be restarted."`
-	Switch   bool          `help:"Also switch the agent to certificate login, as cert switch does. An agent on this machine uses the files at once, so without this it is locked out until the switch."`
+	Switch   bool          `help:"Also switch the agent to certificate login, as cert switch does. An agent on this machine uses the files at once, so without this it is locked out until the switch. An agent that logs in with a certificate already is always switched to the new one: the old certificate stops working."`
 	Validity time.Duration `help:"How long the certificate is valid (positive, and never past the CA's expiry). Renew by issuing again." default:"8760h"`
 }
 
 // Run creates a key and a certificate for the identity and writes them into its credentials
 // directory (client.pem, client.key), from where the files are copied to the machine that uses
-// them. The broker does not know the certificate until it is switched to certificate login.
+// them. The broker does not know the certificate until it is switched to certificate login, and
+// it knows no other certificate of that agent afterwards.
 func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 	if cmd.Admin == (cmd.AgentID != "") {
 		return errors.New("name an agent ID, or pass --admin, not both and not neither")
@@ -73,8 +74,8 @@ func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 		// pair. Until then the admin tools keep the login that works.
 		for _, user := range adminUsers { // bus-admin first, see Admin.SetAdminLogin
 			dir := creds.AdminDir(cli.ConfigDir, user)
-			certPEM, keyPEM, err := newClientCert(ca, broker.AdminCertIdentity(user), cmd.Validity)
-			identity := broker.AdminCertIdentity(user)
+			identity, certID := broker.AdminCertIdentity(user), broker.NewCertID()
+			certPEM, keyPEM, err := newClientCert(ca, broker.WithCertID(identity, certID), cmd.Validity)
 			if err == nil {
 				err = creds.StageClientCert(dir, certPEM, keyPEM)
 			}
@@ -82,7 +83,7 @@ func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 				err = creds.ValidateStagedClientCert(dir, identity) // before the server stops accepting the password
 			}
 			if err == nil {
-				err = admin.SetAdminLogin(ctx, user, "")
+				err = admin.SetAdminLogin(ctx, user, "", certID)
 			}
 			if err == nil {
 				err = creds.ActivateStagedClientCert(dir, identity)
@@ -101,20 +102,32 @@ func (cmd *CertIssueCmd) Run(ctx context.Context, cli *CLI) error {
 		return err
 	}
 	dir := creds.AgentDir(cli.ConfigDir, cmd.AgentID)
-	certPEM, keyPEM, err := newClientCert(ca, broker.AgentCertIdentity(cmd.AgentID), cmd.Validity)
+	identity, certID := broker.AgentCertIdentity(cmd.AgentID), broker.NewCertID()
+	certPEM, keyPEM, err := newClientCert(ca, broker.WithCertID(identity, certID), cmd.Validity)
 	if err != nil {
 		return err
 	}
-	if err := creds.WriteClientCert(dir, certPEM, keyPEM); err != nil {
+	// Staged first: an agent on this machine keeps the login that works until the broker knows the new one.
+	if err := creds.StageClientCert(dir, certPEM, keyPEM); err != nil {
+		return err
+	}
+	_, usesCert, err := cli.server().AgentCertID(cmd.AgentID)
+	if err != nil {
+		return err
+	}
+	switched := cmd.Switch || usesCert
+	if switched {
+		if err := admin.SetAgentLogin(ctx, cmd.AgentID, "", certID); err != nil {
+			return err
+		}
+	}
+	if err := creds.ActivateStagedClientCert(dir, identity); err != nil {
 		return err
 	}
 	certPath, keyPath := creds.ClientCertPaths(dir)
 	fmt.Printf("issued a certificate for %s: %s and %s\n", cmd.AgentID, certPath, keyPath)
-	if cmd.Switch {
-		if err := admin.SetAgentLogin(ctx, cmd.AgentID, ""); err != nil {
-			return err
-		}
-		fmt.Printf("%s logs in with its certificate now; for another machine, copy both files into its %s directory\n", cmd.AgentID, cmd.AgentID)
+	if switched {
+		fmt.Printf("%s logs in with its certificate now, and no earlier certificate of it works; for another machine, copy both files into its %s directory\n", cmd.AgentID, cmd.AgentID)
 		return nil
 	}
 	fmt.Printf("an agent on this machine uses it at once: switch it with `agent-busctl --direct cert switch %s`\n"+
@@ -144,12 +157,18 @@ func (cli *CLI) activateStagedAdminCerts() error {
 		if !staged {
 			continue
 		}
-		usesCert, err := cli.server().AdminUsesCert(user)
+		serverCertID, usesCert, err := cli.server().AdminCertID(user)
 		if err != nil {
 			return err
 		}
-		if usesCert {
-			if err := creds.ActivateStagedClientCert(dir, broker.AdminCertIdentity(user)); err != nil {
+		identity := broker.AdminCertIdentity(user)
+		stagedURI, err := creds.StagedClientCertIdentity(dir)
+		if err != nil {
+			return err
+		}
+		// Only the certificate the server maps is a login that works.
+		if usesCert && creds.MatchesIdentity(stagedURI, identity) && creds.CertID(stagedURI, identity) == serverCertID {
+			if err := creds.ActivateStagedClientCert(dir, identity); err != nil {
 				return err
 			}
 		}
@@ -162,9 +181,11 @@ type CertSignCmd struct {
 	CSR      string        `required:"" type:"existingfile" help:"The certificate request, PEM. Only its public key is used, after its signature is checked."`
 	Out      string        `type:"path" help:"Where to write the certificate. Default: standard output."`
 	Validity time.Duration `help:"How long the certificate is valid." default:"8760h"`
+	Switch   bool          `help:"Also switch the agent to this certificate, as cert switch does: it cannot log in until the certificate is on its machine. An agent that logs in with a certificate already is always switched, and its old certificate stops working."`
 }
 
-// Run signs a request made on the agent's machine, so the private key never leaves it.
+// Run signs a request made on the agent's machine, so the private key never leaves it. The
+// certificate works only once the broker knows it (cert switch --cert).
 func (cmd *CertSignCmd) Run(ctx context.Context, cli *CLI) error {
 	ca, err := cli.loadCA()
 	if err != nil {
@@ -174,7 +195,7 @@ func (cmd *CertSignCmd) Run(ctx context.Context, cli *CLI) error {
 	if err != nil {
 		return err
 	}
-	admin, err := cli.adminClient()
+	admin, err := cli.brokerAdmin()
 	if err != nil {
 		return err
 	}
@@ -182,9 +203,21 @@ func (cmd *CertSignCmd) Run(ctx context.Context, cli *CLI) error {
 	if err := requireActiveAgent(ctx, admin, cmd.AgentID); err != nil {
 		return err
 	}
-	certPEM, err := ca.SignCSR(broker.AgentCertIdentity(cmd.AgentID), csrPEM, cmd.Validity)
+	identity, certID := broker.AgentCertIdentity(cmd.AgentID), broker.NewCertID()
+	certPEM, err := ca.SignCSR(broker.WithCertID(identity, certID), csrPEM, cmd.Validity)
 	if err != nil {
 		return err
+	}
+	_, usesCert, err := cli.server().AgentCertID(cmd.AgentID)
+	if err != nil {
+		return err
+	}
+	if cmd.Switch || usesCert {
+		if err := admin.SetAgentLogin(ctx, cmd.AgentID, "", certID); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "the broker does not know this certificate yet: `agent-busctl --direct cert switch %s --cert <this certificate's file>`\n", cmd.AgentID)
 	}
 	if cmd.Out == "" {
 		_, err = os.Stdout.Write(certPEM)
@@ -197,7 +230,7 @@ type CertSwitchCmd struct {
 	AgentID  string `arg:"" optional:"" name:"agent-id" help:"The registered agent to switch."`
 	Admin    bool   `help:"Switch the two admin users back to password login; needs --password. cert issue --admin switches them to certificates."`
 	Password bool   `help:"Switch back to password login (the rollback)."`
-	Force    bool   `help:"Switch an agent to its certificate although none was issued in this config directory (it is made on its machine, see cert sign). The agent cannot log in until its files are there."`
+	Cert     string `type:"existingfile" help:"The certificate to switch the agent to, for one made on its machine (see cert sign). Default: client.pem in the agent's directory here. Every other certificate of the agent stops working; the agent cannot log in until its files are in place."`
 }
 
 // Run changes how the broker lets the identity in, and returns once the reload is confirmed. The
@@ -227,7 +260,7 @@ func (cmd *CertSwitchCmd) Run(ctx context.Context, cli *CLI) error {
 			if err != nil {
 				return err
 			}
-			if err := admin.SetAdminLogin(ctx, user, hash); err != nil {
+			if err := admin.SetAdminLogin(ctx, user, hash, ""); err != nil {
 				return err
 			}
 			if err := cmd.dropCertificate(dir); err != nil {
@@ -242,20 +275,15 @@ func (cmd *CertSwitchCmd) Run(ctx context.Context, cli *CLI) error {
 		return err
 	}
 	dir := creds.AgentDir(cli.ConfigDir, cmd.AgentID)
-	if !cmd.Password && !cmd.Force {
-		hasCert, err := creds.HasClientCert(dir)
-		if err != nil {
-			return err
-		}
-		if !hasCert {
-			return fmt.Errorf("no certificate was issued for %s here: run `cert issue %s` first, or pass --force for a certificate made elsewhere", cmd.AgentID, cmd.AgentID)
-		}
+	certID, err := cmd.certID(dir, broker.AgentCertIdentity(cmd.AgentID))
+	if err != nil {
+		return err
 	}
 	hash, err := cmd.passwordHash(dir)
 	if err != nil {
 		return err
 	}
-	if err := admin.SetAgentLogin(ctx, cmd.AgentID, hash); err != nil {
+	if err := admin.SetAgentLogin(ctx, cmd.AgentID, hash, certID); err != nil {
 		return err
 	}
 	if err := cmd.dropCertificate(dir); err != nil {
@@ -275,6 +303,33 @@ func (cmd *CertSwitchCmd) mode() string {
 		return "passwords"
 	}
 	return "certificates"
+}
+
+// certID is the ID of the certificate to switch to, from --cert or the agent's client.pem; empty
+// for a switch back to the password.
+func (cmd *CertSwitchCmd) certID(dir, identity string) (string, error) {
+	if cmd.Password {
+		return "", nil
+	}
+	certPath := cmd.Cert
+	if certPath == "" {
+		hasCert, err := creds.HasClientCert(dir)
+		if err != nil {
+			return "", err
+		}
+		if !hasCert {
+			return "", fmt.Errorf("no certificate was issued for %s here: run `cert issue %s` first, or pass --cert for one made elsewhere", cmd.AgentID, cmd.AgentID)
+		}
+		certPath, _ = creds.ClientCertPaths(dir)
+	}
+	uri, err := creds.ClientCertIdentity(certPath)
+	if err != nil {
+		return "", err
+	}
+	if !creds.MatchesIdentity(uri, identity) {
+		return "", fmt.Errorf("%s is for %s, not for %s", certPath, uri, cmd.AgentID)
+	}
+	return creds.CertID(uri, identity), nil
 }
 
 // passwordHash is the hash to switch to: that of the password stored in dir (a new one is made

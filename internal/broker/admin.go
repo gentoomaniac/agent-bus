@@ -136,13 +136,14 @@ func (admin *Admin) CreateAccount(ctx context.Context, agentID, password string)
 	})
 }
 
-// EnsureCertAccount gives the agent an account that logs in with a certificate for
-// AgentCertIdentity: it creates the account, or switches an existing one from its password, as
-// one confirmed reload. The agent's grants are those of every agent.
-func (admin *Admin) EnsureCertAccount(ctx context.Context, agentID string) error {
+// EnsureCertAccount gives the agent an account that logs in with the certificate that carries
+// certID (WithCertID of AgentCertIdentity): it creates the account, switches an existing one from
+// its password, or replaces the certificate of one that has a certificate, as one confirmed reload.
+// Every other certificate of the agent stops working. The agent's grants are those of every agent.
+func (admin *Admin) EnsureCertAccount(ctx context.Context, agentID, certID string) error {
 	token := bus.AgentToken(agentID)
 	return admin.updateAuth(ctx, func(table *userTable) error {
-		table.set(authUser{role: roleAgent, name: token, mode: modeCert})
+		table.set(authUser{role: roleAgent, name: token, mode: modeCert, certID: certID})
 		return nil
 	})
 }
@@ -322,8 +323,8 @@ func listControlRecords[T any](ctx context.Context, admin *Admin, bucket string)
 	return records, nil
 }
 
-// AgentCertIdentity is the URI SAN of the client certificate an agent logs in with, and the NATS
-// user name nats-server maps it to.
+// AgentCertIdentity is the identity of the client certificates an agent logs in with. The URI SAN
+// of a certificate is WithCertID of it, and is the NATS user name nats-server maps it to.
 func AgentCertIdentity(agentID string) string {
 	return certIdentity(roleAgent, bus.AgentToken(agentID))
 }
@@ -332,15 +333,15 @@ func AgentCertIdentity(agentID string) string {
 func AdminCertIdentity(adminUser string) string { return certIdentity(roleAdmin, adminUser) }
 
 // SetAgentLogin changes how a registered agent logs in, as one confirmed reload that closes its
-// connections. With a password hash it logs in with that password; with none, with a certificate
-// for AgentCertIdentity. Its ID, consumers and grants stay.
-func (admin *Admin) SetAgentLogin(ctx context.Context, agentID, passwordHash string) error {
+// connections. With a password hash it logs in with that password; with none, with the
+// certificate that carries certID, and no other. Its ID, consumers and grants stay.
+func (admin *Admin) SetAgentLogin(ctx context.Context, agentID, passwordHash, certID string) error {
 	token := bus.AgentToken(agentID)
 	return admin.updateAuth(ctx, func(table *userTable) error {
 		if _, exists := table.find(roleAgent, token); !exists {
 			return fmt.Errorf("%s has no account on the broker", agentID)
 		}
-		table.set(loginOf(roleAgent, token, passwordHash))
+		table.set(loginOf(roleAgent, token, passwordHash, certID))
 		return nil
 	})
 }
@@ -348,12 +349,12 @@ func (admin *Admin) SetAgentLogin(ctx context.Context, agentID, passwordHash str
 // SetAdminLogin is SetAgentLogin for an admin user. The connections of that user close, so a
 // caller that changes both admins changes BusAdminUser first: that change reads the catalogue
 // through the CONTROL connection.
-func (admin *Admin) SetAdminLogin(ctx context.Context, adminUser, passwordHash string) error {
+func (admin *Admin) SetAdminLogin(ctx context.Context, adminUser, passwordHash, certID string) error {
 	change := func(table *userTable) error {
 		if _, exists := table.find(roleAdmin, adminUser); !exists {
 			return fmt.Errorf("%s is not an admin user of this broker", adminUser)
 		}
-		table.set(loginOf(roleAdmin, adminUser, passwordHash))
+		table.set(loginOf(roleAdmin, adminUser, passwordHash, certID))
 		return nil
 	}
 	switch adminUser {
@@ -374,9 +375,9 @@ func (admin *Admin) SetAdminLogin(ctx context.Context, adminUser, passwordHash s
 	return fmt.Errorf("%s is not an admin user of this broker", adminUser)
 }
 
-func loginOf(role authRole, name, passwordHash string) authUser {
+func loginOf(role authRole, name, passwordHash, certID string) authUser {
 	if passwordHash == "" {
-		return authUser{role: role, name: name, mode: modeCert}
+		return authUser{role: role, name: name, mode: modeCert, certID: certID}
 	}
 	return authUser{role: role, name: name, mode: modePassword, passwordHash: passwordHash}
 }

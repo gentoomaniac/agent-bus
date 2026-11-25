@@ -52,13 +52,14 @@ flowchart LR
 | | never | consumer create, delete or update; any `$JS.API.DIRECT.GET` except the one for stream `PRESENCE`, subject `presence.*` (granted as `$JS.API.DIRECT.GET.PRESENCE.presence.*`, so `list_agents` can read others' presence; never a direct get on stream `BUS`); any wildcard consumer, `MSG.NEXT` or ack grant; any `$KV.*` or `ledger.*` subject; the owner-only busd methods |
 | Owner `human_<owner>` (`BUS`, used by agent-busctl) | post, and the agent's busd calls | as an agent for DMs, `general` and groups; `private.<id>` where busd granted it ([private channels](private-channels.md)); no consumers |
 | | owner-only busd methods | publish `busd.nonce`, `busd.agent.register`, `busd.agent.revoke`, `busd.agent.rotate`, `busd.channel.manager`, `busd.channel.create_group` |
-| Monitor `monitor_<owner>` (`BUS`; also used by `agent-busctl` read commands) | read, from the consumer busd made | `$JS.API.CONSUMER.MSG.NEXT.BUS.bus-monitor`, `$JS.API.CONSUMER.INFO.BUS.bus-monitor`, `$JS.ACK.BUS.bus-monitor.>`, subscribe `_INBOX.monitor.>` |
+| Monitor logins `monitor-bus` (`BUS`) and `monitor-control` (`CONTROL`), **as built**: read-only, passwords | its own ordered consumers, consumer and stream info, presence; the registry and catalogue reads of busd; the pending count | no publish to any message, KV or `busd.ca.*` subject, no consumer create-durable, no auth-file or approval right |
+| Monitor `monitor_<owner>` (`BUS`; also used by `agent-busctl` read commands), **planned** | read, from the consumer busd made | `$JS.API.CONSUMER.MSG.NEXT.BUS.bus-monitor`, `$JS.API.CONSUMER.INFO.BUS.bus-monitor`, `$JS.ACK.BUS.bus-monitor.>`, subscribe `_INBOX.monitor.>` |
 | | read-only busd methods | publish `busd.nonce`, `busd.history`, `busd.registry.get`, `busd.registry.changes`, `busd.catalogue.list`, `busd.channel.list`, `busd.channel.membership` (`busd.channel.membership` for all channels, with signed watermarks; `busd.channel.list` returns the private catalogue of all channels to this identity) |
 | | never | any consumer create, update or delete; any publish on a message subject, any stream, KV or `CONTROL` subject; any other busd method |
 | busd, message connection (`BUS`) | consumers (agents' and the monitor's), history, stream info | `$JS.API.>` |
 | | its API | subscribe `busd.>`, subscribe `_INBOX.busd.>`, publish `_INBOX.>` (replies) |
 | | acks | none for ordered consumers; a durable consumer of its own needs `$JS.ACK.BUS.<name>.>` |
-| busd, control connection (`CONTROL`) | registry, catalogue, ledger | `$JS.API.>`, `$KV.>`, `ledger.>`, subscribe `_INBOX.busd.>`, and `$JS.ACK.<stream>.<name>.>` for a durable consumer of its own |
+| busd, control connection (`CONTROL`) | registry, catalogue, ledger | **as built** (login `busd`): the JetStream read API of `KV_registry` and `KV_catalogue`, publish `$KV.registry.>`, `_INBOX.>` and `busd.enroll.pending`; subscribe `_INBOX.>` and its five `busd.enroll.*` / `busd.ca.*` subjects. **Planned**, with the ledger: `ledger.>`, `$JS.ACK.<stream>.<name>.>` for a durable consumer of its own |
 | Enrollment login `enroll` (`CONTROL`, shared, password listener) | ask for a certificate | publish `busd.enroll.request` and `busd.enroll.status`; subscribe `_INBOX.enroll.>`; never any stream, JetStream API, `BUS` or `busd.ca.*` subject ([phase B](#phase-b-implemented-the-enrollment-flow)) |
 | `bus-admin` (`BUS`) and `control-admin` (`CONTROL`), used by `agent-busctl --direct` over two connections | everything in its own account | publish and subscribe `>`; NATS usernames are server-wide, so the two are distinct users with separate passwords, which live only in the owner's config ([admin CLI](admin-cli.md)) |
 
@@ -78,11 +79,25 @@ copies them to the agent's machine; no request or approval flow. What differs fr
   log in on a `websocket` listener with its own TLS block and `verify_and_map` (`BUS_MAPPED_PORT`,
   4223; clients use a `wss://` address). Users of certificate mode carry
   `allowed_connection_types: ["WEBSOCKET"]`.
-- *Mapping.* The certificate has exactly one URI SAN, `agentbus:<role>/<name>`: `agentbus:agent/<agent
-  token>`, `agentbus:admin/bus-admin`, `agentbus:admin/control-admin`. nats-server matches
-  email, DNS and URI SANs against user names before the subject DN, and the NATS user of a
-  certificate login is named exactly that URI; the permissions are those of the role (agent grants
-  use the token). Verified in nats-server v2.15.3 (`checkClientTLSCertSubject`, `canTLSMap`).
+- *Mapping.* The certificate has exactly one URI SAN, `agentbus:<role>/<name>/<certID>`:
+  `agentbus:agent/<agent token>/<certID>`, `agentbus:admin/bus-admin/<certID>`,
+  `agentbus:admin/control-admin/<certID>`. nats-server matches email, DNS and URI SANs against user
+  names before the subject DN, and the NATS user of a certificate login is named exactly that URI;
+  the permissions are those of the role (agent grants use the token). Verified in nats-server
+  v2.15.3 (`checkClientTLSCertSubject`, `canTLSMap`).
+- *Revocation.* The certID is what makes a certificate revocable. A principal has one entry in
+  the authorization file, which names the certID of its current certificate; issuing another,
+  `cert sign`, an approval (also with `--replace`), `agent remove` and the switch back to the
+  password rewrite or delete the entry, and every earlier certificate maps to no user, so its login
+  is refused after the confirmed reload (its open connections close with it). Considered and
+  rejected: an allowlist of client-certificate fingerprints. nats-server accepts `pinned_certs` in
+  the `websocket` TLS block (a hash of the certificate's public key), but v2.15.3 applies it to
+  an already connected client at a reload and never at the login of a new WebSocket one
+  (`matchesPinnedCert` runs for the plain client listener's handshake and in `reload.go`, not in
+  the WebSocket accept path); checked by logging in with an unpinned certificate, which was
+  accepted. nats-server has no revocation list for client certificates either. A certificate
+  made before certIDs (URI SAN without one) keeps working until it is issued again, which is how an
+  existing setup migrates without a step.
 - *Certificates* are built by `tlsinit.CA.IssueClientCert` from the approved identity only: client
   auth, not a CA, one year by default, no names from a CSR (`SignCSR` checks the request's signature
   and uses only its public key).
@@ -184,7 +199,8 @@ What was built, and where it differs from the plan above it:
 - **Monitor.** busd announces the pending count every five seconds on `busd.enroll.pending`; the
   monitor shows it in its header and hides it when it stops coming.
 - **Certificates** are as in phase A: client use only, not a CA, one URI SAN, one year (`BUS_CERT_VALIDITY`
-  of busd). Renewal is still `cert issue`, or enrolling again from the machine.
+  of busd). Renewal is still `cert issue`, or enrolling again from the machine; either replaces the earlier
+  certificate of the ID (revocation, above).
 - **Removal** is as before (`agent remove`: mapping dropped with the account, ID tombstoned, never
   reused). The directory still reaches other agents by hand (`directory export`); an enrolled machine
   starts with the directory busd returns.

@@ -51,7 +51,7 @@ type Registry interface {
 	Agents(ctx context.Context) ([]bus.AgentRecord, error)
 	PutAgentRecord(ctx context.Context, record bus.AgentRecord) error
 	CreateReadCursor(ctx context.Context, agentID string, channel bus.Channel, afterSequence uint64) error
-	EnsureCertAccount(ctx context.Context, agentID string) error
+	EnsureCertAccount(ctx context.Context, agentID, certID string) error
 }
 
 // Config is what a Service is made of.
@@ -380,7 +380,10 @@ func (service *Service) approve(ctx context.Context, request *entry, replace boo
 		return "", fmt.Errorf("%s is registered with another key: approving replaces it and revokes the old key; confirm with --replace", request.Request.AgentID)
 	}
 	agentID := request.Request.AgentID
-	certificate, err := service.config.CA.SignCSR(broker.AgentCertIdentity(agentID), []byte(request.Request.CSR), service.config.CertValidity)
+	// A new certID for each approval: it replaces the certificate of an earlier enrollment, which
+	// stops working, and a repeat after a failed step signs again (the agent has not got this one).
+	certID := broker.NewCertID()
+	certificate, err := service.config.CA.SignCSR(broker.WithCertID(broker.AgentCertIdentity(agentID), certID), []byte(request.Request.CSR), service.config.CertValidity)
 	if err != nil {
 		return "", err
 	}
@@ -403,7 +406,7 @@ func (service *Service) approve(ctx context.Context, request *entry, replace boo
 			return "", fmt.Errorf("creating the read cursor of %s: %w", channel, err)
 		}
 	}
-	if err := registry.EnsureCertAccount(ctx, agentID); err != nil {
+	if err := registry.EnsureCertAccount(ctx, agentID, certID); err != nil {
 		return "", err
 	}
 	if catalogue, err := trust.BuildCatalogue(ctx, registry); err == nil {
@@ -413,7 +416,7 @@ func (service *Service) approve(ctx context.Context, request *entry, replace boo
 	request.Certificate = string(certificate)
 	request.decide(enroll.StatusApproved, "", service.config.Now())
 	log.Printf("busd: %s enrollment request %s for %s (%s): certificate issued for %s, signing key %s",
-		how, request.code(), agentID, identity, broker.AgentCertIdentity(agentID), request.verified.SigningFingerprint)
+		how, request.code(), agentID, identity, broker.WithCertID(broker.AgentCertIdentity(agentID), certID), request.verified.SigningFingerprint)
 	return fmt.Sprintf("approved %s (%s): certificate issued, the agent now logs in with it", agentID, request.code()), nil
 }
 
