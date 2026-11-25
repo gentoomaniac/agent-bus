@@ -23,7 +23,7 @@ stateDiagram-v2
   working --> rate_limited: StopFailure rate_limit
   working --> error: StopFailure with another error
   rate_limited --> working: quota_auto_resume_fired
-  working --> idle: silent for 10 minutes, shown by readers
+  working --> idle: silent for 10 minutes, derived by the adapter
   idle --> unresponsive: targeted mail unseen for 10 minutes
   idle --> offline: no heartbeat for 90 seconds
   working --> offline: SessionEnd
@@ -51,8 +51,9 @@ Each adapter that holds its identity publishes one record:
 | `updated` | The heartbeat |
 | `activity` | The current activity: the tool name plus the base name of the file or the first word of a command, cut to 60 characters, never contents or whole commands |
 | `workers` | Running subagents, each with a short description |
-| recent activity | The last ten activity entries |
-| unread | The number of unread targeted messages |
+| `activity_since` | When the current activity began |
+| `recent` | The last ten activity entries, oldest first |
+| `pending` | The number of targeted messages not yet marked read |
 
 It publishes on change, at most every 3 seconds, and every 30 seconds as a heartbeat. On a clean end
 it publishes `offline`.
@@ -80,12 +81,12 @@ sends the same events from its session, error and tool events.
 
 ### Derived states
 
-Readers, and the adapter itself, add three states the hooks cannot send:
+The adapter and the readers add three states the hooks cannot send:
 
 | State | Rule |
 |---|---|
-| `offline` | A reader calls an agent offline when its `updated` is more than 90 seconds old (a killed process cannot say so), or when it says `offline`. This applies to any state. |
-| `idle` from `working` | Claude Code runs no `Stop` hook on an interrupt, so a `working` session silent for 10 minutes is shown `idle`. |
+| `offline` | A reader (the monitor, `list_agents`) calls an agent offline when its `updated` is more than 90 seconds old (a killed process cannot say so), or when it says `offline`. This applies to any state. |
+| `idle` from `working` | The adapter derives it: Claude Code runs no `Stop` hook on an interrupt, so a `working` session silent for 10 minutes is published as `idle`. |
 | `unresponsive` | The adapter marks an idle agent `unresponsive` when targeted mail has gone unseen (no `inbox` or `wait_for_messages` call listed it) for 10 minutes. An agent without hooks still shows something; without hooks it reads `idle` while its process lives. |
 
 ### Storage
@@ -94,7 +95,7 @@ Stream `PRESENCE` in the `BUS` account, subjects `presence.*`, `MaxMsgsPerSubjec
 allowed.
 
 - An agent may publish only `presence.<own token>` and may do a direct get on `presence.*` (so
-  `list_agents` can show others' state, and nobody can write another agent's presence).
+  `list_agents` can show others' state, and nobody can publish another agent's presence directly. This is a publish permission, not protection against JetStream reply redirection, which can still store a junk record ([safety](safety.md#known-limit-junk-records-in-a-channel))).
 - The admin watches `presence.*` live and reads the stored records at start.
 - A stream with one message per subject rather than a KV bucket keeps presence in the account whose
   grants [JetStream binding](jetstream-binding.md) already generates, needs only a plain publish from
