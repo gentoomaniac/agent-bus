@@ -120,7 +120,8 @@ no type files); each one the live run on 2.3.0 could reach matched them: the eve
   `session-end` and `offline` within a second). A killed OpenCode (`SIGKILL`, a crash) skips it:
   the heartbeat then shows `offline` after 90 seconds.
 - If the mail prompt was accepted but `pending --mark` fails, the plugin remembers those IDs and
-  retries only the mark at the next check; it never prompts twice for the same mail.
+  retries only the mark at the next check; it never prompts twice for the same mail. Until that
+  mark succeeds, no new mail is announced to the session (the inbox still lists it).
 - Whether a provider's plan usage limit reaches OpenCode as an error with status 429 depends on the
   provider; any other failure shows as `error:<kind>` or `error:retrying`, which is the minimum
   signal that something is wrong with the model.

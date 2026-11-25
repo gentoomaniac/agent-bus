@@ -200,7 +200,11 @@ const wakeExitCode = 2
 // reported once, so a Stop hook that fires again after its own block finds nothing new.
 func (cmd *PendingCmd) Run(ctx context.Context) error {
 	if len(cmd.Mark) > 0 {
-		hook.ConfirmTold(hook.Dir(), cmd.Mark)
+		// Only the OpenCode plugin marks; it must learn when the adapter did not take the mark, or
+		// it would forget the IDs and prompt for the same mail again.
+		if !hook.ConfirmTold(hook.Dir(), cmd.Mark) {
+			return errors.New("the session's adapter did not confirm the mark")
+		}
 		return nil
 	}
 	if cmd.Wait {

@@ -94,7 +94,9 @@ export default Plugin.define({
     let watcher = null;
 
     // Mail the session was prompted about but that could not be marked told. Only the mark is
-    // retried for it: prompting again would wake the model for mail it already has.
+    // retried for it: prompting again would wake the model for mail it already has. While a mark is
+    // pending no new mail is fetched, so a mark that keeps failing (adapter gone) holds the
+    // session's mail back until the adapter answers again; the inbox still lists it.
     let unmarkedIds = [];
 
     async function markTold(ids) {
