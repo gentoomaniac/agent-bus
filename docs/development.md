@@ -158,6 +158,10 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+A second job, `vsix`, then packs the VS Code extension ([vscode/README.md](../vscode/README.md)) with the
+tag's version and attaches `agent-messenger.vsix` to that release; it is not published to a marketplace.
+`make vsix` builds the same file locally.
+
 The job's `GITHUB_TOKEN` creates the release and pushes the image; the workflow asks for the
 `contents: write` and `packages: write` permissions it needs. No secret has to be set. The optional
 repository variable `IMAGE_NAME` overrides the image name (default

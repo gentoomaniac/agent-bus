@@ -253,6 +253,10 @@ JSON under `/api/v1`, for the page, `curl` and other front ends: [api.md](api.md
 endpoints, authentication, errors and event types, and [openapi.yaml](openapi.yaml) is the
 OpenAPI 3.1 description. The unversioned `/api/...` paths of earlier versions are gone.
 
+The [VS Code extension](../vscode/README.md) is a client of this API: it lists channels and agents,
+opens chats, sends as the monitor's identity and counts unread mail. It logs in with the password
+and keeps the session token, which it sends as a `Bearer` header.
+
 ## The page
 
 - The channel list and the members panel are resized by dragging the handles next to them (double-click
