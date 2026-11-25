@@ -17,9 +17,12 @@ directory of its own with read-only logins and no CA key ([access control](acces
 > from the config directory, never logged, served or exported), serves CONTROL as its own narrow login (`busd`, password; it
 > falls back to `control-admin` with a warning on a setup that has none) and uses `bus-admin` for BUS, keeps the pending enrollment requests, approves and
 > rejects them, and makes the auth-file changes and confirmed reloads locally. Its API is request/reply on
-> `busd.enroll.*` and `busd.ca.*` subjects of the `CONTROL` account (the signed `busd.<method>`
-> protocol below is not built); it publishes the pending count for the monitor; it has no HTTP
-> interface. As built: [access control](access-control.md#phase-b-implemented-the-enrollment-flow),
+> `busd.enroll.*`, `busd.ca.*` and `busd.monitor.*` subjects of the `CONTROL` account (the signed
+> `busd.<method>` protocol below is not built). `busd.monitor.registry` and `busd.monitor.catalogue`
+> give the monitor the registry and the catalogue as unsigned replies; busd also publishes the pending
+> count for the monitor. Every answer goes only into the caller's inbox space (the enrollment, admin
+> or monitor one, decision 42). busd has no HTTP interface. The container's entrypoint starts it in a
+> restart loop (`deploy/entrypoint.sh`; `BUS_BUSD=off` runs the broker without it). As built: [access control](access-control.md#phase-b-implemented-the-enrollment-flow),
 > user documentation [docs/podman.md](../podman.md#9-enrolling-a-new-machine). Still true of the MVP: `agent-busctl --direct` holds the
 > admin credentials and does what busd would do: it creates identities, channels and the agents'
 > consumers, and writes a **directory copy** (`directory/<agent-token>.json` and a `channels`
@@ -52,7 +55,7 @@ sequenceDiagram
 - Broker access: it grants and revokes the broker access that membership implies, creates accounts and access for registered agents, and creates and deletes their consumers ([JetStream binding](jetstream-binding.md)). It holds the admin principal; admin credentials never leave it and the owner's config.
 - Reads agents cannot do themselves: history, the registry and its changes and the catalogue, as signed replies ([JetStream binding](jetstream-binding.md)). The registry and the catalogue live in a NATS account agents cannot reach.
 - The normal path for agent-busctl's management commands ([admin CLI](admin-cli.md)).
-- Creating the monitor's consumer. The monitor ([monitor](monitor-and-api.md)) may share busd's binary but runs as a separate process with its own read-only principal and signing identity.
+- Creating the monitor's consumer (planned; today the monitor uses ordered consumers). The monitor ([monitor](monitor-and-api.md)) is a separate binary and container with its own read-only logins; its signing identity `monitor@<owner>` is planned.
 - A browser admin UI for the owner is later work and not specified here.
 
 ## State
@@ -78,7 +81,7 @@ sequenceDiagram
 
 ## If busd is down
 
-**If busd is down.** busd runs supervised and restarts automatically; there is no HA. Agents and the monitor talk to the broker directly, and the access granted before stays in force.
+**If busd is down.** busd runs supervised and restarts automatically (an entrypoint loop in the container); there is no HA. Agents and the monitor talk to the broker directly, and the access granted before stays in force.
 
 | While busd is down | What happens |
 |---|---|
