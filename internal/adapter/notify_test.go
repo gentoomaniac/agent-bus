@@ -39,6 +39,36 @@ func TestNewMailNotifiesEachMessageOnceAndHonoursTheCooldown(t *testing.T) {
 	}
 }
 
+func TestNewMailSkipsMailTheAgentAlreadyRead(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob)
+	ctx := context.Background()
+
+	read, _ := a.Send(ctx, bob, text("read with inbox"))
+	poll(t, bobAdapter)
+	if listed, err := bobAdapter.Inbox(InboxQuery{}); err != nil || len(listed) != 1 {
+		t.Fatalf("inbox: %v, %v", listed, err)
+	}
+	if fresh, unread, _ := bobAdapter.NewMail(); len(fresh) != 0 || unread != 1 {
+		t.Errorf("mail read with inbox announced as new: %v, %d unread", fresh, unread)
+	}
+	if fresh, _, _ := bobAdapter.PeekNewMail(); len(fresh) != 0 {
+		t.Errorf("a peek announces read mail: %v", fresh)
+	}
+
+	unseen, _ := a.Send(ctx, bob, text("not read yet"))
+	poll(t, bobAdapter)
+	if fresh, _, _ := bobAdapter.NewMail(); len(fresh) != 1 || fresh[0].Envelope.ID != unseen {
+		t.Errorf("only the unread message is new: %v", fresh)
+	}
+	if summary, _ := bobAdapter.UnreadSummary(); len(summary) != 2 || summary[0].Envelope.ID != read {
+		t.Errorf("the session summary lists everything unread: %v", summary)
+	}
+}
+
 func TestPeekNewMailMarksNothingUntilMarkNotified(t *testing.T) {
 	b := newTestBus(t)
 	b.register(alice)
