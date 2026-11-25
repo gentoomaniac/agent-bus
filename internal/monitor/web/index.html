@@ -776,11 +776,16 @@ function unseen(channelId, after) {
   return (state.messages.get(channelId) || []).some((m) => m.sequence > after && m.from !== state.status.agent);
 }
 
+// Draws the open channel's "New" line where reading stopped, unless one is drawn already.
+function noteUnseen(channelId) {
+  const readUpTo = readSequence(channelId);
+  if (state.marker === null && unseen(channelId, readUpTo)) state.marker = readUpTo;
+}
+
 function markRead(channelId, sequence) {
   const list = state.messages.get(channelId) || [];
   const last = sequence ?? (list.length ? list[list.length - 1].sequence : 0);
-  if (!state.read) state.read = {};
-  if (last <= readSequence(channelId)) return;
+  if (!state.read || last <= readSequence(channelId)) return; // nothing is kept before the first visit is set up
   state.read[channelId] = last;
   saveSetting(READ_KEY, state.read);
 }
@@ -808,6 +813,7 @@ async function refresh() {
     $("live").textContent = "error: " + error.message;
     return;
   }
+  initReadMarkers();
   showLive();
   $("banner").hidden = state.status.password_set !== false;
   renderIdentity();
@@ -833,14 +839,19 @@ function renderIdentity() {
 }
 
 async function select(channelId) {
+  // Opening the open channel again (a click, a search hit) keeps its "New" line.
+  const reopened = channelId === state.selected;
   state.selected = channelId;
   state.unread.delete(channelId);
   history.replaceState(null, "", "#" + encodeURIComponent(channelId));
+  if (!reopened) state.marker = null;
   if (!state.messages.has(channelId)) await loadMessages(channelId);
+  if (state.selected !== channelId) return; // another channel was opened meanwhile
+  // Before the next await, so a message arriving meanwhile cannot move the read point past the line.
+  noteUnseen(channelId);
+  if (looking()) markRead(channelId);
   await refresh();
-  const readUpTo = readSequence(channelId);
-  state.marker = unseen(channelId, readUpTo) ? readUpTo : null;
-  markRead(channelId);
+  if (state.selected !== channelId) return;
   pointComposerAt(state.channels.find((c) => c.id === channelId));
   renderMessages(true);
 }
@@ -1025,6 +1036,7 @@ function renderMessages(scrollToEnd) {
   renderTypeFilter(list);
   const shown = state.shownTypes.size ? list.filter((m) => state.shownTypes.has(m.type)) : list;
   const none = list.length ? "No message of these types." : "No messages yet.";
+  // A type filter that hides every unseen message hides the line too.
   const markerAt = state.marker === null ? -1 : shown.findIndex((m) => m.sequence > state.marker && m.from !== state.status.agent);
   const rows = shown.flatMap((m, i) => {
     const row = renderMessage(m, settings.grouping && i !== markerAt && continues(shown[i - 1], m));
@@ -1210,6 +1222,7 @@ function connectEvents() {
     if (state.selected) await loadMessages(state.selected);
     await refresh();
     if (state.selected && looking()) markRead(state.selected);
+    else if (state.selected) noteUnseen(state.selected);
     renderMessages(false);
   };
   source.addEventListener("presence", (event) => {
@@ -1233,14 +1246,18 @@ function connectEvents() {
       if (!list || !insertMessage(list, message)) return;
       // Not looked at: the line shows where reading stopped, and the channel stays unread.
       if (looking() || own) markRead(message.channel, message.sequence);
-      else if (state.marker === null) state.marker = readSequence(message.channel);
+      else noteUnseen(message.channel);
       renderMessages(false);
     } else {
       if (list) insertMessage(list, message);
       if (own) {
-        // Sequences count the whole stream: the channel was read if it was read up to its last one.
+        // Sequences count the whole stream: the channel was read if it was read up to its last
+        // sequence, or the periodic refresh has already counted this very message as its last (then
+        // older unseen mail counts as read too: rare, and better than a channel bold for one's own post).
         const channel = state.channels.find((c) => c.id === message.channel);
-        if (!state.unread.get(message.channel) && readSequence(message.channel) >= ((channel && channel.last_sequence) || 0)) markRead(message.channel, message.sequence);
+        const lastBefore = (channel && channel.last_sequence) || 0;
+        const wasRead = !state.unread.get(message.channel) && (readSequence(message.channel) >= lastBefore || lastBefore >= message.sequence);
+        if (wasRead) markRead(message.channel, message.sequence);
       } else {
         state.unread.set(message.channel, (state.unread.get(message.channel) || 0) + 1);
       }
@@ -1260,7 +1277,6 @@ async function start() {
   state.loggedOut = false;
   await refresh();
   if (state.loggedOut) return;
-  initReadMarkers();
   const wanted = decodeURIComponent(location.hash.slice(1));
   await select(state.channels.some((c) => c.id === wanted) ? wanted : "general");
   connectEvents();
