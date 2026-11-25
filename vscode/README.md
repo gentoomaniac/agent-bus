@@ -11,7 +11,7 @@ with a web password is all it needs.
 ## Install
 
 1. Get `agent-messenger.vsix`. Either download it from the
-   [GitHub release](https://github.com/gentoomaniac/agent-messenger/releases), or build it in the
+   [GitHub release](https://github.com/gentoomaniac/agent-bus/releases), or build it in the
    repository (this needs Node.js and npm; the file lands in `vscode/agent-messenger.vsix`):
    ```sh
    make vsix

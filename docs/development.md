@@ -165,7 +165,7 @@ The pid file and `nats-server.log` are in `<config-dir>/nats/`. Environment vari
 
 ## Cutting a release
 
-`.github/workflows/release.yaml` runs on GitHub Actions (github.com/gentoomaniac/agent-messenger).
+`.github/workflows/release.yaml` runs on GitHub Actions (github.com/gentoomaniac/agent-bus).
 On every push to `main` and every pull request it runs `make check` and a goreleaser snapshot build that
 publishes nothing. A tag `v*` publishes the archives, `checksums.txt` and the changelog as a
 GitHub release and pushes the image to `ghcr.io/gentoomaniac/agent-messenger` ([docker.md](docker.md)):

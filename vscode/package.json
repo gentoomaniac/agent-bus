@@ -7,7 +7,7 @@
   "license": "GPL-2.0-only",
   "repository": {
     "type": "git",
-    "url": "https://github.com/gentoomaniac/agent-messenger.git",
+    "url": "https://github.com/gentoomaniac/agent-bus.git",
     "directory": "vscode"
   },
   "engines": {

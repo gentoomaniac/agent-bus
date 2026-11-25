@@ -44,7 +44,10 @@ builds:
     ldflags: ["-s -w -X main.version={{.Version}}"]
 
 archives:
-  - formats: [tar.gz]
+  # busd runs only in the image (linux), so the archives leave it out: every platform's archive
+  # then holds the same binaries.
+  - ids: [agent-busctl, agent-bus, bus-monitor]
+    formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - README.md
@@ -62,7 +65,7 @@ changelog:
 release:
   github:
     owner: gentoomaniac
-    name: agent-messenger
+    name: agent-bus
 
 # The central components (nats-server, busd, agent-busctl, bus-monitor); the image is multi-arch linux. The registry and
 # image name come from the environment: IMAGE_NAME, by default ghcr.io/gentoomaniac/agent-messenger.
