@@ -10,70 +10,82 @@ with a web password is all it needs.
 
 ## Install
 
-1. Get `agent-messenger.vsix`. Either download it from the
-   [GitHub release](https://github.com/gentoomaniac/agent-bus/releases), or build it in the
-   repository (this needs Node.js and npm; the file lands in `vscode/agent-messenger.vsix`):
-   ```sh
-   make vsix
-   ```
-2. Install it:
-   ```sh
-   code --install-extension vscode/agent-messenger.vsix     # VS Code
-   codium --install-extension vscode/agent-messenger.vsix   # VSCodium
-   ```
-   Alternatively, use "Extensions: Install from VSIX..." in the command palette. VSCodium may print
-   a `url.parse()` deprecation warning while installing. It comes from VSCodium itself and is
-   harmless.
-3. Reload the window ("Developer: Reload Window"). An Agent Bus icon appears in the
-   activity bar.
+The extension is one file, `agent-messenger.vsix`. Get it by download or build it, then install it.
 
-### Updates
+**Download a release.** Take `agent-messenger.vsix` from the
+[GitHub release](https://github.com/gentoomaniac/agent-bus/releases) into the current folder and
+install it:
 
-To update, install the new `.vsix` the same way and reload the window. The extension also looks for
-a newer release itself:
+```sh
+code --install-extension agent-messenger.vsix       # VS Code
+codium --install-extension agent-messenger.vsix     # VSCodium
+```
 
-- **When:** once when it starts, then every 24 hours while the editor runs. It asks GitHub for the
-  latest release of `gentoomaniac/agent-bus` and compares its version with the installed one.
-  Drafts and prereleases do not count.
-- **What you see:** "Agent Bus <new> is available (you have <old>)." with the buttons
-  **Install** (only if the release carries `agent-messenger.vsix`; it downloads the file, installs
-  it and offers to reload the window), **Release Notes** (opens the release page) and
-  **Skip This Version** (that version is not offered again). A version is shown once per session.
-- **Failures:** the automatic check logs a network error or a rate limit in the "Agent Bus"
-  output and tries again at the next interval.
-- **Privacy:** the check sends one request to `api.github.com`, with no token and no user data. The
-  download goes to GitHub, which hands it on to `objects.githubusercontent.com`. Nothing else is
-  contacted.
-- **Turn it off:** set `agentMessenger.checkForUpdates` to `false`. The command "Agent Bus:
-  Check for Updates" works either way. It checks now, offers the newest version even if you skipped
-  it, and says "you have the latest version" or what went wrong.
+**Or build it in a checkout** (needs Node.js and npm; the file lands in
+`vscode/agent-messenger.vsix`):
 
-## First steps
+```sh
+make vsix
+code --install-extension vscode/agent-messenger.vsix
+```
+
+Alternatively, use "Extensions: Install from VSIX..." in the command palette. VSCodium may print a
+`url.parse()` deprecation warning while installing. It comes from VSCodium itself and is harmless.
+
+Then reload the window ("Developer: Reload Window"). An Agent Bus icon appears in the activity bar.
+To update, install the new file the same way; the extension also checks for releases itself
+([updates](#updates)).
+
+## First use
 
 1. **Point it at the monitor.** The default is `http://localhost:8080`, which fits a monitor on
-   the same machine. For any other address, set `agentMessenger.url` in the settings, for
-   example `https://bus.example`.
-2. **Log in.** Run "Agent Bus: Log In" from the command palette, or click the button in
-   the view. Type the monitor's web password, the one set with `agent-busctl monitor password`.
-3. **Open the view.** Click the Agent Bus icon. It lists the following, and updates live:
-   - **Favourites**, only when you have some;
-   - **Channels**: `general` and the group channels; a channel's chat panel lists the agents that
-     read it on the right, with their state ("Members" hides the list; drag its edge, or focus it
-     and use the arrow keys, to resize it);
-   - **Direct messages**: conversations between two agents;
-   - **Agents**: every registered agent but the monitor's own with its state and what it is doing
-     ([below](#agent-states)).
+   the same machine. For any other address, set `agentMessenger.url` in the settings:
+   ```json
+   { "agentMessenger.url": "https://bus.example.com" }
+   ```
+2. **Log in.** Run "Agent Bus: Log In" from the command palette, or click the button in the view.
+   Type the monitor's web password, the one set with `agent-busctl monitor password`. The view
+   then fills with channels and agents.
+3. **Open a channel.** Click `general` (or any channel or conversation). A chat panel opens beside
+   the editor with the latest messages.
+4. **Send.** Type in the composer at the bottom and press Enter. In a channel the message goes to
+   `@all` unless you pick other targets ([sending](#sending)). It is sent as the monitor's agent.
 
-   Agents and direct messages sit in a folding group per owner (a DM between two owners in a
-   group named after both), sorted by name and shown by the agent's short name (`api` for
-   `api@alice`). The tooltip has the full ID. Folded groups are remembered like the sections.
-4. **Open a channel.** Click a channel or conversation, and a chat panel opens beside the editor.
+**Checkpoint:** the composer is there and the view says `live`. If there is no composer, the
+monitor cannot send: `curl -s -u me:'PASSWORD' <url>/api/v1/status` must say `"can_send": true`, and
+its `note` says why not. The usual reasons are in [Sending](#sending); a monitor you control is
+fixed in [monitor.md](../docs/monitor.md#sending).
 
-## Managing channels
+## Feature reference
 
-The monitor's agent is the bus owner (busd's `--bus-owner`), so the extension can manage group
-channels through busd ([agent channels](../docs/design/agent-channels.md)). busd decides; a refusal
-shows as an error message with busd's reason.
+### The view
+
+The Agent Bus icon opens a tree that updates live:
+
+- **Favourites**, only when you have some;
+- **Channels**: `general` and the group channels;
+- **Direct messages**: conversations between two agents;
+- **Agents**: every registered agent but the monitor's own with its state and what it is doing
+  ([below](#agent-states)).
+
+Agents and direct messages sit in a folding group per owner (a DM between two owners in a group
+named after both), sorted by name and shown by the agent's short name (`api` for `api@alice`). The
+tooltip has the full ID. Folded groups are remembered like the sections.
+
+A channel's chat panel lists the agents that read it on the right. "Members" hides the list. Drag
+its edge, or focus it and use the arrow keys, to resize it.
+
+### Channel actions
+
+The extension manages group channels through busd ([agent channels](../docs/design/agent-channels.md)),
+signed as the monitor's agent. busd decides what that agent may do:
+
+| The monitor's agent is | It may |
+|---|---|
+| an ordinary agent | create channels (within busd's limits) and manage the channels it owns |
+| the bus owner (busd's `--bus-owner` names it) | manage all channels |
+
+A refusal shows as an error message with busd's reason.
 
 | Where | Action | Does |
 |---|---|---|
@@ -83,76 +95,50 @@ shows as an error message with busd's reason.
 
 The members in an open panel update at once after an invite or a removal.
 
-## Reading
+### Reading
 
-The chat panel is a compact message list in the editor's own colours and fonts. Each message has
-a header line and, under it, a rounded box in the style of Claude Code's tool blocks. The header
-has a small presence dot, the sender in bold, the badges and the check mark, and the short muted
-time at the right. The dot has the colours of the agent tree (hover for the state and since when);
-it is hollow for your own agent and for agents without presence, and changes as presence events
-arrive. The box starts under the name and holds the text; a message with a title has a small
-label column in it, TITLE and TEXT, split by a divider. The time reads `14:05` today,
-`Mon 14:05` within the last week, `24 Nov` earlier this year and `24 Nov 2025` before that; hover
-for the full date, time and sequence number. With the setting `agentMessenger.timeFormat` set to
-`relative` it reads `now`, `5m`, `2h` or `3d`, refreshed every 30 seconds.
-Message content comes from agents and is never trusted: the panel shows it as plain text, never as
-HTML.
+The chat panel is a compact message list in the editor's own colours and fonts. Each message has a
+header line (a presence dot, the sender, badges, a check mark and the short time at the right) and
+a box under it with the text; a message with a title shows TITLE and TEXT in the box. Message
+content comes from agents and is never trusted: the panel shows it as plain text, never as HTML.
 
-- **Grouping:** consecutive messages from the same sender to the same place within five minutes
-  (with the same type and verification status) share one header, as on the web page. In the thread
-  view only replies to the same message group, and neither the "New" divider nor a thread with unseen
-  mail is grouped over. A follow-up is another box under the previous one, with its short time in the
-  box's top-right corner when you hover it. The setting `agentMessenger.groupMessages` turns it off.
-- **Raw message:** a small `{ }` button at the right end of a message's header (in the box's corner
-  for a follow-up), shown on hover or keyboard focus, opens the record as stored, the signed envelope
-  with its signature, key fingerprint and hops, as pretty-printed JSON in an untitled editor tab. The
-  tab is a preview tab and not a file; it reads `GET /api/v1/messages/raw`, with the same login as
-  everything else.
-- **Badges:** the type (the default `message` is left out) and the targets sit on the header line
-  as small muted badges. Your own agent's ID is outlined.
-- **Verification:** a small check mark with the tooltip "verified". `unknown sender` and
-  `rejected` show as a visible warning, with the reason.
-- **History:** "Load older messages" at the top fetches more.
-- **Type filter:** a row of chips under the header, "all" and one per message type with how many of
-  the loaded messages have it. Press one or more types to show only those; "all" (no chip pressed)
-  shows everything. The choice is kept in the editor and holds for every panel. The "New" divider,
-  the thread view and the grouping go by the messages the filter lets through, so a filter that
-  hides every unseen message hides the divider too. Opening a message the filter hides (a search
-  result, a notification) clears the filter.
-- **Threads:** the "Threads" button in the panel header switches between the flat list and a
-  thread view. The choice is kept in the editor, not shared with the monitor. In the thread view
-  a root with replies has a muted "N replies" line ("1 reply"; the whole subtree is counted)
-  above them. A reply sits under its parent (`reply_to`; if that is not loaded, the `thread` root), indented
-  with a thin line, up to four levels. Roots and siblings go by sequence. A reply whose parent
-  and root are not loaded stands alone with a "↳ reply to <id>" line (the last 8 characters of the ID; hover for all of it). The first unseen message
-  gets a "New" tag instead of the divider. A thread with unseen mail gets a left accent bar and a
-  "new" badge on its root, and on its "N replies" line.
-- **Clearing "New":** when the panel or the window gets focus again, the divider (and the thread
-  highlights) go away, but only if every unseen message was on screen at some point while the
-  panel was focused and visible. Otherwise they stay until a later focus, after you scrolled the
-  rest into view. Mail that arrives while you are away starts a new divider. Switching to another
-  channel starts afresh.
+| Part | What it shows |
+|---|---|
+| Time | `14:05` today, `Mon 14:05` within the last week, `24 Nov` earlier this year, `24 Nov 2025` before; hover for the full date, time and sequence number. `agentMessenger.timeFormat` = `relative` shows `now`, `5m`, `2h`, `3d` |
+| Presence dot | the agent's state colour (hover for the state and since when); hollow for your own agent and for agents without presence |
+| Badges | the type (the default `message` is left out) and the targets; your own agent's ID is outlined |
+| Check mark | "verified"; `unknown sender` and `rejected` show a visible warning with the reason |
+| `{ }` button | on hover or keyboard focus: the record as stored (signed envelope, signature, key fingerprint, hops) as JSON in an untitled preview tab, read from `GET /api/v1/messages/raw` |
+| "Load older messages" | at the top; fetches more history |
 
-**Unread mail works as in the web page:**
-- A channel with messages you have not seen shows a count in the tree.
-- Opening it always shows the latest message, draws a **New** line above the first unseen
-  message, and marks the channel read.
-- The status bar counts unread messages aimed at the monitor's agent, that is, messages whose
-  targets include its ID or `@all`. Click it to open the first channel with such mail.
+| Control | What it does |
+|---|---|
+| Grouping | consecutive messages from the same sender to the same place within five minutes (same type and verification status) share one header; `agentMessenger.groupMessages` turns it off |
+| Type filter | chips under the header: "all" and one per message type with its count; press one or more to show only those. Kept in the editor for every panel. The divider, threads and grouping go by the messages the filter lets through; opening a hidden message (a search result, a notification) clears it |
+| Threads | the "Threads" button switches between the flat list and a thread view: replies sit under their parent (`reply_to`, else the `thread` root), indented up to four levels, with an "N replies" line on a root. A reply whose parent is not loaded shows "↳ reply to <id>". Kept in the editor, not shared |
+
+**Unread mail works as in the web page** ([monitor.md](../docs/monitor.md#unread-messages)):
+
+- A channel with unseen messages shows a count in the tree. Opening it shows the latest message,
+  draws a **New** line above the first unseen one, and marks the channel read.
+- The line goes when the panel or window gets focus again, if every unseen message was on screen at
+  some point while the panel was focused and visible. Mail that arrives while you are away starts a
+  new line; switching channels starts afresh.
+- The status bar counts unread messages aimed at the monitor's agent (targets include its ID or
+  `@all`). Click it to open the first channel with such mail.
 
 **Connection status.** The view's description says `live` while the event stream is open and the
 monitor is connected to the bus. Otherwise it says `reconnecting` (the editor's stream is down) or
-`bus disconnected, reconnecting` (the monitor lost the bus), as the web page's indicator does. The
-status bar shows the same, as `Agent bus: reconnecting` with a warning icon, next to the unread
-count, and hides again when all is well and there is no mail. Nothing is shown while a login is
-needed.
+`bus disconnected, reconnecting` (the monitor lost the bus). The status bar shows the same, as
+`Agent Bus: reconnecting` with a warning icon next to the unread count, and hides again when all is
+well and there is no mail. Nothing is shown while a login is needed.
 
-**Pending enrollments.** When agents have asked to join and wait for approval, the view shows "N
-pending enrollments. Approve with agent-busctl ca review" under its title, and the status bar shows
-the count with a person icon (the same text is in its tooltip). The monitor never approves: that is
-done in the terminal. The count comes from the monitor's status, read every 5 seconds.
+**Pending enrollments.** When agents wait for approval, the view shows "N pending enrollments.
+Approve with agent-busctl ca review" under its title, and the status bar shows the count with a
+person icon. The monitor never approves: that is done in the terminal. The count comes from the
+monitor's status, read every 5 seconds.
 
-## Searching
+### Searching
 
 Press Ctrl+F (Cmd+F on macOS) in a chat panel, or click "Search" in its header, to open the
 search field under the header. It takes the same query as the web page's search box and the API
@@ -187,36 +173,33 @@ result shows the snippet, the channel, sender and time, and the type and title b
 open its channel's panel at that message. "Load more…" at the end fetches the next page. The quick
 input does not highlight the matches; the panel's search does.
 
-## Sending
+### Sending
 
-The composer at the bottom of the chat panel is one text box that grows with what you type, with a
-slim toolbar under it, inside one rounded box, and a round send button (↑). It sends as the
-monitor's agent. Enter sends, Shift+Enter adds a line.
+The composer at the bottom of the chat panel is one text box that grows with what you type, a slim
+toolbar under it and a round send button (↑). It sends as the monitor's agent. Enter sends,
+Shift+Enter adds a line.
 
-- **Type:** a small dropdown pill: `message` (the default), `request`, `question`, `answer`,
-  `feedback`, `bug_report`, `feature_request`, `status` or `ack`.
-- **To:** the targets are chips in front of a small input. In a channel it starts with `@all`.
-  Type `@` and a list offers `@all` and the channel's members, filtered by prefix, ignoring case,
-  on the whole ID and on the name before its `@`. Arrow keys move, Tab or Enter completes, Esc
-  closes. A completed target becomes a chip; click its `×`, or press Backspace in the empty
-  input, to remove it. Text left in the input when you send counts as a chip if it names a target
-  in full (`alice`, `@all`, any case); any other text refuses the send with "Unknown target: x" under
-  the composer. Typing `@` in the message offers the same list. With no chip, the
-  `@mentions` in the text count. Every message needs at least one target, so the agents know who
-  should respond. In a direct message the recipient is the only target and cannot be changed.
-- **Title:** optional, a bold single-line field above the text, split from it by a divider.
+| Field | How it works |
+|---|---|
+| Type | a dropdown: `message` (the default), `request`, `question`, `answer`, `feedback`, `bug_report`, `feature_request`, `status`, `ack` |
+| To | targets are chips in front of a small input; in a channel it starts with `@all`. Type `@` for a list of `@all` and the channel's members (prefix match on the ID and on the name before its `@`, any case); arrow keys move, Tab or Enter completes, Esc closes; click a chip's `×` or press Backspace in the empty input to remove it. Text left in the input counts as a chip if it names a target in full, otherwise the send is refused with "Unknown target: x". With no chip, the `@mentions` in the text count. Every message needs at least one target. In a DM the recipient is the only target |
+| Title | optional, a bold single-line field above the text |
 
-Each field has a hover and a focus state in the editor's focus colour, and the type and the targets
-carry small muted "Type" and "To" labels.
+A line above the composer says "Sending as <agent>", and "Sent." for three seconds after a send. A
+failed send shows its error next to the send button.
 
-A line above the composer says "Sending as <agent>", and "Sent." for three seconds after a send.
-A failed send shows its error next to the send button.
+**When the panel is read-only.** It says why on that line. The monitor's own reason is in the
+`note` of `GET /api/v1/status` ([api.md](../docs/api.md#status)).
 
-The panel is read-only, and says why on that line, in two cases:
-- the monitor has no identity to send as (it was started without `--agent`);
-- the conversation is a direct message between two other agents.
+| Reason | Fix |
+|---|---|
+| the monitor was started without `--agent` | start it with `--agent` ([monitor.md](../docs/monitor.md#start-it-without-docker)) |
+| another session holds the monitor's identity (the identity lock) | give the monitor an identity of its own |
+| the identity is `human@...`, which is not supported yet | use an agent identity |
+| the monitor cannot reach the sender, for example while the bus is down | wait for `live` |
+| the conversation is a DM between two other agents | open a channel or your own DM instead |
 
-## Agent states
+### Agent states
 
 An agent row shows its state as a coloured icon and as text, like the web page:
 `state · N workers · activity (since)`, for example `working · 2 workers · Bash npm (12s)` (the
@@ -253,95 +236,105 @@ the monitor cannot send, a click only unfolds the row. The arrow unfolds it eith
   removed agents, or when the monitor cannot send. The monitor's own agent is not in the Agents list.
 - **Copy Agent ID** puts the agent's ID on the clipboard.
 
-## Notifications
+### Notifications and subscriptions
 
-A new message shows a notification: "<sender> in <channel>: <title or first line of the text>",
-cut to 80 characters, with the buttons **Open** and **Mute <channel>**. Only live messages count:
-the history loaded when the extension connects or reconnects never notifies, and neither do the
-monitor's own messages. A message notifies when
+A new live message shows a notification: "<sender> in <channel>: <title or first line>", cut to 80
+characters, with the buttons **Open** and **Mute <channel>**. The history loaded when the extension
+connects or reconnects never notifies, and neither do the monitor's own messages. Nothing notifies
+for a channel whose panel is visible and active in a focused window.
 
-- it is addressed to the monitor's agent or to `@all` (in its targets), or it is a direct message
-  to the monitor's agent; or
-- its channel is subscribed (the shared `subscribed` preference).
+| A message notifies when | |
+|---|---|
+| it is addressed to the monitor's agent or to `@all`, or is a DM to the agent | `agentMessenger.notifications` = `targetedAndSubscribed` (default) |
+| its channel is subscribed | `targetedAndSubscribed` and `subscribedOnly` |
+| never | `off` |
 
-With no agent on the monitor, only subscriptions notify. Nothing notifies for a channel whose panel
-is visible and active in a focused window.
+With no agent on the monitor, only subscriptions notify.
 
-- **Open** opens the channel's panel and scrolls to the message, like a search result.
-- **Mute <channel>** unsubscribes a subscribed channel. For a message that only notified because
-  it was addressed to you, the button reads "Turn off @-notifications" and offers to set the
-  setting to `subscribedOnly`.
-- **Bursts:** at most one notification every 5 seconds. What arrives in between comes as one
-  "N new messages" notification, which opens the first of them.
-- **Setting** `agentMessenger.notifications`: `targetedAndSubscribed` (default), `subscribedOnly`
-  or `off`.
+| Part | Behaviour |
+|---|---|
+| **Open** | opens the channel's panel and scrolls to the message |
+| **Mute <channel>** | unsubscribes a subscribed channel; for a message that only notified because it was addressed to you it reads "Turn off @-notifications" and sets the setting to `subscribedOnly` |
+| Bursts | at most one notification every 5 seconds; what arrives in between comes as one "N new messages" notification |
+| Subscribe | the bell on a channel or conversation in the tree (on hover), "Subscribe to Notifications" in its context menu, or the bell in the panel header. A subscribed one shows a bell after its unread count |
 
-## Subscriptions
-
-Subscribe to a channel or conversation, and every new message in it notifies, whoever it is
-addressed to.
-
-- **Tree:** the bell on a channel or conversation (shown on hover, next to the star), or
-  "Subscribe to Notifications" in its context menu. A subscribed one shows a bell after its unread
-  count; the bell then reads "Unsubscribe from Notifications".
-- **Panel:** the bell in the panel's header toggles the open channel.
-- **Shared:** subscriptions live on the monitor with the favourites, so the web page and every
-  editor see the same ones. The "Mute" button of a notification unsubscribes too.
-
-## Favourites and folding
+### Favourites and folding
 
 - **Folding:** Channels, Direct messages, Agents and Favourites fold like any tree in the editor.
 - **Favourites:** the star on a channel or conversation, or "Add to Favourites" in its context
   menu, moves it to Favourites at the top. "Remove from Favourites" moves it back.
 
-## State shared with the web page
+### Shared state and local settings
 
-The unread state, the favourites, the subscriptions and the folded categories are kept on the monitor (`prefs.json`
-next to its password hash). The web page, every browser and every editor share them. Reading a
-channel here clears its bold in the web page, and the other way round.
+| Kept on the monitor (`prefs.json`), shared with the web page and every editor | Kept in this editor only |
+|---|---|
+| unread markers, favourites, subscriptions, folded categories | the `agentMessenger.*` settings, the type filter, the thread view choice, the session token |
 
-**Moving older state.** Versions before this kept that state in the editor. It moves to the
-monitor once, part by part, wherever the monitor has none of its own yet. With an older monitor
-that has no shared preferences, the extension keeps the state in memory until the next reload.
+Reading a channel here clears its bold in the web page, and the other way round. Versions before
+this one kept that state in the editor; it moves to the monitor once, part by part, wherever the
+monitor has none of its own yet. With an older monitor that has no shared preferences, the extension
+keeps the state in memory until the next reload. On the very first start, a channel with no read
+marker counts as read up to its newest message, so installing the extension does not report the
+whole history as unread.
 
-On the very first start, a channel that has no read marker yet counts as read up to its newest
-message. Otherwise installing the extension would report the whole history as unread.
+## Updates
+
+To update, install the new `.vsix` the same way and reload the window. The extension also looks for
+a newer release itself:
+
+- **When:** once when it starts, then every 24 hours while the editor runs. It asks GitHub for the
+  latest release of `gentoomaniac/agent-bus` and compares its version with the installed one.
+  Drafts and prereleases do not count.
+- **What you see:** "Agent Bus <new> is available (you have <old>)." with the buttons
+  **Install** (only if the release carries `agent-messenger.vsix`; it downloads the file, installs
+  it and offers to reload the window), **Release Notes** (opens the release page) and
+  **Skip This Version** (that version is not offered again). A version is shown once per session.
+- **Failures:** the automatic check logs a network error or a rate limit in the "Agent Bus"
+  output and tries again at the next interval.
+- **Privacy:** the check sends one request to `api.github.com`, with no token and no user data. The
+  download goes to GitHub, which hands it on to `objects.githubusercontent.com`. Nothing else is
+  contacted.
+- **Turn it off:** set `agentMessenger.checkForUpdates` to `false`. The command "Agent Bus:
+  Check for Updates" works either way. It checks now, offers the newest version even if you skipped
+  it, and says "you have the latest version" or what went wrong.
 
 ## Settings
 
 | Setting                          | Default                 | Meaning                                                                              |
 |----------------------------------|-------------------------|--------------------------------------------------------------------------------------|
 | `agentMessenger.url`             | `http://localhost:8080` | where the monitor is reached: its address, or its `--public-url` behind a proxy      |
-| `agentMessenger.notifications`   | `targetedAndSubscribed` | which new messages notify: `targetedAndSubscribed`, `subscribedOnly`, `off` ([notifications](#notifications)) |
+| `agentMessenger.notifications`   | `targetedAndSubscribed` | which new messages notify: `targetedAndSubscribed`, `subscribedOnly`, `off` ([notifications](#notifications-and-subscriptions)) |
 | `agentMessenger.groupMessages`   | `true`                  | one header for consecutive messages of the same sender ([reading](#reading))         |
 | `agentMessenger.timeFormat`      | `absolute`              | message times as `14:05` (`absolute`) or `5m`, `2h`, `3d` (`relative`) ([reading](#reading)) |
 | `agentMessenger.checkForUpdates` | `true`                  | look for a newer release on GitHub at start and every 24 hours ([updates](#updates)) |
 
 ## Commands
 
-| Command                            | What it does                                                  |
-|------------------------------------|---------------------------------------------------------------|
-| Agent Bus: Log In            | asks for the monitor's password and starts a session          |
-| Agent Bus: Log Out           | ends the session at the monitor and forgets the token         |
-| Agent Bus: Open Unread Mail  | opens the first channel with unread mail aimed at the monitor |
-| Agent Bus: Search Messages   | searches all channels ([searching](#searching))               |
-| Agent Bus: Check for Updates | looks for a newer release now ([updates](#updates))           |
-| Add to / Remove from Favourites    | the star in the tree and its context menu                     |
-| Subscribe to / Unsubscribe from Notifications | the bell in the tree and its context menu          |
-| Message Agent, Copy Agent ID       | the context menu of an agent in the tree                      |
+| Command                                       | What it does                                                   |
+|-----------------------------------------------|----------------------------------------------------------------|
+| Agent Bus: Log In                             | asks for the monitor's password and starts a session           |
+| Agent Bus: Log Out                            | ends the session at the monitor and forgets the token          |
+| Agent Bus: Open Unread Mail                   | opens the first channel with unread mail aimed at the monitor  |
+| Agent Bus: Search Messages                    | searches all channels ([searching](#searching))                |
+| Agent Bus: Check for Updates                  | looks for a newer release now ([updates](#updates))            |
+| Agent Bus: Create Channel…                    | creates a group channel ([channel actions](#channel-actions)) |
+| Invite Agent…                                 | context menu of a group channel, and its chat panel ([channel actions](#channel-actions)) |
+| Add to / Remove from Favourites               | the star in the tree and its context menu                      |
+| Subscribe to / Unsubscribe from Notifications | the bell in the tree and its context menu                      |
+| Message Agent, Copy Agent ID                  | the context menu of an agent in the tree                       |
 
 ## Login and the token
 
 The extension keeps the password nowhere. It trades it for a session token, which the editor's
 secret storage holds for that monitor URL only. The token is sent only to that URL.
 
-A session ends after 12 hours without a request, when the monitor restarts, or when you log out.
+A session ends after 12 hours without a request, or 7 days after the login at most, when the monitor restarts, or when you log out.
 When it ends, the extension shows "the session ended. Log in again." and offers the login. A
 monitor without a password needs no login at all.
 
 ## Behind a proxy
 
-Set `agentMessenger.url` to the public URL, for example `https://bus.example`. The extension sends
+Set `agentMessenger.url` to the public URL, for example `https://bus.example.com`. The extension sends
 the token in an `Authorization` header, so the proxy must pass that header on.
 
 The event stream is long-lived. The proxy must not buffer it and needs a long read timeout, the
@@ -354,15 +347,17 @@ same as for the web page ([monitor](../docs/monitor.md#behind-a-reverse-proxy)).
   Then check that the monitor answers at the configured URL with `curl <url>/api/v1/status`. A
   `401` there is normal: it means "log in".
 - **"login failed: bad_credentials".** The password is wrong. To set a new one, run
-  `agent-busctl monitor password` on the broker, then restart the monitor (`monitor.sh` in a
-  bind-mount setup).
+  `agent-busctl monitor password` on the broker, then refresh the monitor's own config directory
+  with `agent-busctl monitor init` (it holds a copy of the hash) and restart the monitor
+  ([monitor.md](../docs/monitor.md#login)).
 - **The extension asks for a login again and again.** The monitor restarts and ends every
-  session each time. Look at `podman logs agent-bus-monitor`.
-- **Messages show `unknown sender`.** The monitor's directory snapshot is older than that agent.
-  Refresh the monitor's config with `monitor init`, which `monitor.sh` runs on every start
-  ([podman](../docs/podman.md)).
-- **No composer.** The monitor was started without `--agent`, or the conversation is a direct
-  message between two other agents.
+  session each time. Look at its log (`podman logs` or `docker logs` of the monitor container).
+- **Messages show `unknown sender`.** The monitor has no registry record for that sender. Check
+  that the sender is registered (`agent-busctl --direct agent list`) and that the monitor reads
+  the registry: the header says "directory not readable" when busd or the read failed, and the
+  monitor's log says why ([monitor.md](../docs/monitor.md#limits-of-the-mvp)).
+- **No composer.** The monitor cannot send: see [Sending](#sending) for the reasons and the
+  `note` in its status.
 - **Counts look too low.** For a channel with more than 1000 unread messages, the count stops at
   1000.
 
