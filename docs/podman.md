@@ -98,7 +98,9 @@ Two details of this command:
 
 ### 4. Create the streams
 
-An alias runs `agent-busctl` inside the broker container. It must be set in the shell you type in:
+An alias runs `agent-busctl` inside the broker container. It must be set in the shell you type in. It
+has no `-it`, so it suits commands that print and exit; the interactive ones (`ca review`, `monitor
+password` without a pipe) are written as `podman exec -it agent-bus agent-busctl ...` below:
 
 ```sh
 alias agent-busctl='podman exec agent-bus agent-busctl'

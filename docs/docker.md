@@ -484,7 +484,7 @@ the quick start); replace `IMAGE` with the image name:
 docker run --rm -v $AGENT_BUS_HOME/config:/config --entrypoint agent-busctl IMAGE tls init --san bus.example.com
 docker run --rm -v $AGENT_BUS_HOME/config:/config --entrypoint agent-busctl IMAGE admin init
 docker run -d --name agent-bus -p 4222:4222 -p 4223:4223 -p 127.0.0.1:8080:8080 -v $AGENT_BUS_HOME/config:/config -v $AGENT_BUS_HOME/data:/data IMAGE
-alias agent-busctl='docker exec agent-bus agent-busctl'
+alias agent-busctl='docker exec agent-bus agent-busctl'     # no terminal: use `docker exec -it` for ca review
 ```
 
 For Podman use [podman.md](podman.md), which adds the `--userns` option and `--network pasta`.

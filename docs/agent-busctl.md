@@ -16,6 +16,18 @@ the alias below, which `docker compose exec` or `podman exec` defines for the sh
 | Docker | `alias agent-busctl='docker compose -f /abs/path/deploy/docker-compose.yaml exec agent-bus agent-busctl'` | `type agent-busctl` |
 | Podman | `alias agent-busctl='podman exec agent-bus agent-busctl'` | `type agent-busctl` |
 
+**Terminal or not.** The alias is for commands that print and exit, also from scripts. `docker
+compose exec` gives the command a terminal when you type it in one, so the Docker alias also works
+for the commands that prompt (`ca review`, `monitor password`); use `exec -T` when you pipe into it.
+`podman exec` does not: it needs `-it` for those, and the plain Podman alias has none. The
+interactive commands are therefore written out in full below:
+
+| Command | Docker | Podman |
+|---|---|---|
+| `ca review` | `agent-busctl ca review` | `podman exec -it agent-bus agent-busctl ca review` |
+| `monitor password` (prompts) | `agent-busctl monitor password` | `podman exec -it agent-bus agent-busctl monitor password` |
+| a command that reads standard input | `docker compose -f /abs/path/deploy/docker-compose.yaml exec -T agent-bus agent-busctl ...` | `podman exec -i agent-bus agent-busctl ...` |
+
 Commands that run before the broker exists (`tls init`, `admin init`) use a one-off container on the
 config folder instead; the exact lines are in [docker.md](docker.md#1-certificates-and-admin-credentials)
 and [podman.md](podman.md#2-certificates-and-admin-credentials). The name is `agent-busctl` and not
@@ -683,7 +695,8 @@ A terminal screen for the same, updated every two seconds: the list of pending r
 pane, and the keys up/down, `a` approve, `r` reject (reason prompt), `/` filter, `q` quit. An
 approval of an ID that would replace another key asks for confirmation first. It needs a terminal:
 `docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl ca review` (compose
-allocates one) or `podman exec -it agent-bus agent-busctl ca review`.
+allocates one; this is what the Docker alias runs) or `podman exec -it agent-bus agent-busctl ca
+review` (the plain Podman alias has no `-it`).
 
 ### Limits and rollback
 
@@ -736,7 +749,8 @@ no broker. Restart `bus-monitor` afterwards: it reads the hash at start, and a r
 login session.
 
 ```sh
-agent-busctl monitor password       # prompts (the alias gives it a terminal)
+agent-busctl monitor password       # Docker: prompts, compose exec gives it a terminal
+podman exec -it agent-bus agent-busctl monitor password   # Podman: -it, or it cannot prompt
 # from a script, with standard input kept open:
 printf '%s\n' "$PASSWORD" | docker compose -f deploy/docker-compose.yaml exec -T agent-bus agent-busctl monitor password
 printf '%s\n' "$PASSWORD" | podman exec -i agent-bus agent-busctl monitor password
