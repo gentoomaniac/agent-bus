@@ -79,9 +79,12 @@ type Admin interface {
 	AccountExists(ctx context.Context, agentID string) (bool, error)
 	// DeleteAccount removes the agent's access; its connections are closed.
 	DeleteAccount(ctx context.Context, agentID string) error
-	// CreateGroupChannel adds the channel to the catalogue, replacing the description of an
-	// existing one, and gives every agent access to it. It says whether the channel is new.
-	CreateGroupChannel(ctx context.Context, name, description string) (created bool, err error)
+	// CreateGroupChannel adds the channel to the catalogue and gives every agent access to it. A
+	// channel in the catalogue keeps its entry. It says whether the channel is new.
+	CreateGroupChannel(ctx context.Context, record TopicRecord) (created bool, err error)
+	// DescribeGroupChannel replaces the description of a catalogued channel; the rest of its entry
+	// stays.
+	DescribeGroupChannel(ctx context.Context, name, description string) error
 	// CreateReadCursor makes the agent's read cursor on a channel, starting after the given
 	// sequence (0: at the beginning). A cursor that exists is left as it is, with its position.
 	CreateReadCursor(ctx context.Context, agentID string, channel Channel, afterSequence uint64) error

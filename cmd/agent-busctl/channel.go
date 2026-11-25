@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
@@ -24,8 +25,9 @@ type ChannelCreateCmd struct {
 	Description string `help:"What the channel is for; listed in the catalogue."`
 }
 
-// Run adds the channel to the catalogue and gives every agent access to it. Repeating it updates
-// the description.
+// Run adds the channel to the catalogue and gives every agent access to it. The bus owner owns it:
+// the entry names no agent as its owner. Repeating it updates the description; an agent's channel
+// keeps its owner.
 func (cmd *ChannelCreateCmd) Run(ctx context.Context, cli *CLI) error {
 	if err := bus.ValidateGroupName(cmd.Name); err != nil {
 		return err
@@ -36,9 +38,15 @@ func (cmd *ChannelCreateCmd) Run(ctx context.Context, cli *CLI) error {
 	}
 	defer admin.Close()
 
-	created, err := admin.CreateGroupChannel(ctx, cmd.Name, cmd.Description)
+	now := time.Now().UTC()
+	created, err := admin.CreateGroupChannel(ctx, bus.TopicRecord{Name: cmd.Name, Description: cmd.Description, CreatedAt: now, UpdatedAt: now})
 	if err != nil {
 		return err
+	}
+	if !created {
+		if err := admin.DescribeGroupChannel(ctx, cmd.Name, cmd.Description); err != nil {
+			return err
+		}
 	}
 	if err := writeCatalogue(ctx, admin, trust.DirectoryPath(cli.ConfigDir)); err != nil {
 		return err

@@ -2,11 +2,16 @@ package bus
 
 import "time"
 
-// TopicRecord is the catalogue entry of a group channel, keyed by channel name.
+// TopicRecord is the catalogue entry of a group channel, keyed by channel name
+// (docs/design/agent-channels.md).
 type TopicRecord struct {
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Owner is the channel owner: the agent that created the channel through busd. Empty means the
+	// bus owner, which owns every channel agent-busctl made, also those of a release before owners.
+	Owner     string    `json:"owner,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitzero"` // zero for a channel of a release before owners
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // AgentRecord is the registry entry of an agent, keyed by its agent token. PublicKey and

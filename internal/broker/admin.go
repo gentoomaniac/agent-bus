@@ -178,18 +178,49 @@ func (admin *Admin) DeleteAccount(ctx context.Context, agentID string) error {
 	})
 }
 
-func (admin *Admin) CreateGroupChannel(ctx context.Context, name, description string) (bool, error) {
-	value, err := json.Marshal(bus.TopicRecord{Name: name, Description: description, UpdatedAt: time.Now().UTC()})
+func (admin *Admin) CreateGroupChannel(ctx context.Context, record bus.TopicRecord) (bool, error) {
+	value, err := json.Marshal(record)
 	if err != nil {
 		return false, err
 	}
-	created, err := admin.putControlRecord(ctx, catalogueKV, name, value)
+	catalogue, err := admin.control.stream.KeyValue(ctx, catalogueKV)
 	if err != nil {
-		return false, fmt.Errorf("writing the catalogue (has `agent-busctl init` run?): %w", err)
+		return false, fmt.Errorf("opening the catalogue (has `agent-busctl init` run?): %w", admin.control.explain(err))
+	}
+	_, err = catalogue.Create(ctx, record.Name, value)
+	created := err == nil
+	if err != nil && !errors.Is(err, jetstream.ErrKeyExists) {
+		return false, fmt.Errorf("writing the catalogue: %w", admin.control.explain(err))
 	}
 	// The grants are regenerated even for an existing channel, so a run that failed after the
 	// catalogue write finishes the job when it is repeated.
 	return created, admin.updateAuth(ctx, func(*userTable) error { return nil })
+}
+
+func (admin *Admin) DescribeGroupChannel(ctx context.Context, name, description string) error {
+	catalogue, err := admin.control.stream.KeyValue(ctx, catalogueKV)
+	if err != nil {
+		return fmt.Errorf("opening the catalogue (has `agent-busctl init` run?): %w", admin.control.explain(err))
+	}
+	entry, err := catalogue.Get(ctx, name)
+	if errors.Is(err, jetstream.ErrKeyNotFound) {
+		return fmt.Errorf("there is no channel %s", name)
+	}
+	if err != nil {
+		return admin.control.explain(err)
+	}
+	var record bus.TopicRecord
+	if err := json.Unmarshal(entry.Value(), &record); err != nil {
+		return fmt.Errorf("reading the catalogue entry of %s: %w", name, err)
+	}
+	record.Description, record.UpdatedAt = description, time.Now().UTC()
+	value, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	// Compare-and-set: a change made since the read fails rather than being overwritten.
+	_, err = catalogue.Update(ctx, name, value, entry.Revision())
+	return admin.control.explain(err)
 }
 
 func (admin *Admin) CreateReadCursor(ctx context.Context, agentID string, channel bus.Channel, afterSequence uint64) error {

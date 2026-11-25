@@ -173,7 +173,9 @@ directory to remove before you rerun it.
 ### channel create
 
 Creates a group channel: writes it to the `catalogue` (key = name) and gives every agent the
-grants for its read cursor on it. Repeating it updates the description.
+grants for its read cursor on it. The bus owner owns it: its entry names no agent as owner
+([agent channels](design/agent-channels.md)). Repeating it updates the description and keeps the
+owner, also of a channel an agent created.
 
 | Flag            | Meaning                                    |
 |-----------------|--------------------------------------------|
