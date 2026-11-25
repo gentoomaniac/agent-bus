@@ -52,6 +52,7 @@ type CLI struct {
 
 	PresenceHeartbeat time.Duration `help:"mcp only: how often an unchanged presence record is published; readers call an agent offline after three times this." default:"30s" env:"BUS_PRESENCE_HEARTBEAT"`
 
+	Enroll   EnrollCmd   `cmd:"" help:"Ask the broker for a client certificate for --agent, to be approved by the owner (docs/claude-code.md). Needs no login of the agent's own."`
 	Send     SendCmd     `cmd:"" help:"Send a message to one agent."`
 	Publish  PublishCmd  `cmd:"" help:"Post to general or a group channel."`
 	Inbox    InboxCmd    `cmd:"" help:"Fetch new mail and print the unread messages as JSON."`
@@ -264,7 +265,8 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if kongCtx.Command() != "mcp" && !cli.Pending.Wait {
+	// enroll bounds its own waiting (--waitforcert).
+	if kongCtx.Command() != "mcp" && kongCtx.Command() != "enroll" && !cli.Pending.Wait {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, cli.Timeout)
 		defer cancel()
@@ -272,7 +274,7 @@ func main() {
 
 	kongCtx.BindTo(ctx, (*context.Context)(nil))
 	kongCtx.Bind(&cli)
-	if kongCtx.Command() != "pending" && kongCtx.Command() != "event" {
+	if kongCtx.Command() != "pending" && kongCtx.Command() != "event" && kongCtx.Command() != "enroll" {
 		session, closeSession, err := cli.open(kongCtx.Command() == "mcp")
 		kongCtx.FatalIfErrorf(err)
 		defer closeSession()

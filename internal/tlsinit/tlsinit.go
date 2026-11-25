@@ -85,14 +85,20 @@ func Create(opts Options) error {
 		return err
 	}
 
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+	// The broker sends its certificate followed by the CA's, so that a new machine that was given
+	// the CA's fingerprint can fetch the CA and check it (broker.FetchCA). Clients still trust
+	// only the CA certificate they hold.
+	brokerPEM := append(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: brokerDER}), caPEM...)
+
 	outputs := []struct {
 		path string
 		pem  []byte
 		mode os.FileMode
 	}{
-		{opts.CACertPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}), files.PublicMode},
+		{opts.CACertPath, caPEM, files.PublicMode},
 		{opts.CAKeyPath, encodeKey(caKey), files.SecretMode},
-		{opts.BrokerCertPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: brokerDER}), files.PublicMode},
+		{opts.BrokerCertPath, brokerPEM, files.PublicMode},
 		{opts.BrokerKeyPath, encodeKey(brokerKey), files.SecretMode},
 	}
 	for _, output := range outputs {
