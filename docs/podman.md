@@ -276,7 +276,9 @@ fingerprint you gave (or uses a `ca.pem` you copied into `~/.config/agent-bus/`)
 there, sends the request and prints an approval code and its signing key fingerprint. A CA that is
 only taken from the broker would prove nothing, so without a copied `ca.pem` the flag is required.
 `--waitforcert` keeps asking (every few seconds, slowing to every half minute) until you decide, for
-up to 24 hours or the time you give (`--waitforcert=10m`); without it the command returns, and
+up to 24 hours or the time you give (`--waitforcert=10m`, `--waitforcert=30s` is honoured too). Each
+question to busd gives up after 10 seconds and is asked again, so a busd that restarts meanwhile
+does not stall the wait; without the flag the command returns, and
 running it again collects the answer.
 
 **Approve it, on the broker's machine:**

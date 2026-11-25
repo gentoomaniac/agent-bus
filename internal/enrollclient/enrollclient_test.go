@@ -103,7 +103,7 @@ func (f *fixture) run(wait time.Duration) error {
 	e := &enrolment{
 		opts:      Options{ConfigDir: f.configDir, AgentID: agentID, Wait: wait, Out: f.out},
 		requester: f.busd, caPEM: f.busd.caPEM, dir: creds.AgentDir(f.configDir, agentID),
-		pollEvery: broker.Backoff{Initial: time.Millisecond, Max: 5 * time.Millisecond},
+		pollEvery: broker.Backoff{Initial: time.Millisecond, Max: 5 * time.Millisecond}, exchangeTimeout: time.Second,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

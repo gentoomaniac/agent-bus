@@ -35,6 +35,10 @@ const (
 	pendingFile = "enroll-pending.json"
 	// DefaultWait is how long a bare --waitforcert waits: as long as a request lives.
 	DefaultWait = 24 * time.Hour
+	// defaultExchangeTimeout bounds one question to busd. A question busd never answers (it
+	// stopped after receiving it) would otherwise hold the whole wait, though busd may be back and
+	// the request approved a moment later; after the timeout the loop asks again.
+	defaultExchangeTimeout = 10 * time.Second
 )
 
 // Options say who asks for what, and whom to trust.
@@ -88,7 +92,10 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 	defer requester.Close()
-	return (&enrolment{opts: opts, requester: requester, caPEM: caPEM, dir: creds.AgentDir(opts.ConfigDir, opts.AgentID), pollEvery: defaultPoll}).run(ctx)
+	return (&enrolment{
+		opts: opts, requester: requester, caPEM: caPEM, dir: creds.AgentDir(opts.ConfigDir, opts.AgentID),
+		pollEvery: defaultPoll, exchangeTimeout: defaultExchangeTimeout,
+	}).run(ctx)
 }
 
 // trustedCA returns the CA certificate this machine trusts. One that was copied here is used (and
@@ -132,6 +139,8 @@ type enrolment struct {
 	caPEM     []byte
 	dir       string
 	pollEvery broker.Backoff // the status questions of --waitforcert
+
+	exchangeTimeout time.Duration // per question, inside the whole wait
 }
 
 var defaultPoll = broker.Backoff{Initial: 2 * time.Second, Max: 30 * time.Second}
@@ -158,8 +167,11 @@ func (e *enrolment) run(ctx context.Context) error {
 	fmt.Fprintf(e.opts.Out, "approval code %s, signing key %s: the owner compares them with what `agent-busctl ca review` shows\n",
 		request.Code(), fingerprintOfRequestKey(request))
 
-	ctx, cancel := context.WithTimeout(ctx, max(e.opts.Wait, time.Minute))
-	defer cancel()
+	if e.opts.Wait > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, e.opts.Wait)
+		defer cancel()
+	}
 	for attempt := 1; ; attempt++ {
 		reply, err := e.ask(ctx, request, isNew && attempt == 1)
 		if err != nil && e.opts.Wait == 0 {
@@ -216,6 +228,8 @@ func (e *enrolment) exchange(ctx context.Context, subject string, body any) (enr
 	if err != nil {
 		return enroll.Reply{}, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, e.exchangeTimeout)
+	defer cancel()
 	answer, err := e.requester.Request(ctx, subject, data)
 	if err != nil {
 		return enroll.Reply{}, err
