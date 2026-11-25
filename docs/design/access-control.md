@@ -105,10 +105,12 @@ no listener of its own: it stays a password user of the password listener.
 
 **Decision** (owner, 2026-11-24, after a design review): agents get client certificates from the bus CA through a Puppet-style enrollment flow, replacing agent passwords. Planned after agent removal, the protocol fixes and the minimal monitor API.
 
-> **Under review.** The owner is reconsidering where the CA key lives. A review suggested a minimal
-> busd that holds the CA key and performs the reloads, instead of the monitor doing both (the
-> monitor would then hold no CA key and need no helper in the broker container). Nothing is decided;
-> the text below is the current plan and stays as it is until the owner decides.
+> **Decided (owner, 2026-11-25, decision 41): busd holds the CA key, not the monitor.** A minimal
+> busd in the broker container holds the CA key, signs certificates, keeps the pending enrollment
+> requests and makes every auth-file change and reload. The monitor stays strictly read-only: it
+> shows the number of pending requests, nothing more. Approval is a TUI, `agent-busctl ca review`
+> (run with `podman exec -it agent-bus …`), plus `agent-busctl ca list|sign|reject` for scripts;
+> no web approval page. Where the text below says the monitor signs or reloads, read busd.
 
 ```mermaid
 sequenceDiagram

@@ -4,6 +4,13 @@
 
 busd does the work that needs admin rights and never carries messages.
 
+**Decision 41 (owner, 2026-11-25):** the first busd is minimal and comes before the enrollment flow.
+It runs in the broker container, holds the CA key, signs certificates, keeps the pending
+enrollment requests (received through the enrollment login) and makes every auth-file change and
+reload, so nothing reloads nats-server across containers. It has no HTTP interface. The owner
+approves requests in a TUI, `agent-busctl ca review`, or with `agent-busctl ca list|sign|reject`;
+the monitor only shows how many are pending.
+
 > **Status: planned, not built (milestone 3).** In the MVP, `agent-busctl --direct` holds the
 > admin credentials and does what busd would do: it creates identities, channels and the agents'
 > consumers, and writes a **directory copy** (`directory/<agent-token>.json` and a `channels`
