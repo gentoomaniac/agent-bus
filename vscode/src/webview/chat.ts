@@ -337,7 +337,7 @@ document.addEventListener("visibilitychange", activate);
 
 composer.addEventListener("submit", (event) => {
   event.preventDefault();
-  if (!textInput.value.trim()) return;
+  if (sending || !textInput.value.trim()) return; // Enter again while a send is under way posts nothing
   sending = true;
   updateSend();
   problem.textContent = "";

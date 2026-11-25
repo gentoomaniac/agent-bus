@@ -234,7 +234,7 @@ export class ChatPanels implements vscode.Disposable {
   .chip button { color: inherit; background: transparent; padding: 0 0 0 4px; line-height: 1; }
   .chip button:hover:not(:disabled) { background: transparent; opacity: 0.7; }
   #toolbar .pill { color: var(--vscode-descriptionForeground); background: transparent; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 10px; font-size: 0.85em; padding: 1px 8px; }
-  #toolbar select.pill { appearance: none; max-width: 10em; cursor: pointer; }
+  #toolbar select.pill { max-width: 10em; cursor: pointer; } /* the native arrow stays: it shows the pill is a choice */
   #toolbar select.pill option { color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); }
   #toolbar .pill:hover:not(:disabled) { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground); }
   #toolbar .pill[aria-pressed="true"] { color: var(--vscode-foreground); border-color: var(--vscode-focusBorder); }
