@@ -2,138 +2,32 @@
 
 `bus-monitor` is a small web interface to see that the bus works: a chat-like page with the
 channels, the agents, the members of each channel and every message with its verification status.
-It can also post messages as one agent. It is the MVP version of [design/monitor-and-api.md](design/monitor-and-api.md): one user with one
-password, no private channels, and no way to reply to a message (it does show threads).
+It can also post messages as one agent. It is the MVP version of
+[design/monitor-and-api.md](design/monitor-and-api.md): one user with one password, no private
+channels, and no way to reply to a message (it does show threads).
 
-## Security: it shows everything
+**It shows everything**, including all direct messages. Read
+[Security](#security-it-shows-everything) before you publish it.
 
-The monitor reads with two read-only logins of its own (`monitor-bus` and `monitor-control`: no
-write, no approval, no auth file), so it sees every message of every channel, including all direct
-messages, and with `--agent` it can post as that agent. Give it a config directory of its own
-(`agent-busctl monitor init <dir>`), so it never sees `ca.key` or the admin logins; a monitor that
-mounts the broker's config directory can read the CA key, which decision 41 rules out. A config
-directory made before the read-only logins existed has only the admin logins, which the monitor
-then uses and says so in its log (migration: [podman.md](podman.md#6-the-monitor)). It speaks **plain HTTP only**, so there are two ways to
-run it:
-
-- **On loopback** (the default, `127.0.0.1:8080`). It refuses any other `--listen` address unless
-  `--behind-proxy` is given. Without a password it is open to everyone on the machine and the page
-  shows a "no password set" banner; set one ([Login](#login)) as soon as other people use the
-  machine. To use it from another machine, tunnel to it (`ssh -L 8080:127.0.0.1:8080 broker-host`)
-  or use a proxy.
-- **Behind a reverse proxy** that does the TLS ([Behind a reverse proxy](#behind-a-reverse-proxy)).
-  That is the only supported way to publish it. The monitor then insists on a password.
-
-There is no TLS in the monitor and no other way to expose it. It never sends CORS headers, and it
-answers only requests whose `Host` header is `localhost`, `127.0.0.1`, `[::1]`, the listen
-address's host, the `--public-url` host or an `--allowed-host`, with any port (so a published port
-such as `18080:8080` works). That refuses a web page on another name that resolves to this machine
-(DNS rebinding); for any other name, add `--allowed-host name` (repeatable; `name:port` pins the
-port).
-
-## Login
-
-`agent-busctl monitor password` sets the one password: it prompts twice (or reads one line from standard
-input) and stores a bcrypt hash in `monitor-web/password.bcrypt` of the config directory (older
-versions used `monitor/password.bcrypt`; that file is still read until the new one exists). Restart
-`bus-monitor` after changing it; a restart also ends all login sessions. Sending stays the
-monitor's one identity (`--agent`); several users may come later.
-
-With a password the page shows a login form, and the API ([api.md](api.md)) wants the session
-cookie, a bearer token or HTTP Basic. Sessions are random tokens kept in the monitor's memory (12
-hours idle, 7 days at most), renewed at every login and ended by logout. The cookie is `HttpOnly`,
-`SameSite=Strict` and `Secure` when the monitor knows the client is on https. A request that changes
-something (send, logout) must come from the page's own origin or carry an `Authorization` header.
-After five wrong passwords a client is slowed down, with a delay that doubles each time; every
-attempt counts before the password is compared, so guesses sent at once do not get more tries. A
-password file with nothing in it stops the monitor with an error instead of leaving it open.
-
-## Behind a reverse proxy
-
-```sh
-bus-monitor --listen 0.0.0.0:8080 --behind-proxy --public-url https://bus.example
-```
-
-- `--behind-proxy` (`BUS_WEB_BEHIND_PROXY`) allows a non-loopback `--listen` address and **refuses
-  to start without a password**. It also makes the monitor believe `X-Forwarded-*` headers, but
-  only from `--trusted-proxy` peers.
-- `--trusted-proxy` (repeatable, an IP or a CIDR range; default `127.0.0.1` and `::1`) names the
-  proxies whose `X-Forwarded-For` (the client's address, for the login limit), `X-Forwarded-Proto`
-  and `X-Forwarded-Host` are believed. From anybody else they are ignored, and without
-  `--behind-proxy` they always are.
-- `--public-url` (`https://bus.example`, scheme and host and optional port) is the page's address
-  as clients see it. It decides the `Origin` a changing request must have and whether the cookie is
-  `Secure` (https), and its host is accepted as `Host`. Without it the monitor uses the `Host` and
-  `X-Forwarded-Proto` a trusted proxy sent. Set it: then a proxy that gets the headers wrong can
-  not widen what is accepted.
-- The proxy passes the client's `Host` through (nginx: `proxy_set_header Host $host`), does not
-  buffer `/api/v1/events` and lets it stay open (HTTP/1.1, a long read timeout).
-
-Samples, all checked with their own tools (`caddy validate`, `nginx -t`):
-[deploy/proxy/Caddyfile](../deploy/proxy/Caddyfile),
-[deploy/proxy/nginx.conf](../deploy/proxy/nginx.conf) and, for Docker Compose,
-[deploy/docker-compose.proxy.yaml](../deploy/docker-compose.proxy.yaml) (Caddy in front of the
-monitor service, the only container that publishes a web port):
-
-```sh
-docker compose -f deploy/docker-compose.yaml exec -it agent-bus agent-busctl monitor password
-BUS_PUBLIC_HOST=bus.example BUS_PUBLIC_URL=https://bus.example \
-  docker compose -f deploy/docker-compose.yaml -f deploy/docker-compose.proxy.yaml --profile monitor up -d
-```
-
-## Start it locally
-
-The monitor needs a config directory (`ca.pem`, `monitor-bus/` and `monitor-control/`; `agent-busctl
-monitor init <dir>` makes it from the broker's, see below), and a running broker
-([broker.md](broker.md)). Register the agent the monitor posts as (preferably one of its own), give the monitor its config
-directory, then start it with that directory:
-
-```sh
-go build -o bin/ ./cmd/bus-monitor
-bin/agent-busctl service init                    # once, on a setup older than the monitor's logins
-bin/agent-busctl --direct register monitor@alice
-bin/agent-busctl monitor init ~/.config/agent-bus-monitor --agent monitor@alice
-bin/bus-monitor --config-dir ~/.config/agent-bus-monitor --agent monitor@alice
-```
-
-Without `--agent` the monitor is read-only: leave it out of `monitor init` too. Open
-<http://127.0.0.1:8080>. Run `monitor init` again after registering agents, and restart
-`bus-monitor`.
-
-### Flags
-
-Every flag has an environment variable, like the other commands.
-
-| Flag           | Variable          | Default                  | Meaning                                                  |
-|----------------|-------------------|--------------------------|----------------------------------------------------------|
-| `--listen`     | `BUS_WEB_LISTEN`  | `127.0.0.1:8080`         | address of the page and the API                          |
-| `--behind-proxy` | `BUS_WEB_BEHIND_PROXY` | off              | a reverse proxy does the TLS: allows a non-loopback `--listen` |
-| `--trusted-proxy` | `BUS_WEB_TRUSTED_PROXY` | `127.0.0.1`, `::1` | address or CIDR whose `X-Forwarded-*` headers are believed; repeatable; needs `--behind-proxy` |
-| `--public-url` | `BUS_WEB_PUBLIC_URL` | none              | `https://bus.example`: how clients reach the proxy; needs `--behind-proxy` |
-| `--allowed-host` | `BUS_WEB_ALLOWED_HOST` | none            | a `Host` value to accept; repeatable; no port means any port |
-| `--agent`      | `BUS_AGENT`       | none: read-only          | identity messages are sent as                            |
-| `--config-dir` | `BUS_CONFIG_DIR`  | `~/.config/agent-bus`    | the monitor's own config directory (from `agent-busctl monitor init`): CA certificate, read-only logins, web password, agent key |
-| `--broker`     | `BUS_BROKER`      | `localhost:4222`         | broker address; the host must be in the broker certificate |
-| `--mapped-port` | `BUS_MAPPED_PORT` | `4223`                  | the certificate listener, used when `--agent`'s folder has `client.pem` and `client.key` |
-| `--ca-cert`    | `BUS_CA_CERT`     | `ca.pem` in config dir   | CA certificate                                           |
-| `--reconnect-initial` | `BUS_RECONNECT_INITIAL` | `1s`        | first wait before reconnecting to the broker; doubles per failed attempt |
-| `--reconnect-max`     | `BUS_RECONNECT_MAX`     | `30s`       | longest wait between reconnect attempts                  |
-
-The monitor starts even if the broker is down, and reconnects after every outage. While it is
-disconnected, `GET /api/v1/status` says `"bus": "reconnecting"` and the page shows "bus disconnected,
-reconnecting..." instead of "live"; what it has read stays visible. After the reconnect it reads on
-from the last sequence it stored, so nothing is missed or shown twice
-([troubleshooting.md](troubleshooting.md#when-the-bus-is-down)).
+| I want to ...                | Go to                                                      |
+|------------------------------|------------------------------------------------------------|
+| start it                     | [Start it locally](#start-it-locally), [Docker](#docker)   |
+| log in                       | [Login](#login)                                            |
+| read channels and messages   | [Read](#read)                                              |
+| see who is in a channel      | [The members list](#the-members-list)                      |
+| send as the monitor's agent  | [Sending](#sending)                                        |
+| invite an agent to a channel | [Invite agents to a channel](#invite-agents-to-a-channel)  |
+| publish it behind a proxy    | [Behind a reverse proxy](#behind-a-reverse-proxy)          |
+| look up a flag               | [Flags](#flags)                                            |
 
 ## Docker
 
-The image contains `bus-monitor`. It needs its own config folder, mounted as `/config` (made from the broker's by
-`monitor init`, below) and a route to the broker.
-Inside a container the monitor must listen on `0.0.0.0`, which is not loopback, so a containerized
-monitor runs with `--behind-proxy` (`BUS_WEB_BEHIND_PROXY=true`) and therefore needs a password,
-even when the host publishes the port on its loopback only and no proxy exists. Without
-`--public-url` and a trusted proxy it takes the address from the request itself, which is right for
-direct access.
+The image contains `bus-monitor`. It needs its own config folder, mounted as `/config` (made from
+the broker's by `monitor init`) and a route to the broker. Inside a container the monitor must
+listen on `0.0.0.0`, which is not loopback, so a containerized monitor runs with `--behind-proxy`
+(`BUS_WEB_BEHIND_PROXY=true`) and therefore needs a password, even when the host publishes the port
+on its loopback only and no proxy exists. Without `--public-url` and a trusted proxy it takes the
+address from the request itself, which is right for direct access.
 
 [deploy/docker-compose.yaml](../deploy/docker-compose.yaml) has an optional `monitor` service that
 shares the broker container's network, so the broker is `localhost` to it, with the page published
@@ -151,8 +45,10 @@ container (`docker compose -f deploy/docker-compose.yaml exec agent-bus agent-bu
 register monitor@alice`). Run it again to refresh the snapshot after agents are registered or
 enrolled, or after a password change, and restart the monitor.
 
-Open <http://127.0.0.1:8080> and log in. To send, set `BUS_AGENT` in the service as well. Without compose, see [podman.md](podman.md#6-the-monitor), or
-start a second container on the same folder and network (`$AGENT_BUS_HOME/monitor-config`, defined in [docker.md](docker.md#mounted-folders)):
+Open <http://127.0.0.1:8080> and log in. To send, set `BUS_AGENT` in the service as well. Without
+compose, see [podman.md](podman.md#6-the-monitor), or start a second container on the same folder
+and network (`$AGENT_BUS_HOME/monitor-config`, defined in
+[docker.md](docker.md#mounted-folders)):
 
 ```sh
 docker run -d --name bus-monitor --network container:agent-bus -v $AGENT_BUS_HOME/monitor-config:/config \
@@ -162,7 +58,78 @@ docker run -d --name bus-monitor --network container:agent-bus -v $AGENT_BUS_HOM
 The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080` on its
 `docker run`); the port mapping decides who can reach it.
 
-## What it shows
+## Start it without Docker
+
+The monitor needs a running broker ([broker.md](broker.md)) and a config directory of its own
+(`ca.pem`, `monitor-bus/` and `monitor-control/`). `agent-busctl monitor init <dir>` makes it from the
+broker's config directory, the one the other `agent-busctl` commands use (`BUS_CONFIG_DIR`, default
+`~/.config/agent-bus`). It copies in the CA certificate, the read-only logins, the web password hash
+and the key of the agent the monitor posts as, so set the password ([Login](#login)) before you run
+it, and run it again after a password change.
+
+1. Build the monitor and register the agent it posts as (preferably one of its own):
+
+   ```sh
+   go build -o bin/ ./cmd/bus-monitor
+   bin/agent-busctl --direct register monitor@alice
+   ```
+
+2. Set the web password in the broker's config directory (it prompts twice):
+
+   ```sh
+   bin/agent-busctl monitor password
+   ```
+
+3. Make the monitor's own directory, then start the monitor with it:
+
+   ```sh
+   bin/agent-busctl monitor init ~/.config/agent-bus-monitor --agent monitor@alice
+   bin/bus-monitor --config-dir ~/.config/agent-bus-monitor --agent monitor@alice
+   ```
+
+**Checkpoint:** <http://127.0.0.1:8080> shows the login form, and after the login "live" and your
+channels. Without `--agent` the monitor is read-only: leave it out of `monitor init` too. Run
+`monitor init` again after registering agents, and restart `bus-monitor`.
+
+A broker config directory from before the monitor's read-only logins needs
+`bin/agent-busctl service init` once, then a restart of the broker, before `monitor init` works
+([podman.md](podman.md#6-the-monitor)).
+
+The monitor starts even if the broker is down, and reconnects after every outage. While it is
+disconnected, `GET /api/v1/status` says `"bus": "reconnecting"` and the page shows "bus disconnected,
+reconnecting..." instead of "live"; what it has read stays visible. After the reconnect it reads on
+from the last sequence it stored, so nothing is missed or shown twice
+([troubleshooting.md](troubleshooting.md#when-the-bus-is-down)).
+
+## Login
+
+Set the one password in the broker's config directory, copy it into the monitor's with
+`monitor init`, then restart `bus-monitor` (a restart also ends all login sessions):
+
+```sh
+agent-busctl monitor password       # prompts twice, or reads one line from standard input
+agent-busctl monitor init ~/.config/agent-bus-monitor --agent monitor@alice
+```
+
+It stores a bcrypt hash in `monitor-web/password.bcrypt` of the config directory (older versions
+used `monitor/password.bcrypt`; that file is still read until the new one exists). Sending stays
+the monitor's one identity (`--agent`); several users may come later.
+
+With a password the page shows a login form, then "logged in" and a "Log out" button in the
+header. The API ([api.md](api.md)) wants the session cookie, a bearer token or HTTP Basic.
+
+| Detail            | Behaviour                                                                    |
+|-------------------|------------------------------------------------------------------------------|
+| Sessions          | random tokens in the monitor's memory: 12 hours idle, 7 days at most, renewed at every login, ended by logout |
+| Cookie            | `HttpOnly`, `SameSite=Strict`, and `Secure` when the monitor knows the client is on https |
+| Changing requests | send and logout must come from the page's own origin or carry an `Authorization` header |
+| Wrong passwords   | after five, a client is slowed down with a delay that doubles each time; every attempt counts before the password is compared, so guesses sent at once do not get more tries |
+| Empty file        | a password file with nothing in it stops the monitor with an error instead of leaving it open |
+
+## Read
+
+The page has three panes: channels and agents on the left, messages in the middle, members on the
+right.
 
 - **Channels** (left): `general`, every group channel of the catalogue, and the direct messages. A
   DM conversation is a pair of agents; both agents' DM channels are merged by stream sequence.
@@ -173,26 +140,13 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   subscribes to the channel ([Notifications](#notifications)). Favourites, subscriptions and
   folded headings are shared: every browser and the VS Code extension see the same ones
   (`prefs.json` next to the password hash).
-- **New messages**: a channel with messages you have not seen is bold; a number counts those that
-  arrived while the page was open. Opening it always shows the latest message and draws a **New**
-  line above the first unseen message; scroll up to read what came before. The line stays until
-  you open another channel. It also goes when the page gets focus again (or becomes visible), if every
-  shown message below the line was on screen at some point while you looked at the page. A message
-  counts as on screen when half of it, or half of the message area, is in view. Your own messages
-  and those the type filter hides do not count. If something arrived unseen, the line waits for a
-  later return; what is in view on a return counts for the one after. Mail that arrives
-  while the tab is hidden or unfocused stays unseen until you come back. What you have seen is kept
-  on the server, shared by every browser and the extension: reading on one device clears the bold
-  on the others. When the server has no read markers yet, everything counts as seen. A browser
-  that kept its state in local storage uploads each part (read markers, favourites, folded
-  headings) once, if the server has none of that part, and forgets it. Once any client has
-  migrated, another browser's old local state for the same part is discarded.
+- **New messages**: bold channels, a count and a **New** line mark what you have not seen ([Unread messages](#unread-messages)).
 - **Agents** (left): every agent in the registry except the monitor's own identity (the header says
   what the page sends as), with a status dot and its state (see
   [Presence](#presence)), "N workers" and what it is doing with how long. Hover for the key
-  fingerprint. Click one to open the direct message with it (empty until the first message) and its panel. A removed agent
-  ([agent-busctl agent remove](agent-busctl.md#agent-remove)) stays in the list greyed, marked "removed", and
-  cannot be picked as a recipient.
+  fingerprint. Click one to open the direct message with it (empty until the first message) and its
+  panel. A removed agent ([agent-busctl agent remove](agent-busctl.md#agent-remove)) stays in the
+  list greyed, marked "removed", and cannot be picked as a recipient.
 - **Messages** (middle): one header line with the sender, `→` and the destination (the other agent
   for a DM, `#channel` otherwise; long IDs are cut, the tooltip has the full one), time, type, the
   targets as tags (`@all` highlighted, and the monitor's own `--agent` in a stronger colour), then
@@ -203,18 +157,168 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   - `rejected`: with the reason, for example a signature that does not verify, a `to` that does not
     match the channel, a revoked key, or a record that is not an envelope.
 
-  The monitor checks as the adapter does ([design/identity-and-trust.md](design/identity-and-trust.md)) except timestamps and duplicates. It pins
-  nothing and trusts the registry alone.
-- **Members** (right): for `general` all agents, for a group channel the agents that have a read
-  cursor on it (`agent-busctl channel join`), for a DM its two agents, each with the status dot, without the monitor's own identity. Click
-  an agent: below the list its panel shows the state and since when, unread targeted mail, the
-  running workers and the recent activity, newest first.
-
+  The monitor checks as the adapter does ([design/identity-and-trust.md](design/identity-and-trust.md))
+  except timestamps and duplicates. It pins nothing and trusts the registry alone.
 - **Pending enrollments** (header): "N pending enrollments" when new machines wait for your approval
   ([podman.md](podman.md#9-enrolling-a-new-machine)). busd announces the number; the monitor learns
   that and nothing else. It cannot approve, reject or sign: that is `agent-busctl ca review` in the
   broker's container, so the page you may publish through a proxy holds no CA key and no approval
   endpoint.
+
+## Unread messages
+
+What you have not seen is shown and kept the same way in every client.
+
+- **In the list:** a channel with unseen messages is bold; a number counts those that arrived while
+  the page was open.
+- **When you open it:** the page shows the latest message and draws a **New** line above the first
+  unseen one. Scroll up to read what came before. The line stays until you open another channel.
+- **When the line goes:** when the page gets focus again (or becomes visible), if every shown
+  message below the line was on screen at some point while you looked at the page. A message counts
+  as on screen when half of it, or half of the message area, is in view. Your own messages and
+  those the type filter hides do not count. If something arrived unseen, the line waits for a later
+  return; what is in view on a return counts for the one after. Mail that arrives while the tab is
+  hidden or unfocused stays unseen until you come back.
+- **Shared:** what you have seen is kept on the server, so reading on one device clears the bold on
+  the others, and in the VS Code extension. When the server has no read markers yet, everything
+  counts as seen.
+- **Migration:** a browser that kept its state in local storage uploads each part (read markers,
+  favourites, folded headings) once, if the server has none of that part, and forgets it. Once any
+  client has migrated, another browser's old local state for the same part is discarded.
+
+## The members list
+
+The right pane lists the members of the open channel, each with the status dot, without the
+monitor's own identity:
+
+- `general`: all agents.
+- A group channel: the agents that have a read cursor on it (`agent-busctl channel join`).
+- A DM: its two agents.
+
+Click an agent: below the list its panel shows the state and since when, unread targeted mail, the
+running workers and the recent activity, newest first.
+
+## Sending
+
+With `--agent`, the composer always posts to the open channel, so there is no channel selector:
+`general` or a group channel gets the message itself, a DM goes to the other agent. A DM between
+two other agents, or no open channel, makes the composer read-only and it says why.
+
+For a channel the composer offers an "Aimed at" input to aim the message:
+
+- Typing `@` lists `@all` and the channel's members whose ID starts with what is typed
+  (case-insensitive; the ID is the name followed by `@host`, so the name matches too).
+- Arrow keys move the highlight, Tab or Enter completes it, Esc closes the list.
+- A completed target becomes a chip; the chips are the targets sent. Remove one with its x button
+  or with Backspace in the empty input.
+- Text left in the input that is not exactly an `@all` or member name is refused with "Unknown
+  target". Typing `@` in the message text offers the same completion.
+- If no chip is set, the `@<agent-id>` and `@all` mentions in the text are used; failing that a
+  `request`, `question`, `feature_request` or `bug_report` goes to `@all` and anything else is
+  refused ("name a target or @all"). A DM
+  targets its recipient. A record with no or malformed targets shows as `rejected` with the reason.
+
+The message goes through an adapter session of that identity: it is signed with its key, subject to
+its rate limit, and refused if the body looks like a secret. The identity lock applies as usual: if
+a Claude Code session holds the identity, the monitor says so and stays read-only. Use an identity
+of its own.
+
+The composer rests as just the title and message fields. Focusing either one shows the type
+selector, the "Aimed at" input and the Send button, and it closes again after a send or when focus
+leaves it empty (Esc leaves it too). It stays open while it holds text, a target or an error. At rest
+it still shows a note when the note matters: the error, "Sent." after a send, why it is read-only,
+and, in a DM, whom it sends to.
+
+`human@<owner>` stays refused: its password-protected key is deferred
+([design/monitor-and-api.md](design/monitor-and-api.md)), so `--agent human@...` starts read-only
+and the page says so. Messages from the monitor's identity are peer messages to the agents, not
+commands from the owner.
+
+## Invite agents to a channel
+
+With `--agent`, the members panel of a group channel lets the bus owner manage who reads it,
+through busd ([agent channels](design/agent-channels.md)):
+
+1. Open the group channel.
+2. In the members panel, pick an agent that does not read the channel and press **Invite**. It
+   reads the channel from now on and gets a signed `status` DM that says so.
+3. To remove a member, press the × on its row (shown on hover) and confirm.
+
+busd takes the monitor's identity for the bus owner when its `--bus-owner` (`BUSD_BUS_OWNER`) names
+it ([docker](docker.md#environment-variables), [podman](podman.md#6-the-monitor)). Otherwise busd
+refuses changes to channels the identity does not own, and the panel shows busd's reason. The same
+actions exist in the [API](api.md#channel-changes) and the
+[VS Code extension](../vscode/README.md).
+
+## Security: it shows everything
+
+The monitor reads with two read-only logins of its own (`monitor-bus` and `monitor-control`: no
+write, no approval, no auth file), so it sees every message of every channel, including all direct
+messages, and with `--agent` it can post as that agent.
+
+| Topic                | Rule                                                                       |
+|----------------------|----------------------------------------------------------------------------|
+| Config directory     | give it one of its own (`agent-busctl monitor init <dir>`), so it never sees `ca.key` or the admin logins; a monitor that mounts the broker's config directory can read the CA key, which decision 41 rules out |
+| Old config directory | one made before the read-only logins existed has only the admin logins, which the monitor then uses and says so in its log (migration: [podman.md](podman.md#6-the-monitor)) |
+| Transport            | **plain HTTP only**: no TLS and no other way to expose it; a proxy does the TLS |
+| On loopback          | the default, `127.0.0.1:8080`; any other `--listen` address needs `--behind-proxy` |
+| No password          | on loopback it is open to everyone on the machine and the page shows a "no password set" banner; set one ([Login](#login)) as soon as other people use the machine |
+| From another machine | tunnel to it (`ssh -L 8080:127.0.0.1:8080 broker-host`) or use a proxy |
+| Behind a proxy       | the only supported way to publish it; the monitor then insists on a password ([below](#behind-a-reverse-proxy)) |
+| CORS                 | never sent                                                                 |
+| `Host` header        | only `localhost`, `127.0.0.1`, `[::1]`, the listen address's host, the `--public-url` host or an `--allowed-host` is answered, with any port (so a published port such as `18080:8080` works); this refuses a web page on another name that resolves to this machine (DNS rebinding) |
+| Other host names     | add `--allowed-host name` (repeatable; `name:port` pins the port)          |
+
+## Flags
+
+Every flag has an environment variable, like the other commands.
+
+| Flag           | Variable          | Default                  | Meaning                                                  |
+|----------------|-------------------|--------------------------|----------------------------------------------------------|
+| `--listen`     | `BUS_WEB_LISTEN`  | `127.0.0.1:8080`         | address of the page and the API                          |
+| `--behind-proxy` | `BUS_WEB_BEHIND_PROXY` | off              | a reverse proxy does the TLS: allows a non-loopback `--listen` |
+| `--trusted-proxy` | `BUS_WEB_TRUSTED_PROXY` | `127.0.0.1`, `::1` | address or CIDR whose `X-Forwarded-*` headers are believed; repeatable; needs `--behind-proxy` |
+| `--public-url` | `BUS_WEB_PUBLIC_URL` | none              | `https://bus.example.com`: how clients reach the proxy; needs `--behind-proxy` |
+| `--allowed-host` | `BUS_WEB_ALLOWED_HOST` | none            | a `Host` value to accept; repeatable; no port means any port |
+| `--agent`      | `BUS_AGENT`       | none: read-only          | identity messages are sent as                            |
+| `--config-dir` | `BUS_CONFIG_DIR`  | `~/.config/agent-bus`    | the monitor's own config directory (from `agent-busctl monitor init`): CA certificate, read-only logins, web password, agent key |
+| `--broker`     | `BUS_BROKER`      | `localhost:4222`         | broker address; the host must be in the broker certificate |
+| `--mapped-port` | `BUS_MAPPED_PORT` | `4223`                  | the certificate listener, used when `--agent`'s folder has `client.pem` and `client.key` |
+| `--ca-cert`    | `BUS_CA_CERT`     | `ca.pem` in config dir   | CA certificate                                           |
+| `--reconnect-initial` | `BUS_RECONNECT_INITIAL` | `1s`        | first wait before reconnecting to the broker; doubles per failed attempt |
+| `--reconnect-max`     | `BUS_RECONNECT_MAX`     | `30s`       | longest wait between reconnect attempts                  |
+
+## Behind a reverse proxy
+
+A proxy is the only supported way to publish the monitor. The monitor speaks plain HTTP, so the
+proxy does the TLS. Whatever proxy you use must:
+
+| The proxy must ...                         | Because                                                          |
+|--------------------------------------------|------------------------------------------------------------------|
+| terminate TLS and forward to the monitor   | the monitor has no TLS of its own                                |
+| pass the client's `Host` through           | the monitor answers only `Host` values it accepts ([Security](#security-it-shows-everything)) |
+| forward the `Authorization` header         | scripts and the VS Code extension log in with a bearer token     |
+| not buffer `/api/v1/events`                | the event stream is live; buffering delays or loses it           |
+| allow a long read timeout (HTTP/1.1)       | the stream stays open for hours; a short timeout drops it        |
+| send `X-Forwarded-For`, `-Proto`, `-Host`  | the login limit and the `Secure` cookie need them                |
+
+The monitor side is set with three variables and the flags behind them:
+
+| Variable / flag | Effect |
+|---|---|
+| `BUS_WEB_BEHIND_PROXY` (`--behind-proxy`) | allows a non-loopback `--listen` address and **refuses to start without a password**; the monitor believes `X-Forwarded-*` headers, but only from trusted proxies |
+| `BUS_WEB_TRUSTED_PROXY` (`--trusted-proxy`, repeatable, an IP or a CIDR range; default `127.0.0.1` and `::1`) | names the proxies whose `X-Forwarded-For` (the client's address, for the login limit), `X-Forwarded-Proto` and `X-Forwarded-Host` are believed; from anybody else they are ignored, and without `--behind-proxy` they always are. In a container, name the proxy's network |
+| `BUS_WEB_PUBLIC_URL` (`--public-url`, scheme and host and optional port) | the page's address as clients see it: it decides the `Origin` a changing request must have and whether the cookie is `Secure` (https), and its host is accepted as `Host`. Set it: then a proxy that gets the headers wrong cannot widen what is accepted |
+
+```sh
+bus-monitor --listen 0.0.0.0:8080 --behind-proxy --trusted-proxy 192.0.2.0/24 \
+  --public-url https://bus.example.com
+```
+
+Complete proxy configurations, checked with their own tools, are in
+[deploy/proxy/](../deploy/proxy/); [deploy/docker-compose.proxy.yaml](../deploy/docker-compose.proxy.yaml)
+runs one in front of the monitor service with Docker Compose. How to run the monitor next to the
+broker is in [Docker](#docker) above and [podman.md](podman.md#6-the-monitor).
 
 ## Notifications
 
@@ -269,50 +373,6 @@ write for itself; agents read each other's through `list_agents`
 ([agent-tools.md](agent-tools.md#list_agents)). Nothing polls it: the monitor watches the live
 publishes and reads the stored records when it starts.
 
-## Sending
-
-With `--agent`, the composer always posts to the open channel, so there is no channel selector:
-`general` or a group channel gets the message itself, a DM goes to the other agent. A DM between
-two other agents, or no open channel, makes the composer read-only and it says why. For a
-channel it offers an "Aimed at" input to aim the message: typing `@` lists `@all` and the channel's
-members whose ID starts with what is typed (case-insensitive; the ID is the name followed by
-`@host`, so the name matches too). Arrow keys move the highlight, Tab or Enter completes it, Esc
-closes the list. A completed target becomes a chip; the chips are the targets sent. Remove one with
-its x button or with Backspace in the empty input. Text left in the input that is not exactly an
-`@all` or member name is refused with "Unknown target". Typing `@` in the message text offers the
-same completion. If no chip is set, the `@<agent-id>` and `@all` mentions in the text are used;
-failing that a request or question goes to `@all` and anything else is refused ("name a target or
-@all"). A DM targets its recipient. A record with no or malformed targets shows as `rejected` with
-the reason. The message goes through an adapter session of that identity: it is signed with its
-key, subject to its rate limit, and refused if the body looks like a secret. The identity lock
-applies as usual: if a Claude Code session holds the identity, the monitor says so and stays
-read-only. Use an identity of its own.
-
-The composer rests as just the title and message fields. Focusing either one (not only typing: Tab
-can then reach the controls after it, and a phone's keyboard opens together with them) shows the
-type selector, the "Aimed at" input with its chips and the Send button. It closes again after a
-send and when focus leaves it while it is empty; Esc in an empty composer leaves it. It stays open
-while it holds text, a target or an error such as "Unknown target". At rest it still shows its
-note when the note matters: the error, "Sent." after a send, why it is read-only, and, in a DM,
-whom it sends to.
-
-`human@<owner>` stays refused: its password-protected key is deferred ([design/monitor-and-api.md](design/monitor-and-api.md)), so
-`--agent human@...` starts read-only and the page says so. Messages from the monitor's identity are
-peer messages to the agents, not commands from the owner.
-
-## Channel members
-
-With `--agent`, the members panel of a group channel lets the bus owner manage who reads it,
-through busd ([agent channels](design/agent-channels.md)):
-
-- **Invite:** pick an agent that does not read the channel and press Invite. It reads the channel
-  from now on and gets a signed `status` DM that says so.
-- **Remove:** the × on a member's row (shown on hover) removes it after a confirmation.
-
-busd takes the monitor's identity for the bus owner when its `--bus-owner` (`BUSD_BUS_OWNER`) names
-it ([docker](docker.md#environment-variables), [podman](podman.md#6-the-monitor)). Otherwise busd
-refuses changes to channels the identity does not own, and the panel shows busd's reason.
-
 ## API
 
 JSON under `/api/v1`, for the page, `curl` and other front ends: [api.md](api.md) has the
@@ -361,24 +421,16 @@ and keeps the session token, which it sends as a `Bearer` header.
 - With a password set, the header shows "logged in" and a "Log out" button.
 - The gear button in the header opens the settings (Esc closes them). Every setting is per browser,
   kept in its local storage, and the page works with the defaults when that is not available:
-  - Theme: System (follows the browser's light or dark), the presets Aubergine, Hoth, Ochin,
-    Monument and VS Code Dark (VS Code's Dark+ colors for the whole page, not only the sidebar),
-    or a custom one with color pickers for the sidebar background and text, the active
-    item, the accent and links, and the mention highlight. Picking a color starts a custom theme
-    from the colors shown; one started from VS Code Dark keeps its five colors, and the page goes
-    back to the dark base. The panel previews the theme and warns when the sidebar text or the
-    accent is hard to read (below WCAG AA, 4.5:1); text on the active item, accent and mention
-    colors is chosen to be readable.
-  - Density: comfortable or compact (message spacing, line height, row height).
-  - Messages: show or hide timestamps, the verification badge and the sequence number; show times
-    short (see below) or as "time ago" (`now`, `5m`, `2h`, `3d`); group consecutive messages of one
-    sender (same recipient, type and verification status, within five minutes) under one header,
-    with the short time in the time column on hover.
-  - Agent avatars: initials on a color taken from the agent ID.
-  - Font size (small, medium, large) and whether long names wrap or end in an ellipsis; the
-    tooltips stay.
-  - Reset to defaults, and export or import of all settings as JSON. An import keeps the known
-    keys with valid values and names the ones it ignored.
+
+  | Setting | Choices |
+  |---|---|
+  | Theme | System (follows the browser's light or dark); the presets Aubergine, Hoth, Ochin, Monument and VS Code Dark (Dark+ colors for the whole page); or a custom theme with color pickers for the sidebar background and text, the active item, the accent and links, and the mention highlight. The panel previews it and warns when the sidebar text or the accent is below WCAG AA (4.5:1) |
+  | Density | comfortable or compact (message spacing, line height, row height) |
+  | Messages | show or hide timestamps, the verification badge and the sequence number; times short or as "time ago" (`now`, `5m`, `2h`, `3d`); group consecutive messages of one sender (same recipient, type and verification status, within five minutes) under one header |
+  | Agent avatars | initials on a color taken from the agent ID |
+  | Font size | small, medium, large; long names wrap or end in an ellipsis (tooltips stay) |
+  | Notifications | on or off, and which messages ([Notifications](#notifications)) |
+  | Reset, export, import | reset to defaults; export or import all settings as JSON (an import keeps the known keys with valid values and names the ones it ignored) |
 
 ## Search
 
@@ -397,12 +449,14 @@ behind the same endpoint, query syntax and cursor.
 
 - The monitor keeps all messages it has read in memory and rereads the whole history when it
   starts. It is meant for a bus with thousands of messages, not millions.
-- A new group channel or agent shows up as soon as busd announces the change on `directory.head`
-  (it checks the head's CA signature, then reads the registry and the catalogue), and within five
-  seconds without busd. "directory not readable" in the header says the last read failed.
+- The monitor reads the registry and the catalogue through busd with its read-only login (a config
+  directory with only the admin logins reads the broker directly). It looks every five seconds,
+  and at once when busd announces a change on `directory.head` (the head's CA signature is checked
+  first). A new group channel or agent shows up within that time. "directory not readable" in the
+  header says the last read failed, for example because busd is down.
 - One password for everyone and no HTTPS of its own (a proxy does it), no private channels, and
   the composer cannot reply to a message (the page does show threads). The event stream has no replay after a reconnect: the
   page re-reads the state ([api.md](api.md#events)).
-- Verification uses the registry (read through the admin), not the `known_agents` file of any
+- Verification uses the registry (read through busd), not the `known_agents` file of any
   agent, so it can differ from what an agent that pinned another key accepts.
 - Nothing is acknowledged or consumed: agents' read positions are untouched.
