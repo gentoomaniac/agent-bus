@@ -48,6 +48,15 @@ function renderTime(message: Message, className: string): HTMLElement {
   return time;
 }
 
+// Asks the host to open the record as stored, in an editor tab.
+function renderRawButton(message: Message): HTMLElement {
+  const button = el("button", "raw", "{ }");
+  button.type = "button";
+  button.title = button.ariaLabel = "Raw message";
+  button.addEventListener("click", () => host.postMessage({ type: "raw", sequence: message.sequence }));
+  return button;
+}
+
 // The dot shows the sender's presence. The monitor's own messages and agents without presence get a
 // hollow one.
 function paintDot(dot: HTMLElement, from: string): void {
@@ -86,7 +95,7 @@ function renderHeader(message: Message, newTag: string | undefined): HTMLElement
     header.append(warning);
   }
   if (newTag) header.append(el("span", "new", newTag));
-  header.append(renderTime(message, "time"));
+  header.append(renderTime(message, "time"), renderRawButton(message));
   return header;
 }
 
@@ -98,10 +107,14 @@ function renderSection(label: string, content: HTMLElement): HTMLElement {
 }
 
 // With a title the box has a label column, TITLE and TEXT split by a divider; without one it holds
-// the text alone. A follow-up of a group has no header, so its time sits in the box's corner.
+// the text alone. A follow-up of a group has no header, so its time and raw message button sit in the box's corner.
 function renderBox(message: Message, continued: boolean): HTMLElement {
   const box = el("div", "box");
-  if (continued) box.append(renderTime(message, "time corner"));
+  if (continued) {
+    const corner = el("span", "corner");
+    corner.append(renderTime(message, "time"), renderRawButton(message));
+    box.append(corner);
+  }
   if (message.title) {
     box.classList.add("labelled");
     box.append(renderSection("Title", el("div", "title", message.title)));

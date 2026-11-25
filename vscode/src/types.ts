@@ -57,6 +57,17 @@ export interface Message {
   text?: string;
 }
 
+// A message as stored (GET /api/v1/messages/raw): the signed envelope, or its bytes when they are not JSON.
+export interface RawMessage {
+  channel: string;
+  sequence: number;
+  status: MessageStatus;
+  reason?: string;
+  size: number;
+  raw?: unknown;
+  raw_text?: string;
+}
+
 export const MESSAGE_TYPES = ["message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"];
 export const ALL = "@all";
 export const DEFAULT_TYPE = "message";

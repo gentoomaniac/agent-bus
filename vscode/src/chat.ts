@@ -106,6 +106,13 @@ export class ChatPanels implements vscode.Disposable {
     } else if (message.type === "older") {
       await this.guarded(() => model.loadOlder(channelId));
       this.post(channelId, chat);
+    } else if (message.type === "raw") {
+      await this.guarded(async () => {
+        const { raw, raw_text } = await model.api.rawMessage(channelId, message.sequence);
+        const content = raw_text ?? JSON.stringify(raw, null, 2);
+        const document = await vscode.workspace.openTextDocument({ language: "json", content });
+        await vscode.window.showTextDocument(document, { preview: true });
+      });
     } else if (message.type === "threaded") {
       await this.context.globalState.update(THREADED_KEY, message.value);
       this.chats.forEach((other, otherId) => this.post(otherId, other));
@@ -220,8 +227,13 @@ export class ChatPanels implements vscode.Disposable {
   .time { flex: none; font-size: 0.85em; font-family: var(--vscode-font-family); }
   .box { position: relative; margin: 4px 0 0 var(--name-indent); border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 6px; line-height: 1.45; }
   .box > .text { padding: 6px 10px; }
-  .box .time.corner { position: absolute; top: 2px; right: 8px; visibility: hidden; }
-  .box:hover .time.corner { visibility: visible; }
+  /* Hidden by opacity, not visibility, so the keyboard still reaches the raw message button. */
+  .box .corner { position: absolute; top: 2px; right: 8px; display: flex; gap: 6px; align-items: center; opacity: 0; }
+  .box:hover .corner, .box:focus-within .corner { opacity: 1; }
+  .raw { padding: 0 4px; font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em; color: var(--vscode-descriptionForeground); background: transparent; opacity: 0; }
+  .message:hover .raw, .message:focus-within .raw, .box .raw { opacity: 1; }
+  .raw:hover:not(:disabled) { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground); }
+  .raw:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
   .section { display: grid; grid-template-columns: 3.5em 1fr; gap: 8px; padding: 6px 10px; }
   .section + .section { border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); }
   .label { padding-top: 0.15em; font-family: var(--vscode-font-family); font-size: 0.7em; letter-spacing: 0.05em; text-transform: uppercase; color: var(--vscode-descriptionForeground); }

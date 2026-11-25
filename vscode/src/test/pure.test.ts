@@ -138,7 +138,8 @@ test("parseFromWebview accepts well-formed messages only", () => {
   assert.deepEqual(parseFromWebview({ type: "ready", extra: 1 }), { type: "ready" });
   assert.deepEqual(parseFromWebview({ type: "send", draft }), { type: "send", draft });
   assert.deepEqual(parseFromWebview({ type: "threaded", value: true }), { type: "threaded", value: true });
-  for (const bad of [null, "ready", {}, { type: "nope" }, { type: "threaded", value: "yes" }, { type: "send" }, { type: "send", draft: { ...draft, targets: "@all" } },
+  assert.deepEqual(parseFromWebview({ type: "raw", sequence: 7, extra: 1 }), { type: "raw", sequence: 7 });
+  for (const bad of [null, "ready", {}, { type: "nope" }, { type: "threaded", value: "yes" }, { type: "raw" }, { type: "raw", sequence: "7" }, { type: "raw", sequence: -1 }, { type: "raw", sequence: 1.5 }, { type: "send" }, { type: "send", draft: { ...draft, targets: "@all" } },
     { type: "send", draft: { ...draft, targets: [1] } }, { type: "send", draft: { ...draft, text: undefined } }]) {
     assert.equal(parseFromWebview(bad), undefined);
   }

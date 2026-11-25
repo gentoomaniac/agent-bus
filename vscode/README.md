@@ -80,6 +80,11 @@ HTML.
 - **Grouping:** consecutive messages from the same sender within five minutes (with the same type
   and targets, and no title) share one header. A follow-up is another box under the previous one, with
   its short time in the box's top-right corner when you hover it.
+- **Raw message:** a small `{ }` button at the right end of a message's header (in the box's corner
+  for a follow-up), shown on hover or keyboard focus, opens the record as stored, the signed envelope
+  with its signature, key fingerprint and hops, as pretty-printed JSON in an untitled editor tab. The
+  tab is a preview tab and not a file; it reads `GET /api/v1/messages/raw`, with the same login as
+  everything else.
 - **Badges:** the type (the default `message` is left out) and the targets sit on the header line
   as small muted badges. Your own agent's ID is outlined.
 - **Verification:** a small check mark with the tooltip "verified". `unknown sender` and
