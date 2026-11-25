@@ -179,7 +179,9 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
   while the tab is hidden or unfocused stays unseen until you come back. What you have seen is kept
   on the server, shared by every browser and the extension: reading on one device clears the bold
   on the others. When the server has no read markers yet, everything counts as seen. A browser
-  that kept its state in local storage uploads it once, if the server has none, and forgets it.
+  that kept its state in local storage uploads each part (read markers, favourites, folded
+  headings) once, if the server has none of that part, and forgets it. Once any client has
+  migrated, another browser's old local state for the same part is discarded.
 - **Agents** (left): every agent in the registry, with a status dot and its state (see
   [Presence](#presence); the monitor's own identity shows `monitor`), "N workers" and what it is doing with how long. Hover for the key
   fingerprint. Click one to point the composer at it and to open its panel. A removed agent

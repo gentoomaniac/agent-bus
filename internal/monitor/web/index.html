@@ -877,8 +877,9 @@ function applyPrefs(prefs) {
   }
 }
 
-// Loads the shared prefs after login. A browser that kept them in local storage before moves them
-// to the server once, if the server has none yet, and then forgets them.
+// Loads the shared prefs after login. A browser that kept them in local storage before moves each
+// part to the server once, if the server has none of that part yet, and then forgets it. A part
+// that fails to upload stays in local storage for the next visit.
 async function loadPrefs() {
   let prefs;
   try {
@@ -887,20 +888,17 @@ async function loadPrefs() {
     return; // an old server, or it is down: the state stays in memory until a reload
   }
   state.prefsOnline = true;
-  const old = { read: loadSetting(OLD_READ_KEY, null), favourites: loadSetting(OLD_FAVOURITES_KEY, null), collapsed: loadSetting(OLD_COLLAPSED_KEY, null) };
-  const serverEmpty = !Object.keys(prefs.read).length && !prefs.favourites.length && !prefs.collapsed.length;
-  if (serverEmpty && (old.read || old.favourites || old.collapsed)) {
-    try {
-      if (old.read && Object.keys(old.read).length) prefs.read = await api("/api/v1/prefs/read", jsonRequest("POST", old.read));
-      if (old.favourites?.length) prefs.favourites = (await api("/api/v1/prefs/favourites", jsonRequest("PUT", old.favourites))).favourites;
-      if (old.collapsed?.length) prefs.collapsed = (await api("/api/v1/prefs/collapsed", jsonRequest("PUT", old.collapsed))).collapsed;
-    } catch (error) {
-      applyPrefs(prefs);
-      return; // kept in local storage for the next visit
+  const parts = [
+    { name: "read", key: OLD_READ_KEY, isEmpty: (value) => !Object.keys(value).length, send: (value) => api("/api/v1/prefs/read", jsonRequest("POST", value)) },
+    { name: "favourites", key: OLD_FAVOURITES_KEY, isEmpty: (value) => !value.length, send: async (value) => (await api("/api/v1/prefs/favourites", jsonRequest("PUT", value))).favourites },
+    { name: "collapsed", key: OLD_COLLAPSED_KEY, isEmpty: (value) => !value.length, send: async (value) => (await api("/api/v1/prefs/collapsed", jsonRequest("PUT", value))).collapsed },
+  ];
+  for (const part of parts) {
+    const old = loadSetting(part.key, null);
+    if (old && part.isEmpty(prefs[part.name]) && !part.isEmpty(old)) {
+      try { prefs[part.name] = await part.send(old); } catch (error) { continue; }
     }
-  }
-  for (const key of [OLD_READ_KEY, OLD_FAVOURITES_KEY, OLD_COLLAPSED_KEY]) {
-    try { localStorage.removeItem(key); } catch (error) { /* nothing to remove */ }
+    try { localStorage.removeItem(part.key); } catch (error) { /* nothing to remove */ }
   }
   applyPrefs(prefs);
 }
