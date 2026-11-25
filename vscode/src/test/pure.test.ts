@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ago, describePresence, recentActivity } from "../presence";
-import { matchTargets, mentionBefore } from "../completion";
+import { matchTargets, mentionBefore, mentionText } from "../completion";
 import { categorize, describeChannel, destinationOf, dmChannelId } from "../channels";
+import { parseFromWebview } from "../protocol";
 import { nextBackoff } from "../events";
 import { continuesGroup, insertMessage, isTargeted, unreadMessages } from "../messages";
 import { SseParser } from "../sse";
@@ -130,6 +131,22 @@ test("matchTargets matches by prefix on the whole ID or the name, ignoring case 
   assert.deepEqual(matchTargets(all, "LIB-x@al"), ["lib-x@alice"]);
   assert.deepEqual(matchTargets(all, "alice"), []);
   assert.deepEqual(matchTargets(all, "lib", ["lib-x@alice"]), ["Lib-Y@bob"]);
+});
+
+test("parseFromWebview accepts well-formed messages only", () => {
+  const draft = { type: "message", targets: ["@all"], title: "", text: "hi" };
+  assert.deepEqual(parseFromWebview({ type: "ready", extra: 1 }), { type: "ready" });
+  assert.deepEqual(parseFromWebview({ type: "send", draft }), { type: "send", draft });
+  assert.deepEqual(parseFromWebview({ type: "threaded", value: true }), { type: "threaded", value: true });
+  for (const bad of [null, "ready", {}, { type: "nope" }, { type: "threaded", value: "yes" }, { type: "send" }, { type: "send", draft: { ...draft, targets: "@all" } },
+    { type: "send", draft: { ...draft, targets: [1] } }, { type: "send", draft: { ...draft, text: undefined } }]) {
+    assert.equal(parseFromWebview(bad), undefined);
+  }
+});
+
+test("mentionText gives every candidate exactly one @", () => {
+  assert.equal(mentionText("@all"), "@all ");
+  assert.equal(mentionText("lib-x@alice"), "@lib-x@alice ");
 });
 
 test("mentionBefore finds an @word ending at the caret", () => {

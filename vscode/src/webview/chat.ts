@@ -1,7 +1,8 @@
 // The chat panel's page. Messages are untrusted: everything goes in with textContent, never as HTML.
-import { matchTargets, mentionBefore } from "../completion";
+import { matchTargets, mentionBefore, mentionText } from "../completion";
 import { continuesGroup, insertMessage } from "../messages";
 import type { ChatState, FromWebview, ToWebview } from "../protocol";
+import { isSeen } from "../viewport";
 import { ThreadRow, ThreadSummary, summarizeThreads, threadRows } from "../threads";
 import { ALL, DEFAULT_TYPE, MESSAGE_TYPES, Message } from "../types";
 
@@ -9,7 +10,7 @@ declare function acquireVsCodeApi(): { postMessage(message: FromWebview): void }
 const host = acquireVsCodeApi();
 
 const STATUS_LABEL: Record<string, string> = { unknown_sender: "unknown sender", rejected: "rejected" };
-const ID_PREFIX = 8; // characters of a message ID shown in "reply to"
+const ID_SUFFIX = 8; // characters of a message ID shown in "reply to": the end of a ULID tells IDs apart
 const COMPOSER_MAX_HEIGHT = 12 * 16; // px; the CSS max-height says the same
 
 let state: ChatState | undefined;
@@ -74,7 +75,11 @@ function renderMessage(row: ThreadRow, continued: boolean, isNew: boolean, highl
   const { message } = row;
   const item = el("div", (continued ? "message continued" : "message") + (row.depth > 0 ? " depth-" + row.depth : "") + (highlighted ? " has-new" : ""));
   item.dataset.sequence = String(message.sequence);
-  if (row.replyTo) item.append(el("div", "reply-to muted", "↳ reply to " + row.replyTo.slice(0, ID_PREFIX)));
+  if (row.replyTo) {
+    const replyTo = el("div", "reply-to muted", "↳ reply to " + row.replyTo.slice(-ID_SUFFIX));
+    replyTo.title = row.replyTo;
+    item.append(replyTo);
+  }
   if (!continued) item.append(renderHeader(message));
   if (!continued && (isNew || highlighted)) item.lastElementChild?.append(el("span", "new", isNew ? "New" : "new"));
   if (message.title) item.append(el("div", "title", message.title));
@@ -96,28 +101,37 @@ function renderReplies(summary: ThreadSummary): HTMLElement {
 let dividerAfter = 0;
 let hostDividerAfter: number | undefined;
 const seen = new Set<number>(); // sequences that were on screen while the page was focused and visible
-let checkOnObserve = false; // the page was just activated: clear the markers once the rows are measured
 
 const isUnseen = (message: Message): boolean => message.sequence > dividerAfter && message.from !== state?.self;
 const isActive = (): boolean => document.hasFocus() && document.visibilityState === "visible";
 
+// An observer only fires on changes, so scrolling is caught here, and the rows already in view
+// when the page gets focus or is drawn are caught by markVisibleRows.
 const seenObserver = new IntersectionObserver((entries) => {
-  if (isActive()) for (const entry of entries) if (entry.isIntersecting) seen.add(Number((entry.target as HTMLElement).dataset.sequence));
-  if (!checkOnObserve) return;
-  checkOnObserve = false;
+  if (!isActive()) return;
+  for (const entry of entries) {
+    if (entry.rootBounds && isSeen(entry.boundingClientRect, entry.rootBounds)) seen.add(Number((entry.target as HTMLElement).dataset.sequence));
+  }
+}, { root: list, threshold: [0, 0.25, 0.5, 0.75, 1] });
+
+function markVisibleRows(): void {
+  if (!isActive()) return;
+  const view = list.getBoundingClientRect();
+  for (const row of list.querySelectorAll<HTMLElement>("[data-sequence]")) {
+    if (isSeen(row.getBoundingClientRect(), view)) seen.add(Number(row.dataset.sequence));
+  }
+}
+
+// The page got focus or became visible. What was seen before decides whether the markers go;
+// only then do the rows in view now count as seen.
+function activate(): void {
+  if (!isActive()) return;
   const unseen = messages.filter(isUnseen);
   if (unseen.length > 0 && unseen.every((message) => seen.has(message.sequence))) {
     dividerAfter = Number.POSITIVE_INFINITY;
     render();
   }
-}, { root: list });
-
-// The page got focus or became visible: measure the rows again, then clear what was seen.
-function activate(): void {
-  if (!isActive()) return;
-  checkOnObserve = true;
-  seenObserver.disconnect();
-  for (const row of list.querySelectorAll<HTMLElement>("[data-sequence]")) seenObserver.observe(row);
+  markVisibleRows();
 }
 
 // Draws the list again. It keeps the distance from the bottom, so new messages at the end and
@@ -157,6 +171,7 @@ function render(first = false): void {
   }
   if (first) (marked ?? list.lastElementChild)?.scrollIntoView({ block: marked ? "start" : "end" });
   else list.scrollTop = list.scrollHeight - fromBottom;
+  markVisibleRows();
 }
 
 // The chosen targets, as chips before the input. With none, the @mentions in the text count.
@@ -226,7 +241,7 @@ function moveCompletion(step: number): void {
 
 // Arrow keys move, Tab and Enter complete, Esc closes. The answer says whether the key was used.
 function completionKey(event: KeyboardEvent): boolean {
-  if (!completion) return false;
+  if (!completion || event.isComposing) return false; // an input method owns the keys
   if (event.key === "ArrowDown" || event.key === "ArrowUp") moveCompletion(event.key === "ArrowDown" ? 1 : -1);
   else if (event.key === "Tab" || event.key === "Enter") completion.accept(completion.items[completion.index]);
   else if (event.key === "Escape") closeCompletion();
@@ -252,7 +267,7 @@ function completeMention(): void {
   const mention = mentionBefore(textInput.value, textInput.selectionStart);
   if (!mention) return closeCompletion();
   showCompletion(matchTargets(candidates(), mention.query), (id) => {
-    textInput.setRangeText(id + " ", mention.start + 1, textInput.selectionStart, "end");
+    textInput.setRangeText(mentionText(id), mention.start, textInput.selectionStart, "end");
     closeCompletion();
     growComposer();
   });
@@ -327,6 +342,9 @@ textInput.addEventListener("input", () => {
   completeMention();
 });
 textInput.addEventListener("click", completeMention);
+textInput.addEventListener("keyup", (event) => {
+  if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) completeMention(); // the caret moved
+});
 textInput.addEventListener("blur", closeCompletion);
 textInput.addEventListener("keydown", (event) => {
   if (completionKey(event)) return;

@@ -21,3 +21,8 @@ export function mentionBefore(text: string, caret: number): { start: number; que
   const query = found[1];
   return { start: caret - query.length - 1, query };
 }
+
+// What replaces the "@word" when a candidate is picked: "@all" already has its "@", an agent ID has none.
+export function mentionText(id: string): string {
+  return (id.startsWith("@") ? id : "@" + id) + " ";
+}

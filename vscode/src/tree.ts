@@ -49,7 +49,7 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
       ...favourites,
       { kind: "section", id: "channels", label: "Channels", children: channelNodes(categories.channels) },
       { kind: "section", id: "dms", label: "Direct messages", children: channelNodes(categories.directMessages) },
-      { kind: "section", id: "agents", label: "Agents", children: agents.map((agent) => ({ kind: "agent", agent })) },
+      { kind: "section", id: "agents", label: "Agents", children: agents.filter((agent) => agent.id !== this.model.self).map((agent) => ({ kind: "agent", agent })) },
     ];
   }
 
@@ -95,8 +95,8 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     const workers = (view.workers ?? []).map((worker, index): Node => ({
       kind: "agentDetail", id: `worker:${agent.id}:${worker.id ?? index}`, label: worker.description, description: ago(worker.since, now), icon: "person",
     }));
-    const recent = recentActivity(view, RECENT_CHILDREN).map((entry): Node => ({
-      kind: "agentDetail", id: `recent:${agent.id}:${entry.at}`, label: entry.text, description: ago(entry.at, now) + " ago", icon: "history",
+    const recent = recentActivity(view, RECENT_CHILDREN).map((entry, index): Node => ({
+      kind: "agentDetail", id: `recent:${agent.id}:${index}:${entry.at}`, label: entry.text, description: ago(entry.at, now) + " ago", icon: "history",
     }));
     return [...workers, ...recent];
   }
@@ -105,7 +105,7 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     const item = new vscode.TreeItem(agent.id);
     item.id = "agent:" + agent.id;
     // The menu offers "Message Agent" only for an agent the monitor can write to.
-    const messageable = !agent.removed && agent.id !== this.model.self && this.model.status?.can_send === true;
+    const messageable = !agent.removed && this.model.status?.can_send === true;
     item.contextValue = messageable ? "agent" : "agentNoMessage";
     if (agent.removed) {
       item.description = "removed";

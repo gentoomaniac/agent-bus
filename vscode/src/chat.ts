@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import { ApiError } from "./api";
 import { describeChannel, destinationOf, dmChannelId } from "./channels";
-import { ChatState, FromWebview, ToWebview } from "./protocol";
+import { ChatState, FromWebview, ToWebview, parseFromWebview } from "./protocol";
 import { Session } from "./session";
 import { ALL, Channel } from "./types";
 
@@ -77,7 +77,11 @@ export class ChatPanels implements vscode.Disposable {
       void this.show(channelId, chat, true);
       if (panel.active) void panel.webview.postMessage({ type: "activated" } satisfies ToWebview);
     });
-    panel.webview.onDidReceiveMessage((message: FromWebview) => void this.handle(channelId, chat, message));
+    panel.webview.onDidReceiveMessage((raw: unknown) => {
+      const message = parseFromWebview(raw);
+      if (!message) this.session.report(new Error("chat panel: ignored a malformed message from the page"));
+      else this.handle(channelId, chat, message).catch((error) => this.session.report(error));
+    });
   }
 
   dispose(): void {
@@ -211,13 +215,12 @@ export class ChatPanels implements vscode.Disposable {
   button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
   button:disabled { opacity: 0.5; cursor: default; }
   #note { padding: 8px 12px; border-top: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); }
-  #composer { margin: 8px 12px 10px; border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); background: var(--vscode-input-background); border-radius: 4px; }
+  #composer { position: relative; margin: 8px 12px 10px; border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); background: var(--vscode-input-background); border-radius: 4px; }
   #composer:focus-within { border-color: var(--vscode-focusBorder); }
   #composer textarea, #composer input { display: block; box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: transparent; border: 0; outline: 0; padding: 6px 8px; }
   #composer textarea { resize: none; max-height: 12em; }
   #title { font-weight: bold; border-bottom: 1px solid var(--vscode-panel-border); }
   #toolbar { display: flex; align-items: center; gap: 6px; padding: 2px 6px 4px; }
-  #composer { position: relative; }
   #completions { position: absolute; bottom: 100%; left: 0; margin: 0 0 2px; padding: 2px 0; list-style: none; max-height: 10em; overflow-y: auto; min-width: 12em; color: var(--vscode-quickInput-foreground, var(--vscode-foreground)); background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background)); border: 1px solid var(--vscode-focusBorder); border-radius: 4px; z-index: 1; }
   #completions li { padding: 2px 10px; cursor: pointer; }
   #completions li.active { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); }
@@ -226,7 +229,6 @@ export class ChatPanels implements vscode.Disposable {
   .chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 6px; border-radius: 8px; font-size: 0.85em; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
   .chip button { color: inherit; background: transparent; padding: 0 4px; line-height: 1; }
   #toolbar select { max-width: 14em; color: var(--vscode-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border); font-size: 0.9em; padding: 1px 2px; }
-
   #toolbar .spacer { flex: 1; }
   #hint { font-size: 0.85em; }
   #problem { color: var(--vscode-errorForeground); font-size: 0.9em; }

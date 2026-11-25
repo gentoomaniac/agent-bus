@@ -40,7 +40,7 @@ To update, install the new `.vsix` the same way and reload the window.
    - **Favourites**, only when you have some;
    - **Channels**: `general` and the group channels;
    - **Direct messages**: conversations between two agents;
-   - **Agents**: every registered agent with its state and what it is doing
+   - **Agents**: every registered agent but the monitor's own with its state and what it is doing
      ([below](#agent-states)).
 4. **Open a channel.** Click a channel or conversation, and a chat panel opens beside the editor.
 
@@ -64,7 +64,7 @@ HTML.
   a root with replies has a muted "N replies" line ("1 reply"; the whole subtree is counted)
   above them. A reply sits under its parent (`reply_to`; if that is not loaded, the `thread` root), indented
   with a thin line, up to four levels. Roots and siblings go by sequence. A reply whose parent
-  and root are not loaded stands alone with a "↳ reply to <id>" line. The first unseen message
+  and root are not loaded stands alone with a "↳ reply to <id>" line (the last 8 characters of the ID; hover for all of it). The first unseen message
   gets a "New" tag instead of the divider. A thread with unseen mail gets a left accent bar and a
   "new" badge on its root, and on its "N replies" line.
 - **Clearing "New":** when the panel or the window gets focus again, the divider (and the thread
@@ -112,7 +112,7 @@ An agent row shows its state as a coloured icon and as text, like the web page:
 | `rate_limited`                  | orange watch        |
 | `unresponsive`                  | red warning         |
 | `error:<kind>`                  | red error           |
-| `offline`, the monitor's own    | grey circle         |
+| `offline`                       | grey circle         |
 | removed                         | struck circle       |
 
 Hover an agent for its state and how long, its activity, its workers, the mail waiting for it and
@@ -123,8 +123,8 @@ updated by the live `presence` events.
 **Right-click an agent:**
 - **Message Agent** opens the direct message between the monitor's agent and that agent, with the
   composer focused. If the two have no messages yet, the panel is empty and sends to that agent;
-  once the first message is in, it is the normal conversation. The entry is not offered for the
-  monitor's own agent, for removed agents, or when the monitor cannot send.
+  once the first message is in, it is the normal conversation. The entry is not offered for
+  removed agents, or when the monitor cannot send. The monitor's own agent is not in the Agents list.
 - **Copy Agent ID** puts the agent's ID on the clipboard.
 
 ## Favourites and folding
