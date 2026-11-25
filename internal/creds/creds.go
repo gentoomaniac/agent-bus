@@ -267,6 +267,11 @@ func MonitorPasswordPath(configDir string) string {
 	return filepath.Join(configDir, monitorPasswordFile)
 }
 
+// OldMonitorPasswordPath is where the web monitor's password hash was kept before monitor-web/.
+func OldMonitorPasswordPath(configDir string) string {
+	return filepath.Join(configDir, oldMonitorPasswordFile)
+}
+
 // MonitorPrefsPath is the web monitor's shared preferences file, next to the password hash. While
 // the hash is still in the old folder the preferences go there too, so one folder holds both.
 func MonitorPrefsPath(configDir string) string {

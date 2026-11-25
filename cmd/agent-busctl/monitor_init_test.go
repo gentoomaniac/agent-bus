@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
@@ -77,6 +78,23 @@ func TestMonitorInitCopiesOnlyWhatTheMonitorNeeds(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, gone)); err == nil {
 			t.Errorf("a refresh left %s", gone)
 		}
+	}
+}
+
+func TestMonitorInitTakesTheWebPasswordFromTheOldFolder(t *testing.T) {
+	cli := &CLI{ConfigDir: t.TempDir()}
+	if err := (&AdminInitCmd{}).Run(cli); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(cli.ConfigDir, "ca.pem"), "ca certificate")
+	writeTestFile(t, creds.OldMonitorPasswordPath(cli.ConfigDir), "old hash")
+
+	dir := filepath.Join(t.TempDir(), "monitor")
+	if err := (&MonitorInitCmd{Dir: dir}).Run(cli); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(creds.MonitorPasswordPath(dir)); err != nil || strings.TrimSpace(string(got)) != "old hash" {
+		t.Errorf("the monitor's web password: %q, %v", got, err)
 	}
 }
 

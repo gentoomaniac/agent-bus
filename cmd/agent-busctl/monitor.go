@@ -105,7 +105,13 @@ func (cmd *MonitorInitCmd) Run(cli *CLI) error {
 			}
 		}
 	}
-	if webPassword := creds.MonitorPasswordPath(cli.ConfigDir); fileExists(webPassword) {
+	// A setup from before the password moved to monitor-web/ still has it in monitor/: the
+	// monitor's config gets it at the new place.
+	webPassword := creds.MonitorPasswordPath(cli.ConfigDir)
+	if !fileExists(webPassword) {
+		webPassword = creds.OldMonitorPasswordPath(cli.ConfigDir)
+	}
+	if fileExists(webPassword) {
 		copies = append(copies, transfer{webPassword, creds.MonitorPasswordPath(""), files.SecretMode})
 	} else {
 		fmt.Fprintln(os.Stderr, "no web password is set yet: `agent-busctl monitor password`, then run this again")
