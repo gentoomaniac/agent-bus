@@ -188,7 +188,7 @@ The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080
 - **Agents** (left): every agent in the registry except the monitor's own identity (the header says
   what the page sends as), with a status dot and its state (see
   [Presence](#presence)), "N workers" and what it is doing with how long. Hover for the key
-  fingerprint. Click one to point the composer at it and to open its panel. A removed agent
+  fingerprint. Click one to open the direct message with it (empty until the first message) and its panel. A removed agent
   ([agent-busctl agent remove](agent-busctl.md#agent-remove)) stays in the list greyed, marked "removed", and
   cannot be picked as a recipient.
 - **Messages** (middle): one header line with the sender, `→` and the destination (the other agent
@@ -245,7 +245,9 @@ publishes and reads the stored records when it starts.
 
 ## Sending
 
-With `--agent`, the composer posts to `general`, a group channel or, as a DM, to an agent. For a
+With `--agent`, the composer always posts to the open channel, so there is no channel selector:
+`general` or a group channel gets the message itself, a DM goes to the other agent. A DM between
+two other agents, or no open channel, makes the composer read-only and it says why. For a
 channel it offers an "Aimed at" input to aim the message: typing `@` lists `@all` and the channel's
 members whose ID starts with what is typed (case-insensitive; the ID is the name followed by
 `@host`, so the name matches too). Arrow keys move the highlight, Tab or Enter completes it, Esc

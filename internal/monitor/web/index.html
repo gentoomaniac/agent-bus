@@ -270,7 +270,6 @@
     <div id="results" hidden></div>
     <form id="composer">
       <div class="row">
-        <select name="target" aria-label="Send to"></select>
         <select name="type" aria-label="Type"></select>
         <input name="title" placeholder="Title (optional)" aria-label="Title">
       </div>
@@ -360,7 +359,8 @@ const OLD_COLLAPSED_KEY = "bus-monitor-collapsed";
 const STATUS_LABEL = { verified: "verified", unknown_sender: "unknown sender", rejected: "rejected" };
 
 const state = {
-  channels: [], agents: [], members: [], status: { can_send: false, note: "" },
+  channels: [], agents: [], members: [],
+  emptyDirects: new Map(),        // channel ID -> direct message opened from the sidebar that has no message yet status: { can_send: false, note: "" },
   presence: new Map(),            // agent ID -> presence view
   detailAgent: null,              // agent ID whose recent activity is shown
   selected: null,                 // channel ID
@@ -976,7 +976,11 @@ async function refresh() {
     let views;
     [state.channels, state.agents, state.status, views] = await Promise.all([api("/api/v1/channels"), api("/api/v1/agents"), api("/api/v1/status"), api("/api/v1/presence")]);
     state.presence = new Map(views.map((view) => [view.agent, view]));
-    if (state.selected) state.members = await api(`/api/v1/members?channel=${encodeURIComponent(state.selected)}`).catch(() => []);
+    // Once the first message made the channel real, the monitor lists it.
+    for (const id of state.emptyDirects.keys()) if (state.channels.some((c) => c.id === id)) state.emptyDirects.delete(id);
+    const empty = state.emptyDirects.get(state.selected);
+    if (empty) state.members = empty.agents;
+    else if (state.selected) state.members = await api(`/api/v1/members?channel=${encodeURIComponent(state.selected)}`).catch(() => []);
   } catch (error) {
     $("live").textContent = "error: " + error.message;
     return;
@@ -1013,25 +1017,41 @@ async function select(channelId) {
   state.unread.delete(channelId);
   history.replaceState(null, "", "#" + encodeURIComponent(channelId));
   if (!reopened) { state.marker = null; state.seen.clear(); }
-  if (!state.messages.has(channelId)) await loadMessages(channelId);
+  if (state.emptyDirects.has(channelId)) state.messages.set(channelId, []);
+  else if (!state.messages.has(channelId)) await loadMessages(channelId);
   if (state.selected !== channelId) return; // another channel was opened meanwhile
   // Before the next await, so a message arriving meanwhile cannot move the read point past the line.
   noteUnseen(channelId);
   if (looking()) markRead(channelId);
   await refresh();
   if (state.selected !== channelId) return;
-  pointComposerAt(state.channels.find((c) => c.id === channelId));
   renderMessages(true);
 }
 
-// The composer's target follows the channel that is open: a conversation of the sending agent
-// is answered, anything else is posted to the channel itself.
-function pointComposerAt(channel) {
-  if (!channel) return;
-  const target = document.forms.composer.target;
-  if (channel.kind === "general") target.value = "group:general";
-  else if (channel.kind === "group") target.value = "group:" + channel.name;
-  else if (channel.agents.includes(state.status.agent)) target.value = "agent:" + channel.agents.find((id) => id !== state.status.agent);
+// Opens the conversation with an agent, as an empty one while the two have no messages yet.
+function openDirect(agentId) {
+  const self = state.status.agent;
+  if (!self) return;
+  const agents = [self, agentId].sort();
+  const id = "dm:" + agents.join(":");
+  if (!channelById(id)) state.emptyDirects.set(id, { id, kind: "dm", name: agents.join(" + "), description: "", agents, messages: 0, last_sequence: 0 });
+  return select(id);
+}
+
+// A channel the monitor lists, or an empty direct message opened here.
+function channelById(channelId) {
+  return state.channels.find((c) => c.id === channelId) || state.emptyDirects.get(channelId);
+}
+
+// Where the composer posts: always the open channel. A direct message can be written only by one
+// of its two agents; for anything else this is null.
+function destination() {
+  const channel = channelById(state.selected);
+  if (!channel) return null;
+  if (channel.kind === "general") return { kind: "group", name: "general" };
+  if (channel.kind === "group") return { kind: "group", name: channel.name };
+  if (!channel.agents.includes(state.status.agent)) return null;
+  return { kind: "agent", name: channel.agents.find((id) => id !== state.status.agent) };
 }
 
 // ---- rendering ----
@@ -1161,7 +1181,7 @@ function renderSidebar() {
         el("div", {}, el("span", { class: "agent-line", title: agent.id + " (removed)" }, el("span", { class: "dot" }), el("span", { class: "label" }, agent.id), el("span", { class: "muted state" }, "removed"))));
     }
     const view = presenceOf(agent.id);
-    return el("li", { class: "item", title: agent.fingerprint, onclick: () => { document.forms.composer.target.value = "agent:" + agent.id; showDetail(agent.id); } },
+    return el("li", { class: "item", title: agent.fingerprint, onclick: () => { showDetail(agent.id); openDirect(agent.id); } },
       el("div", {}, agentLine(agent.id, view), agentSummary(view)));
   }) : [el("li", { class: "empty" }, "no agents registered")]));
   $("agents").hidden = syncSection("agents");
@@ -1175,7 +1195,7 @@ function renderMembers() {
 }
 
 function renderHeader() {
-  const channel = state.channels.find((c) => c.id === state.selected);
+  const channel = channelById(state.selected);
   const title = channel ? describeChannel(channel) : "Select a channel";
   $("channel-title").textContent = title;
   $("channel-title").title = title;
@@ -1393,21 +1413,18 @@ function renderMessages(scrollToEnd) {
 
 function renderComposer() {
   const form = document.forms.composer;
-  const previous = form.target.value;
-  const groups = state.channels.filter((c) => c.kind === "group");
-  form.target.replaceChildren(
-    el("optgroup", { label: "Channels" }, el("option", { value: "group:general" }, "# general"), ...groups.map((g) => el("option", { value: "group:" + g.name }, "# " + g.name))),
-    el("optgroup", { label: "Direct message" }, ...state.agents.filter((a) => a.id !== state.status.agent && !a.removed).map((a) => el("option", { value: "agent:" + a.id }, a.id))));
-  form.target.value = previous || "group:general";
-  if (!form.target.value) form.target.value = "group:general";
   if (!form.type.options.length) form.type.replaceChildren(...MESSAGE_TYPES.map((type) => el("option", { value: type }, type)));
 
   renderTargets();
-  const canSend = state.status.can_send;
-  for (const field of form.elements) field.disabled = !canSend || (field.id === "target-input" && form.target.value.startsWith("agent:"));
+  const to = destination();
+  const canSend = state.status.can_send && to !== null;
+  for (const field of form.elements) field.disabled = !canSend || (field.id === "target-input" && to?.kind === "agent");
   const note = $("send-note");
   if (!note.classList.contains("error")) {
-    note.textContent = canSend ? "Sending as " + state.status.agent : state.status.note;
+    if (!state.status.can_send) note.textContent = state.status.note;
+    else if (!state.selected) note.textContent = "Open a channel to send.";
+    else if (!to) note.textContent = "Read-only: this conversation is between other agents.";
+    else note.textContent = "Sending as " + state.status.agent;
   }
 }
 
@@ -1418,18 +1435,18 @@ function targetChoices() {
   return [ALL, ...state.members.filter((id) => id !== state.status.agent)];
 }
 
-let typedFor = null; // the "Send to" value the target input's text was typed for
+let typedFor = null; // the channel the target input's text was typed for
 
 function renderTargets() {
-  const form = document.forms.composer;
-  const isDM = form.target.value.startsWith("agent:");
+  const to = destination();
+  const isDM = to !== null && to.kind === "agent";
   const choices = targetChoices();
   state.picked = new Set(isDM ? [] : [...state.picked].filter((id) => choices.includes(id)));
   const input = $("target-input");
   input.disabled = isDM;
-  if (form.target.value !== typedFor) input.value = "";
-  typedFor = form.target.value;
-  input.placeholder = isDM ? "\u2192 " + form.target.value.slice("agent:".length) : "@name";
+  if (state.selected !== typedFor) input.value = "";
+  typedFor = state.selected;
+  input.placeholder = isDM ? "\u2192 " + to.name : "@name";
   $("target-chips").replaceChildren(...[...state.picked].map((id) =>
     el("span", { class: "target-chip", title: id },
       el("span", {}, id),
@@ -1660,17 +1677,16 @@ function showSendError(message) {
   setTimeout(() => { note.classList.remove("error"); renderComposer(); }, 8000);
 }
 
-document.forms.composer.target.addEventListener("change", renderTargets);
 document.forms.composer.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.target;
-  const [kind, ...nameParts] = form.target.value.split(":");
+  const to = destination();
   $("send-note").classList.remove("error");
   try {
-    if (!form.target.value.startsWith("agent:")) resolveTargetInput();
+    if (to.kind !== "agent") resolveTargetInput();
     await api("/api/v1/send", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: { kind, name: nameParts.join(":") }, type: form.type.value, targets: form.target.value.startsWith("agent:") ? [] : [...state.picked], title: form.title.value, text: form.text.value }),
+      body: JSON.stringify({ to, type: form.type.value, targets: to.kind === "agent" ? [] : [...state.picked], title: form.title.value, text: form.text.value }),
     });
     form.title.value = form.text.value = "";
     state.picked.clear();
