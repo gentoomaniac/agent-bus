@@ -53,6 +53,16 @@ func consumerName(agentToken string, channel bus.Channel) string {
 	}
 }
 
+// groupCursorHolder is the agent token and the group of a consumer that holds a read cursor on a
+// group channel, and false for any other consumer.
+func groupCursorHolder(name string) (agentToken, group string, ok bool) {
+	agentToken, group, found := strings.Cut(name, "__g__")
+	if !found || name != consumerName(agentToken, bus.GroupChannel(group)) || strings.Contains(agentToken, "__") {
+		return "", "", false
+	}
+	return agentToken, group, true
+}
+
 // readCursorHolder is the agent token of a consumer that holds a read cursor on the channel, and
 // false for any other consumer.
 func readCursorHolder(name string, channel bus.Channel) (agentToken string, ok bool) {

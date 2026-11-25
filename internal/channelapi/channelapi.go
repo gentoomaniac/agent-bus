@@ -32,6 +32,9 @@ const (
 	MaxRequestBytes = 4 << 10
 	// MaxDescriptionBytes bounds a channel's description: a line that says what it is for.
 	MaxDescriptionBytes = 300
+	// MaxListedChannels bounds a list reply: with names and descriptions at their limits it stays
+	// below 200 KiB, well inside a NATS message.
+	MaxListedChannels = 500
 )
 
 // The domains are prefixed to what is signed, so that a signature made for one kind of message
@@ -43,7 +46,8 @@ const (
 
 // The actions of a Request.
 const (
-	List         = "list"          // every channel, with its owner, description and members
+	List         = "list"          // every channel, with its owner and description, and whether the caller reads it
+	Members      = "members"       // one channel, with its members
 	Create       = "create"        // Channel with Description; the caller owns it and reads it
 	Join         = "join"          // the caller reads Channel from now on
 	Leave        = "leave"         // the caller stops reading Channel
@@ -53,7 +57,7 @@ const (
 )
 
 // Actions are the actions busd answers.
-var Actions = []string{List, Create, Join, Leave, Invite, RemoveMember, Update}
+var Actions = []string{List, Members, Create, Join, Leave, Invite, RemoveMember, Update}
 
 // Request is what an agent asks busd. The challenge makes every request, and so the request hash
 // its reply is bound to, unique.
@@ -129,12 +133,14 @@ func strictDecode(data []byte, value any) error {
 	return decoder.Decode(value)
 }
 
-// Channel is a group channel as busd describes it. An empty Owner is the bus owner.
+// Channel is a group channel as busd describes it. An empty Owner is the bus owner. A list leaves
+// the members out and says only whether the caller is one (Joined); the other answers name them.
 type Channel struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Owner       string   `json:"owner,omitempty"`
-	Members     []string `json:"members"`
+	Members     []string `json:"members,omitempty"`
+	Joined      bool     `json:"joined,omitempty"`
 }
 
 // Limits are the rules a new channel lives under, with the values busd enforces as it answers. A
@@ -151,11 +157,13 @@ type Limits struct {
 }
 
 // Reply is busd's signed answer. Channel is the channel the request was about, as it is now
-// (Channels instead for list), Limits come with a created channel, and Error says why busd refused.
+// (Channels instead for list, the first MaxListedChannels by name, Truncated when there are more),
+// Limits come with a created channel, and Error says why busd refused.
 type Reply struct {
 	RequestHash string    `json:"request_hash"`
 	Channel     *Channel  `json:"channel,omitempty"`
 	Channels    []Channel `json:"channels,omitempty"`
+	Truncated   bool      `json:"truncated,omitempty"`
 	Limits      *Limits   `json:"limits,omitempty"`
 	Error       string    `json:"error,omitempty"`
 }

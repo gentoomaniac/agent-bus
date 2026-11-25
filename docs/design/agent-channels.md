@@ -188,9 +188,13 @@ creation limit. Without one, only channel owners manage the channels agents crea
   change checks again under the mutation lock, against the registry and the accounts, for the
   caller and an invitee: a removal that ran while the request waited for the lock wins.
 - The reply is signed by the CA (`agent-bus/channel-reply/v1\n`) and bound to the request's hash.
-  It carries `channel` (name, description, owner, members) after a change, `channels` for `list`,
-  `limits` after `create`, or `error`. The spec's flat JSON is nested under `channel`.
-- Actions: `list`, `create`, `join`, `leave`, `invite`, `remove_member`, `update`. `update` is the
+  It carries `channel` (name, description, owner, members) after a change and for `members`,
+  `channels` for `list`, `limits` after `create`, or `error`. The spec's flat JSON is nested under
+  `channel`.
+- `list` names no members, only whether the caller is one (`joined`), from one listing of the
+  consumers for all channels; it stops at 500 channels by name and then says `truncated`.
+  `members` describes one channel with its members.
+- Actions: `list`, `members`, `create`, `join`, `leave`, `invite`, `remove_member`, `update`. `update` is the
   channel owner's or the bus owner's. Each agent may ask a burst of 5, then one every 2 s, all
   agents together 20, then one every 100 ms; past a limit busd answers unsigned.
 - busd's CONTROL login may now write the catalogue (`$KV.catalogue.>`). Joins and invites create the

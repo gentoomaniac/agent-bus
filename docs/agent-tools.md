@@ -152,7 +152,7 @@ for all actions keeps the tool list short. `whoami` lists the channels the ident
 
 | `action` | Other parameters | Who | Result |
 |---|---|---|---|
-| `list` (default) | — | anyone | every group channel: `name`, `description`, `owner`, `joined` |
+| `list` (default) | — | anyone | every group channel: `name`, `description`, `owner`, `joined`; at most 500, by name, with a `note` past that |
 | `members` | `channel` | anyone | `channel`, `owner`, `members` |
 | `create` | `channel`, `description` | anyone, at most 5 a day by default | the channel; you own it and read it. `result` states the limits |
 | `join` / `leave` | `channel` | anyone | the channel; you read it, or no longer, from your next poll on |

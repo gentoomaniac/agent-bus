@@ -45,6 +45,7 @@ type ChannelAdmin interface {
 	DeleteReadCursor(ctx context.Context, agentID string, channel bus.Channel) error
 	LastSequence(ctx context.Context) (uint64, error)
 	Retention(ctx context.Context) (bus.Retention, error)
+	GroupReaders(ctx context.Context) (map[string][]string, error)
 }
 
 // ChannelsConfig is what Channels are made of.
@@ -115,11 +116,16 @@ func (channels *Channels) HandleRequest(caller string, message []byte) []byte {
 // the published directory.
 func (channels *Channels) answer(ctx context.Context, request channelapi.Request, signer bus.AgentRecord, reply *channelapi.Reply) error {
 	if request.Action == channelapi.List {
-		list, err := channels.list(ctx)
-		reply.Channels = list
+		var err error
+		reply.Channels, reply.Truncated, err = channels.list(ctx, request.AgentID)
 		return err
 	}
 	if err := bus.ValidateGroupName(request.Channel); err != nil {
+		return err
+	}
+	if request.Action == channelapi.Members {
+		var err error
+		reply.Channel, err = channels.describe(ctx, request.Channel)
 		return err
 	}
 	if channels.config.LockMutations != nil {
@@ -352,21 +358,28 @@ func (channels *Channels) describe(ctx context.Context, name string) (*channelap
 	return channelOf(record, members), nil
 }
 
-func (channels *Channels) list(ctx context.Context) ([]channelapi.Channel, error) {
+// list is every channel by name, at most channelapi.MaxListedChannels, with whether the caller
+// reads it. The consumers are listed once for all channels.
+func (channels *Channels) list(ctx context.Context, caller string) (list []channelapi.Channel, truncated bool, err error) {
 	groups, err := channels.config.Admin.GroupChannels(ctx)
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	readers, err := channels.config.Admin.GroupReaders(ctx)
+	if err != nil {
+		return nil, false, err
 	}
 	slices.SortFunc(groups, func(a, b bus.TopicRecord) int { return strings.Compare(a.Name, b.Name) })
-	list := []channelapi.Channel{}
-	for _, group := range groups {
-		members, err := channels.config.Admin.ReadCursorHolders(ctx, bus.GroupChannel(group.Name))
-		if err != nil {
-			return nil, err
-		}
-		list = append(list, *channelOf(group, members))
+	if len(groups) > channelapi.MaxListedChannels {
+		groups, truncated = groups[:channelapi.MaxListedChannels], true
 	}
-	return list, nil
+	list = []channelapi.Channel{}
+	for _, group := range groups {
+		list = append(list, channelapi.Channel{
+			Name: group.Name, Description: group.Description, Owner: group.Owner, Joined: slices.Contains(readers[group.Name], caller),
+		})
+	}
+	return list, truncated, nil
 }
 
 func channelOf(record bus.TopicRecord, members []string) *channelapi.Channel {

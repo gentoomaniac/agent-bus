@@ -85,11 +85,16 @@ func ptr[T any](value T) *T { return &value }
 
 func TestChannelsListsEveryChannelAndSaysWhichTheAgentReads(t *testing.T) {
 	b := newTestBus(t, alice, bob)
-	b.startBusd(func(channelapi.Request) channelapi.Reply {
-		return channelapi.Reply{Channels: []channelapi.Channel{
-			{Name: "agent-bus", Description: "bus bug reports", Owner: bob, Members: []string{alice, bob}},
-			{Name: "lib-x", Description: "about lib-x", Members: []string{bob}},
-		}}
+	agentBus := channelapi.Channel{Name: "agent-bus", Description: "bus bug reports", Owner: bob}
+	b.startBusd(func(request channelapi.Request) channelapi.Reply {
+		if request.Action == channelapi.Members {
+			withMembers := agentBus
+			withMembers.Members = []string{alice, bob}
+			return channelapi.Reply{Channel: &withMembers}
+		}
+		joined := agentBus
+		joined.Joined = true
+		return channelapi.Reply{Channels: []channelapi.Channel{joined, {Name: "lib-x", Description: "about lib-x"}}}
 	})
 	client := b.connect(alice)
 

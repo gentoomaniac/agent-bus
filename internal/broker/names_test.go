@@ -56,3 +56,18 @@ func TestReadCursorHolder(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupCursorHolder(t *testing.T) {
+	for name, want := range map[string][2]string{
+		"lib-x_bob__g__release": {"lib-x_bob", "release"},
+		"lib-x_bob__general":    {},
+		"lib-x_bob__dm":         {},
+		"a__b__g__x":            {}, // no agent token has "__"
+		"monitor-ordered-123":   {},
+	} {
+		token, group, ok := groupCursorHolder(name)
+		if [2]string{token, group} != want || ok != (want[0] != "") {
+			t.Errorf("groupCursorHolder(%q) = %q, %q, %v; want %v", name, token, group, ok, want)
+		}
+	}
+}

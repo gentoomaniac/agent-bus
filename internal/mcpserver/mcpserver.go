@@ -313,14 +313,16 @@ func (t tools) listChannels(ctx context.Context) (*mcp.CallToolResult, channelsO
 	if err := t.session.Ready(); err != nil {
 		return nil, channelsOut{}, err
 	}
-	self := t.session.AgentID()
 	reply, err := t.session.RequestChannel(ctx, channelapi.Request{Action: channelapi.List})
 	if err == nil {
 		out := channelsOut{Channels: []channelEntry{}}
 		for _, channel := range reply.Channels {
 			out.Channels = append(out.Channels, channelEntry{
-				Name: channel.Name, Description: channel.Description, Owner: cmp.Or(channel.Owner, busOwner), Joined: slices.Contains(channel.Members, self),
+				Name: channel.Name, Description: channel.Description, Owner: cmp.Or(channel.Owner, busOwner), Joined: channel.Joined,
 			})
+		}
+		if reply.Truncated {
+			out.Note = fmt.Sprintf("only the first %d channels by name", len(reply.Channels))
 		}
 		return nil, out, nil
 	}
@@ -330,22 +332,17 @@ func (t tools) listChannels(ctx context.Context) (*mcp.CallToolResult, channelsO
 	}
 	out := channelsOut{Channels: []channelEntry{}, Note: "only the names this machine knows: " + err.Error()}
 	for _, name := range slices.Sorted(maps.Keys(catalogue)) {
-		out.Channels = append(out.Channels, channelEntry{Name: name, Joined: slices.Contains(catalogue[name], self)})
+		out.Channels = append(out.Channels, channelEntry{Name: name, Joined: slices.Contains(catalogue[name], t.session.AgentID())})
 	}
 	return nil, out, nil
 }
 
 func (t tools) channelMembers(ctx context.Context, name string) (*mcp.CallToolResult, channelsOut, error) {
-	reply, err := t.session.RequestChannel(ctx, channelapi.Request{Action: channelapi.List})
+	reply, err := t.session.RequestChannel(ctx, channelapi.Request{Action: channelapi.Members, Channel: name})
 	if err != nil {
 		return nil, channelsOut{}, err
 	}
-	for _, channel := range reply.Channels {
-		if channel.Name == name {
-			return nil, describeChannel(channel), nil
-		}
-	}
-	return nil, channelsOut{}, fmt.Errorf("there is no channel %s", name)
+	return nil, describeChannel(*reply.Channel), nil
 }
 
 // unknownSenders says why mail is missing: its senders are not in the local directory.

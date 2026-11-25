@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -40,6 +41,14 @@ func (fake *fakeRegistry) DeleteReadCursor(_ context.Context, agentID string, ch
 	prefix := agentID + " " + channel.String() + " after "
 	fake.cursors = slices.DeleteFunc(fake.cursors, func(cursor string) bool { return strings.HasPrefix(cursor, prefix) })
 	return nil
+}
+func (fake *fakeRegistry) GroupReaders(ctx context.Context) (map[string][]string, error) {
+	readers := map[string][]string{}
+	for _, group := range fake.groups {
+		holders, _ := fake.ReadCursorHolders(ctx, bus.GroupChannel(group.Name))
+		readers[group.Name] = holders
+	}
+	return readers, nil
 }
 func (*fakeRegistry) Retention(context.Context) (bus.Retention, error) {
 	return bus.Retention{MaxAge: 90 * 24 * time.Hour, MaxBytes: 1 << 30}, nil
@@ -152,8 +161,14 @@ func TestJoinLeaveAndListArePublic(t *testing.T) {
 		t.Errorf("the cursor does not start at the end of the log: %v", f.registry.cursors)
 	}
 	list := f.must(channelapi.Request{AgentID: member, Action: channelapi.List}).Channels
-	if len(list) != 1 || list[0].Name != "agent-bus" || list[0].Owner != owner || !slices.Equal(list[0].Members, []string{owner, visitor}) {
-		t.Errorf("list = %+v", list)
+	if len(list) != 1 || list[0].Name != "agent-bus" || list[0].Owner != owner || list[0].Joined || list[0].Members != nil {
+		t.Errorf("list for a non-member = %+v", list)
+	}
+	if list := f.must(channelapi.Request{AgentID: visitor, Action: channelapi.List}).Channels; !list[0].Joined {
+		t.Errorf("list for a member = %+v", list)
+	}
+	if members := f.must(channelapi.Request{AgentID: member, Action: channelapi.Members, Channel: "agent-bus"}).Channel; !slices.Equal(members.Members, []string{owner, visitor}) {
+		t.Errorf("members = %+v", members)
 	}
 	if reply := f.must(channelapi.Request{AgentID: visitor, Action: channelapi.Leave, Channel: "agent-bus"}); !slices.Equal(reply.Channel.Members, []string{owner}) {
 		t.Errorf("after the leave the members are %v", reply.Channel.Members)
@@ -312,6 +327,17 @@ func TestARepeatedCreateFinishesAHalfMadeChannel(t *testing.T) {
 	}
 	if _, err := f.create(member, "agent-bus"); err == nil || !strings.Contains(err.Error(), "exists") {
 		t.Errorf("another agent's create of the channel: %v", err)
+	}
+}
+
+func TestAListStopsAtItsBound(t *testing.T) {
+	f := newChannelFixture(t)
+	for i := range channelapi.MaxListedChannels + 1 {
+		f.registry.groups = append(f.registry.groups, bus.TopicRecord{Name: fmt.Sprintf("c%04d", i)})
+	}
+	reply := f.must(channelapi.Request{AgentID: member, Action: channelapi.List})
+	if len(reply.Channels) != channelapi.MaxListedChannels || !reply.Truncated || reply.Channels[0].Name != "c0000" {
+		t.Errorf("%d channels, truncated %v", len(reply.Channels), reply.Truncated)
 	}
 }
 

@@ -289,6 +289,23 @@ func (admin *Admin) ReadCursorHolders(ctx context.Context, channel bus.Channel) 
 	return holders, admin.bus.explain(names.Err())
 }
 
+// GroupReaders are the agents that read each group channel, by channel name, from one listing of
+// the consumers: what ReadCursorHolders gives for one channel, for all of them at the cost of one.
+func (admin *Admin) GroupReaders(ctx context.Context) (map[string][]string, error) {
+	stream, err := admin.bus.stream.Stream(ctx, busStream)
+	if err != nil {
+		return nil, admin.bus.explain(err)
+	}
+	readers := map[string][]string{}
+	names := stream.ConsumerNames(ctx)
+	for name := range names.Name() {
+		if token, group, ok := groupCursorHolder(name); ok {
+			readers[group] = append(readers[group], bus.AgentIDFromToken(token))
+		}
+	}
+	return readers, admin.bus.explain(names.Err())
+}
+
 // Retention is the retention of the message log as its stream has it.
 func (admin *Admin) Retention(ctx context.Context) (bus.Retention, error) {
 	stream, err := admin.bus.stream.Stream(ctx, busStream)
