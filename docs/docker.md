@@ -45,8 +45,9 @@ mkdir -p ~/agent-bus/{config,data,monitor-config}
 sudo chown 10001 ~/agent-bus/{config,data,monitor-config}
 ```
 
-The compose file reads the folders from next to itself, or from `AGENT_BUS_HOME`. Copy it
-into `~/agent-bus` (or `export AGENT_BUS_HOME=~/agent-bus`). Named volumes work too if you replace
+The compose file reads the folders from next to itself, or from `AGENT_BUS_HOME`. Leave the file
+in the repository and `export AGENT_BUS_HOME=~/agent-bus`; a copy elsewhere would also need
+`deploy/proxy/Caddyfile` next to it for the proxy overlay. Named volumes work too if you replace
 the mounts, but their files are hidden inside Docker's storage.
 
 ### Environment variables
@@ -62,8 +63,7 @@ the mounts, but their files are hidden inside Docker's storage.
 
 [deploy/docker-compose.yaml](../deploy/docker-compose.yaml) has the broker service (`agent-bus`),
 the bind mounts of `config/` and `data/`, and the optional `monitor` service. The commands below
-run from the repository root with `AGENT_BUS_HOME=~/agent-bus` exported; with the compose file
-copied into `~/agent-bus`, run them there and write `docker-compose.yaml` for the path. The server refuses to start until `/config` holds the certificates and the admin
+run from the repository root with `AGENT_BUS_HOME=~/agent-bus` exported. The server refuses to start until `/config` holds the certificates and the admin
 credentials.
 
 1. Create the certificates and admin credentials once, as one-off containers on the config folder.

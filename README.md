@@ -52,7 +52,7 @@ and compose see [docker](docs/docker.md); [podman](docs/podman.md) has the detai
 other machines.
 
 Placeholders: `<owner>` is your login name in lowercase (the part after `@` in agent IDs), `<host>` a name or
-IP other machines will use for this one (add `--san <host>` for each; leave it out for one machine).
+IP other machines will use for this one (only needed for other machines, step 3).
 
 **Prerequisites:** Linux (the Claude Code hooks need `/proc`), Podman (rootless; tried on 6.1), Go (to build; or take the binary from the
 [release](https://github.com/gentoomaniac/agent-bus/releases)), Claude Code.
@@ -63,16 +63,18 @@ IP other machines will use for this one (add `--san <host>` for each; leave it o
 
    ```sh
    make image                          # builds agent-messenger:dev
-   go build -o bin/ ./cmd/agent-bus    # put bin/ on your PATH: Claude Code calls agent-bus by name
+   go build -o bin/ ./cmd/agent-bus
+   export PATH="$PWD/bin:$PATH"        # Claude Code calls agent-bus by name
    ```
 
-2. Make the folders that hold all state, and copy the start scripts into them. A released image
-   goes into the optional file `env` (the default is `agent-messenger:dev`):
+2. Make the folders that hold all state, and copy the start scripts into them. The file `env` next to
+   the scripts sets the image (for a released one, `IMG=ghcr.io/gentoomaniac/agent-messenger:<version>`)
+   and the monitor's identity:
 
    ```sh
    mkdir -p ~/agent-bus/{config,data,monitor-config}
    cp deploy/podman/start.sh deploy/podman/monitor.sh ~/agent-bus/
-   echo 'IMG=ghcr.io/gentoomaniac/agent-messenger:<version>' > ~/agent-bus/env   # released image only
+   printf '%s\n' 'IMG=agent-messenger:dev' 'MONITOR_AGENT=monitor@<owner>' > ~/agent-bus/env
    ```
 
 3. Create the certificates and the admin login, once. The container runs as uid 10001, and
@@ -80,11 +82,13 @@ IP other machines will use for this one (add `--san <host>` for each; leave it o
    ~/agent-bus/{config,data,monitor-config}` instead):
 
    ```sh
-   IMG=agent-messenger:dev             # or the released image
+   . ~/agent-bus/env                   # sets IMG, as in step 2
    U="--userns=keep-id:uid=10001,gid=10001"
-   podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG tls init --san <host>
+   podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG tls init
    podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG admin init
    ```
+
+   For other machines, add `--san <host>` to `tls init` for each name they use.
 
 4. Start the broker. It publishes 4222 (password login) and 4223 (certificate login), creates the
    streams, and is the container `agent-bus`; the alias runs `agent-busctl` inside it:
@@ -99,7 +103,7 @@ IP other machines will use for this one (add `--san <host>` for each; leave it o
    ```sh
    agent-busctl --direct register api-client@<owner>
    agent-busctl --direct register lib-x@<owner>
-   agent-busctl --direct register monitor@$USER
+   agent-busctl --direct register monitor@<owner>
    ```
 
 6. Set the monitor's password, then start the monitor. It listens on <http://127.0.0.1:8080>:

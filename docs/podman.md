@@ -29,7 +29,7 @@ U="--userns=keep-id:uid=10001,gid=10001"
 
 ```sh
 mkdir -p ~/agent-bus/{config,data,monitor-config}
-podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG tls init --san localhost --san <broker-host>
+podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG tls init --san <broker-host>
 podman run --rm $U -v ~/agent-bus/config:/config --entrypoint agent-busctl $IMG admin init
 ```
 
@@ -198,12 +198,13 @@ For day-to-day starts, `deploy/podman/start.sh` does the `podman run` of section
 the monitor's `podman run` of section 6. Copy them into the folder that holds `config/`, `data/`
 and `monitor-config/` (`~/agent-bus` above); they use the folder they are in, or `AGENT_BUS_HOME`.
 They replace an old container of the same name, so they also restart. `IMG` (default
-`agent-messenger:dev`) and `MONITOR_AGENT` (default `monitor@$USER`) come from the environment or
-from an optional file `env` next to them, in shell syntax:
+`agent-messenger:dev`) and `MONITOR_AGENT` (default `monitor@$USER`, so set it to
+`monitor@<owner>`) come from the environment or from an optional file `env` next to them, in shell
+syntax:
 
 ```sh
 cp deploy/podman/start.sh deploy/podman/monitor.sh ~/agent-bus/
-echo 'IMG=ghcr.io/gentoomaniac/agent-messenger:<version>' > ~/agent-bus/env
+printf '%s\n' 'IMG=ghcr.io/gentoomaniac/agent-messenger:<version>' 'MONITOR_AGENT=monitor@<owner>' > ~/agent-bus/env
 ~/agent-bus/start.sh
 ~/agent-bus/monitor.sh
 ```
