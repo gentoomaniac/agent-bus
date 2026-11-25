@@ -28,14 +28,24 @@ func DirectoryPath(configDir string) FileDirectory {
 	return FileDirectory(filepath.Join(configDir, "directory"))
 }
 
-func (dir FileDirectory) recordPath(agentID string) string {
-	return filepath.Join(string(dir), bus.AgentToken(agentID)+".json")
+// recordPath refuses an ID that is not a valid agent ID: the IDs of a directory fetched from busd
+// or of a message come from other machines, and the token only swaps "@" for "_", so "../x@y"
+// would leave the directory.
+func (dir FileDirectory) recordPath(agentID string) (string, error) {
+	if err := bus.ValidateAgentID(agentID); err != nil {
+		return "", err
+	}
+	return filepath.Join(string(dir), bus.AgentToken(agentID)+".json"), nil
 }
 
 // Lookup reads the agent's record.
 func (dir FileDirectory) Lookup(_ context.Context, agentID string) (bus.AgentRecord, error) {
 	var record bus.AgentRecord
-	data, err := os.ReadFile(dir.recordPath(agentID))
+	path, err := dir.recordPath(agentID)
+	if err != nil {
+		return record, err
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return record, err
 	}
@@ -158,9 +168,13 @@ func (dir FileDirectory) WriteIssuedAt(issuedAt time.Time) error {
 
 // Write stores a record, replacing an earlier one.
 func (dir FileDirectory) Write(record bus.AgentRecord) error {
+	path, err := dir.recordPath(record.AgentID)
+	if err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return err
 	}
-	return files.Write(dir.recordPath(record.AgentID), data, files.PublicMode, true)
+	return files.Write(path, data, files.PublicMode, true)
 }
