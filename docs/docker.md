@@ -140,11 +140,12 @@ tar. `docker compose cp agent-bus:/config/ca.pem .` works for single files, and
 
 ### Keep the directory fresh
 
-Agents of this version that have the enrollment password in `<config-dir>/enroll/password` fetch
-the directory from busd every minute and need no copying; skip this section for them. For the
-others (older versions, no password), after every `register`, `channel join` and `agent remove` the agents' `directory/` must be copied
-again; a running `agent-bus mcp` re-reads it every minute. `register` and `channel join` update
-`/config/directory` themselves; after `agent remove` write the tombstone out first:
+Agents of this version that have the enrollment password in `<config-dir>/enroll/password` fetch the
+directory from busd every minute and need no copying; skip this section for them. For the others
+(older versions, no password), after every `register`, `channel join` and `agent remove` the agents'
+`directory/` must be copied again; a running `agent-bus mcp` re-reads it every minute. `register`
+and `channel join` update `/config/directory` themselves; after `agent remove` write the tombstone
+out first:
 
 ```sh
 agent-busctl --direct directory export /config/directory

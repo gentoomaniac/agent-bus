@@ -30,10 +30,10 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/identity"
 )
 
-// The subjects of busd's enrollment and approval API, all in the CONTROL account. The first two
-// are what the enrollment login may publish, as may SubjectDirectory; the rest need an admin login. busd publishes the
-// number of pending requests on SubjectPending, for the monitor, which reads the registry and the
-// catalogue with requests on the last two: its login has no JetStream access in CONTROL.
+// The subjects of busd's API, all in the CONTROL account. The enrollment login may publish
+// SubjectRequest, SubjectStatus and SubjectDirectory; the rest need an admin login. busd publishes
+// the number of pending requests on SubjectPending, for the monitor, which reads the registry and
+// the catalogue with requests on the last two: its login has no JetStream access in CONTROL.
 const (
 	SubjectRequest = "busd.enroll.request"
 	SubjectStatus  = "busd.enroll.status"
