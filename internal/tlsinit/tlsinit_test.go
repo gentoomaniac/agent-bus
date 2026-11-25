@@ -1,6 +1,7 @@
 package tlsinit
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"os"
@@ -125,13 +126,35 @@ func TestRenewBrokerKeepsTheCAAndChangesTheNames(t *testing.T) {
 	if _, err := broker.Verify(x509.VerifyOptions{Roots: pool, DNSName: "broker.lan"}); err == nil {
 		t.Error("still valid for a name that was dropped")
 	}
-	if _, err := os.Stat(opts.BrokerKeyPath); err != nil {
-		t.Error(err)
+	if _, err := tls.LoadX509KeyPair(opts.BrokerCertPath, opts.BrokerKeyPath); err != nil {
+		t.Errorf("the new certificate and key do not match: %v", err)
+	}
+	for path, want := range map[string]os.FileMode{opts.BrokerKeyPath: 0o600, opts.BrokerCertPath: 0o644} {
+		if info, err := os.Stat(path); err != nil || info.Mode().Perm() != want {
+			t.Errorf("%s: %v, %v, want %v", path, info, err, want)
+		}
 	}
 	// The CA follows the broker certificate, for new machines that check it by fingerprint.
-	data, _ := os.ReadFile(opts.BrokerCertPath)
-	if rest := data; strings.Count(string(rest), "BEGIN CERTIFICATE") != 2 {
-		t.Errorf("broker.pem holds %d certificates, want 2", strings.Count(string(rest), "BEGIN CERTIFICATE"))
+	data, err := os.ReadFile(opts.BrokerCertPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := strings.Count(string(data), "BEGIN CERTIFICATE"); count != 2 || !strings.HasSuffix(string(data), string(caBefore)) {
+		t.Errorf("broker.pem holds %d certificates, want the broker's followed by the CA", count)
+	}
+}
+
+func TestRenewBrokerNeverOutlivesTheCA(t *testing.T) {
+	opts := testOptions(t.TempDir())
+	if err := Create(opts); err != nil {
+		t.Fatal(err)
+	}
+	opts.BrokerValidity = 100 * caValidity
+	if err := RenewBroker(opts); err != nil {
+		t.Fatal(err)
+	}
+	if broker, ca := readCert(t, opts.BrokerCertPath), readCert(t, opts.CACertPath); broker.NotAfter.After(ca.NotAfter) {
+		t.Errorf("broker valid until %v, CA until %v", broker.NotAfter, ca.NotAfter)
 	}
 }
 

@@ -87,6 +87,9 @@ list them with `--san` (repeatable) before you create it:
 docker compose -f deploy/docker-compose.yaml run --rm --no-deps --entrypoint agent-busctl agent-bus tls init --san bus.example.org --san 192.168.1.10
 ```
 
+To add names later, keep the CA and reissue only the broker certificate with `agent-busctl tls
+broker --san ...` ([agent-busctl](agent-busctl.md#tls-broker)); clients need nothing new.
+
 `tls init` refuses to overwrite existing files unless you pass `--force`. A forced `tls init` makes
 a new CA: every client that does not get the new `ca.pem` stops trusting the broker, and the
 broker must be restarted to load the new certificate. Clients trust only `ca.pem` (`--ca-cert`,

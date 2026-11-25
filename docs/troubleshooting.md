@@ -12,7 +12,7 @@ Symptom: a client fails with a certificate error (`x509: certificate is valid fo
 
   ```sh
   podman exec agent-bus agent-busctl tls broker --san localhost --san 127.0.0.1 --san bus.example.org --san 192.168.1.10
-  podman restart agent-bus     # bind-mount setup: start.sh, then monitor.sh
+  podman restart agent-bus     # in the bind-mount setup instead: start.sh, then monitor.sh
   ```
 
   With compose: `docker compose -f deploy/docker-compose.yaml exec agent-bus agent-busctl tls broker

@@ -97,7 +97,9 @@ func RenewBroker(opts Options) error {
 	if err != nil {
 		return err
 	}
-	// nats-server reads both at its next start; until then it keeps serving the old pair.
+	// nats-server reads both at its next start; until then it keeps serving the old pair. If the
+	// second write fails, the pair on disk does not match and the broker will not start: run the
+	// command again.
 	if err := files.Write(opts.BrokerKeyPath, brokerKeyPEM, files.SecretMode, true); err != nil {
 		return err
 	}
@@ -118,6 +120,9 @@ func issueBroker(caCert *x509.Certificate, caKey crypto.Signer, caPEM []byte, sa
 		NotAfter:     time.Now().Add(validity),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	if brokerTemplate.NotAfter.After(caCert.NotAfter) {
+		brokerTemplate.NotAfter = caCert.NotAfter // never outlives its CA
 	}
 	for _, san := range sans {
 		if ip := net.ParseIP(san); ip != nil {

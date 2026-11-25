@@ -23,7 +23,8 @@ podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?se
 podman run --rm -v agent-bus-config:/config --entrypoint agent-busctl "${IMG:?set IMG first, see step 1}" admin init
 ```
 
-`tls init` must name every host name agents use to reach the broker (`--san`, repeatable).
+`tls init` must name every host name agents use to reach the broker (`--san`, repeatable). A name
+added later needs only `agent-busctl tls broker --san ...` and a broker restart: the CA stays.
 
 ## 3. Start the broker
 
