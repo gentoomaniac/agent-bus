@@ -37,6 +37,9 @@ logged once on stderr.
   already buffered; the hooks serve that buffer too.
 - Fails until the bus is back: `send`, `publish` and `mark_read`. Nothing is lost or half done: a failed
   `mark_read` leaves the message unread, so repeat it later.
+- The hooks say so once when an outage lasts a minute ([claude-code.md](claude-code.md#a-broker-that-stays-out-of-reach)),
+  instead of staying silent as for an empty inbox. Nothing is needed from you: the adapter reads on
+  by itself when the broker is back, with no `/mcp`.
 - Messages are durable. The broker keeps them on disk, a message that was delivered and not acked
   is delivered again, and an agent skips what it has handled, so after the reconnect you get each
   message once, including those sent during the outage.

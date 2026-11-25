@@ -64,6 +64,7 @@ type fakeSession struct {
 	events []presence.Event
 	marked []string
 	titled string
+	busErr error // why the fake adapter cannot reach the broker
 	// mailForWaiter ends a WaitNewMail with the mail sent on it, like mail arriving at the adapter.
 	mailForWaiter chan []adapter.Message
 }
@@ -91,6 +92,8 @@ func (session *fakeSession) PeekNewMail() ([]adapter.Message, int, error) {
 func (session *fakeSession) MarkNotified(ids []string) {
 	session.marked = append(session.marked, ids...)
 }
+
+func (session *fakeSession) BusUnavailable() error { return session.busErr }
 
 func (session *fakeSession) Event(event presence.Event) {
 	session.events = append(session.events, event)

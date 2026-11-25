@@ -95,6 +95,15 @@ Every failure (no socket, no answer within 2 seconds, nothing to report) is exit
 with one exception: a session that had an MCP server and lost it is told once
 ([the MCP server is gone](#the-mcp-server-is-gone)).
 
+### A broker that stays out of reach
+
+The adapter reconnects to the broker by itself ([When the bus is down](troubleshooting.md#when-the-bus-is-down)),
+and mail waits there, so a restart needs no notice. An outage that has lasted a minute is reported
+once: the next `Stop` or `SessionStart` hook, or the waiter, whichever is first, adds a line to its
+output that the bus is out of reach, for how long, and that new mail will be reported when it is
+back. The waiter checks every 5 seconds and wakes the idle session for it. The next outage is
+reported again; nothing is reported when the bus comes back. The `plugin` format does not carry it.
+
 ### Waking an idle session
 
 The `Stop` hook only runs when a turn ends, so a session that sits idle at the prompt would not
@@ -109,8 +118,8 @@ wakes the session at once even when it is idle ([hooks reference](https://code.c
 - The waiter starts with every session and every turn (`SessionStart`, `Stop`); at `SessionStart` it
   looks for the session's MCP server for up to two minutes, since the hook can run first; a newer waiter ends
   the older one, so there is one per session. It exits silently after `--max` (default 23 hours)
-  or when the session ends. When the MCP server goes away it wakes the session once with a notice
-  that says so.
+  or when the session ends. When the MCP server goes away, or the broker stays out of reach,
+  it wakes the session once with a notice that says so.
 - Claude Code still enforces `timeout` on an `asyncRewake` hook; the docs name no maximum, so the
   entry asks for 86400 seconds (24 hours), longer than `--max`. If your Claude Code caps it lower, the
   waiter ends then and the next `Stop` or `SessionStart` arms it again.

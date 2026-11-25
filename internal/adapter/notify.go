@@ -64,6 +64,10 @@ func (adapter *Adapter) WaitNewMail(ctx context.Context) (fresh []Message, unrea
 	}
 }
 
+// BusUnavailable says why the adapter cannot reach the broker right now, or returns nil. The
+// hooks use it to report an outage the agent would otherwise take for an empty inbox.
+func (adapter *Adapter) BusUnavailable() error { return adapter.config.Transport.Unavailable() }
+
 // MarkNotified marks the messages told and starts the cooldown, like NewMail would have.
 func (adapter *Adapter) MarkNotified(ids []string) {
 	adapter.mu.Lock()

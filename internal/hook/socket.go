@@ -65,6 +65,8 @@ type Session interface {
 	PeekNewMail() (fresh []adapter.Message, unread int, err error)
 	MarkNotified(ids []string)
 	Event(presence.Event)
+	// BusUnavailable is why the adapter cannot reach the broker, or nil.
+	BusUnavailable() error
 }
 
 // Dir is the private directory of the sockets: $XDG_RUNTIME_DIR/agent-bus, or a per-user one in
@@ -102,7 +104,8 @@ func Listen(dir string, session Session) (stop func(), err error) {
 		log.Printf("agent-bus: no session marker, a lost server will go unreported: %v", err)
 	}
 	var waiter currentWaiter
-	go acceptLoop(listener, func(connection net.Conn) { serve(connection, session, &waiter) })
+	var brokerOutage outage
+	go acceptLoop(listener, func(connection net.Conn) { serve(connection, session, &waiter, &brokerOutage) })
 	return func() { listener.Close() }, nil // closing removes the socket file
 }
 
@@ -145,7 +148,7 @@ func (waiter *currentWaiter) replace(cancel context.CancelFunc) {
 	waiter.cancel = cancel
 }
 
-func serve(connection net.Conn, session Session, waiter *currentWaiter) {
+func serve(connection net.Conn, session Session, waiter *currentWaiter, brokerOutage *outage) {
 	defer connection.Close()
 	connection.SetDeadline(time.Now().Add(connectionTimeout))
 	var asked request
@@ -161,7 +164,7 @@ func serve(connection net.Conn, session Session, waiter *currentWaiter) {
 	case PeekMail:
 		messages, unread, err = session.PeekNewMail()
 	case WaitMail:
-		serveWait(connection, session, waiter)
+		serveWait(connection, session, waiter, brokerOutage)
 		return
 	case MarkTold:
 		session.MarkNotified(asked.IDs)
@@ -182,7 +185,11 @@ func serve(connection net.Conn, session Session, waiter *currentWaiter) {
 	if err != nil { // no lock: the session's hooks stay silent
 		return
 	}
-	json.NewEncoder(connection).Encode(replyFor(messages, unread))
+	reply := replyFor(messages, unread)
+	if asked.Op != PeekMail { // the plugin's output has no room for it
+		reply.Problem = brokerOutage.report(session.BusUnavailable(), time.Now())
+	}
+	json.NewEncoder(connection).Encode(reply)
 }
 
 func replyFor(messages []adapter.Message, unread int) Reply {
@@ -194,8 +201,9 @@ func replyFor(messages []adapter.Message, unread int) Reply {
 }
 
 // serveWait answers with the mail that ends the wait, or with an empty reply when the waiter was
-// replaced. It stops waiting when the client goes away, so nothing is marked told for nobody.
-func serveWait(connection net.Conn, session Session, waiter *currentWaiter) {
+// replaced. It also ends the wait to report an outage of the bus, which nothing else would wake an
+// idle session for. It stops waiting when the client goes away, so nothing is marked told for nobody.
+func serveWait(connection net.Conn, session Session, waiter *currentWaiter, brokerOutage *outage) {
 	connection.SetDeadline(time.Time{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -204,11 +212,39 @@ func serveWait(connection net.Conn, session Session, waiter *currentWaiter) {
 		io.Copy(io.Discard, connection) // the client sends nothing more: this returns when it closes
 		cancel()
 	}()
-	messages, unread, err := session.WaitNewMail(ctx)
+
+	waitCtx, stopWaiting := context.WithCancel(ctx)
+	defer stopWaiting()
+	outageReport, watchEnded := make(chan string, 1), make(chan struct{})
+	go func() {
+		defer close(watchEnded)
+		ticker := time.NewTicker(outagePoll)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-waitCtx.Done():
+				return
+			case <-ticker.C:
+				if problem := brokerOutage.report(session.BusUnavailable(), time.Now()); problem != "" {
+					outageReport <- problem
+					stopWaiting()
+					return
+				}
+			}
+		}
+	}()
+	messages, unread, err := session.WaitNewMail(waitCtx)
 	if err != nil {
 		messages, unread = nil, 0
 	}
-	json.NewEncoder(connection).Encode(replyFor(messages, unread))
+	stopWaiting()
+	<-watchEnded // a report it made is not lost to a mail that arrived at the same moment
+	reply := replyFor(messages, unread)
+	select {
+	case reply.Problem = <-outageReport:
+	default:
+	}
+	json.NewEncoder(connection).Encode(reply)
 }
 
 // titleOf is the message's title, or the first line of its text.
