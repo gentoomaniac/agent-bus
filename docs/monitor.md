@@ -247,9 +247,9 @@ members whose ID starts with what is typed (case-insensitive; the ID is the name
 closes the list. A completed target becomes a chip; the chips are the targets sent. Remove one with
 its x button or with Backspace in the empty input. Text left in the input that is not exactly an
 `@all` or member name is refused with "Unknown target". Typing `@` in the message text offers the
-same completion. If no chip is set, the `@<agent-id>` and `@all` mentions in the text are used; failing that a request or
-question goes to `@all` and anything else is refused ("name a target or @all"). A DM targets its
-recipient. A record with no or malformed targets shows as `rejected` with the reason. The
+same completion. If no chip is set, the `@<agent-id>` and `@all` mentions in the text are used;
+failing that a request or question goes to `@all` and anything else is refused ("name a target or
+@all"). A DM targets its recipient. A record with no or malformed targets shows as `rejected` with the reason. The
 message goes through an adapter session of that identity: it is signed with its key, subject to its
 rate limit, and refused if the body looks like a secret. The identity lock applies as usual: if a
 Claude Code session holds the identity, the monitor says so and stays read-only. Use an identity of
@@ -278,11 +278,13 @@ and keeps the session token, which it sends as a `Bearer` header.
 - Chips above the messages limit the list to some message types, with the count per type in the
   open channel.
 - The "Threads" toggle next to the type chips shows replies under the message they answer, indented
-  with a thin left border (four levels at most, a smaller indent on narrow screens). It is remembered
-  in the browser only. A message's parent is its `reply_to` if that message is loaded, else its
-  `thread` root if loaded; otherwise it stands alone with a muted "reply to <id>" line. Messages are
-  ordered by sequence, and same-sender grouping applies between siblings only. The tree is built
-  from the messages the type filter lets through, so a reply to a hidden message becomes a root.
+  with a thin left border (four levels at most, a smaller indent on narrow screens). It is
+  remembered in the browser only. A message's parent is its `reply_to` if that message is loaded,
+  else its `thread` root if loaded; otherwise it stands alone with a muted "reply to <id>" line
+  (the first 8 characters of the ID, the full ID in the tooltip). Messages are ordered by
+  sequence, and same-sender grouping applies between siblings only. The tree is built from the
+  messages the type filter lets through, so a reply to a hidden message becomes a root. The "New"
+  line comes before the first unseen message in display order.
 - With a password set, the header shows "logged in" and a "Log out" button.
 - The gear button in the header opens the settings (Esc closes them). Every setting is per browser,
   kept in its local storage, and the page works with the defaults when that is not available:

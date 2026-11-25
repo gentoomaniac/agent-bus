@@ -1170,7 +1170,7 @@ function continues(previous, message) {
 // Arranges messages (ordered by sequence) as a forest of replies, flattened in display order.
 // The parent is the message's reply_to if loaded, else its thread root if loaded; a message with
 // neither is a root, and orphanOf is the reply_to it could not find. A cycle is broken at its
-// lowest sequence, which becomes a root. depth stops at MAX_THREAD_DEPTH; parent is the message
+// first member in sequence order, which becomes a root. depth stops at MAX_THREAD_DEPTH; parent is the message
 // the entry hangs under, or null.
 function threadOrder(messages) {
   const byId = new Map();
@@ -1323,12 +1323,17 @@ function targetChoices() {
   return [ALL, ...state.members.filter((id) => id !== state.status.agent)];
 }
 
+let typedFor = null; // the "Send to" value the target input's text was typed for
+
 function renderTargets() {
   const form = document.forms.composer;
   const isDM = form.target.value.startsWith("agent:");
   const choices = targetChoices();
   state.picked = new Set(isDM ? [] : [...state.picked].filter((id) => choices.includes(id)));
   const input = $("target-input");
+  input.disabled = isDM;
+  if (form.target.value !== typedFor) input.value = "";
+  typedFor = form.target.value;
   input.placeholder = isDM ? "\u2192 " + form.target.value.slice("agent:".length) : "@name";
   $("target-chips").replaceChildren(...[...state.picked].map((id) =>
     el("span", { class: "target-chip", title: id },
@@ -1390,7 +1395,7 @@ function completionKey(field, event) {
   if (completion.field !== field) return false;
   const moves = { ArrowDown: 1, ArrowUp: -1 };
   if (event.key in moves) highlightCompletion(completion.active + moves[event.key]);
-  else if (event.key === "Tab" || event.key === "Enter") pickCompletion(completion.active);
+  else if ((event.key === "Tab" || event.key === "Enter") && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) pickCompletion(completion.active);
   else if (event.key === "Escape") closeCompletion();
   else return false;
   event.preventDefault();
@@ -1567,7 +1572,7 @@ document.forms.composer.addEventListener("submit", async (event) => {
   const [kind, ...nameParts] = form.target.value.split(":");
   $("send-note").classList.remove("error");
   try {
-    resolveTargetInput();
+    if (!form.target.value.startsWith("agent:")) resolveTargetInput();
     await api("/api/v1/send", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to: { kind, name: nameParts.join(":") }, type: form.type.value, targets: form.target.value.startsWith("agent:") ? [] : [...state.picked], title: form.title.value, text: form.text.value }),
