@@ -379,10 +379,13 @@ $compose stop
 $compose start
 ```
 
-With Caddy also save its volume (the name ends in `caddy-data`, usually `deploy_caddy-data`):
+The archive holds `tls/` only when it is inside `$AGENT_BUS_HOME`. With a `BUS_TLS_DIR` elsewhere,
+save that folder too, and with Caddy save its volume (the name ends in `caddy-data`, usually
+`deploy_caddy-data`):
 
 ```sh
-( umask 077; docker run --rm -v deploy_caddy-data:/data alpine tar -C /data -cz . > ~/caddy-data-$(date +%F).tar.gz )
+( umask 077; sudo tar -C "$BUS_TLS_DIR" -cz . > ~/bus-tls-$(date +%F).tar.gz )     # external BUS_TLS_DIR
+( umask 077; docker run --rm -v deploy_caddy-data:/data alpine tar -C /data -cz . > ~/caddy-data-$(date +%F).tar.gz )   # Caddy
 ```
 
 **Restore** onto a stopped, empty setup (a new machine, or after losing the folders). `tar` run as
@@ -395,6 +398,16 @@ mkdir -p $AGENT_BUS_HOME
 sudo tar -C $AGENT_BUS_HOME -xzf ~/agent-bus-2026-11-25.tar.gz
 sudo rm -f $AGENT_BUS_HOME/config/enroll/directory.json   # busd rebuilds it; see below
 . $AGENT_BUS_HOME/compose.env       # the settings, the overlay and the profiles
+```
+
+Put back the proxy's state before the services start, for the variants that have it:
+
+- **External `BUS_TLS_DIR`:** `mkdir -p "$BUS_TLS_DIR" && sudo tar -C "$BUS_TLS_DIR" -xzf ~/bus-tls-2026-11-25.tar.gz`
+- **Caddy:** `docker volume create deploy_caddy-data`, then
+  `docker run --rm -v deploy_caddy-data:/data -v ~:/backup alpine tar -C /data -xzf /backup/caddy-data-2026-11-25.tar.gz`.
+  Compose may warn that it did not create the volume; that is harmless.
+
+```sh
 $compose up -d
 agent-busctl --direct agent list
 ```

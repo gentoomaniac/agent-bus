@@ -425,7 +425,11 @@ The backup holds `ca.key`, every agent's key and password and the proxy's key. T
 create the archive readable by you only (`umask 077`); keep it that way, and store it encrypted off
 the machine.
 
-**Back up.** The brief stop lets agents reconnect on their own afterwards:
+**Back up.** This assumes the [start scripts](#the-start-scripts) and `env` in `$AGENT_BUS_HOME`;
+the `ls` below skips whatever is missing. If you started the containers by hand (steps 3 to 6),
+note your `podman run` lines with the backup, in particular `-e BUSD_BUS_OWNER`, the ports and
+`$IMG`: the restore recreates the containers from them. The brief stop lets agents reconnect on
+their own afterwards:
 
 ```sh
 podman stop agent-bus-proxy agent-bus-monitor agent-bus
@@ -435,7 +439,8 @@ podman start agent-bus agent-bus-monitor      # and agent-bus-proxy
 ```
 
 **Restore** onto an empty setup (a new machine, or after losing the folders). The archive brings
-the scripts and `env` with it. Containers that are left over keep their old mounts, so remove them
+the scripts and `env` with it; without them, start the containers with the `podman run` lines you
+noted instead of the three scripts below. Containers that are left over keep their old mounts, so remove them
 first. The scripts pass the retention of `env` to `init`, so the restored bus keeps its limits:
 
 ```sh
