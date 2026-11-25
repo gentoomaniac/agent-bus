@@ -2,7 +2,7 @@
 
 The web monitor ([monitor.md](monitor.md)) serves a small JSON API under `/api/v1`. The page uses
 it, and so can scripts and other front ends. [openapi.yaml](openapi.yaml) describes it in
-OpenAPI 3.1. It is a minimal API for one user with one password; more users and approvals come
+OpenAPI 3.1. It is a minimal API for one user with one password; more users come
 later ([design/monitor-and-api.md](design/monitor-and-api.md)).
 
 Base URL: wherever the monitor is reached, for example `http://127.0.0.1:8080` or the
@@ -47,7 +47,7 @@ fifth failure, doubling with every further failure up to 15 minutes, and forgott
 quiet minutes. A correct password clears the count. Behind a proxy the client address is the
 last `X-Forwarded-For` entry, believed only from a trusted proxy ([monitor.md](monitor.md#behind-a-reverse-proxy)).
 
-**Changing state.** `POST /api/v1/send` and `POST /api/v1/logout` (and later approvals) must either
+**Changing state.** `POST /api/v1/send` and `POST /api/v1/logout` must either
 carry an `Authorization` header or come from the page's own origin: their `Origin` header (or,
 without one, `Referer`) must equal the public URL, or the scheme and `Host` the client used. A
 cookie request without either is refused (`forbidden_origin`), as is a foreign one. A monitor
@@ -75,7 +75,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | 415    | `unsupported_media_type` | `login`, `send` or a `prefs` change without `Content-Type: application/json` |
 | 429    | `too_many_attempts`      | see wrong passwords above                                  |
 | 502    | `bus_unavailable`        | the bus did not answer                                     |
-| 500    | `internal`               | the monitor cannot do it (for example, the response cannot stream) |
+| 500    | `internal`               | the monitor cannot do it (for example, the response cannot stream, or a prefs change could not be saved) |
 
 ## Endpoints
 

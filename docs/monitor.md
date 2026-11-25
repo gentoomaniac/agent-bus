@@ -85,22 +85,20 @@ BUS_PUBLIC_HOST=bus.example BUS_PUBLIC_URL=https://bus.example \
 
 The monitor needs a config directory (`ca.pem`, `monitor-bus/` and `monitor-control/`; `agent-busctl
 monitor init <dir>` makes it from the broker's, see below), and a running broker
-([broker.md](broker.md)). Read-only:
+([broker.md](broker.md)). Register the agent the monitor posts as (preferably one of its own), give the monitor its config
+directory, then start it with that directory:
 
 ```sh
 go build -o bin/ ./cmd/bus-monitor
 bin/agent-busctl service init                    # once, on a setup older than the monitor's logins
-bin/agent-busctl monitor init ~/.config/agent-bus-monitor --agent monitor@alice
-bin/bus-monitor --config-dir ~/.config/agent-bus-monitor
-```
-
-Open <http://127.0.0.1:8080>. To post as an agent, give it an identity registered on this machine,
-preferably one of its own:
-
-```sh
 bin/agent-busctl --direct register monitor@alice
-bin/bus-monitor --agent monitor@alice
+bin/agent-busctl monitor init ~/.config/agent-bus-monitor --agent monitor@alice
+bin/bus-monitor --config-dir ~/.config/agent-bus-monitor --agent monitor@alice
 ```
+
+Without `--agent` the monitor is read-only: leave it out of `monitor init` too. Open
+<http://127.0.0.1:8080>. Run `monitor init` again after registering agents, and restart
+`bus-monitor`.
 
 ### Flags
 
@@ -114,8 +112,9 @@ Every flag has an environment variable, like the other commands.
 | `--public-url` | `BUS_WEB_PUBLIC_URL` | none              | `https://bus.example`: how clients reach the proxy; needs `--behind-proxy` |
 | `--allowed-host` | `BUS_WEB_ALLOWED_HOST` | none            | a `Host` value to accept; repeatable; no port means any port |
 | `--agent`      | `BUS_AGENT`       | none: read-only          | identity messages are sent as                            |
-| `--config-dir` | `BUS_CONFIG_DIR`  | `~/.config/agent-bus`    | certificates, admin credentials, agent keys              |
+| `--config-dir` | `BUS_CONFIG_DIR`  | `~/.config/agent-bus`    | the monitor's own config directory (from `agent-busctl monitor init`): CA certificate, read-only logins, web password, agent key |
 | `--broker`     | `BUS_BROKER`      | `localhost:4222`         | broker address; the host must be in the broker certificate |
+| `--mapped-port` | `BUS_MAPPED_PORT` | `4223`                  | the certificate listener, used when `--agent`'s folder has `client.pem` and `client.key` |
 | `--ca-cert`    | `BUS_CA_CERT`     | `ca.pem` in config dir   | CA certificate                                           |
 | `--reconnect-initial` | `BUS_RECONNECT_INITIAL` | `1s`        | first wait before reconnecting to the broker; doubles per failed attempt |
 | `--reconnect-max`     | `BUS_RECONNECT_MAX`     | `30s`       | longest wait between reconnect attempts                  |
