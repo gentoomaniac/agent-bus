@@ -130,13 +130,19 @@ func ClientCertIdentity(certPath string) (string, error) {
 	return leaf.URIs[0].String(), nil
 }
 
-// ValidateClientCert checks that the pair loads, that the certificate is for the principal with
-// the given identity (its one URI SAN, see MatchesIdentity) and that it is valid now. A client must
-// not start with a pair that cannot log in as that principal: it would fail at the server with a
-// message that names nothing.
+// ValidateClientCert is LoadClientCert without the pair.
 func ValidateClientCert(certPath, keyPath, identity string) error {
-	fail := func(reason string) error {
-		return fmt.Errorf("the client certificate %s and %s %s; issue it again with `agent-busctl --direct cert issue`, "+
+	_, err := LoadClientCert(certPath, keyPath, identity)
+	return err
+}
+
+// LoadClientCert reads the pair and checks that it loads, that the certificate is for the principal
+// with the given identity (its one URI SAN, see MatchesIdentity) and that it is valid now. A client
+// must not log in with a pair that cannot log in as that principal: it would fail at the server
+// with a message that names nothing.
+func LoadClientCert(certPath, keyPath, identity string) (tls.Certificate, error) {
+	fail := func(reason string) (tls.Certificate, error) {
+		return tls.Certificate{}, fmt.Errorf("the client certificate %s and %s %s; issue it again with `agent-busctl --direct cert issue`, "+
 			"or delete both files to log in with the password if the server still allows it", certPath, keyPath, reason)
 	}
 	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
@@ -153,7 +159,7 @@ func ValidateClientCert(certPath, keyPath, identity string) error {
 	if now := time.Now(); now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
 		return fail("is not valid now (" + leaf.NotBefore.Format(time.DateOnly) + " to " + leaf.NotAfter.Format(time.DateOnly) + ")")
 	}
-	return nil
+	return pair, nil
 }
 
 func stagedClientCertPaths(dir string) (certPath, keyPath string) {

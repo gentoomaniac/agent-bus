@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -31,6 +32,7 @@ type Connection struct {
 	Password       string
 	ClientCertPath string
 	ClientKeyPath  string
+	ClientIdentity string // the identity the certificate must carry (creds.LoadClientCert)
 
 	// Reconnect makes the connection outlive the broker: it connects, and reconnects after an
 	// outage, in the background on this schedule and never gives up, so it can be made while the
@@ -78,11 +80,18 @@ func connect(conn Connection, inboxPrefix string) (*session, error) {
 	if conn.ClientCertPath == "" {
 		options = append(options, nats.UserInfo(conn.User, conn.Password))
 	} else {
-		pair, err := tls.LoadX509KeyPair(conn.ClientCertPath, conn.ClientKeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("reading the client certificate: %w", err)
+		// Read at each handshake, so a reconnect after `agent-busctl cert issue` renews the login
+		// without a restart. The first read is made here to fail with a message.
+		loadPair := func() (tls.Certificate, error) {
+			return creds.LoadClientCert(conn.ClientCertPath, conn.ClientKeyPath, conn.ClientIdentity)
 		}
-		tlsConfig.Certificates = []tls.Certificate{pair}
+		if _, err := loadPair(); err != nil {
+			return nil, err
+		}
+		tlsConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			pair, err := loadPair()
+			return &pair, err
+		}
 	}
 	options = append(options, nats.Secure(tlsConfig))
 	if conn.Reconnect == nil {

@@ -231,8 +231,9 @@ built from the agent ID alone: client authentication only, not a CA, valid for o
 random and new for every certificate. nats-server maps that URI to the user of the same name, and
 the authorization file names one certID per agent. The certificate does not log in until `cert
 switch` (or `--switch`) tells the broker to accept it. Run it again to renew: an agent that logs in
-with a certificate already is switched to the new one at once (a running `agent-bus` on this machine
-picks it up when it reconnects), and **the old certificate stops working**, as does one replaced by
+with a certificate already is switched to the new one at once. Running clients (`agent-bus`, the
+monitor, busd) read the pair again at every TLS handshake: the broker drops their old login once,
+and they reconnect with the new certificate by themselves, without a restart. **The old certificate stops working**, as does one replaced by
 `cert sign --switch`, an approval with `--replace` or `agent remove`; switching back to the password
 takes the current one away too. (A certificate made before certIDs, with the URI SAN
 `agentbus:agent/<agent-token>`, works until the next issue.) A removed ID gets none. The pair is

@@ -12,10 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 	"github.com/nats-io/nats.go"
 )
 
@@ -188,6 +190,38 @@ func TestCertificateLogin(t *testing.T) {
 				conn.Close()
 				t.Errorf("logged in on the password port %s", name)
 			}
+		}
+	})
+
+	t.Run("a running agent reconnects with a renewed certificate by itself and can send", func(t *testing.T) {
+		connection := h.agentConnection(alice)
+		connection.Reconnect = &broker.Backoff{Initial: 100 * time.Millisecond, Max: 500 * time.Millisecond}
+		transport, err := broker.NewTransport(connection, alice)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(transport.Close)
+		aliceSession, err := adapter.Open(adapter.Config{AgentID: alice, Dir: creds.AgentDir(h.configDir, alice), Transport: transport, Directory: trust.DirectoryPath(h.configDir)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = aliceSession.Close() })
+		bobSession, _ := h.startAdapter(t, bob)
+
+		h.run(t, h.agentBusctl, "--direct", "cert", "issue", alice) // the broker drops the old login
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			_, err := aliceSession.Send(ctx, bob, say("after the renewal"))
+			if err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("alice never sent again after her certificate was renewed: %v", err)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		if got := pollUntil(t, bobSession, 2); got[1].Envelope.Body.Text != "after the renewal" { // after the first subtest's message
+			t.Errorf("bob got %v", summaries(got))
 		}
 	})
 

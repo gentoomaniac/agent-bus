@@ -43,10 +43,11 @@ func UserConnection(dir, user, brokerAddress string, mappedPort int, caCertPath 
 			return Connection{}, err
 		}
 		certPath, keyPath := creds.ClientCertPaths(dir)
-		if err := creds.ValidateClientCert(certPath, keyPath, userCertIdentity(user)); err != nil {
+		identity := userCertIdentity(user)
+		if err := creds.ValidateClientCert(certPath, keyPath, identity); err != nil {
 			return Connection{}, err
 		}
-		return Connection{Address: address, CACertPath: caCertPath, User: user, ClientCertPath: certPath, ClientKeyPath: keyPath}, nil
+		return Connection{Address: address, CACertPath: caCertPath, User: user, ClientCertPath: certPath, ClientKeyPath: keyPath, ClientIdentity: identity}, nil
 	}
 	password, err := creds.ReadPassword(dir)
 	if err != nil {
