@@ -10,11 +10,13 @@ export class Session implements vscode.Disposable {
   model: Model;
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   private readonly messageEmitter = new vscode.EventEmitter<Message>();
+  private readonly refreshEmitter = new vscode.EventEmitter<void>();
   private modelSubscription: { dispose(): void } | undefined;
   private stream: AbortController | undefined;
 
   readonly onDidChange = this.changeEmitter.event;
   readonly onDidReceiveMessage = this.messageEmitter.event;
+  readonly onDidRefresh = this.refreshEmitter.event; // the state was read again, after every (re)connect
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.model = this.newModel(this.url, undefined);
@@ -51,9 +53,10 @@ export class Session implements vscode.Disposable {
     await vscode.commands.executeCommand("setContext", "agentMessenger.loginRequired", false);
     this.changeEmitter.fire();
     void followEvents(model.api, {
-      onOpen: () => {
+      onOpen: async () => {
         model.setLive(true);
-        return model.refresh();
+        await model.refresh();
+        this.refreshEmitter.fire();
       },
       onEvent: (event) => {
         model.apply(event).then(

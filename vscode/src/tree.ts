@@ -53,6 +53,7 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     item.description = unread > 0 ? String(unread) : undefined;
     item.tooltip = channel.description || describeChannel(channel);
     item.iconPath = new vscode.ThemeIcon(channel.kind === "dm" ? "mail" : "comment-discussion");
+    item.command = { command: "agentMessenger.openChannel", title: "Open", arguments: [channel.id] };
     return item;
   }
 
