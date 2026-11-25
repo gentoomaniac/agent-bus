@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"github.com/nats-io/nats.go/jetstream"
@@ -94,5 +95,47 @@ func waitFor(t *testing.T, what string, condition func() bool) {
 			t.Fatalf("timed out waiting for %s", what)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// An agent may direct-get presence records, and the reply subject of a request is the requester's
+// choice. Pointing it into BUS must not put anything in front of a receiver as mail.
+func TestPresenceDirectGetRedirectedIntoBus(t *testing.T) {
+	h := startBus(t)
+	if err := h.transport(t, alice).PublishPresence([]byte(`{"state":"working"}`)); err != nil {
+		t.Fatal(err)
+	}
+	bobSession, _ := h.startAdapter(t, bob)
+	busStream, err := h.rawAdmin(t, broker.BusAdminUser).js.Stream(timeout(t), "BUS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedBefore := func() uint64 {
+		info, err := busStream.Info(timeout(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return info.State.Msgs
+	}
+	before := storedBefore()
+
+	mallory := h.rawAgent(t, alice)
+	get := "$JS.API.DIRECT.GET.PRESENCE.presence." + bus.AgentToken(alice)
+	for _, replyTo := range []string{"dm." + bus.AgentToken(bob), "general"} {
+		mallory.expectNoViolation(t, "direct get replying to "+replyTo, func() {
+			if err := mallory.conn.PublishRequest(get, replyTo, nil); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	time.Sleep(500 * time.Millisecond)
+
+	stored := storedBefore() - before
+	t.Logf("BUS holds %d new messages after the redirected direct gets", stored)
+	if err := bobSession.Poll(timeout(t)); err != nil {
+		t.Fatal(err)
+	}
+	if messages, err := bobSession.Inbox(adapter.InboxQuery{}); err != nil || len(messages) != 0 {
+		t.Errorf("bob has mail from the redirected direct get: %v, %v", summaries(messages), err)
 	}
 }
