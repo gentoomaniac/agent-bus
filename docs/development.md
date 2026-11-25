@@ -173,8 +173,9 @@ publishes nothing. A tag `v*` publishes the archives, `checksums.txt` and the ch
 GitHub release and pushes the image to `ghcr.io/gentoomaniac/agent-messenger` ([docker.md](docker.md)):
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push github v0.2.0     # the release is built on GitHub
+git push origin v0.2.0     # keep the tag on the main remote too
 ```
 
 A second job, `vsix`, then packs the VS Code extension ([vscode/README.md](../vscode/README.md)) with the
