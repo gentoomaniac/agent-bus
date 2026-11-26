@@ -61,7 +61,7 @@ export class ChatPanels implements vscode.Disposable {
     const id = dmChannelId(self, agentId);
     if (!channels.some((channel) => channel.id === id) && !this.emptyDirects.has(id)) {
       const agents = [self, agentId].sort();
-      this.emptyDirects.set(id, { id, kind: "dm", name: agents.join(" + "), description: "", agents, messages: 0, last_sequence: 0 });
+      this.emptyDirects.set(id, { id, kind: "dm", name: agents.join(" + "), description: "", agents, messages: 0, last_sequence: 0, unread: 0, targeted_unread: 0 });
     }
     this.open(id, true);
   }

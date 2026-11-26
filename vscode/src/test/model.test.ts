@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Api } from "../api";
+import { isTargeted } from "../messages";
 import { Model, ReadStore } from "../model";
 import { Channel, Message, Presence } from "../types";
 
@@ -11,17 +12,23 @@ function message(channel: string, sequence: number, extra: Partial<Message> = {}
   return { sequence, channel, status: "verified", from: "a@x", ...extra };
 }
 
+// The monitor: it counts unread messages from the read markers it holds (here the store's), and
+// counts none while it holds no marker at all.
 class FakeApi {
   channelList: Channel[];
-  constructor(private readonly store: Message[]) {
+  constructor(private readonly store: Message[], private readonly reads: { values: Record<string, number> } = { values: {} }) {
     const ids = [...new Set(store.map((m) => m.channel))];
     this.channelList = ids.map((id) => ({
       id, kind: id === "general" ? "general" : "group", name: id.replace("group:", ""), description: "", messages: 0,
-      last_sequence: Math.max(...store.filter((m) => m.channel === id).map((m) => m.sequence)),
+      last_sequence: Math.max(...store.filter((m) => m.channel === id).map((m) => m.sequence)), unread: 0, targeted_unread: 0,
     }));
   }
   status = async () => ({ bus: "live" as const, agent: SELF, can_send: true, note: "", password_set: true });
-  channels = async () => this.channelList;
+  channels = async () => this.channelList.map((channel) => {
+    if (Object.keys(this.reads.values).length === 0) return { ...channel };
+    const unread = this.store.filter((m) => m.channel === channel.id && m.sequence > (this.reads.values[channel.id] ?? 0) && m.from !== SELF);
+    return { ...channel, unread: unread.length, targeted_unread: unread.filter((m) => isTargeted(m, SELF)).length };
+  });
   agents = async () => [];
   presenceList: Presence[] = [];
   presence = async () => this.presenceList;
@@ -35,7 +42,7 @@ function memoryStore(initial: Record<string, number> = {}): ReadStore & { values
 }
 
 function newModel(store: Message[], reads = memoryStore()) {
-  return { model: new Model(new FakeApi(store) as unknown as Api, reads), reads };
+  return { model: new Model(new FakeApi(store, reads) as unknown as Api, reads), reads };
 }
 
 test("a channel seen for the first time counts as read", async () => {
@@ -53,6 +60,29 @@ test("messages after the last-read sequence are unread, targeted ones are counte
   assert.equal(model.unreadCount("group:ops"), 2);
   assert.equal(model.targetedUnreadCount(), 2);
   assert.deepEqual(model.targetedUnreadChannels().map(([channel, count]) => [channel.id, count]), [["general", 1], ["group:ops", 1]]);
+});
+
+test("events keep the monitor's counts up, once, and without the agent's own messages", async () => {
+  const messages = [message("general", 1), message("general", 2, { targets: [SELF] })];
+  const { model } = newModel(messages, memoryStore({ general: 0 }));
+  await model.refresh();
+  assert.deepEqual([model.unreadCount("general"), model.targetedUnreadCount()], [2, 1]);
+
+  const send = (m: Message) => model.apply({ event: "message", data: JSON.stringify(m) });
+  await send(message("general", 2, { targets: [SELF] })); // in the monitor's count already
+  await send(message("general", 3, { targets: ["@all"] }));
+  await send(message("general", 4, { from: SELF }));
+  assert.deepEqual([model.unreadCount("general"), model.targetedUnreadCount()], [3, 2]);
+});
+
+test("a marker at the newest message means nothing unread, also one the monitor has not counted yet", async () => {
+  const { model, reads } = newModel([message("general", 1), message("general", 2, { targets: [SELF] })], memoryStore({ general: 0 }));
+  await model.refresh();
+  reads.values["general"] = 2; // read on another device
+  assert.deepEqual([model.unreadCount("general"), model.targetedUnreadCount()], [0, 0]);
+  // The next message starts a new count; the old one must not come back.
+  await model.apply({ event: "message", data: JSON.stringify(message("general", 3)) });
+  assert.deepEqual([model.unreadCount("general"), model.targetedUnreadCount()], [1, 0]);
 });
 
 test("markRead moves the last-read sequence to the newest loaded message", async () => {
@@ -94,11 +124,12 @@ test("loadHistory walks back through older messages until there are enough", asy
 
 test("a channel that appears after the first refresh starts unread, its message targeted", async () => {
   const store = [message("general", 1)];
-  const api = new FakeApi(store);
-  const model = new Model(api as unknown as Api, memoryStore());
+  const reads = memoryStore();
+  const api = new FakeApi(store, reads);
+  const model = new Model(api as unknown as Api, reads);
   await model.refresh();
   store.push(message("group:new", 2, { targets: [SELF] }));
-  api.channelList = new FakeApi(store).channelList;
+  api.channelList = new FakeApi(store, reads).channelList;
   await model.refresh();
   assert.equal(model.unreadCount("group:new"), 1);
   assert.equal(model.targetedUnreadCount(), 1);
@@ -127,7 +158,7 @@ test("refreshState announces a new channel or agent, and nothing when the state 
   model.onChange(() => changes++);
   await model.refreshState();
   assert.equal(changes, 0);
-  api.channelList = [...api.channelList, { id: "group:empty", kind: "group", name: "empty", description: "", messages: 0, last_sequence: 0 }];
+  api.channelList = [...api.channelList, { id: "group:empty", kind: "group", name: "empty", description: "", messages: 0, last_sequence: 0, unread: 0, targeted_unread: 0 }];
   await model.refreshState();
   assert.deepEqual(model.channels.map((channel) => channel.id), ["general", "group:empty"]);
   assert.equal(changes, 1);

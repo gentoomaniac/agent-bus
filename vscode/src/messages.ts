@@ -20,11 +20,6 @@ export function isTargeted(message: Message, agent: string): boolean {
   return (message.targets ?? []).some((target) => target === ALL || target === agent);
 }
 
-// Messages after the last-read sequence that the agent did not write itself.
-export function unreadMessages(list: Message[], lastRead: number, agent: string): Message[] {
-  return list.filter((message) => message.sequence > lastRead && message.from !== agent);
-}
-
 // Whether the row continues the previous one's group, as on the web page: the same sender wrote
 // it to the same place, with the same type and verification status, within five minutes, and
 // answering the same message (loaded or not).

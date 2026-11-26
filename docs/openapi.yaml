@@ -528,7 +528,7 @@ components:
             error: { type: string, description: Why the last read of the registry or the catalogue failed; absent when it worked. }
     Channel:
       type: object
-      required: [id, kind, name, messages, last_sequence]
+      required: [id, kind, name, messages, last_sequence, unread, targeted_unread]
       properties:
         id: { type: string, description: "`general`, `group:<name>` or `dm:<agent>:<agent>`." }
         kind: { type: string, enum: [general, group, dm] }
@@ -538,6 +538,8 @@ components:
         agents: { type: array, items: { type: string }, description: The two agents of a DM channel. }
         messages: { type: integer }
         last_sequence: { type: integer }
+        unread: { type: integer, description: "Messages after the read marker that the monitor's agent did not write. 0 while the monitor holds no read marker at all." }
+        targeted_unread: { type: integer, description: "Of the unread messages, those that name the agent as a target or go to @all." }
     Agent:
       type: object
       required: [id, fingerprint, registered_at, removed]

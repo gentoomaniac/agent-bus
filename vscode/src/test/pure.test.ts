@@ -6,13 +6,13 @@ import { categorize, channelNameProblem, describeChannel, destinationOf, dmChann
 import { byOwner, dmAgents, dmByOwner, dmOwners, groupBy, ownerOf, shortName } from "../names";
 import { parseFromWebview, parsePresenceMarks } from "../protocol";
 import { nextBackoff } from "../events";
-import { continuesGroup, insertMessage, isTargeted, unreadMessages } from "../messages";
+import { continuesGroup, insertMessage, isTargeted } from "../messages";
 import { SseParser } from "../sse";
 import { ThreadRow } from "../threads";
 import { Channel, Message } from "../types";
 
 const message = (sequence: number, extra: Partial<Message> = {}): Message => ({ sequence, channel: "general", status: "verified", ...extra });
-const channel = (extra: Partial<Channel>): Channel => ({ id: "general", kind: "general", name: "general", description: "", messages: 0, last_sequence: 0, ...extra });
+const channel = (extra: Partial<Channel>): Channel => ({ id: "general", kind: "general", name: "general", description: "", messages: 0, last_sequence: 0, unread: 0, targeted_unread: 0, ...extra });
 
 test("SseParser reads events split across chunks and drops comments", () => {
   const parser = new SseParser();
@@ -49,12 +49,6 @@ test("isTargeted counts @all and the agent, not its own messages", () => {
   assert.equal(isTargeted(message(1, { targets: ["a@x"] }), me), false);
   assert.equal(isTargeted(message(1), me), false);
   assert.equal(isTargeted(message(1, { from: me, targets: ["@all"] }), me), false);
-});
-
-test("unreadMessages counts what follows the last-read sequence, without own messages", () => {
-  const list = [message(1), message(2), message(3, { from: "me@x" }), message(4)];
-  assert.deepEqual(unreadMessages(list, 1, "me@x").map((m) => m.sequence), [2, 4]);
-  assert.deepEqual(unreadMessages(list, 4, "me@x"), []);
 });
 
 test("describeChannel names channels as the web page does", () => {

@@ -74,6 +74,11 @@ type Channel struct {
 	Agents       []string `json:"agents,omitempty"` // of a DM channel
 	Messages     int      `json:"messages"`
 	LastSequence uint64   `json:"last_sequence"`
+	// Unread counts the messages after the read marker (prefs.Read) that the monitor's own agent
+	// did not write; TargetedUnread those of them aimed at it. Both are 0 while no read marker
+	// exists at all, so a first visit does not open with every channel unread.
+	Unread         int `json:"unread"`
+	TargetedUnread int `json:"targeted_unread"`
 }
 
 // Agent is a registered agent. A removed one stays listed, marked, because its history remains.
@@ -376,11 +381,19 @@ func (monitor *Monitor) Subscribe() (messages <-chan Message, unsubscribe func()
 func (monitor *Monitor) Channels() []Channel {
 	monitor.mu.Lock()
 	defer monitor.mu.Unlock()
+	read := monitor.prefs.get().Read
+	var self string
+	if monitor.config.Sender != nil {
+		self = monitor.config.Sender.AgentID()
+	}
 	describe := func(channel Channel) Channel {
 		rows := monitor.index.channels[channel.ID]
 		channel.Messages = len(rows)
 		if len(rows) > 0 {
 			channel.LastSequence = rows[len(rows)-1].sequence
+		}
+		if len(read) > 0 {
+			channel.Unread, channel.TargetedUnread = monitor.index.unread(channel.ID, read[channel.ID], self)
 		}
 		return channel
 	}

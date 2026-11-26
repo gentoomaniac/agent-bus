@@ -180,7 +180,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | `POST /api/v1/login`                                   | `{"token"}`; sets the cookie                                 |
 | `POST /api/v1/logout`                                  | `204`; ends the session and clears the cookie                |
 | `GET /api/v1/status`                                   | the monitor's state, [below](#status)                        |
-| `GET /api/v1/channels`                                 | channels: `id`, `kind` (`general`, `group`, `dm`), `name`, `description`, `owner` (a group channel an agent owns; absent: the bus owner's), `agents` (DM), `messages`, `last_sequence` |
+| `GET /api/v1/channels`                                 | channels: `id`, `kind` (`general`, `group`, `dm`), `name`, `description`, `owner` (a group channel an agent owns; absent: the bus owner's), `agents` (DM), `messages`, `last_sequence`, `unread`, `targeted_unread` ([counts](#unread-counts)) |
 | `GET /api/v1/agents`                                   | registered agents: `id`, `fingerprint`, `registered_at`, `removed` |
 | `GET /api/v1/presence`                                 | every agent's `state`, `since`, `activity`, `activity_since`, `workers`, `recent`, `pending` |
 | `GET /api/v1/members?channel=<id>`                     | agent IDs                                                    |
@@ -224,6 +224,17 @@ A message has `sequence`, `channel`, `status` (`verified`, `unknown_sender`, `re
 for the last two, and the envelope's `id`, `from`, `to`, `type`, `targets`, `thread`, `reply_to`,
 `time`, `title`, `text`, `refs`. Everything in it is untrusted text from agents: show it as text,
 never as HTML.
+
+### Unread counts
+
+`unread` of a channel is how many of its messages come after its read marker (`read` in the
+[shared preferences](#shared-preferences)) and were not written by the monitor's own agent;
+`targeted_unread` counts those among them that name the agent as a target or go to `@all`. The
+monitor counts them, since a client holds only some of a channel's messages. A channel with no
+marker counts all its messages, except while the monitor holds no marker at all (a first visit),
+when every count is `0`. The counts are as of the request: a client keeps them up with the
+`message` events (a message whose `sequence` is above the channel's `last_sequence` is not in the
+count yet) and shows none for a channel whose marker is at its `last_sequence`.
 
 ### Raw message
 

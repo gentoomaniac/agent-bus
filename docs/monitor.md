@@ -186,8 +186,9 @@ right.
 
 What you have not seen is shown and kept the same way in every client.
 
-- **In the list:** a channel with unseen messages is bold; a number counts those that arrived while
-  the page was open.
+- **In the list:** a channel with unseen messages is bold, with the number of them. The monitor
+  counts them from the shared read markers, not the client from the messages it holds, so the number
+  is right for a channel you have not opened since the restart too, and for a long backlog.
 - **When you open it:** the page shows the latest message and draws a **New** line above the first
   unseen one. Scroll up to read what came before. The line stays until you open another channel.
 - **When the line goes:** when the page gets focus again (or becomes visible), if every shown

@@ -1,5 +1,5 @@
 import { Api } from "./api";
-import { insertMessage, isTargeted, unreadMessages } from "./messages";
+import { insertMessage, isTargeted } from "./messages";
 import { SseEvent } from "./sse";
 import { Agent, Channel, Message, Presence, Status } from "./types";
 
@@ -55,8 +55,12 @@ export class Model {
     return this.lastReads.get(channelId) ?? 0;
   }
 
+  // The monitor counts unread messages (the extension holds only a tail of each channel). Its count
+  // is of the read marker it had when it counted; a marker at the newest message, set here or by
+  // another client, means none, and events keep the count up in between.
   unreadCount(channelId: string): number {
-    return unreadMessages(this.messagesOf(channelId), this.lastRead(channelId), this.self).length;
+    const channel = this.channels.find((c) => c.id === channelId);
+    return channel && this.lastRead(channelId) < channel.last_sequence ? channel.unread : 0;
   }
 
   targetedUnreadCount(): number {
@@ -67,9 +71,7 @@ export class Model {
   targetedUnreadChannels(): [Channel, number][] {
     const result: [Channel, number][] = [];
     for (const channel of this.channels) {
-      const unread = unreadMessages(this.messagesOf(channel.id), this.lastRead(channel.id), this.self);
-      const targeted = unread.filter((message) => isTargeted(message, this.self)).length;
-      if (targeted > 0) result.push([channel, targeted]);
+      if (this.unreadCount(channel.id) > 0 && channel.targeted_unread > 0) result.push([channel, channel.targeted_unread]);
     }
     return result;
   }
@@ -155,6 +157,19 @@ export class Model {
     return incoming.filter((message) => insertMessage(list, message));
   }
 
+  // Takes a new message into the monitor's counts. One at or below the channel's last sequence is in
+  // them already: the answer that listed the channel came after the monitor stored it.
+  private count(channel: Channel, message: Message): void {
+    if (message.sequence > channel.last_sequence) {
+      if (this.lastRead(channel.id) >= channel.last_sequence) channel.unread = channel.targeted_unread = 0;
+      if (message.from !== this.self) {
+        channel.unread++;
+        if (isTargeted(message, this.self)) channel.targeted_unread++;
+      }
+    }
+    channel.last_sequence = Math.max(channel.last_sequence, message.sequence);
+  }
+
   markRead(channelId: string): void {
     const list = this.messagesOf(channelId);
     const sequence = list.length > 0 ? list[list.length - 1].sequence : 0;
@@ -178,7 +193,7 @@ export class Model {
     const known = this.messagesOf(message.channel).some((other) => other.sequence === message.sequence);
     if (!this.channels.some((channel) => channel.id === message.channel)) await this.refresh();
     const channel = this.channels.find((c) => c.id === message.channel);
-    if (channel) channel.last_sequence = Math.max(channel.last_sequence, message.sequence);
+    if (channel) this.count(channel, message);
     const [added] = this.insert(message.channel, [message]);
     if (added) this.changed();
     return added ?? (known ? undefined : message); // the refresh above may have loaded a new channel's first message

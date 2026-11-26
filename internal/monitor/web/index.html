@@ -509,7 +509,6 @@ const state = {
   detailAgent: null,              // agent ID whose recent activity is shown
   selected: null,                 // channel ID
   messages: new Map(),            // channel ID -> messages ordered by sequence, once loaded
-  unread: new Map(),              // channel ID -> count of messages that arrived since the page loaded
   notified: new Map(),            // channel ID -> notifying messages counted in the tab title, when desktop notifications are not available
   // The next four are the server's shared prefs (/api/v1/prefs).
   read: null,                     // channel ID -> sequence read up to; null on a first visit
@@ -1130,9 +1129,6 @@ function applyPrefs(prefs) {
     state.read = state.read || {};
     for (const [channel, sequence] of Object.entries(prefs.read)) {
       state.read[channel] = Math.max(state.read[channel] || 0, sequence);
-      const known = state.messages.get(channel) || [];
-      const newest = Math.max((state.channels.find((c) => c.id === channel) || {}).last_sequence || 0, known.length ? known[known.length - 1].sequence : 0);
-      if (state.read[channel] >= newest) state.unread.delete(channel);
     }
   }
   if (replacements === 0) {
@@ -1221,7 +1217,6 @@ async function select(channelId) {
   // Opening the open channel again (a click, a search hit) keeps its "New" line.
   const reopened = channelId === state.selected;
   state.selected = channelId;
-  state.unread.delete(channelId);
   history.replaceState(null, "", "#" + encodeURIComponent(channelId));
   if (!reopened) { state.marker = null; state.seen.clear(); $("member-note").hidden = true; }
   if (state.emptyDirects.has(channelId)) state.messages.set(channelId, []);
@@ -1372,8 +1367,26 @@ for (const button of document.querySelectorAll("button.section")) {
   button.addEventListener("click", () => toggleFolded(button.dataset.section));
 }
 
+// What the monitor counts unread in the channel: the messages after the shared read marker that
+// the monitor's agent did not write (the page holds only some of a channel's messages). A marker at
+// the channel's newest message means none, also when set elsewhere since the count; events keep
+// the count up in between (countMessage). The open channel counts as read.
+function unreadCount(channel) {
+  return channel.id !== state.selected && readSequence(channel.id) < (channel.last_sequence || 0) ? channel.unread || 0 : 0;
+}
+
+// Takes a new message into the channel's counts. One at or below the channel's last sequence is in
+// them already: the list that brought the channel was read after the monitor stored it.
+function countMessage(channel, message) {
+  if (message.sequence > (channel.last_sequence || 0)) {
+    if (readSequence(channel.id) >= (channel.last_sequence || 0)) channel.unread = 0;
+    if (message.from !== state.status.agent) channel.unread = (channel.unread || 0) + 1;
+  }
+  channel.last_sequence = Math.max(channel.last_sequence || 0, message.sequence);
+}
+
 function isUnseen(channel) {
-  return channel.id !== state.selected && Boolean(state.unread.get(channel.id) || (channel.last_sequence || 0) > readSequence(channel.id));
+  return unreadCount(channel) > 0;
 }
 
 // A folded section or owner group keeps the open channel and the unread ones, as in Slack.
@@ -1401,7 +1414,7 @@ const bellGlyph = (subscribed) => (subscribed ? "\u{1F514}" : "\u{1F515}");
 const bellTitle = (subscribed) => (subscribed ? "Subscribed: every new message notifies. Click to unsubscribe" : "Subscribe: notify for every new message here");
 
 function channelItem(channel) {
-  const unread = state.unread.get(channel.id);
+  const unread = unreadCount(channel);
   const favourite = state.favourites.has(channel.id);
   const star = el("button", { type: "button", class: "star" + (favourite ? " on" : ""), "data-channel": channel.id, title: favourite ? "Remove from Favourites" : "Add to Favourites", "aria-label": "Favourite", "aria-pressed": String(favourite),
     onclick: (event) => { event.stopPropagation(); toggleFavourite(channel.id); } }, favourite ? "\u2605" : "\u2606");
@@ -2454,6 +2467,8 @@ function connectEvents() {
   source.addEventListener("message", async (event) => {
     const message = JSON.parse(event.data);
     if (!state.channels.some((c) => c.id === message.channel)) await refresh();
+    const channel = state.channels.find((c) => c.id === message.channel);
+    if (channel) countMessage(channel, message);
     const list = state.messages.get(message.channel); // missing until the channel was opened
     const added = list ? insertMessage(list, message) : true;
     if (added) notifyAbout(message); // a duplicate event must not notify twice
@@ -2465,17 +2480,6 @@ function connectEvents() {
       else noteUnseen(message.channel);
       renderMessages(false);
     } else {
-      if (own) {
-        // Sequences count the whole stream: the channel was read if it was read up to its last
-        // sequence, or the periodic refresh has already counted this very message as its last (then
-        // older unseen mail counts as read too: rare, and better than a channel bold for one's own post).
-        const channel = state.channels.find((c) => c.id === message.channel);
-        const lastBefore = (channel && channel.last_sequence) || 0;
-        const wasRead = !state.unread.get(message.channel) && (readSequence(message.channel) >= lastBefore || lastBefore >= message.sequence);
-        if (wasRead) markRead(message.channel, message.sequence);
-      } else {
-        state.unread.set(message.channel, (state.unread.get(message.channel) || 0) + 1);
-      }
       renderSidebar();
     }
   });

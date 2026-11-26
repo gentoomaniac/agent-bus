@@ -11,6 +11,8 @@ export interface Channel {
   agents?: string[]; // DM only
   messages: number;
   last_sequence: number;
+  unread: number; // messages after the read marker that the monitor's agent did not write, as the monitor counts them
+  targeted_unread: number; // of those, the ones aimed at the agent
 }
 
 export interface Agent {

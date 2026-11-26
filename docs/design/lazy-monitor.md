@@ -337,7 +337,12 @@ Each step is one commit with its tests and docs, and passes `make check` on its 
    only at the end of a channel. A read that finds a message gone also asks for the look at the log
    at once.
 6. **Unread counts on the server** (`unread`, `targeted_unread` in `/channels`) and clients using
-   them; the same step for both clients.
+   them; the same step for both clients. *Built.* The monitor counts from the index and the read
+   markers of `prefs.json` (all zero while it holds no marker at all, so a first visit is quiet; a
+   channel with no marker while others have one is all unread, as "channels that appear later start
+   unread" was). The clients show `unread` unless the marker is at the channel's newest message, and
+   keep it up with the message events (a sequence above the channel's `last_sequence` is not in the
+   count yet). The web page has no targeted count to show and does not keep one.
 7. **SQLite store.** The driver, the file, the `message` table, load at start and read from
    `last_seq + 1`; rebuild on a missing or bad file.
 8. **FTS and search.** `message_fts`, the writer, the query path behind the existing endpoint, the

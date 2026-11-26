@@ -88,6 +88,37 @@ func compareRowSequence(entry row, sequence uint64) int {
 	return cmp.Compare(entry.sequence, sequence)
 }
 
+// unread counts the rows of the channel after the read marker that the agent did not write, and
+// those of them aimed at it: it is a target, or the message goes to everyone.
+func (index *index) unread(channel string, readThrough uint64, agent string) (unread, targeted int) {
+	none := uint32(len(index.names.text)) // the ID of no name
+	idOf := func(name string) uint32 {
+		if id, known := index.names.ids[name]; known {
+			return id
+		}
+		return none
+	}
+	self, everyone := idOf(agent), idOf(envelope.TargetAll)
+	rows := index.channels[channel]
+	start, found := slices.BinarySearchFunc(rows, readThrough, compareRowSequence)
+	if found {
+		start++
+	}
+	for _, entry := range rows[start:] {
+		if entry.from == self {
+			continue
+		}
+		unread++
+		for _, target := range index.names.pool[entry.targetsAt : entry.targetsAt+uint32(entry.targetsN)] {
+			if target == self || target == everyone {
+				targeted++
+				break
+			}
+		}
+	}
+	return unread, targeted
+}
+
 // remove drops the row of the message at the sequence in the channel, and the channel with its
 // last row.
 func (index *index) remove(channel string, sequence uint64) {

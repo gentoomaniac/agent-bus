@@ -4,7 +4,7 @@ import { parseFromWebview } from "../protocol";
 import { Chip, buildQuery, chipTerm, hitPlace, plainLabel, scopeTerms, snippetParts, withChip } from "../search";
 import { Channel } from "../types";
 
-const channel = (extra: Partial<Channel>): Channel => ({ id: "general", kind: "general", name: "general", description: "", messages: 0, last_sequence: 0, ...extra });
+const channel = (extra: Partial<Channel>): Channel => ({ id: "general", kind: "general", name: "general", description: "", messages: 0, last_sequence: 0, unread: 0, targeted_unread: 0, ...extra });
 
 test("scopeTerms limits to a group by its name and to a DM by both agents", () => {
   assert.deepEqual(scopeTerms(channel({})), ["to:#general"]);

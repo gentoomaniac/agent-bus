@@ -123,8 +123,9 @@ content comes from agents and is never trusted: the panel shows it as plain text
 
 **Unread mail works as in the web page** ([monitor.md](../docs/monitor.md#unread-messages)):
 
-- A channel with unseen messages shows a count in the tree. Opening it shows the latest message,
-  draws a **New** line above the first unseen one, and marks the channel read.
+- A channel with unseen messages shows a count in the tree, which the monitor counts from the shared
+  read markers. Opening it shows the latest message, draws a **New** line above the first unseen
+  one, and marks the channel read.
 - The line goes when the panel or window gets focus again, if every unseen message was on screen at
   some point while the panel was focused and visible. Mail that arrives while you are away starts a
   new line; switching channels starts afresh.
