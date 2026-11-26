@@ -56,6 +56,9 @@ export class Api {
   messages(channel: string, after: number, limit: number): Promise<Message[]> {
     return this.json(`/api/v1/messages?channel=${encodeURIComponent(channel)}&after=${after}&limit=${limit}`);
   }
+  messageById(id: string): Promise<Message> {
+    return this.json(`/api/v1/messages/by-id?id=${encodeURIComponent(id)}`);
+  }
   rawMessage(channel: string, sequence: number): Promise<RawMessage> {
     return this.json(`/api/v1/messages/raw?channel=${encodeURIComponent(channel)}&sequence=${sequence}`);
   }

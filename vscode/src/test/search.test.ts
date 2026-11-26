@@ -65,6 +65,11 @@ test("hitPlace names a listed channel and falls back to the ID", () => {
   assert.equal(hitPlace(channels, "group:new"), "group:new");
 });
 
+test("parseFromWebview checks the lookup of a parent", () => {
+  assert.deepEqual(parseFromWebview({ type: "parent", id: "01J", extra: 1 }), { type: "parent", id: "01J" });
+  for (const bad of [{ type: "parent" }, { type: "parent", id: "" }, { type: "parent", id: 7 }]) assert.equal(parseFromWebview(bad), undefined);
+});
+
 test("parseFromWebview checks search and jump messages", () => {
   assert.deepEqual(parseFromWebview({ type: "search", run: 3, chips: [], text: "deploy", allChannels: false }), { type: "search", run: 3, chips: [], text: "deploy", allChannels: false });
   assert.deepEqual(parseFromWebview({ type: "search", run: 3, chips: [{ key: "from", value: "a@x", extra: 1 }], text: "", allChannels: true, cursor: "c1", extra: 1 }),

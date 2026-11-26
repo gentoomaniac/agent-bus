@@ -3,7 +3,7 @@ import { matchTargets, mentionBefore, mentionText, resolveTarget } from "../comp
 import { continuesGroup, insertMessage } from "../messages";
 import { parsePresenceMarks } from "../protocol";
 import { Chip, chipTerm, snippetParts, withChip } from "../search";
-import type { ChatState, FromWebview, PresenceMark, SearchHitView, ToWebview } from "../protocol";
+import type { ChatState, FromWebview, ParentView, PresenceMark, SearchHitView, ToWebview } from "../protocol";
 import { presenceClass } from "../presence";
 import { byOwner, groupBy, ownerOf, shortName } from "../names";
 import { shortTime } from "../time";
@@ -248,31 +248,51 @@ function renderBox(message: Message, continued: boolean): HTMLElement {
   return box;
 }
 
-// What a reply answers, above its header: the parent's sender and first line, which scrolls to the
-// parent on a click. A parent that is not loaded (older, or in another channel) is said so.
+// Parents the page has not loaded, by message ID: the message as the host found it, "gone" when
+// the monitor does not hold it any more, "failed" for any other failure, "loading" meanwhile. A
+// message never changes, so an answer is kept; one lookup per ID.
+const parents = new Map<string, ParentView | "gone" | "failed" | "loading">();
+
+function lookUpParent(id: string): void {
+  parents.set(id, "loading");
+  host.postMessage({ type: "parent", id });
+}
+
+// A quote of the message a reply answers: its sender, where it is when that is another channel, its
+// time and its first line. With `onClick` it is a button.
+function renderQuote(parent: ParentView, title: string, label: string, onClick: (() => void) | undefined): HTMLElement {
+  const quote = quoteOf(parent) || "(no text)";
+  const line = onClick ? el("button", "reply-to") : el("div", "reply-to");
+  if (line instanceof HTMLButtonElement) line.type = "button";
+  line.title = title;
+  line.append("↳ ", el("span", "who", shortName(parent.from ?? "?")));
+  if (parent.where) line.append(el("span", "where", " in " + parent.where));
+  line.append(" ", renderTime(parent, "time"), " " + quote);
+  if (onClick) {
+    line.setAttribute("aria-label", `${label}, from ${parent.from ?? "unknown sender"}: ${quote}`);
+    line.addEventListener("click", onClick);
+  }
+  return line;
+}
+
+// What a reply answers, above its header: a quote of the parent that shows it on a click. A parent
+// that is not loaded (older, or in another channel) is looked up, and said so meanwhile.
 function renderReplyLine(row: ThreadRow): HTMLElement | undefined {
   const { parent } = row;
-  if (!parent) {
-    if (!row.replyTo) return undefined;
-    const line = el("div", "reply-to missing", "↳ answers a message not shown here (older, or in another channel)");
-    line.title = "reply to " + row.replyTo;
-    return line;
+  const label = (message: Message) => `reply to ${message.from ?? "unknown sender"} (${message.id ?? "no id"})`;
+  if (parent) {
+    // A parent the type filter hides is quoted, but there is nothing to scroll to.
+    if (!shownSequences.has(parent.sequence)) return renderQuote(parent, label(parent) + ", hidden by the type filter", "", undefined);
+    return renderQuote(parent, label(parent) + ": show it", "Show the message this answers", () => showMessage(parent.sequence));
   }
-  const quote = quoteOf(parent) || "(no text)";
-  const label = `reply to ${parent.from ?? "unknown sender"} (${parent.id ?? "no id"})`;
-  // A parent the type filter hides is quoted, but there is nothing to scroll to.
-  if (!shownSequences.has(parent.sequence)) {
-    const line = el("div", "reply-to");
-    line.title = label + ", hidden by the type filter";
-    line.append("↳ ", el("span", "who", shortName(parent.from ?? "?")), " " + quote);
-    return line;
+  if (!row.replyTo) return undefined;
+  if (!parents.has(row.replyTo)) lookUpParent(row.replyTo);
+  const found = parents.get(row.replyTo);
+  if (typeof found === "object") {
+    return renderQuote(found, label(found) + ": show it", "Show the message this answers", () => host.postMessage({ type: "jump", channel: found.channel, sequence: found.sequence }));
   }
-  const line = el("button", "reply-to");
-  line.type = "button";
-  line.title = label + ": show it";
-  line.setAttribute("aria-label", `Show the message this answers, from ${parent.from ?? "unknown sender"}: ${quote}`);
-  line.append("↳ ", el("span", "who", shortName(parent.from ?? "?")), " " + quote);
-  line.addEventListener("click", () => showMessage(parent.sequence));
+  const line = el("div", "reply-to missing", "↳ " + (found === "gone" ? "answers a message that is no longer kept" : "answers a message not shown here (older, or in another channel)"));
+  line.title = "reply to " + row.replyTo;
   return line;
 }
 
@@ -754,6 +774,10 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
   if (data.type === "state") showState(data.state);
   else if (data.type === "searchResults") showResults(data);
   else if (data.type === "reveal") reveal(data.sequence);
+  else if (data.type === "parent") {
+    parents.set(data.id, data.message ?? (data.gone ? "gone" : "failed"));
+    render();
+  }
   else if (data.type === "focusComposer") textInput.focus();
   else if (data.type === "activated") activate();
   else if (data.type === "subscribed") showSubscribed(data.value);

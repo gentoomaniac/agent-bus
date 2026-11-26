@@ -97,6 +97,21 @@ export class ChatPanels implements vscode.Disposable {
     void chat.panel.webview.postMessage({ type: "reveal", sequence } satisfies ToWebview);
   }
 
+  // Answers the page's lookup of the message a reply answers. Not finding it (404) is an answer;
+  // any other failure is told as none, and the page keeps saying the message is not shown.
+  private async lookUpParent(channelId: string, chat: Chat, id: string): Promise<void> {
+    const { model } = this.session;
+    let answer: Extract<ToWebview, { type: "parent" }> = { type: "parent", id };
+    try {
+      const message = await model.api.messageById(id);
+      answer = { ...answer, message: message.channel === channelId ? message : { ...message, where: hitPlace(model.channels, message.channel) } };
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) answer = { ...answer, gone: true };
+      else if (error instanceof ApiError && error.unauthenticated) this.session.report(error);
+    }
+    void chat.panel.webview.postMessage(answer satisfies ToWebview);
+  }
+
   // Answers a search of the page. A failure goes to the page, which shows it in place of the results.
   private async search(channelId: string, chat: Chat, { run, chips, text, allChannels, cursor }: Extract<FromWebview, { type: "search" }>): Promise<void> {
     const { model } = this.session;
@@ -183,6 +198,8 @@ export class ChatPanels implements vscode.Disposable {
       await this.reveal(channelId, chat);
     } else if (message.type === "search") {
       await this.search(channelId, chat, message);
+    } else if (message.type === "parent") {
+      await this.lookUpParent(channelId, chat, message.id);
     } else if (message.type === "jump") {
       await this.jumpTo(message.channel, message.sequence);
     } else if (message.type === "older") {
@@ -317,6 +334,7 @@ export class ChatPanels implements vscode.Disposable {
   header .link { color: var(--vscode-textLink-foreground); background: transparent; padding: 0 4px; font-size: 0.9em; }
   header .link[aria-pressed="true"] { color: var(--vscode-foreground); border-bottom: 1px solid var(--vscode-focusBorder); }
   .reply-to { display: block; max-width: calc(100% - var(--name-indent)); margin-left: var(--name-indent); padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 0.85em; font-family: var(--vscode-font-family); color: var(--vscode-descriptionForeground); background: transparent; }
+  .reply-to .where { opacity: 0.8; }
   button.reply-to:hover:not(:disabled) { background: transparent; color: var(--vscode-textLink-foreground); }
   .reply-to .who { font-weight: 600; }
   .reply-to.missing { font-style: italic; }

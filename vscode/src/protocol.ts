@@ -33,6 +33,12 @@ export interface SearchHitView extends SearchHit {
   where: string;
 }
 
+// The message a reply answers, looked up by ID because the page has not loaded it: with `where`
+// (the channel's name as the page shows it) when it is in another channel.
+export interface ParentView extends Message {
+  where?: string;
+}
+
 export type ToWebview =
   | { type: "state"; state: ChatState }
   | { type: "message"; message: Message }
@@ -41,6 +47,7 @@ export type ToWebview =
   | { type: "sendResult"; error?: string }
   | { type: "focusComposer" }
   | { type: "searchResults"; run: number; hits: SearchHitView[]; next?: string; error?: string } // the answer to the search with the same run
+  | { type: "parent"; id: string; message?: ParentView; gone?: boolean } // the answer to the lookup of `id`; neither field: it failed
   | { type: "reveal"; sequence: number } // scroll to the message and flash it
   | { type: "activated" }; // the panel became visible and active
 
@@ -58,6 +65,7 @@ export type FromWebview =
   | { type: "threaded"; value: boolean }
   | { type: "shownTypes"; value: string[] }
   | { type: "subscribe"; value: boolean } // subscribe the channel or unsubscribe it
+  | { type: "parent"; id: string } // look up a message by ID: the parent of a reply that is not loaded
   | { type: "raw"; sequence: number } // open the record as stored
   | { type: "search"; run: number; chips: Chip[]; text: string; allChannels: boolean; cursor?: string }
   | { type: "jump"; channel: string; sequence: number } // show a search result: load history and open its channel if needed
@@ -76,6 +84,7 @@ export function parseFromWebview(raw: unknown): FromWebview | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
   const message = raw as Record<string, unknown>;
   if (message.type === "ready" || message.type === "older" || message.type === "invite") return { type: message.type };
+  if (message.type === "parent") return typeof message.id === "string" && message.id !== "" ? { type: "parent", id: message.id } : undefined;
   if (message.type === "removeMember") return typeof message.agent === "string" && message.agent !== "" ? { type: "removeMember", agent: message.agent } : undefined;
   if (message.type === "raw") return Number.isSafeInteger(message.sequence) && (message.sequence as number) >= 0 ? { type: "raw", sequence: message.sequence as number } : undefined;
   if (message.type === "search") {
