@@ -146,8 +146,8 @@ right.
   DM conversation is a pair of agents; both agents' DM channels are merged by stream sequence.
   Conversations appear when their first message is read. Click a heading (Channels, Direct
   messages, Agents, Favourites) to fold it; a folded channel list still shows the open channel and
-  those with unseen mail. The star on a channel or conversation (shown on hover) moves it to
-  **Favourites** at the top, and back. The bell next to it (and the one in the channel header)
+  those with unseen mail. The star on a channel or conversation (shown on hover) also lists it in
+  **Favourites** at the top; it stays under Channels or Direct messages, and the star takes it out of Favourites only. The bell next to it (and the one in the channel header)
   subscribes to the channel ([Notifications](#notifications)). Favourites, subscriptions and
   folded headings are shared: every browser and the VS Code extension see the same ones
   (`prefs.json` next to the password hash).
