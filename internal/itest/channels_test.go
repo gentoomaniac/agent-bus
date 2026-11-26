@@ -4,6 +4,7 @@ package itest
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -136,5 +137,29 @@ func TestAgentsCreateJoinAndManageChannelsThroughBusd(t *testing.T) {
 		if index < 0 || list.Channels[index].Owner != alice || list.Channels[index].Description != "renamed by the bus owner" {
 			t.Errorf("list = %+v", list.Channels)
 		}
+	})
+}
+
+// A broker set up by an older release lacks the grant for channel requests. busd renders the grants
+// again when it starts, so an upgrade needs no `agent-busctl init`.
+func TestBusdAppliesTheGrantsOfANewReleaseAtStart(t *testing.T) {
+	h := startBus(t)
+	h.run(t, h.agentBusctl, "enroll", "init")
+	grant := `"` + channelapi.Subject(bus.AgentToken(alice)) + `"`
+	if err := h.server.UpdateAuth(context.Background(), func(body string) (string, error) {
+		if !strings.Contains(body, grant) {
+			return "", fmt.Errorf("auth.conf has no %s", grant)
+		}
+		return strings.NewReplacer(", "+grant, "", grant+", ", "", grant, "").Replace(body), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h.startBusd(t)
+	session := h.channelAgent(t, alice)
+	waitFor(t, "a channel request of alice to be answered", func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, err := session.RequestChannel(ctx, channelapi.Request{Action: channelapi.List})
+		return err == nil
 	})
 }

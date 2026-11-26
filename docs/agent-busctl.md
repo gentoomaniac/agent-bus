@@ -190,6 +190,8 @@ On a broker that has them already it says `busd and the monitor have their login
 ### init
 
 Creates the streams and buckets the bus needs, and regenerates every agent's grants. Safe to repeat.
+Run it once when setting up a bus. busd regenerates the grants at every start, so an upgrade needs
+`init` only where its guide says so.
 
 | Created | In account | Holds |
 |---|---|---|

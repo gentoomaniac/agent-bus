@@ -455,14 +455,14 @@ recreation keeps the proxy overlay:
 . $AGENT_BUS_HOME/compose.env
 $compose pull
 $compose up -d
-agent-busctl --direct init     # the agents' grants and the message log's limits; add your flags
 ```
 
-Take a [backup](#backup-and-restore) first. `init` applies the defaults (90 days, 1 GiB) when run
-without flags, so give your `--max-age` and `--max-bytes` again if you changed them, for example
-`init --max-age 720h --max-bytes 536870912` ([agent-busctl.md](agent-busctl.md#init)).
-**Checkpoint:** the log says `Server is ready`, `init` prints the streams line, and the page loads
-through the proxy.
+Take a [backup](#backup-and-restore) first. busd applies the new release's grants when it starts,
+so there is no `agent-busctl` step. Run `init` only where an upgrade guide asks for it (new streams
+or buckets). It also applies the message log's limits, the defaults (90 days, 1 GiB) when run
+without flags, so give your `--max-age` and `--max-bytes` again ([agent-busctl.md](agent-busctl.md#init)).
+**Checkpoint:** the log says `Server is ready` and `busd: agent and service grants are up to date`,
+and the page loads through the proxy.
 
 Steps that only one release needs are in the upgrade guides. Apply them in order, 0.1 to 0.2 to 0.3
 (0.3.0 is the next release and is not tagged yet):

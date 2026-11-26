@@ -120,8 +120,14 @@ func (admin *Admin) Setup(ctx context.Context, retention bus.Retention) error {
 			return fmt.Errorf("creating bucket %s: %w", bucket.Bucket, admin.control.explain(err))
 		}
 	}
-	// Agents registered by an older release get the grants of this one (presence), and so do busd
-	// and the monitor in CONTROL (busd's catalogue writes).
+	return admin.RefreshGrants(ctx)
+}
+
+// RefreshGrants renders both authorization files again from their users, so agents registered by
+// an older release get the grants of this one, and so do busd and the monitor in CONTROL. busd
+// runs it at every start, which makes an upgrade take effect without `agent-busctl init`; it
+// changes no stream, so the retention stays as init set it.
+func (admin *Admin) RefreshGrants(ctx context.Context) error {
 	if err := admin.updateAuth(ctx, func(*userTable) error { return nil }); err != nil {
 		return err
 	}

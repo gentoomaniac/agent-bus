@@ -119,6 +119,13 @@ func (cli *CLI) Run() error {
 		return err
 	}
 	defer admin.Close()
+	// An upgrade brings new grants: they take effect here, so no `agent-busctl init` is needed for
+	// them. A failure leaves the old grants, and busd serves what they allow.
+	if err := admin.RefreshGrants(ctx); err != nil {
+		log.Printf("busd: the grants of this release could not be applied (`agent-busctl --direct init` does it): %v", err)
+	} else {
+		log.Printf("busd: agent and service grants are up to date")
+	}
 
 	published := busd.NewDirectory(busd.DirectoryConfig{
 		Source: admin, CA: ca, ConfigDir: cli.ConfigDir,

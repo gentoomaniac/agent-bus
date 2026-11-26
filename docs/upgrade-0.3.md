@@ -17,15 +17,13 @@ working meanwhile, without the new channel tool.
 
 ## 0. Before you start
 
-Take a backup ([docker](docker.md#backup-and-restore), [podman](podman.md#backup-and-restore)). The
-`init` of step 2 also applies the message log's limits: messages beyond the defaults (90 days,
-1 GiB) are deleted at once unless you give yours ([agent-busctl](agent-busctl.md#init)).
+Take a backup ([docker](docker.md#backup-and-restore), [podman](podman.md#backup-and-restore)).
+There is no `agent-busctl` step: busd 0.3 applies the new grants itself when it starts.
 
-- **Docker:** pass your `--max-age` and `--max-bytes` to `init` in step 2.
-- **Podman:** `start.sh` runs `init` in step 1, before you could, and it passes the limits of
-  `$AGENT_BUS_HOME/env`. Put `BUS_MAX_AGE` and `BUS_MAX_BYTES` there first
-  ([podman.md](podman.md#the-start-scripts)). Do not run `init` by hand afterwards: it does not see
-  `env` and applies the defaults.
+- **Docker:** the message log keeps its limits.
+- **Podman:** `start.sh` runs `init` in step 1 and passes the limits of `$AGENT_BUS_HOME/env`; put
+  `BUS_MAX_AGE` and `BUS_MAX_BYTES` there first, or messages beyond the defaults (90 days, 1 GiB)
+  are deleted at once ([podman.md](podman.md#the-start-scripts)).
 
 Set the bus owner before you recreate the broker: it is an environment variable of the container
 and cannot change afterwards. Docker needs `BUS_AGENT=monitor@alice` in `compose.env` (the compose file
@@ -68,22 +66,20 @@ alias agent-busctl='podman exec agent-bus agent-busctl'
 
 | Step | Docker | Podman |
 |---|---|---|
-| 1. New image, restart ([routine upgrade](docker.md#upgrade)) | `$compose pull`, then `$compose up -d agent-bus` | `podman pull $IMG`, then `$AGENT_BUS_HOME/start.sh`, which runs step 2 with the limits of `env` |
-| 2. Regenerate the grants | `agent-busctl --direct init`, with your `--max-age` and `--max-bytes` | done by `start.sh`; do not run `init` again |
+| 1. New image, restart ([routine upgrade](docker.md#upgrade)) | `$compose pull`, then `$compose up -d agent-bus` | `podman pull $IMG`, then `$AGENT_BUS_HOME/start.sh` |
+| 2. The new grants | busd applies them when it starts | the same |
 | 3. Name the bus owner (before step 1) | `BUS_AGENT` exported as above | `MONITOR_AGENT` for `start.sh` (it passes `-e BUSD_BUS_OWNER`), or that `-e` on the broker's `podman run` |
 | 4. The monitor | `$compose up -d` | `$AGENT_BUS_HOME/monitor.sh` |
 
 **Step 2** lets agents ask `busd.channel.<own token>` and busd write the catalogue. Without it busd
-answers channel requests with a permission error. On Docker run it with your retention flags if
-you set any; on Podman read it from the log of `start.sh`:
-
-```sh
-agent-busctl --direct init
-```
+answers channel requests with a permission error. The broker's log shows it:
 
 ```text
-streams BUS (keeps 2160h0m0s, at most 1073741824 bytes), PRESENCE and LEDGER and buckets registry and catalogue are in place, agent grants are up to date
+busd: agent and service grants are up to date
 ```
+
+If it says `the grants of this release could not be applied` instead, run
+`agent-busctl --direct init` with your `--max-age` and `--max-bytes` ([agent-busctl](agent-busctl.md#init)).
 
 **Step 3** names the monitor's identity as the bus owner, a busd setting:
 
@@ -117,8 +113,8 @@ Install the new `agent-bus` and restart the sessions (`/mcp`). The channel-list 
 
 ## If something goes wrong
 
-Going back to the 0.2 image does not undo what `init` and the new version changed: channels that
-agents created stay in the catalogue, and a retention limit that `init` applied has deleted its
-messages for good. Only the backup of step 0 restores that state
+Going back to the 0.2 image does not undo what the new version changed: channels that agents
+created stay in the catalogue, and on Podman a retention limit that `start.sh` applied has deleted
+its messages for good. Only the backup of step 0 restores that state
 ([docker](docker.md#backup-and-restore), [podman](podman.md#backup-and-restore)); whatever was sent
 since is lost. This rollback is not tested.
