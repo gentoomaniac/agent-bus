@@ -109,10 +109,10 @@
     },
     "views": {
       "agentMessenger": [
-        { "id": "agentMessenger.favourites", "name": "Favourites", "when": "agentMessenger.hasFavourites && !agentMessenger.loginRequired" },
-        { "id": "agentMessenger.channels", "name": "Channels" },
-        { "id": "agentMessenger.dms", "name": "Direct Messages", "when": "!agentMessenger.loginRequired" },
-        { "id": "agentMessenger.agents", "name": "Agents", "when": "!agentMessenger.loginRequired" }
+        { "id": "agentMessenger.favourites", "name": "Favourites", "initialSize": 1, "when": "agentMessenger.hasFavourites && !agentMessenger.loginRequired" },
+        { "id": "agentMessenger.channels", "name": "Channels", "initialSize": 2 },
+        { "id": "agentMessenger.dms", "name": "Direct Messages", "initialSize": 2, "when": "!agentMessenger.loginRequired" },
+        { "id": "agentMessenger.agents", "name": "Agents", "initialSize": 3, "when": "!agentMessenger.loginRequired" }
       ]
     },
     "viewsWelcome": [

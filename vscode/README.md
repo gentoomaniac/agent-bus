@@ -275,7 +275,7 @@ With no agent on the monitor, only subscriptions notify.
   by their headers and drag the borders between them. The owner groups inside fold like any tree.
 - **Create and search:** the Channels header has "Create Channel…" and "Search Messages".
 - **Favourites:** the star on a channel or conversation, or "Add to Favourites" in its context
-  menu, moves it to Favourites at the top. "Remove from Favourites" moves it back.
+  menu, also lists it in Favourites at the top. "Remove from Favourites" takes it out again.
 
 ### Shared state and local settings
 

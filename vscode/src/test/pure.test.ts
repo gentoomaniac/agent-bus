@@ -82,7 +82,7 @@ test("nextBackoff doubles up to the maximum", () => {
   assert.equal(nextBackoff(30000, 30000), 30000);
 });
 
-test("categorize moves favourites out of their category and ignores unknown ones", () => {
+test("categorize lists favourites also in their own section and ignores unknown ones", () => {
   const general = channel({});
   const group = channel({ id: "group:ops", kind: "group", name: "ops" });
   const dm = channel({ id: "dm:a:b", kind: "dm", name: "a + b" });
@@ -92,7 +92,7 @@ test("categorize moves favourites out of their category and ignores unknown ones
   assert.deepEqual([ids(plain.favourites), ids(plain.channels), ids(plain.directMessages)], [[], ["general", "group:ops"], ["dm:a:b"]]);
 
   const starred = categorize([general, group, dm], new Set(["dm:a:b", "group:ops", "group:gone"]));
-  assert.deepEqual([ids(starred.favourites), ids(starred.channels), ids(starred.directMessages)], [["group:ops", "dm:a:b"], ["general"], []]);
+  assert.deepEqual([ids(starred.favourites), ids(starred.channels), ids(starred.directMessages)], [["group:ops", "dm:a:b"], ["general", "group:ops"], ["dm:a:b"]]);
 });
 
 test("byOwner sorts agents by owner, then by name", () => {
