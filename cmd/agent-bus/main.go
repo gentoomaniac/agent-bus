@@ -20,6 +20,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	gocli "git.srv.gentoomaniac.net/marco/agent-messenger/internal/cli"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enrollclient"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
@@ -31,11 +32,17 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// version is set at release time: -ldflags "-X main.version=...".
-var version = "dev"
+// Set at release time by goreleaser: -ldflags "-X main.version=...".
+var (
+	version = "dev"
+	commit  = "unknown"
+	binName = "agent-bus"
+	builtBy = "unknown"
+	date    = "unknown"
+)
 
 type CLI struct {
-	Version kong.VersionFlag `help:"Print the version and exit."`
+	Version gocli.VersionFlag `short:"V" help:"Display version."`
 
 	Agent      string        `help:"The identity to act as, <name>@<owner>. Required except for pending." aliases:"identity" env:"BUS_AGENT"`
 	ConfigDir  string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
@@ -283,7 +290,7 @@ func (cmd *EventCmd) Run() error {
 
 func main() {
 	var cli CLI
-	kongCtx := kong.Parse(&cli, kong.Name("agent-bus"), kong.Vars{"version": version}, kong.Description("Adapter of the Agent Bus."))
+	kongCtx := kong.Parse(&cli, kong.Name("agent-bus"), kong.Vars{"version": version, "commit": commit, "binName": binName, "builtBy": builtBy, "date": date}, kong.Description("Adapter of the Agent Bus."))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

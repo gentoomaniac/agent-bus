@@ -12,15 +12,22 @@ import (
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	gocli "git.srv.gentoomaniac.net/marco/agent-messenger/internal/cli"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"github.com/alecthomas/kong"
 )
 
-// version is set at release time: -ldflags "-X main.version=...".
-var version = "dev"
+// Set at release time by goreleaser: -ldflags "-X main.version=...".
+var (
+	version = "dev"
+	commit  = "unknown"
+	binName = "agent-busctl"
+	builtBy = "unknown"
+	date    = "unknown"
+)
 
 type CLI struct {
-	Version kong.VersionFlag `help:"Print the version and exit."`
+	Version gocli.VersionFlag `short:"V" help:"Display version."`
 
 	ConfigDir  string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
 	Broker     string        `help:"NATS server address (host:port); the host must be in the broker certificate." default:"localhost:4222" env:"BUS_BROKER"`
@@ -137,7 +144,7 @@ func (cli *CLI) brokerAdmin() (*broker.Admin, error) {
 
 func main() {
 	var cli CLI
-	kongCtx := kong.Parse(&cli, kong.Name("agent-busctl"), kong.Vars{"version": version}, kong.Description("Admin CLI of the Agent Bus."))
+	kongCtx := kong.Parse(&cli, kong.Name("agent-busctl"), kong.Vars{"version": version, "commit": commit, "binName": binName, "builtBy": builtBy, "date": date}, kong.Description("Admin CLI of the Agent Bus."))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

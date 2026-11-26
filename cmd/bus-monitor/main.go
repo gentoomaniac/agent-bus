@@ -21,19 +21,26 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
+	gocli "git.srv.gentoomaniac.net/marco/agent-messenger/internal/cli"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/monitor"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 	"github.com/alecthomas/kong"
 )
 
-// version is set at release time: -ldflags "-X main.version=...".
-var version = "dev"
+// Set at release time by goreleaser: -ldflags "-X main.version=...".
+var (
+	version = "dev"
+	commit  = "unknown"
+	binName = "bus-monitor"
+	builtBy = "unknown"
+	date    = "unknown"
+)
 
 const shutdownTimeout = 5 * time.Second
 
 type CLI struct {
-	Version kong.VersionFlag `help:"Print the version and exit."`
+	Version gocli.VersionFlag `short:"V" help:"Display version."`
 
 	Listen     string `help:"Address of the web interface. It shows all traffic and speaks plain HTTP: it must be a loopback address unless --behind-proxy is set." default:"127.0.0.1:8080" env:"BUS_WEB_LISTEN"`
 	Agent      string `help:"The identity messages are sent as, <name>@<owner>, registered on this machine. Without it the interface is read-only." env:"BUS_AGENT"`
@@ -209,6 +216,6 @@ func (cli *CLI) openSender(caCert string, caPEM []byte) (sender monitor.Sender, 
 
 func main() {
 	var cli CLI
-	kongCtx := kong.Parse(&cli, kong.Name("bus-monitor"), kong.Vars{"version": version}, kong.Description("Web interface of the Agent Bus."))
+	kongCtx := kong.Parse(&cli, kong.Name("bus-monitor"), kong.Vars{"version": version, "commit": commit, "binName": binName, "builtBy": builtBy, "date": date}, kong.Description("Web interface of the Agent Bus."))
 	kongCtx.FatalIfErrorf(kongCtx.Run())
 }

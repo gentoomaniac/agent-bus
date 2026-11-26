@@ -23,14 +23,21 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/busd"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/channelapi"
+	gocli "git.srv.gentoomaniac.net/marco/agent-messenger/internal/cli"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
 )
 
-// version is set at release time: -ldflags "-X main.version=...".
-var version = "dev"
+// Set at release time by goreleaser: -ldflags "-X main.version=...".
+var (
+	version = "dev"
+	commit  = "unknown"
+	binName = "busd"
+	builtBy = "unknown"
+	date    = "unknown"
+)
 
 const (
 	handlerTimeout       = time.Minute // a certificate approval includes a confirmed reload
@@ -43,7 +50,7 @@ const (
 )
 
 type CLI struct {
-	Version kong.VersionFlag `help:"Print the version and exit."`
+	Version gocli.VersionFlag `short:"V" help:"Display version."`
 
 	ConfigDir    string        `help:"Directory with the CA key, the admin credentials and the server's files." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
 	Broker       string        `help:"NATS server address (host:port); busd runs next to it." default:"localhost:4222" env:"BUS_BROKER"`
@@ -251,7 +258,7 @@ func directoryReconciler(ctx context.Context, published *busd.Directory, admin *
 
 func main() {
 	var cli CLI
-	kongCtx := kong.Parse(&cli, kong.Name("busd"), kong.Vars{"version": version}, kong.Description("Control service of the Agent Bus."))
+	kongCtx := kong.Parse(&cli, kong.Name("busd"), kong.Vars{"version": version, "commit": commit, "binName": binName, "builtBy": builtBy, "date": date}, kong.Description("Control service of the Agent Bus."))
 	kongCtx.FatalIfErrorf(cli.Run())
 }
 

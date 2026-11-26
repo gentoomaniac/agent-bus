@@ -16,7 +16,13 @@ builds:
     goos: [linux]
     goarch: [amd64, arm64]
     flags: [-trimpath]
-    ldflags: ["-s -w -X main.version={{.Version}}"]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy={{.Env.GITHUB_WORKFLOW}}/{{.Env.GITHUB_RUN_ID}}
+      - -X main.binName={{.Binary}}
   - id: agent-busctl
     main: ./cmd/agent-busctl
     binary: agent-busctl
@@ -24,7 +30,13 @@ builds:
     goos: [linux, darwin]
     goarch: [amd64, arm64]
     flags: [-trimpath]
-    ldflags: ["-s -w -X main.version={{.Version}}"]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy={{.Env.GITHUB_WORKFLOW}}/{{.Env.GITHUB_RUN_ID}}
+      - -X main.binName={{.Binary}}
   - id: agent-bus
     main: ./cmd/agent-bus
     binary: agent-bus
@@ -32,7 +44,13 @@ builds:
     goos: [linux, darwin]
     goarch: [amd64, arm64]
     flags: [-trimpath]
-    ldflags: ["-s -w -X main.version={{.Version}}"]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy={{.Env.GITHUB_WORKFLOW}}/{{.Env.GITHUB_RUN_ID}}
+      - -X main.binName={{.Binary}}
 
   - id: bus-monitor
     main: ./cmd/bus-monitor
@@ -41,7 +59,13 @@ builds:
     goos: [linux, darwin]
     goarch: [amd64, arm64]
     flags: [-trimpath]
-    ldflags: ["-s -w -X main.version={{.Version}}"]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy={{.Env.GITHUB_WORKFLOW}}/{{.Env.GITHUB_RUN_ID}}
+      - -X main.binName={{.Binary}}
 
 archives:
   # busd runs only in the image (linux), so the archives leave it out: every platform's archive
