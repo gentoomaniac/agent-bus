@@ -3,26 +3,35 @@ import { createChannel, inviteAgent } from "./channelAdmin";
 import { ChatPanels } from "./chat";
 import { Session } from "./session";
 import { searchMessages } from "./searchPicker";
-import { AgentMessengerTree, Node } from "./tree";
+import { AgentMessengerTree, Node, SECTIONS } from "./tree";
 import { UpdateChecker } from "./updates";
 import { showNotifications } from "./notifications";
 import { openUnreadMail, showUnreadIndicators } from "./unread";
 
 export function activate(context: vscode.ExtensionContext): void {
   const session = new Session(context);
-  const tree = new AgentMessengerTree(session);
   const chats = new ChatPanels(context, session);
   const updates = new UpdateChecker(context, session.log);
-  const treeView = vscode.window.createTreeView("agentMessenger.tree", { treeDataProvider: tree });
+  // A view per section, so each folds and resizes like the Explorer's Outline and Timeline. Inside
+  // Direct Messages and Agents the owner groups fold as tree rows.
+  const views = SECTIONS.map((section) => {
+    const tree = new AgentMessengerTree(session, section);
+    const view = vscode.window.createTreeView(`agentMessenger.${section}`, { treeDataProvider: tree });
+    view.onDidCollapseElement((event) => tree.setCollapsed(event.element, true));
+    view.onDidExpandElement((event) => tree.setCollapsed(event.element, false));
+    return view;
+  });
+  const channelsView = views[SECTIONS.indexOf("channels")];
+  const favouritesShown = () => vscode.commands.executeCommand("setContext", "agentMessenger.hasFavourites", session.prefs.favourites.size > 0);
+  void favouritesShown();
 
   context.subscriptions.push(
     session,
     chats,
     updates,
-    treeView,
-    treeView.onDidCollapseElement((event) => tree.setCollapsed(event.element, true)),
-    treeView.onDidExpandElement((event) => tree.setCollapsed(event.element, false)),
-    showUnreadIndicators(session, treeView),
+    ...views,
+    session.onDidChange(() => void favouritesShown()),
+    showUnreadIndicators(session, channelsView),
     showNotifications(session, chats),
     vscode.commands.registerCommand("agentMessenger.openUnreadMail", () => openUnreadMail(session)),
     vscode.commands.registerCommand("agentMessenger.login", () => session.login()),

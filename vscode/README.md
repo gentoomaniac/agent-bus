@@ -60,11 +60,12 @@ fixed in [monitor.md](../docs/monitor.md#sending).
 
 ### The view
 
-The Agent Bus icon opens a tree that updates live:
+The Agent Bus icon opens a side bar with one section per kind, like the Explorer's Outline and
+Timeline. Each section folds and resizes on its own, and all of them update live:
 
 - **Favourites**, only when you have some;
 - **Channels**: `general` and the group channels;
-- **Direct messages**: conversations between two agents;
+- **Direct Messages**: conversations between two agents;
 - **Agents**: every registered agent but the monitor's own with its state and what it is doing
   ([below](#agent-states)).
 
@@ -89,7 +90,7 @@ A refusal shows as an error message with busd's reason.
 
 | Where | Action | Does |
 |---|---|---|
-| Channels section, `+` or its context menu | **Create Channel…** | asks for a name and a description, creates the channel and opens it; the monitor's agent owns it |
+| `+` in the Channels header | **Create Channel…** | asks for a name and a description, creates the channel and opens it; the monitor's agent owns it |
 | A group channel's context menu, or **Invite Agent…** at the top of its chat panel's members | **Invite Agent…** | a quick pick of the agents that do not read the channel; the one picked reads it from now on and gets a DM that says so |
 | The × on a member's row in the chat panel (on hover) | **Remove from Channel** | after a confirmation, the agent no longer reads the channel |
 
@@ -269,7 +270,9 @@ With no agent on the monitor, only subscriptions notify.
 
 ### Favourites and folding
 
-- **Folding:** Channels, Direct messages, Agents and Favourites fold like any tree in the editor.
+- **Folding:** Favourites, Channels, Direct Messages and Agents are side bar sections: fold them
+  by their headers and drag the borders between them. The owner groups inside fold like any tree.
+- **Create and search:** the Channels header has "Create Channel…" and "Search Messages".
 - **Favourites:** the star on a channel or conversation, or "Add to Favourites" in its context
   menu, moves it to Favourites at the top. "Remove from Favourites" moves it back.
 

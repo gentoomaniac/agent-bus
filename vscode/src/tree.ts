@@ -8,7 +8,7 @@ import { Agent, Channel, Presence } from "./types";
 const RECENT_CHILDREN = 3; // recent activities listed under an agent
 const RECENT_TOOLTIP = 10; // and in its tooltip
 
-// A row of the tree. A section's id is the name the monitor's prefs use for it when it is folded.
+// A row of a view. An owner group's id is the name the monitor's prefs use for it when it is folded.
 export type Node =
   | { kind: "section"; id: string; label: string; children: Node[] }
   | { kind: "channel"; channel: Channel }
@@ -42,11 +42,19 @@ function dmGroups(channels: Channel[]): Node[] {
   }));
 }
 
+// The view sections of the Agent Bus side bar, each a view of its own (package.json "views").
+export const SECTIONS = ["favourites", "channels", "dms", "agents"] as const;
+export type Section = (typeof SECTIONS)[number];
+
+// One view section: its rows, and the owner groups under Direct Messages and Agents.
 export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
 
-  constructor(private readonly session: Session) {
+  constructor(
+    private readonly session: Session,
+    private readonly section: Section,
+  ) {
     session.onDidChange(() => this.emitter.fire());
   }
 
@@ -60,13 +68,10 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     const { channels, agents } = this.model;
     const categories = categorize(channels, this.session.prefs.favourites);
     const channelNodes = (list: Channel[]): Node[] => list.map((channel) => ({ kind: "channel", channel }));
-    const favourites: Node[] = categories.favourites.length > 0 ? [{ kind: "section", id: "favourites", label: "Favourites", children: channelNodes(categories.favourites) }] : [];
-    return [
-      ...favourites,
-      { kind: "section", id: "channels", label: "Channels", children: channelNodes(categories.channels) },
-      { kind: "section", id: "dms", label: "Direct messages", children: dmGroups(categories.directMessages) },
-      { kind: "section", id: "agents", label: "Agents", children: agentGroups(agents.filter((agent) => agent.id !== this.model.self)) },
-    ];
+    if (this.section === "favourites") return channelNodes(categories.favourites);
+    if (this.section === "channels") return channelNodes(categories.channels);
+    if (this.section === "dms") return dmGroups(categories.directMessages);
+    return agentGroups(agents.filter((agent) => agent.id !== this.model.self));
   }
 
   getTreeItem(node: Node): vscode.TreeItem {
@@ -83,11 +88,10 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     const collapsed = this.session.prefs.collapsed.has(node.id);
     const item = new vscode.TreeItem(node.label, collapsed ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded);
     item.id = "category:" + node.id;
-    item.contextValue = "section:" + node.id; // the Channels section offers "Create Channel…"
     return item;
   }
 
-  // Remembers a category the user folded or unfolded, so it stays so after a refresh or restart.
+  // Remembers an owner group the user folded or unfolded, so it stays so after a refresh or restart.
   setCollapsed(node: Node, collapsed: boolean): void {
     if (node.kind === "section") this.session.prefs.setCollapsed(node.id, collapsed);
   }
