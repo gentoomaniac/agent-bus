@@ -182,6 +182,19 @@ func TestNewIDIsAULIDThatSortsByTime(t *testing.T) {
 	}
 }
 
+func TestIDRoundTripsThroughItsBytes(t *testing.T) {
+	for range 100 {
+		id := NewID(time.Now())
+		raw, ok := ParseID(id)
+		if !ok || FormatID(raw) != id {
+			t.Fatalf("%s did not survive ParseID and FormatID (%v, %s)", id, ok, FormatID(raw))
+		}
+	}
+	if _, ok := ParseID("not a ULID"); ok {
+		t.Error("ParseID accepted text that is no ULID")
+	}
+}
+
 func TestSignedRecordIsPlainJSON(t *testing.T) {
 	public, private := identity.Generate()
 	payload, _ := Sign(testEnvelope(public), private)

@@ -8,13 +8,14 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
@@ -97,10 +98,12 @@ func ToFor(channel bus.Channel) To {
 	}
 }
 
+// idAlphabet is Crockford base32, the characters of a ULID.
+const idAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
 // NewID returns a ULID: 48 bits of milliseconds and 80 random bits as 26 Crockford base32
 // characters, so IDs sort by creation time.
 func NewID(now time.Time) string {
-	const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 	var raw [16]byte
 	milliseconds := uint64(now.UnixMilli())
 	for i := 0; i < 6; i++ {
@@ -109,13 +112,36 @@ func NewID(now time.Time) string {
 	if _, err := rand.Read(raw[6:]); err != nil {
 		panic(err) // the system's random source is broken
 	}
-	number := new(big.Int).SetBytes(raw[:])
+	return FormatID(raw)
+}
+
+// FormatID writes the 128 bits of a ULID as its 26 characters.
+func FormatID(raw [16]byte) string {
+	high, low := binary.BigEndian.Uint64(raw[:8]), binary.BigEndian.Uint64(raw[8:])
 	var id [26]byte
 	for i := len(id) - 1; i >= 0; i-- {
-		id[i] = alphabet[number.Uint64()&31]
-		number.Rsh(number, 5)
+		id[i] = idAlphabet[low&31]
+		low = low>>5 | high<<59
+		high >>= 5
 	}
 	return string(id[:])
+}
+
+// ParseID reads the 128 bits of a ULID, for a reader that keeps many IDs and wants 16 bytes each.
+// It says false for text that is not a ULID.
+func ParseID(id string) ([16]byte, bool) {
+	var raw [16]byte
+	if !idShape.MatchString(id) {
+		return raw, false
+	}
+	var high, low uint64
+	for i := 0; i < len(id); i++ {
+		high = high<<5 | low>>59
+		low = low<<5 | uint64(strings.IndexByte(idAlphabet, id[i]))
+	}
+	binary.BigEndian.PutUint64(raw[:8], high)
+	binary.BigEndian.PutUint64(raw[8:], low)
+	return raw, true
 }
 
 // Sign returns the record to publish. It refuses an envelope that Validate would refuse and a
