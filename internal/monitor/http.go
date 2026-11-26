@@ -112,6 +112,16 @@ func writeError(w http.ResponseWriter, status int, code string, message string) 
 	json.NewEncoder(w).Encode(map[string]string{"error": message, "code": code})
 }
 
+// writeReadError answers a failed read of messages: 404 for one that does not exist, 503 when the
+// stream could not be read, which a client may try again.
+func writeReadError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrUnknownMessage) {
+		writeError(w, http.StatusNotFound, "unknown_message", err.Error())
+		return
+	}
+	writeError(w, http.StatusServiceUnavailable, "bus_unavailable", err.Error())
+}
+
 func writeJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(value)
@@ -140,7 +150,11 @@ func (monitor *Monitor) serveMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	messages := monitor.Messages(query.Get("channel"), after, int(min(limit, maxMessageLimit)))
+	messages, err := monitor.Messages(r.Context(), query.Get("channel"), after, int(min(limit, maxMessageLimit)))
+	if err != nil {
+		writeReadError(w, err)
+		return
+	}
 	if messages == nil {
 		messages = []Message{}
 	}
@@ -149,9 +163,9 @@ func (monitor *Monitor) serveMessages(w http.ResponseWriter, r *http.Request) {
 
 // serveMessageByID answers ?id=<message id> with the message, as /messages lists it, wherever it is.
 func (monitor *Monitor) serveMessageByID(w http.ResponseWriter, r *http.Request) {
-	message, err := monitor.MessageByID(r.URL.Query().Get("id"))
+	message, err := monitor.MessageByID(r.Context(), r.URL.Query().Get("id"))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "unknown_message", err.Error())
+		writeReadError(w, err)
 		return
 	}
 	writeJSON(w, message)
@@ -166,9 +180,9 @@ func (monitor *Monitor) serveRawMessage(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "bad_request", "sequence: "+err.Error())
 		return
 	}
-	message, stored, err := monitor.RawMessage(query.Get("channel"), sequence)
+	message, stored, err := monitor.RawMessage(r.Context(), query.Get("channel"), sequence)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "unknown_message", err.Error())
+		writeReadError(w, err)
 		return
 	}
 	answer := struct {
@@ -198,9 +212,13 @@ func (monitor *Monitor) serveSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	result, err := monitor.Search(query, int(max(1, min(limit, maxSearchLimit))), params.Get("cursor"))
-	if err != nil {
+	result, err := monitor.Search(r.Context(), query, int(max(1, min(limit, maxSearchLimit))), params.Get("cursor"))
+	if errors.Is(err, ErrBadCursor) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if err != nil {
+		writeReadError(w, err)
 		return
 	}
 	writeJSON(w, result)

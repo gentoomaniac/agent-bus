@@ -163,13 +163,14 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | 403    | `forbidden_host`         | the `Host` header is not one the monitor accepts           |
 | 403    | `read_only`              | `send` or a channel change, but the monitor has no identity (`note` in `status` says why) |
 | 404    | `unknown_channel`        | `members` of a channel that is not listed                  |
-| 404    | `unknown_message`        | `messages/by-id` of an ID, or `messages/raw` of a channel or sequence, the monitor does not hold |
+| 404    | `unknown_message`        | `messages/by-id` of an ID, or `messages/raw` of a channel or sequence, the monitor does not hold, or whose message the stream no longer has |
 | 404    | `not_found`              | no such endpoint (this includes a wrong method)            |
 | 409    | `no_password_set`        | `login` on a monitor without a password                    |
 | 409    | `refused`                | busd refused a channel change; the message is busd's reason |
 | 415    | `unsupported_media_type` | `login`, `send`, a channel change or a `prefs` change without `Content-Type: application/json` |
 | 429    | `too_many_attempts`      | see wrong passwords above                                  |
 | 502    | `bus_unavailable`        | the bus did not answer                                     |
+| 503    | `bus_unavailable`        | `messages`, `messages/by-id`, `messages/raw` or `search` needed a message body from the stream and could not read it; try again |
 | 500    | `internal`               | the monitor cannot do it (for example, the response cannot stream, or a prefs change could not be saved) |
 
 ## Endpoints
@@ -211,7 +212,8 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 ### Messages
 
 Channel IDs are `general`, `group:<name>` and `dm:<agent>:<agent>` (the two agents sorted). To page
-through a channel, pass the `sequence` of the last message as `after`.
+through a channel, pass the `sequence` of the last message as `after`. A message the stream no
+longer has (retention) is left out of a page.
 
 A message has `sequence`, `channel`, `status` (`verified`, `unknown_sender`, `rejected`), `reason`
 for the last two, and the envelope's `id`, `from`, `to`, `type`, `targets`, `thread`, `reply_to`,
@@ -285,7 +287,7 @@ the owner, a limit, a channel that exists) is a `409` `refused` with busd's reas
 
 ## Search
 
-`GET /api/v1/search` scans the messages the monitor holds in memory (all channels) and answers
+`GET /api/v1/search` scans the monitor's index of all channels, reads the bodies it needs from the stream and answers
 
 ```json
 {"results": [{"channel": "group:ops", "sequence": 42, "id": "01JD3K8Z4W6Q2R9T5V7X1B0NMA",

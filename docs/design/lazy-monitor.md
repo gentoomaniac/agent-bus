@@ -312,14 +312,20 @@ a release is a rebuild, not a migration.
 
 Each step is one commit with its tests and docs, and passes `make check` on its own.
 
-1. **Split `Message` from the index row.** Introduce the row type and the interning tables, build
-   them next to today's `messages` map (not used yet), with a test that both give the same channel
-   lists.
-2. **Read a body from the stream by sequence.** A `bus.Transport` method `Message(ctx, seq)` and
-   its grants; an integration test against the pinned server. Also the concurrent page read.
-3. **Serve from the index and the cache.** `Messages`, `RawMessage`, `Channels` (counts, last
-   sequence) and the by-id lookup read the index; bodies come through the LRU cache; drop
-   `Message.raw` and the per-channel `Message` slices. Memory test: heap per message.
+1. **Split `Message` from the index row.** *Built.* The row type, the interning tables and the
+   by-id lookup (`GET /messages/by-id` and its `Monitor.byID` came after this note was written, so
+   the index row took it over). The row has no `reply_to` yet: nothing reads it until the thread
+   view moves to the server, and the previews fetch parents by `id`. The reason a message was not
+   verified is kept in a small map by sequence, to move into the SQLite table in step 7.
+2. **Read a body from the stream by sequence.** *Built.* `bus.Transport.Message(ctx, seq)`, the
+   `STREAM.MSG.GET.BUS` grant, an integration test against the pinned server. The concurrent page
+   read lives with the cache in step 3, since it is the monitor's logic.
+3. **Serve from the index and the cache.** *Built.* `Messages`, `MessageByID`, `RawMessage`,
+   `Channels` (counts, last sequence) and search read the index; bodies come through the LRU
+   cache (`--cache-size`) and, on a miss, up to 32 concurrent gets; `Message.raw` and the
+   per-channel `Message` slices are gone. Search still scans: it filters on the index and reads the
+   bodies of the candidates newest first, which is slow on a big history until step 8. Memory test:
+   heap per message.
 4. **`before` on `/messages`**, in `docs/api.md` and `docs/openapi.yaml`.
 5. **Follow retention.** The `FirstSeq` tick, the `404` rule, the count check; integration test with
    a short `MaxAge` or `MaxBytes` stream (`internal/itest/retention_test.go` has the setup).

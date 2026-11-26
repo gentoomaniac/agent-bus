@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"cmp"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -12,8 +13,10 @@ import (
 	"unicode"
 )
 
-// Search scans the messages the monitor keeps in memory. A SQLite FTS index can replace the scan
-// later without changing the endpoint (docs/monitor.md).
+// Search scans the index for the messages that fit the filters and reads their bodies, newest
+// first, until a page of them also holds the words. That reads many bodies from the stream on a
+// big history and is slow there; a SQLite FTS index replaces the scan without changing the
+// endpoint (docs/design/lazy-monitor.md).
 
 const (
 	defaultSearchLimit = 50
@@ -179,30 +182,69 @@ type SearchResult struct {
 // ErrBadCursor is returned for a cursor this monitor did not hand out.
 var ErrBadCursor = errors.New("bad cursor")
 
+// searchBatch is how many candidates Search reads the bodies of at once.
+const searchBatch = 100
+
+// place is where a message stands in the newest-first order of a search.
+type place struct {
+	time     int64 // Unix nanoseconds
+	channel  string
+	sequence uint64
+}
+
+func placeOf(message Message) place {
+	return place{message.Time.UnixNano(), message.Channel, message.Sequence}
+}
+
 // Search returns up to limit messages matching the query, newest first, after the cursor.
-func (monitor *Monitor) Search(query Query, limit int, cursor string) (SearchResult, error) {
+func (monitor *Monitor) Search(ctx context.Context, query Query, limit int, cursor string) (SearchResult, error) {
 	after, err := parseCursor(cursor)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	var matched []Message
+	type candidate struct {
+		channel string
+		entry   row
+	}
+	var candidates []candidate
 	monitor.mu.Lock()
-	for _, list := range monitor.messages {
-		for _, message := range list {
-			if query.matches(message) && (cursor == "" || newerFirst(message, after) > 0) {
-				matched = append(matched, message)
+	for channel, rows := range monitor.index.channels {
+		for _, entry := range rows {
+			meta := monitor.index.describe(channel, entry)
+			if query.matchesFilters(meta) && (cursor == "" || newerFirst(placeOf(meta), after) > 0) {
+				candidates = append(candidates, candidate{channel, entry})
 			}
 		}
 	}
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		return newerFirst(place{a.entry.time, a.channel, a.entry.sequence}, place{b.entry.time, b.channel, b.entry.sequence})
+	})
 	monitor.mu.Unlock()
-	slices.SortFunc(matched, newerFirst)
 
 	result := SearchResult{Hits: []SearchHit{}}
-	if len(matched) > limit {
-		matched = matched[:limit]
-		result.NextCursor = cursorAfter(matched[limit-1])
+	var hits []Message
+	for start := 0; start < len(candidates) && len(hits) <= limit; start += searchBatch {
+		monitor.mu.Lock()
+		var described []Message
+		for _, c := range candidates[start:min(len(candidates), start+searchBatch)] {
+			described = append(described, monitor.index.describe(c.channel, c.entry))
+		}
+		monitor.mu.Unlock()
+		messages, err := monitor.withBodies(ctx, described)
+		if err != nil {
+			return SearchResult{}, err
+		}
+		for _, message := range messages {
+			if query.matchesWords(message) {
+				hits = append(hits, message)
+			}
+		}
 	}
-	for _, message := range matched {
+	if len(hits) > limit {
+		hits = hits[:limit]
+		result.NextCursor = cursorAfter(hits[limit-1])
+	}
+	for _, message := range hits {
 		result.Hits = append(result.Hits, SearchHit{
 			Channel: message.Channel, Sequence: message.Sequence, ID: message.ID, From: message.From, To: message.To,
 			Type: message.Type, Targets: message.Targets, Time: message.Time, Title: message.Title, Snippet: query.snippet(message),
@@ -211,10 +253,10 @@ func (monitor *Monitor) Search(query Query, limit int, cursor string) (SearchRes
 	return result, nil
 }
 
-// newerFirst orders messages newest first; it is negative when a comes before b. The time decides,
-// then the channel and sequence make the order total (sequences count per channel).
-func newerFirst(a, b Message) int {
-	return cmp.Or(b.Time.Compare(a.Time), cmp.Compare(a.Channel, b.Channel), cmp.Compare(b.Sequence, a.Sequence))
+// newerFirst orders places newest first; it is negative when a comes before b. The time decides,
+// then the channel and sequence make the order total.
+func newerFirst(a, b place) int {
+	return cmp.Or(cmp.Compare(b.time, a.time), cmp.Compare(a.channel, b.channel), cmp.Compare(b.sequence, a.sequence))
 }
 
 // The cursor is the last message of a page; the next page starts after it in the order.
@@ -223,25 +265,31 @@ func cursorAfter(last Message) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(text))
 }
 
-func parseCursor(cursor string) (Message, error) {
+func parseCursor(cursor string) (place, error) {
 	if cursor == "" {
-		return Message{}, nil
+		return place{}, nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return Message{}, ErrBadCursor
+		return place{}, ErrBadCursor
 	}
 	nanos, rest, _ := strings.Cut(string(raw), "|")
 	sequence, channel, _ := strings.Cut(rest, "|")
 	unixNano, nanosErr := strconv.ParseInt(nanos, 10, 64)
 	number, sequenceErr := strconv.ParseUint(sequence, 10, 64)
 	if err := errors.Join(nanosErr, sequenceErr); err != nil || channel == "" {
-		return Message{}, ErrBadCursor
+		return place{}, ErrBadCursor
 	}
-	return Message{Time: time.Unix(0, unixNano).UTC(), Sequence: number, Channel: channel}, nil
+	return place{unixNano, channel, number}, nil
 }
 
+// matches says whether the message satisfies the whole query.
 func (query Query) matches(message Message) bool {
+	return query.matchesFilters(message) && query.matchesWords(message)
+}
+
+// matchesFilters checks what the index knows of a message: its sender, recipient, type, targets and time.
+func (query Query) matchesFilters(message Message) bool {
 	if message.From == "" { // not a valid envelope: nothing to search
 		return false
 	}
@@ -265,6 +313,11 @@ func (query Query) matches(message Message) bool {
 			return false
 		}
 	}
+	return true
+}
+
+// matchesWords checks that every word and phrase of the query is in the title or text.
+func (query Query) matchesWords(message Message) bool {
 	title, text := lowerRunes(message.Title), lowerRunes(message.Text)
 	for _, term := range query.terms {
 		if len(findTerm(title, term)) == 0 && len(findTerm(text, term)) == 0 {

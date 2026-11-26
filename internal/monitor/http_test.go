@@ -322,7 +322,7 @@ func TestMessageByIDFindsItInAnyChannel(t *testing.T) {
 	defer server.Close()
 
 	for _, channel := range []string{"general", "dm:api-client@alice:lib-x@bob"} {
-		stored := monitor.Messages(channel, 0, 10)[0]
+		stored := messagesOf(t, monitor, channel, 0, 10)[0]
 		var got Message
 		getJSON(t, server, "/api/v1/messages/by-id?id="+stored.ID, &got)
 		if got.ID != stored.ID || got.Channel != channel || got.Sequence != stored.Sequence || got.Text != stored.Text {

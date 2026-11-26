@@ -185,12 +185,22 @@ func runMonitor(t *testing.T, fake *fakeBus) *Monitor {
 	return monitor
 }
 
+// messagesOf is Monitor.Messages for a test.
+func messagesOf(t *testing.T, monitor *Monitor, channel string, after uint64, limit int) []Message {
+	t.Helper()
+	messages, err := monitor.Messages(context.Background(), channel, after, limit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return messages
+}
+
 // waitForMessages waits until the channel holds n messages.
 func waitForMessages(t *testing.T, monitor *Monitor, channel string, n int) []Message {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		messages := monitor.Messages(channel, 0, 100)
+		messages := messagesOf(t, monitor, channel, 0, 100)
 		if len(messages) >= n {
 			return messages
 		}
@@ -306,11 +316,11 @@ func TestMessagesArePagedBySequence(t *testing.T) {
 	monitor := runMonitor(t, fake)
 	waitForMessages(t, monitor, "general", 5)
 
-	page := monitor.Messages("general", 20, 2)
+	page := messagesOf(t, monitor, "general", 20, 2)
 	if len(page) != 2 || page[0].Sequence != 30 || page[1].Sequence != 40 {
 		t.Errorf("page after 20 = %+v, want sequences 30 and 40", page)
 	}
-	if rest := monitor.Messages("general", 50, 2); len(rest) != 0 {
+	if rest := messagesOf(t, monitor, "general", 50, 2); len(rest) != 0 {
 		t.Errorf("page after the last = %+v, want none", rest)
 	}
 }

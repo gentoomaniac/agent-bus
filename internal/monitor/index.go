@@ -40,6 +40,7 @@ type index struct {
 	names    names
 	channels map[string][]row // by channel ID, ordered by sequence
 	byID     map[[16]byte]position
+	reasons  map[uint64]string // why a message is not verified, by sequence; few messages have one
 }
 
 // position finds a row by its channel and sequence, which do not change when later messages are
@@ -50,7 +51,7 @@ type position struct {
 }
 
 func newIndex() *index {
-	return &index{names: newNames(), channels: map[string][]row{}, byID: map[[16]byte]position{}}
+	return &index{names: newNames(), channels: map[string][]row{}, byID: map[[16]byte]position{}, reasons: map[uint64]string{}}
 }
 
 // add inserts the message in its channel's order. It says false for one that is there already.
@@ -75,6 +76,9 @@ func (index *index) add(message Message) bool {
 	if id, ok := envelope.ParseID(message.ID); ok {
 		entry.id = id
 		index.byID[id] = position{message.Channel, message.Sequence}
+	}
+	if message.Reason != "" {
+		index.reasons[message.Sequence] = message.Reason
 	}
 	index.channels[message.Channel] = slices.Insert(rows, at, entry)
 	return true
@@ -104,11 +108,19 @@ func (index *index) lookup(id string) (position, bool) {
 	return at, known
 }
 
-// describe returns the message as far as the index knows it: everything but the body, the
-// reason a message was rejected and the ID it replies to.
+// describeAll returns the messages as far as the index knows them: everything but the body and
+// the ID each replies to.
+func (index *index) describeAll(channel string, rows []row) []Message {
+	messages := make([]Message, len(rows))
+	for i, entry := range rows {
+		messages[i] = index.describe(channel, entry)
+	}
+	return messages
+}
+
 func (index *index) describe(channel string, entry row) Message {
 	message := Message{
-		Sequence: entry.sequence, Channel: channel, Status: verifications[entry.status],
+		Sequence: entry.sequence, Channel: channel, Status: verifications[entry.status], Reason: index.reasons[entry.sequence],
 		From: index.names.str(entry.from), To: index.names.str(entry.to), Type: index.names.str(entry.kind),
 		Thread: index.names.str(entry.thread), Targets: index.names.list(entry.targetsAt, entry.targetsN),
 	}

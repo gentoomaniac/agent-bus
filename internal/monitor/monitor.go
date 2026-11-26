@@ -1,6 +1,8 @@
 // Package monitor is the backend of the bus monitor (docs/design/monitor-and-api.md): it reads every channel with
-// the admin's credentials, verifies each message and keeps what it saw in memory for the web
-// interface. It reads history only; it never touches an agent's read cursor.
+// the admin's credentials, verifies each message and keeps an index of what it saw in memory for
+// the web interface, with a cache of recent message bodies; older bodies are read from the stream
+// when a client asks (docs/design/lazy-monitor.md). It reads history only; it never touches an
+// agent's read cursor.
 package monitor
 
 import (
@@ -59,10 +61,6 @@ type Message struct {
 	Title    string       `json:"title,omitempty"`
 	Text     string       `json:"text,omitempty"`
 	Refs     []string     `json:"refs,omitempty"`
-
-	// raw is the record as stored, for RawMessage. It doubles what the monitor holds per message in
-	// memory (the parsed fields and the signed record), the price of serving it without a stream read.
-	raw []byte
 }
 
 // Channel is a conversation of the bus as the monitor lists it. A DM channel is the conversation of
@@ -109,6 +107,8 @@ type Config struct {
 	// against.
 	DirectoryHeads func(handler func(head []byte)) (stop func(), err error)
 	CACert         []byte
+	// CacheBytes bounds the cache of message bodies; zero means DefaultCacheBytes.
+	CacheBytes int64
 }
 
 // Monitor follows every channel and answers the web interface's questions.
@@ -119,10 +119,9 @@ type Monitor struct {
 
 	mu         sync.Mutex
 	groups     []bus.TopicRecord
-	messages   map[string][]Message // by channel ID, ordered by sequence
-	byID       map[string]position  // where each message with an ID is in messages
-	index      *index               // the same messages without their bodies; not read yet
-	followed   map[string]bool      // sources that have a reader, by channel name
+	index      *index          // every message without its body
+	bodies     *bodyCache      // the bodies read recently
+	followed   map[string]bool // sources that have a reader, by channel name
 	followers  sync.WaitGroup
 	messageHub hub[Message]
 
@@ -157,9 +156,8 @@ func New(config Config) *Monitor {
 		config:        config,
 		registry:      &registry{admin: config.Admin},
 		trust:         trust.Unpinned(),
-		messages:      map[string][]Message{},
-		byID:          map[string]position{},
 		index:         newIndex(),
+		bodies:        newBodyCache(cmp.Or(config.CacheBytes, DefaultCacheBytes)),
 		followed:      map[string]bool{},
 		records:       map[string]presence.Record{},
 		shownState:    map[string]string{},
@@ -304,7 +302,7 @@ func sleep(ctx context.Context, duration time.Duration) {
 // interpret verifies a record as the adapter of the reader of the source would (docs/design/identity-and-trust.md), except for
 // timestamps and duplicates, and trusting the registry alone.
 func (monitor *Monitor) interpret(ctx context.Context, source bus.Channel, record bus.Record) Message {
-	message := Message{Sequence: record.Sequence, Channel: channelID(source, unknownAgent), Status: Rejected, raw: record.Payload}
+	message := Message{Sequence: record.Sequence, Channel: channelID(source, unknownAgent), Status: Rejected}
 	signed, err := envelope.Parse(record.Payload)
 	if err != nil {
 		message.Reason = err.Error()
@@ -353,25 +351,15 @@ func channelID(source bus.Channel, sender string) string {
 	}
 }
 
-// add stores a message in its channel's order and tells the subscribers.
+// add indexes a message, keeps its body in the cache and tells the subscribers.
 func (monitor *Monitor) add(message Message) {
 	monitor.mu.Lock()
 	defer monitor.mu.Unlock()
-	list := monitor.messages[message.Channel]
-	index, found := slices.BinarySearchFunc(list, message.Sequence, compareSequence)
-	if found {
+	if !monitor.index.add(message) {
 		return
 	}
-	monitor.messages[message.Channel] = slices.Insert(list, index, message)
-	monitor.index.add(message)
-	if message.ID != "" {
-		monitor.byID[message.ID] = position{message.Channel, message.Sequence}
-	}
+	monitor.bodies.put(message)
 	monitor.messageHub.publish(message)
-}
-
-func compareSequence(stored Message, sequence uint64) int {
-	return cmp.Compare(stored.Sequence, sequence)
 }
 
 // Subscribe returns the messages added from now on. The channel is closed when the subscriber
@@ -385,10 +373,10 @@ func (monitor *Monitor) Channels() []Channel {
 	monitor.mu.Lock()
 	defer monitor.mu.Unlock()
 	describe := func(channel Channel) Channel {
-		list := monitor.messages[channel.ID]
-		channel.Messages = len(list)
-		if len(list) > 0 {
-			channel.LastSequence = list[len(list)-1].Sequence
+		rows := monitor.index.channels[channel.ID]
+		channel.Messages = len(rows)
+		if len(rows) > 0 {
+			channel.LastSequence = rows[len(rows)-1].sequence
 		}
 		return channel
 	}
@@ -397,7 +385,7 @@ func (monitor *Monitor) Channels() []Channel {
 	for _, group := range groups {
 		channels = append(channels, describe(Channel{ID: "group:" + group.Name, Kind: "group", Name: group.Name, Description: group.Description, Owner: group.Owner}))
 	}
-	for _, id := range slices.Sorted(maps.Keys(monitor.messages)) {
+	for _, id := range slices.Sorted(maps.Keys(monitor.index.channels)) {
 		if agents, isDM := dmAgents(id); isDM {
 			channels = append(channels, describe(Channel{ID: id, Kind: "dm", Name: strings.Join(agents, " + "), Agents: agents}))
 		}
@@ -478,46 +466,118 @@ func (monitor *Monitor) hasGroup(name string) bool {
 	return slices.ContainsFunc(monitor.groups, func(group bus.TopicRecord) bool { return group.Name == name })
 }
 
-// Messages returns up to limit messages of the channel after the given sequence, oldest first.
-func (monitor *Monitor) Messages(id string, after uint64, limit int) []Message {
+// Messages returns up to limit messages of the channel after the given sequence, oldest first. The
+// bodies come from the cache or the stream; a message the stream no longer has is left out.
+func (monitor *Monitor) Messages(ctx context.Context, id string, after uint64, limit int) ([]Message, error) {
 	monitor.mu.Lock()
-	defer monitor.mu.Unlock()
-	list := monitor.messages[id]
-	start, found := slices.BinarySearchFunc(list, after, compareSequence)
+	rows := monitor.index.channels[id]
+	start, found := slices.BinarySearchFunc(rows, after, compareRowSequence)
 	if found {
 		start++
 	}
-	return slices.Clone(list[start:min(len(list), start+limit)])
+	described := monitor.index.describeAll(id, rows[start:min(len(rows), start+limit)])
+	monitor.mu.Unlock()
+	return monitor.withBodies(ctx, described)
 }
 
 // MessageByID returns the message with the envelope ID, whatever channel it is in.
-func (monitor *Monitor) MessageByID(id string) (Message, error) {
+func (monitor *Monitor) MessageByID(ctx context.Context, id string) (Message, error) {
 	monitor.mu.Lock()
-	defer monitor.mu.Unlock()
-	at, known := monitor.byID[id]
+	at, known := monitor.index.lookup(id)
+	var described []Message
+	if known {
+		entry, _ := monitor.index.find(at.channel, at.sequence)
+		described = monitor.index.describeAll(at.channel, []row{entry})
+	}
+	monitor.mu.Unlock()
 	if !known {
 		return Message{}, ErrUnknownMessage
 	}
-	list := monitor.messages[at.channel]
-	index, _ := slices.BinarySearchFunc(list, at.sequence, compareSequence)
-	return list[index], nil
+	messages, err := monitor.withBodies(ctx, described)
+	if err != nil {
+		return Message{}, err
+	}
+	if len(messages) == 0 {
+		return Message{}, ErrUnknownMessage
+	}
+	return messages[0], nil
 }
 
 // ErrUnknownMessage is returned for a channel and sequence that name no stored message.
 var ErrUnknownMessage = errors.New("unknown message")
 
-// RawMessage returns the message as Messages shows it, and the record as stored. The monitor keeps
-// the stored bytes with each message, as a DM channel merges two streams and has no single source
-// to read a sequence from.
-func (monitor *Monitor) RawMessage(id string, sequence uint64) (Message, []byte, error) {
+// RawMessage returns the message as Messages shows it, and the record as stored, read from the
+// stream: a DM channel merges two subjects, but the sequence names one record of the log.
+func (monitor *Monitor) RawMessage(ctx context.Context, id string, sequence uint64) (Message, []byte, error) {
 	monitor.mu.Lock()
-	defer monitor.mu.Unlock()
-	list := monitor.messages[id]
-	index, found := slices.BinarySearchFunc(list, sequence, compareSequence)
+	entry, found := monitor.index.find(id, sequence)
+	var described []Message
+	if found {
+		described = monitor.index.describeAll(id, []row{entry})
+	}
+	monitor.mu.Unlock()
 	if !found {
 		return Message{}, nil, ErrUnknownMessage
 	}
-	return list[index], list[index].raw, nil
+	record, err := monitor.config.History.Message(ctx, sequence)
+	if errors.Is(err, bus.ErrMessageGone) {
+		return Message{}, nil, ErrUnknownMessage
+	}
+	if err != nil {
+		return Message{}, nil, err
+	}
+	return withBody(described[0], record.Payload), record.Payload, nil
+}
+
+// maxConcurrentReads bounds the stream reads one request makes at once.
+const maxConcurrentReads = 32
+
+// withBodies returns the described messages with their bodies, from the cache or read from the
+// stream, many at a time and in the same order. A message the stream no longer has is left out;
+// any other failed read fails the whole call, so a page is never silently short.
+func (monitor *Monitor) withBodies(ctx context.Context, described []Message) ([]Message, error) {
+	full := make([]Message, len(described))
+	errs := make([]error, len(described))
+	limiter := make(chan struct{}, maxConcurrentReads)
+	var reads sync.WaitGroup
+	for i, meta := range described {
+		reads.Go(func() {
+			limiter <- struct{}{}
+			defer func() { <-limiter }()
+			full[i], errs[i] = monitor.bodies.get(ctx, meta.Sequence, func(ctx context.Context) (Message, error) {
+				record, err := monitor.config.History.Message(ctx, meta.Sequence)
+				if err != nil {
+					return Message{}, err
+				}
+				return withBody(meta, record.Payload), nil
+			})
+		})
+	}
+	reads.Wait()
+
+	messages := full[:0]
+	for i, message := range full {
+		switch {
+		case errors.Is(errs[i], bus.ErrMessageGone):
+		case errs[i] != nil:
+			return nil, errs[i]
+		default:
+			messages = append(messages, message)
+		}
+	}
+	return messages, nil
+}
+
+// withBody adds the body of the record to the message the index described. A record that is no
+// envelope has none; the index has its reason.
+func withBody(message Message, payload []byte) Message {
+	signed, err := envelope.Parse(payload)
+	if err != nil {
+		return message
+	}
+	body := signed.Envelope
+	message.Title, message.Text, message.Refs, message.ReplyTo = body.Body.Title, body.Body.Text, body.Body.Refs, body.ReplyTo
+	return message
 }
 
 // registry is the registry of agents, read through the admin and cached. It is the trust.Directory

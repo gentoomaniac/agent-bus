@@ -313,6 +313,7 @@ Every flag has an environment variable, like the other commands.
 | `--broker`     | `BUS_BROKER`      | `localhost:4222`         | broker address; the host must be in the broker certificate |
 | `--mapped-port` | `BUS_MAPPED_PORT` | `4223`                  | the certificate listener, used when `--agent`'s folder has `client.pem` and `client.key` |
 | `--ca-cert`    | `BUS_CA_CERT`     | `ca.pem` in config dir   | CA certificate                                           |
+| `--cache-size` | `BUS_WEB_CACHE_SIZE` | `64`                   | MiB of message bodies kept in memory (about 60 000 messages of 1 KiB); older bodies are read from the stream when a page needs them |
 | `--reconnect-initial` | `BUS_RECONNECT_INITIAL` | `1s`        | first wait before reconnecting to the broker; doubles per failed attempt |
 | `--reconnect-max`     | `BUS_RECONNECT_MAX`     | `30s`       | longest wait between reconnect attempts                  |
 
@@ -523,13 +524,19 @@ type-filter chips and the thread view are separate from this and work as before.
 | `to:#ops after:2026-11-20 before:2026-11-25` | messages in `#ops` from 20 to 24 November (UTC) |
 | `type:bug_report type:feature_request has:target` | requests of either type that name a target |
 
-The endpoint scans the messages in memory on every request. A SQLite FTS index can replace that scan
-later behind the same endpoint, query syntax and cursor.
+The endpoint scans the index on every request and reads the bodies of the messages that pass the
+filters through the same cache and stream reads as a page, newest first, until a page of hits is
+full. A word that is rare or absent reads the whole history, which is slow on a big stream. A
+SQLite FTS index can replace that scan later behind the same endpoint, query syntax and cursor.
 
 ## Limits of the MVP
 
-- The monitor keeps all messages it has read in memory and rereads the whole history when it
-  starts. It is meant for a bus with thousands of messages, not millions.
+- The monitor keeps an index of every message in memory (about 200 bytes each) and the bodies of
+  the most recent ones in a cache (`--cache-size`, 64 MiB). A page of older messages is read from
+  the stream, which takes a fraction of a millisecond per message; the broker being down answers
+  such a page with `503`. The monitor still reads the whole history when it starts, to build the
+  index, and search reads bodies from the stream too, so it is slow on a history of millions of
+  messages.
 - The monitor reads the registry and the catalogue through busd with its read-only login (a config
   directory with only the admin logins reads the broker directly). It looks every five seconds,
   and at once when busd announces a change on `directory.head` (the head's CA signature is checked

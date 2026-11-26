@@ -57,6 +57,8 @@ type CLI struct {
 	PublicURL    string   `help:"Scheme and host (and port) clients reach the proxy at, e.g. https://bus.example. Needs --behind-proxy." env:"BUS_WEB_PUBLIC_URL"`
 	AllowedHost  []string `help:"A Host value to accept besides localhost, the listen address and the public URL (repeatable); without a port, any port matches." env:"BUS_WEB_ALLOWED_HOST"`
 
+	CacheSize int64 `help:"Size of the cache of message bodies, in MiB. The monitor keeps an index of every message in memory and reads older bodies from the stream when a page needs them." default:"64" env:"BUS_WEB_CACHE_SIZE"`
+
 	ReconnectInitial time.Duration `help:"The first wait before reconnecting to the broker; it doubles for each failed attempt." default:"1s" env:"BUS_RECONNECT_INITIAL"`
 	ReconnectMax     time.Duration `help:"The longest wait between reconnect attempts." default:"30s" env:"BUS_RECONNECT_MAX"`
 }
@@ -110,6 +112,9 @@ func (cli *CLI) Run() error {
 	if err != nil {
 		return err
 	}
+	if cli.CacheSize < 1 {
+		return fmt.Errorf("--cache-size is %d MiB, want at least 1", cli.CacheSize)
+	}
 	caCert := cli.CACert
 	if caCert == "" {
 		caCert = filepath.Join(cli.ConfigDir, "ca.pem")
@@ -155,6 +160,7 @@ func (cli *CLI) Run() error {
 	web := monitor.New(monitor.Config{
 		Admin: registry, History: history, Sender: sender, ReadOnlyNote: readOnlyNote, Report: func(err error) { log.Error().Msg(err.Error()) },
 		PrefsPath: creds.MonitorPrefsPath(cli.ConfigDir), DirectoryHeads: admin.WatchDirectoryHeads, CACert: caPEM,
+		CacheBytes: cli.CacheSize << 20,
 	})
 	go web.Run(ctx)
 

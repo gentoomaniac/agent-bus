@@ -1,8 +1,10 @@
 package monitor
 
 import (
+	"cmp"
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"testing"
 	"time"
 
@@ -30,23 +32,28 @@ func sampleMessages() []Message {
 	return messages
 }
 
-func TestIndexListsTheSameMessagesAsTheMessageMap(t *testing.T) {
-	monitor := New(Config{})
+func TestIndexDescribesTheMessagesItWasGiven(t *testing.T) {
+	index := newIndex()
+	given := map[string][]Message{}
 	for _, message := range sampleMessages() {
-		monitor.add(message)
-		monitor.add(message) // a repeat changes nothing
+		index.add(message)
+		if index.add(message) {
+			t.Fatalf("#%d was added twice", message.Sequence)
+		}
+		given[message.Channel] = append(given[message.Channel], message)
 	}
 
-	for channel, messages := range monitor.messages {
-		rows := monitor.index.channels[channel]
-		if len(rows) != len(messages) {
-			t.Fatalf("%s: %d rows for %d messages", channel, len(rows), len(messages))
+	for channel, messages := range given {
+		slices.SortFunc(messages, func(a, b Message) int { return cmp.Compare(a.Sequence, b.Sequence) })
+		described := index.describeAll(channel, index.channels[channel])
+		if len(described) != len(messages) {
+			t.Fatalf("%s: %d rows for %d messages", channel, len(described), len(messages))
 		}
 		for i, message := range messages {
-			// The index keeps no body, no reason and no reply.
+			// The index keeps no body and no reply.
 			want := message
-			want.Title, want.Text, want.Refs, want.Reason, want.ReplyTo, want.raw = "", "", nil, "", nil, nil
-			got := monitor.index.describe(channel, rows[i])
+			want.Title, want.Text, want.Refs, want.ReplyTo = "", "", nil, nil
+			got := described[i]
 			if !got.Time.Equal(want.Time) {
 				t.Errorf("%s #%d: time %v, want %v", channel, message.Sequence, got.Time, want.Time)
 			}
@@ -54,15 +61,12 @@ func TestIndexListsTheSameMessagesAsTheMessageMap(t *testing.T) {
 			if fmt.Sprint(got) != fmt.Sprint(want) {
 				t.Errorf("%s #%d: described as %+v, want %+v", channel, message.Sequence, got, want)
 			}
-		}
-	}
-	if len(monitor.index.byID) != len(monitor.byID) {
-		t.Errorf("%d IDs in the index, %d in the map", len(monitor.index.byID), len(monitor.byID))
-	}
-	for id, want := range monitor.byID {
-		got, known := monitor.index.lookup(id)
-		if !known || got != want {
-			t.Errorf("ID %s is at %+v (%v), want %+v", id, got, known, want)
+			if message.ID == "" {
+				continue
+			}
+			if at, known := index.lookup(message.ID); !known || at != (position{channel, message.Sequence}) {
+				t.Errorf("ID %s is at %+v (%v), want %s #%d", message.ID, at, known, channel, message.Sequence)
+			}
 		}
 	}
 }

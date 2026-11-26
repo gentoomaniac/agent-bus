@@ -72,9 +72,9 @@ func TestFollowResumesAfterTheLastStoredSequence(t *testing.T) {
 			}
 		}
 	}
-	waitFor("the first record", func() bool { return len(monitor.Messages("general", 0, 10)) == 1 })
+	waitFor("the first record", func() bool { return len(messagesOf(t, monitor, "general", 0, 10)) == 1 })
 	fake.store(general, 9, []byte("another"))
-	waitFor("the second record", func() bool { return len(monitor.Messages("general", 0, 10)) == 2 })
+	waitFor("the second record", func() bool { return len(messagesOf(t, monitor, "general", 0, 10)) == 2 })
 	cancel()
 	<-done
 

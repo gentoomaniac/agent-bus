@@ -141,7 +141,7 @@ func searchServer(t *testing.T, count int) (*Monitor, string) {
 		if i%2 == 1 {
 			text += " about cake"
 		}
-		monitor.add(Message{Sequence: uint64(i), Channel: "general", From: "alice@home", To: "general", Type: "message", Text: text, Time: start.Add(time.Duration(i) * time.Minute)})
+		monitor.add(Message{Sequence: uint64(i), Channel: "general", Status: Verified, From: "alice@home", To: "general", Type: "message", Text: text, Time: start.Add(time.Duration(i) * time.Minute)})
 	}
 	server := serve(monitor)
 	t.Cleanup(server.Close)
@@ -178,7 +178,7 @@ func TestSearchPagesNewestFirst(t *testing.T) {
 func TestSearchCursorSurvivesNewMessages(t *testing.T) {
 	monitor, base := searchServer(t, 5)
 	_, first := search(t, base, "q=cake&limit=2")
-	monitor.add(Message{Sequence: 6, Channel: "general", From: "alice@home", Text: "fresh cake", Time: time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)})
+	monitor.add(Message{Sequence: 6, Channel: "general", Status: Verified, From: "alice@home", Text: "fresh cake", Time: time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)})
 	_, second := search(t, base, "q=cake&limit=2&cursor="+first.NextCursor)
 	if len(second.Hits) != 1 || second.Hits[0].Sequence != 1 {
 		t.Errorf("a message arriving between pages moved the next page: %+v", second)

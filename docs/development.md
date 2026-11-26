@@ -66,7 +66,7 @@ messages; `make itest` and `make check` end with `ok` lines per package.
 | Identity | an exclusive `flock` on `<agent-dir>/lock` holds the identity, released by the OS when the process ends | [design/identity-and-trust.md](design/identity-and-trust.md) |
 | Trust | `known_agents` pins keys on first use from the registry record; a changed key is refused | [design/identity-and-trust.md](design/identity-and-trust.md) |
 | Directory | agents sync the registry and the channel catalogue from busd; `<config-dir>/directory/` is the older copy path | [design/directory-v2.md](design/directory-v2.md) |
-| Monitor | read-only logins, verification against the registry, messages in memory, sends through an adapter session | [design/monitor-and-api.md](design/monitor-and-api.md) |
+| Monitor | read-only logins, verification against the registry, an index in memory with bodies read from the stream, sends through an adapter session | [design/monitor-and-api.md](design/monitor-and-api.md) |
 | Presence | hooks feed events, a tracker builds the record, a publisher throttles and heartbeats it | [design/delivery.md](design/delivery.md) |
 | Envelope | the signed message and its canonical JSON (RFC 8785 subset: integers up to 2^53, no floats) | [design/protocol.md](design/protocol.md) |
 
