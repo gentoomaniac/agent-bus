@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -140,11 +141,10 @@ func TestAgentsCreateJoinAndManageChannelsThroughBusd(t *testing.T) {
 	})
 }
 
-// A broker set up by an older release lacks the grant for channel requests. busd renders the grants
-// again when it starts, so an upgrade needs no `agent-busctl init`.
-func TestBusdAppliesTheGrantsOfANewReleaseAtStart(t *testing.T) {
-	h := startBus(t)
-	h.run(t, h.agentBusctl, "enroll", "init")
+// stripChannelGrant takes alice's grant for channel requests out of auth.conf, as a broker set up
+// by a release before channels has it.
+func (h *harness) stripChannelGrant(t *testing.T) {
+	t.Helper()
 	grant := `"` + channelapi.Subject(bus.AgentToken(alice)) + `"`
 	if err := h.server.UpdateAuth(context.Background(), func(body string) (string, error) {
 		if !strings.Contains(body, grant) {
@@ -154,12 +154,74 @@ func TestBusdAppliesTheGrantsOfANewReleaseAtStart(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	h.startBusd(t)
-	session := h.channelAgent(t, alice)
-	waitFor(t, "a channel request of alice to be answered", func() bool {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_, err := session.RequestChannel(ctx, channelapi.Request{Action: channelapi.List})
-		return err == nil
+}
+
+func (h *harness) waitForChannelAnswer(t *testing.T, session *adapter.Adapter) {
+	t.Helper()
+	var last error
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("the last channel request failed with: %v", last)
+		}
 	})
+	// An agent that asked before busd served rests 30 seconds before it asks again, as it should.
+	deadline := time.Now().Add(time.Minute)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, last = session.RequestChannel(ctx, channelapi.Request{Action: channelapi.List})
+		cancel()
+		if last == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for a channel request of alice to be answered")
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// busd renders the grants again when it starts, so an upgrade needs no `agent-busctl init`; in
+// the container busd starts before nats-server, so it keeps trying until the broker answers.
+func TestBusdAppliesTheGrantsOfANewReleaseAtStart(t *testing.T) {
+	t.Run("broker first", func(t *testing.T) {
+		h := startBus(t)
+		h.run(t, h.agentBusctl, "enroll", "init")
+		h.stripChannelGrant(t)
+		h.startBusd(t)
+		h.waitForChannelAnswer(t, h.channelAgent(t, alice))
+	})
+	t.Run("busd first", func(t *testing.T) {
+		h := startBus(t)
+		h.run(t, h.agentBusctl, "enroll", "init")
+		h.stripChannelGrant(t)
+		h.run(t, natsScript, "down")
+		h.launchBusd(t)
+		time.Sleep(2 * time.Second)
+		h.run(t, natsScript, "up")
+		h.waitForChannelAnswer(t, h.channelAgent(t, alice))
+	})
+	t.Run("files that hold the grants already are left alone", func(t *testing.T) {
+		h := startBus(t)
+		h.run(t, h.agentBusctl, "enroll", "init")
+		before := h.readAuthFiles(t)
+		h.startBusd(t)
+		h.waitForChannelAnswer(t, h.channelAgent(t, alice))
+		time.Sleep(2 * time.Second)
+		if after := h.readAuthFiles(t); after != before {
+			t.Error("busd rewrote authorization files that were up to date")
+		}
+	})
+}
+
+func (h *harness) readAuthFiles(t *testing.T) string {
+	t.Helper()
+	var all string
+	for _, name := range []string{"auth.conf", "control-auth.conf"} {
+		content, err := os.ReadFile(filepath.Join(h.configDir, "nats", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		all += string(content)
+	}
+	return all
 }

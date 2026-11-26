@@ -127,11 +127,22 @@ func (admin *Admin) Setup(ctx context.Context, retention bus.Retention) error {
 // an older release get the grants of this one, and so do busd and the monitor in CONTROL. busd
 // runs it at every start, which makes an upgrade take effect without `agent-busctl init`; it
 // changes no stream, so the retention stays as init set it.
+// A file that already holds this release's grants is left alone, without a reload.
 func (admin *Admin) RefreshGrants(ctx context.Context) error {
-	if err := admin.updateAuth(ctx, func(*userTable) error { return nil }); err != nil {
+	if err := admin.server.RefreshAuth(ctx, func(body string) (string, error) {
+		table, err := parseUserTable(body)
+		if err != nil {
+			return "", err
+		}
+		groups, err := admin.groupNames(ctx)
+		if err != nil {
+			return "", err
+		}
+		return table.render(groups), nil
+	}); err != nil {
 		return err
 	}
-	return admin.server.UpdateControlAuth(ctx, func(body string) (string, error) {
+	return admin.server.RefreshControlAuth(ctx, func(body string) (string, error) {
 		table, err := parseUserTable(body)
 		if err != nil {
 			return "", err

@@ -67,7 +67,7 @@ alias agent-busctl='podman exec agent-bus agent-busctl'
 | Step | Docker | Podman |
 |---|---|---|
 | 1. New image, restart ([routine upgrade](docker.md#upgrade)) | `$compose pull`, then `$compose up -d agent-bus` | `podman pull $IMG`, then `$AGENT_BUS_HOME/start.sh` |
-| 2. The new grants | busd applies them when it starts | the same |
+| 2. The new grants | busd applies them when it starts | `start.sh`'s `init` does, and busd again |
 | 3. Name the bus owner (before step 1) | `BUS_AGENT` exported as above | `MONITOR_AGENT` for `start.sh` (it passes `-e BUSD_BUS_OWNER`), or that `-e` on the broker's `podman run` |
 | 4. The monitor | `$compose up -d` | `$AGENT_BUS_HOME/monitor.sh` |
 
@@ -78,8 +78,9 @@ answers channel requests with a permission error. The broker's log shows it:
 busd: agent and service grants are up to date
 ```
 
-If it says `the grants of this release could not be applied` instead, run
-`agent-busctl --direct init` with your `--max-age` and `--max-bytes` ([agent-busctl](agent-busctl.md#init)).
+busd keeps trying until the broker answers. If after five minutes it says `the grants of this
+release are still not applied` instead, run `agent-busctl --direct init` with your `--max-age` and
+`--max-bytes` ([agent-busctl](agent-busctl.md#init)).
 
 **Step 3** names the monitor's identity as the bus owner, a busd setting:
 

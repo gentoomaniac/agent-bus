@@ -248,7 +248,7 @@ an unknown agent; `send` does the same. The message says if the sync failed ("sy
 | "busd is not running" | busd is down, or the broker's container runs without it |
 | "not signed by the CA" | this machine's `ca.pem` is not busd's CA |
 | "a rollback" | busd was restored from a backup and offers an older revision of the same epoch. Delete `enroll/directory.json` in busd's config directory and restart busd: it starts a new epoch, which agents take in, keeping every pin and revoked key |
-| a permissions violation on `busd.directory.sync.<token>` or `directory.head` | the broker's auth files predate directory v2: regenerate them (`agent-busctl --direct init`, or any `register`) |
+| a permissions violation on `busd.directory.sync.<token>` or `directory.head` | the broker's auth files predate directory v2. busd 0.3 and later regenerates them when it starts (log: `busd: agent and service grants are up to date`); on an older busd run `agent-busctl --direct init`, or any `register` |
 | none of these | busd or the agent is of an older version |
 
 **Fix until it works.** `register` writes the file on the machine it runs on; copy that `directory/` to this
@@ -400,8 +400,9 @@ closed with the adapter still running, or waiting for your input.
 **Cause.** Presence needs the stream `PRESENCE` and the per-agent grant to publish `presence.<token>`. After
 upgrading from a release without them, the publish is refused and the server logs a permissions violation.
 
-**Fix.** Run `agent-busctl --direct init` once: it creates the stream and regenerates every agent's grants,
-which take effect on live connections.
+**Fix.** Run `agent-busctl --direct init` once, with your `--max-age` and `--max-bytes`: it creates the
+stream and regenerates every agent's grants, which take effect on live connections. (From 0.3 busd
+regenerates the grants at every start, but only `init` creates a missing stream.)
 
 An agent without hooks is `idle` while its process runs; `unresponsive` needs targeted mail unlisted for 10
 minutes.

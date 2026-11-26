@@ -180,21 +180,43 @@ func (server Server) certLogin(file string, role authRole, name string) (certID 
 	return table[index].certID, true, nil
 }
 
+// confirmed says whether the file's content is what the server runs with: for auth.conf, the copy
+// kept after the last confirmed reload. control-auth.conf has no copy; the server reads it at its
+// own start, and every change to it is confirmed before it returns.
+func (server Server) confirmed(name string, content []byte) bool {
+	if name != authFile {
+		return true
+	}
+	copied, err := os.ReadFile(server.path(authFile + confirmedSuffix))
+	return err == nil && string(copied) == string(content)
+}
+
 // UpdateAuth changes auth.conf as one serialised operation: lock, let edit produce the new file
 // body from the current one, test the new configuration, replace the file atomically, reload the
 // server and wait until its monitoring endpoint reports a newer config load time. Only then is
 // the change done. A reload that does not take is an error, and the file stays replaced: the
 // next UpdateAuth, or a restart of the server, finishes it.
 func (server Server) UpdateAuth(ctx context.Context, edit func(currentBody string) (string, error)) error {
-	return server.updateAuthFile(ctx, authFile, edit)
+	return server.updateAuthFile(ctx, authFile, edit, false)
 }
 
 // UpdateControlAuth is UpdateAuth for control-auth.conf, the users of CONTROL.
 func (server Server) UpdateControlAuth(ctx context.Context, edit func(currentBody string) (string, error)) error {
-	return server.updateAuthFile(ctx, controlAuthFile, edit)
+	return server.updateAuthFile(ctx, controlAuthFile, edit, false)
 }
 
-func (server Server) updateAuthFile(ctx context.Context, name string, edit func(currentBody string) (string, error)) error {
+// RefreshAuth and RefreshControlAuth are UpdateAuth and UpdateControlAuth that leave a file alone
+// when the edit changes nothing and the server has confirmed it, so a refresh at every busd start
+// does not reload the server for nothing.
+func (server Server) RefreshAuth(ctx context.Context, edit func(currentBody string) (string, error)) error {
+	return server.updateAuthFile(ctx, authFile, edit, true)
+}
+
+func (server Server) RefreshControlAuth(ctx context.Context, edit func(currentBody string) (string, error)) error {
+	return server.updateAuthFile(ctx, controlAuthFile, edit, true)
+}
+
+func (server Server) updateAuthFile(ctx context.Context, name string, edit func(currentBody string) (string, error), skipUnchanged bool) error {
 	unlock, err := server.lock()
 	if err != nil {
 		return err
@@ -209,6 +231,9 @@ func (server Server) updateAuthFile(ctx context.Context, name string, edit func(
 	newBody, err := edit(currentBody)
 	if err != nil {
 		return err
+	}
+	if skipUnchanged && newBody == currentBody && server.confirmed(name, current) {
+		return nil
 	}
 
 	if err := server.testConfig(ctx, name, withGeneration(generation+1, newBody)); err != nil {

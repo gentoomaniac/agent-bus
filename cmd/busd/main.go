@@ -120,12 +120,9 @@ func (cli *CLI) Run() error {
 	}
 	defer admin.Close()
 	// An upgrade brings new grants: they take effect here, so no `agent-busctl init` is needed for
-	// them. A failure leaves the old grants, and busd serves what they allow.
-	if err := admin.RefreshGrants(ctx); err != nil {
-		log.Printf("busd: the grants of this release could not be applied (`agent-busctl --direct init` does it): %v", err)
-	} else {
-		log.Printf("busd: agent and service grants are up to date")
-	}
+	// them. In the container busd starts before nats-server is ready, so this tries until the
+	// broker answers; meanwhile busd serves what the old grants allow.
+	go refreshGrants(ctx, admin)
 
 	published := busd.NewDirectory(busd.DirectoryConfig{
 		Source: admin, CA: ca, ConfigDir: cli.ConfigDir,
@@ -256,4 +253,36 @@ func main() {
 	var cli CLI
 	kongCtx := kong.Parse(&cli, kong.Name("busd"), kong.Vars{"version": version}, kong.Description("Control service of the Agent Bus."))
 	kongCtx.FatalIfErrorf(cli.Run())
+}
+
+const (
+	refreshAttempt    = 30 * time.Second // one try, with its catalogue read and the reloads
+	refreshBackoffMax = 30 * time.Second
+	refreshHintAfter  = 5 * time.Minute // then the log names init as the way out
+)
+
+// refreshGrants applies this release's grants (broker.Admin.RefreshGrants), trying again until
+// the broker answers or busd stops.
+func refreshGrants(ctx context.Context, admin *broker.Admin) {
+	start, backoff, hinted := time.Now(), time.Second, false
+	for {
+		attempt, cancel := context.WithTimeout(ctx, refreshAttempt)
+		err := admin.RefreshGrants(attempt)
+		cancel()
+		if err == nil {
+			log.Printf("busd: agent and service grants are up to date")
+			return
+		}
+		if !hinted && time.Since(start) >= refreshHintAfter {
+			log.Printf("busd: the grants of this release are still not applied, trying on; "+
+				"`agent-busctl --direct init` with your --max-age and --max-bytes applies them too: %v", err)
+			hinted = true
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff = min(2*backoff, refreshBackoffMax)
+	}
 }

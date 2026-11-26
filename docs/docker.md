@@ -93,7 +93,7 @@ $compose logs agent-bus | tail -4
 
 **Checkpoint:** the log ends with `Server is ready` and `busd ...: serving enrollment, approval, the
 directory and channel requests on the bus`. A line saying `has agent-busctl init run?` is expected
-until the next step.
+until the next step; busd keeps trying and then logs `busd: agent and service grants are up to date`.
 
 ### 3. Create the streams
 

@@ -53,6 +53,23 @@ func (b *lockedBuffer) String() string {
 // it answers.
 func (h *harness) startBusd(t *testing.T) {
 	t.Helper()
+	output := h.launchBusd(t)
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if _, err := h.tryRun(h.agentBusctl, "ca", "list"); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("busd never answered; it said:\n%s", output)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// launchBusd starts busd without waiting for it to answer, as the container does before
+// nats-server is up.
+func (h *harness) launchBusd(t *testing.T) *lockedBuffer {
+	t.Helper()
 	binary := filepath.Join(t.TempDir(), "busd")
 	h.run(t, "go", "build", "-o", binary, "../../cmd/busd")
 	output := &lockedBuffer{}
@@ -76,16 +93,7 @@ func (h *harness) startBusd(t *testing.T) {
 			t.Logf("busd said:\n%s", output)
 		}
 	})
-	deadline := time.Now().Add(20 * time.Second)
-	for {
-		if _, err := h.tryRun(h.agentBusctl, "ca", "list"); err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("busd never answered; it said:\n%s", output)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	return output
 }
 
 // enrollee is an `agent-bus enroll` run on another machine: a fresh config directory.
