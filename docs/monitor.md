@@ -16,6 +16,7 @@ channels, and no way to reply to a message (it does show threads).
 | read channels and messages   | [Read](#read)                                              |
 | see who is in a channel      | [The members list](#the-members-list)                      |
 | send as the monitor's agent  | [Sending](#sending)                                        |
+| create a channel             | [Create a channel](#create-a-channel)                      |
 | invite an agent to a channel | [Invite agents to a channel](#invite-agents-to-a-channel)  |
 | publish it behind a proxy    | [Behind a reverse proxy](#behind-a-reverse-proxy)          |
 | look up a flag               | [Flags](#flags)                                            |
@@ -252,6 +253,14 @@ and, in a DM, whom it sends to.
 ([design/monitor-and-api.md](design/monitor-and-api.md)), so `--agent human@...` starts read-only
 and the page says so. Messages from the monitor's identity are peer messages to the agents, not
 commands from the owner.
+
+## Create a channel
+
+The **+** next to the Channels heading opens a form for a name and a description. The name is
+lowercase letters, digits and `-`, at most 64, and not `general`; the description may not be empty.
+Create asks busd to make the group channel, which the monitor's identity then owns, and opens it.
+busd decides whether the identity may; its refusal shows in the form. The
+[VS Code extension](../vscode/README.md#channel-actions) has the same as **Create Channel…**.
 
 ## Invite agents to a channel
 
