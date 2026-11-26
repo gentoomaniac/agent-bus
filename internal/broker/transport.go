@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
@@ -24,6 +25,9 @@ const requestExpiry = time.Second
 type Transport struct {
 	session    *session
 	agentToken string
+
+	logMu sync.Mutex
+	log   jetstream.Stream // the handle Message reads through, made at the first call
 }
 
 var _ bus.Transport = (*Transport)(nil)
@@ -132,6 +136,41 @@ func (transport *Transport) History(ctx context.Context, from bus.Channel, after
 		records = append(records, bus.Record{Sequence: metadata.Sequence.Stream, Payload: message.Data()})
 	}
 	return records, transport.session.explain(batch.Error())
+}
+
+// Message reads one record of stream BUS by its sequence with STREAM.MSG.GET: the stream does not
+// allow direct gets (docs/design/lazy-monitor.md), and the monitor's login may use this one subject.
+func (transport *Transport) Message(ctx context.Context, sequence uint64) (bus.Record, error) {
+	if err := transport.Unavailable(); err != nil {
+		return bus.Record{}, err
+	}
+	log, err := transport.logHandle(ctx)
+	if err != nil {
+		return bus.Record{}, fmt.Errorf("reading message %d: %w", sequence, transport.session.explain(err))
+	}
+	raw, err := log.GetMsg(ctx, sequence)
+	if errors.Is(err, jetstream.ErrMsgNotFound) {
+		return bus.Record{}, fmt.Errorf("message %d: %w", sequence, bus.ErrMessageGone)
+	}
+	if err != nil {
+		return bus.Record{}, fmt.Errorf("reading message %d: %w", sequence, transport.session.explain(err))
+	}
+	return bus.Record{Sequence: raw.Sequence, Payload: raw.Data}, nil
+}
+
+// logHandle returns the handle on stream BUS. Making one asks the server for the stream's
+// configuration, which a handle keeps, so it is made once.
+func (transport *Transport) logHandle(ctx context.Context) (jetstream.Stream, error) {
+	transport.logMu.Lock()
+	defer transport.logMu.Unlock()
+	if transport.log == nil {
+		log, err := transport.session.stream.Stream(ctx, busStream)
+		if err != nil {
+			return nil, err
+		}
+		transport.log = log
+	}
+	return transport.log, nil
 }
 
 // RequestDirectory asks busd for the directory with a sync request on the agent's own sync subject

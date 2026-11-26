@@ -325,13 +325,15 @@ func monitorControlPermissions() string {
 	return allowOnly(publish, []string{enroll.MonitorInboxPrefix + ".>", enroll.SubjectPending})
 }
 
-// monitorBusPermissions let the monitor read every channel through consumers of its own, list who
+// monitorBusPermissions let the monitor read every channel through consumers of its own, read a
+// stored record by its sequence (STREAM.MSG.GET; BUS has no AllowDirect, so no direct get), list who
 // holds a read cursor, read presence and hear busd's directory heads. It publishes no message. JetStream subjects cannot name
 // a consumer prefix, so these grants also reach the consumers of agents; the monitor sees all
 // traffic anyway (docs/design/access-control.md).
 func monitorBusPermissions() string {
 	publish := []string{
 		"$JS.API.STREAM.INFO." + busStream,
+		"$JS.API.STREAM.MSG.GET." + busStream,
 		"$JS.API.CONSUMER.CREATE." + busStream + ".>",
 		"$JS.API.CONSUMER.INFO." + busStream + ".*",
 		"$JS.API.CONSUMER.DELETE." + busStream + ".*",

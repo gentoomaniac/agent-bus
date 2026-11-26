@@ -10,6 +10,10 @@ import (
 // and being re-established.
 var ErrUnavailable = errors.New("bus unavailable, reconnecting")
 
+// ErrMessageGone is the error of reading a record the broker no longer has: retention deleted it,
+// or its sequence was never used.
+var ErrMessageGone = errors.New("message is gone")
+
 // Transport is one agent's message path to the broker (docs/design/architecture.md): publish to a channel,
 // consume channels with explicit acknowledgement, and read history without touching a read cursor.
 // It speaks in channels and agents, never in broker subjects or access rules.
@@ -25,6 +29,10 @@ type Transport interface {
 	// History reads up to limit records of a channel after the given sequence, oldest first.
 	// It does not move any read cursor. Until busd exists, only the admin's connection may use it.
 	History(ctx context.Context, from Channel, afterSequence uint64, limit int) ([]Record, error)
+	// Message reads the record with the given sequence of the whole log, whatever channel it is in,
+	// without touching any read cursor. It returns ErrMessageGone for one the broker does not have.
+	// Until busd exists, only the admin's and the monitor's connections may use it.
+	Message(ctx context.Context, sequence uint64) (Record, error)
 	// PublishPresence replaces the agent's own presence record, which the broker keeps for
 	// readers (docs/design/delivery.md). An agent can write no one else's.
 	PublishPresence(record []byte) error

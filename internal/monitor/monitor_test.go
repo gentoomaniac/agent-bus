@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -105,6 +106,21 @@ func (fake *fakeBus) History(_ context.Context, from bus.Channel, after uint64, 
 		}
 	}
 	return records, nil
+}
+
+// Message finds a record by its sequence in any channel; the tests keep sequences unique, as the
+// stream does.
+func (fake *fakeBus) Message(_ context.Context, sequence uint64) (bus.Record, error) {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for _, records := range fake.records {
+		for _, record := range records {
+			if record.Sequence == sequence {
+				return record, nil
+			}
+		}
+	}
+	return bus.Record{}, fmt.Errorf("message %d: %w", sequence, bus.ErrMessageGone)
 }
 
 func (fake *fakeBus) store(channel bus.Channel, sequence uint64, payload []byte) {

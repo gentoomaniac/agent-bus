@@ -83,6 +83,10 @@ func (fakeTransport) History(context.Context, bus.Channel, uint64, int) ([]bus.R
 	return nil, nil
 }
 
+func (fakeTransport) Message(context.Context, uint64) (bus.Record, error) {
+	return bus.Record{}, nil
+}
+
 func (transport fakeTransport) PublishPresence(record []byte) error {
 	transport.broker.mu.Lock()
 	defer transport.broker.mu.Unlock()
