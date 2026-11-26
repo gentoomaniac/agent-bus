@@ -499,9 +499,9 @@ Where to look:
 
 | What                                           | Where                                                                      |
 |------------------------------------------------|----------------------------------------------------------------------------|
-| Broker                                         | `podman logs "$BROKER_NAME"`                                               |
+| Broker                                         | `podman logs "$BROKER_NAME"`; busd's lines are JSON, `jq -r .message` shows the text |
 | An agent's rejected mail                       | `$BUS_CONFIG_DIR/<agent-id>/alerts.log` on the agent's machine             |
-| An adapter's own messages (connect, reconnect) | Claude Code's MCP log: `claude --debug`, or `/mcp`                         |
+| An adapter's own messages (connect, reconnect) | Claude Code's MCP log: `claude --debug`, or `/mcp`; add `-vv` to its `args` |
 | The monitor                                    | `podman logs "$MONITOR_NAME"`, and `GET /api/v1/status` ([api.md](api.md)) |
 | Presence as stored                             | `GET /api/v1/presence`                                                     |
 

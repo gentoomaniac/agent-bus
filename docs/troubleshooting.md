@@ -109,7 +109,7 @@ naming the file.
 
 ### An enrolled identity falls back to localhost
 
-**Symptom.** The MCP log of a session has a line like this, and `whoami` carries the same text as
+**Symptom.** The MCP log of a session (a warning: it shows with `-v` in the server's `args`) has a line like this, and `whoami` carries the same text as
 `broker_note`:
 
 ```text
@@ -500,3 +500,8 @@ as in [docker.md](docker.md).
 
 **Logs.** In a container, read the broker's output: `podman logs agent-bus` (Docker: `docker logs agent-bus`).
 `nats/nats-server.log` exists only in a development setup that runs `nats-server` itself.
+
+busd and the monitor log JSON on stderr, and the text of a line is its `message` field. `jq -r .message` shows the text
+alone, and `--no-json` makes a binary write readable lines. They log status lines (`-vv`) in the image; a binary you
+start yourself logs errors only until you add `-v`, `-vv` or `--debug`
+([logging flags](agent-busctl.md#logging-flags)).

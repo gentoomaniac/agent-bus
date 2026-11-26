@@ -78,7 +78,24 @@ Every command takes these.
 | `--direct` | | off | act as the admin users of the config directory |
 | `--monitor-url` | `BUS_MONITOR_URL` | `http://127.0.0.1:8222` | the server's monitoring endpoint, confirms reloads |
 | `--nats-server` | `BUS_NATS_SERVER` | `bin/nats-server` in the config dir | the binary that tests configurations |
-| `--version` | | | print the version |
+| `-V`, `--version` | | | print the version and build, and exit |
+
+### Logging flags
+
+`agent-busctl`, `agent-bus`, `busd` and `bus-monitor` share these flags. The binaries log on stderr,
+one JSON object per line; the text of a line is in its `message` field. A command's own output
+stays on stdout.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `-v` | | more log: `-v` adds warnings, `-vv` adds status lines, `-vvv` adds debug lines. Without it only errors are logged |
+| `--debug` | off | the same as `-vvv` |
+| `-q`, `--quiet` | off | log nothing |
+| `--json` / `--no-json` | `--json` | `--no-json` writes readable lines for a terminal |
+| `-V`, `--version` | | print `<binary> commit:... release:... build:... date:... goVersion:... platform:...` and exit |
+
+The image starts `busd` and `bus-monitor` with `-vv`, so `podman logs` shows their status lines. A
+session's `agent-bus mcp` logs errors only; add `-vv` to its `args` to see how it connects.
 
 Inside the image the environment already points at `/config`, the bundled server and the monitoring
 endpoint, so the commands need no flags:

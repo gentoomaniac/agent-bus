@@ -54,7 +54,7 @@ and network (`$AGENT_BUS_HOME/monitor-config`, defined in
 
 ```sh
 docker run -d --name bus-monitor --network container:agent-bus -v $AGENT_BUS_HOME/monitor-config:/config \
-  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true --entrypoint bus-monitor IMAGE
+  -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true --entrypoint bus-monitor IMAGE -vv
 ```
 
 The page is then published by the `agent-bus` container (`-p 127.0.0.1:8080:8080` on its
@@ -89,7 +89,7 @@ it, and run it again after a password change.
 
    ```sh
    bin/agent-busctl monitor init ~/.config/agent-bus-monitor --agent monitor@alice
-   bin/bus-monitor --config-dir ~/.config/agent-bus-monitor --agent monitor@alice
+   bin/bus-monitor -vv --config-dir ~/.config/agent-bus-monitor --agent monitor@alice
    ```
 
 **Checkpoint:** <http://127.0.0.1:8080> shows the login form, and after the login "live" and your

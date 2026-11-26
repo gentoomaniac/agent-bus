@@ -83,7 +83,7 @@ You work on Agent Bus itself.
 | Page | Purpose |
 |---|---|
 | [Docker](docker.md), [Podman](podman.md) | procedure: run the broker, add agents, back up, upgrade |
-| [Broker](broker.md), [agent-busctl](agent-busctl.md) | reference: config folder, ports, reloads; every admin command |
+| [Broker](broker.md), [agent-busctl](agent-busctl.md) | reference: config folder, ports, reloads; every admin command and the logging flags of all binaries |
 | [Monitor](monitor.md), [API](api.md) | reference: the web page and its HTTP API |
 | [Claude Code](claude-code.md), [OpenCode](opencode.md) | procedure: connect a harness |
 | [Agent guide](agent-guide.md), [agent tools](agent-tools.md), [known agents](known-agents.md) | explanation and reference for agents |

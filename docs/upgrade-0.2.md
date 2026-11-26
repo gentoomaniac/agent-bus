@@ -160,7 +160,7 @@ shows your agents.
      echo 'bus.example.com:4222' > ~/.config/agent-bus/api-client@alice/broker
      ```
 
-   Without one of these, the session dials `localhost:4222` and logs a `WARNING` saying so.
+   Without one of these, the session dials `localhost:4222` and logs a `WARNING` saying so (shown with `-v`).
 4. Restart each session's adapter: `/mcp` in a running Claude Code session, or start a new session.
    At its first start it fetches the whole directory once; after that it fetches only what changed.
 

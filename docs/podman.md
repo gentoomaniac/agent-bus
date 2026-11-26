@@ -83,7 +83,7 @@ podman run -d --name agent-bus --network pasta $U -e BUSD_BUS_OWNER=monitor@alic
 podman logs agent-bus | tail -4
 ```
 
-**Checkpoint:** the log shows `Server is ready` and a line `busd ...: serving enrollment, approval,
+**Checkpoint:** the log shows `Server is ready` and a JSON line from busd whose `message` is `busd ...: serving enrollment, approval,
 the directory and channel requests on the bus`. A line saying `has agent-busctl init run?` is
 expected until step 4.
 
@@ -192,7 +192,7 @@ An ID that exists, autosigning, the request limits, the shared password and the 
 `nats-server` when the config folder has `ca.key`, and starts again if it stops (`BUS_BUSD=off`, an
 environment variable of the container, runs the broker without it). It holds the CA key, keeps the
 pending requests and makes the changes to the authorization file and the reloads, all inside this
-container, with no HTTP port. Its log is part of `podman logs agent-bus` (lines starting `busd:`);
+container, with no HTTP port. Its log is part of `podman logs agent-bus` (JSON lines whose `message` starts `busd`; the entrypoint starts it with `-vv`);
 `podman exec agent-bus pkill busd` makes the entrypoint start it afresh. The web monitor only shows
 "N pending enrollments": it has no CA key and cannot approve.
 

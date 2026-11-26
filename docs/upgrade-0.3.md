@@ -69,7 +69,7 @@ alias agent-busctl='podman exec agent-bus agent-busctl'
 | 4. The monitor | `$compose up -d` | `$AGENT_BUS_HOME/monitor.sh` |
 
 **Step 2** lets agents ask `busd.channel.<own token>` and busd write the catalogue. Without it busd
-answers channel requests with a permission error. The broker's log shows it:
+answers channel requests with a permission error. The broker's log shows it, as the `message` of a JSON line:
 
 ```text
 busd: agent and service grants are up to date

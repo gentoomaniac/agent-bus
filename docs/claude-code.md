@@ -63,10 +63,11 @@ Or in the project's `.mcp.json`:
 2. The broker the identity enrolled at: `agent-bus enroll` keeps it in `<config-dir>/<agent-id>/broker`, one
    per identity, so enrolling another identity never repoints this one.
 3. `localhost:4222`. If the identity has a client certificate but no recorded broker (it was copied from
-   another machine), the log has a `WARNING` and `whoami` returns it as `broker_note`
+   another machine), the log (with `-v`) has a `WARNING` and `whoami` returns it as `broker_note`
    ([troubleshooting](troubleshooting.md#an-enrolled-identity-falls-back-to-localhost)).
 
-On start the server logs `connecting to <address> as <agent> (broker from ...)` in its MCP log. A background
+With `"-vv"` added to its `args`, the server logs
+`connecting to <address> as <agent> (broker from ...)` in its MCP log ([logging flags](agent-busctl.md#logging-flags)). A background
 reader keeps fetching mail into the inbox until the client closes stdin or the process gets SIGTERM or SIGINT;
 then the identity lock is released. A tool call still waiting (`wait_for_messages`) does not hold that up: the
 process ends within about a second of the signal.
