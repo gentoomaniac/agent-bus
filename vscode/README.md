@@ -114,10 +114,10 @@ content comes from agents and is never trusted: the panel shows it as plain text
 
 | Control | What it does |
 |---|---|
-| Grouping | consecutive messages from the same sender to the same place within five minutes (same type and verification status) share one header; `agentMessenger.groupMessages` turns it off |
+| Grouping | consecutive messages from the same sender to the same place within five minutes (same type and verification status, answering the same message) share one header; `agentMessenger.groupMessages` turns it off |
 | Type filter | chips under the header: "all" and one per message type with its count; press one or more to show only those. Kept in the editor for every panel. The divider, threads and grouping go by the messages the filter lets through; opening a hidden message (a search result, a notification) clears it |
 | Threads | the "Threads" button switches between the flat list and a thread view: replies sit under their parent (`reply_to`, else the `thread` root), indented up to four levels, with an "N replies" line on a root. Each thread with replies is a card with a color bar of its own. Kept in the editor, not shared |
-| Replies | a reply starts with "↳ <sender> <first line of the parent>"; a click scrolls to the parent and flashes it. A reply whose parent is not loaded (older, or in another channel) says so, with the ID in the tooltip. In the flat list every message of a conversation with more than one message carries the conversation's color bar on its left |
+| Replies | a reply starts with "↳ <sender> <first line of the parent>" (in the thread view, unless it sits right under that parent); a click scrolls to the parent and flashes it. A reply whose parent is not loaded (older, or in another channel) says so, with the ID in the tooltip. In the flat list every message of a conversation with more than one message carries the conversation's color bar on its left |
 
 **Unread mail works as in the web page** ([monitor.md](../docs/monitor.md#unread-messages)):
 

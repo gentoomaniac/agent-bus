@@ -258,13 +258,25 @@ function renderReplyLine(row: ThreadRow): HTMLElement | undefined {
     line.title = "reply to " + row.replyTo;
     return line;
   }
+  const quote = quoteOf(parent) || "(no text)";
+  const label = `reply to ${parent.from ?? "unknown sender"} (${parent.id ?? "no id"})`;
+  // A parent the type filter hides is quoted, but there is nothing to scroll to.
+  if (!shownSequences.has(parent.sequence)) {
+    const line = el("div", "reply-to");
+    line.title = label + ", hidden by the type filter";
+    line.append("↳ ", el("span", "who", shortName(parent.from ?? "?")), " " + quote);
+    return line;
+  }
   const line = el("button", "reply-to");
   line.type = "button";
-  line.title = `reply to ${parent.from ?? "unknown sender"} (${parent.id ?? "no id"}): show it`;
-  line.append("↳ ", el("span", "who", shortName(parent.from ?? "?")), " " + (quoteOf(parent) || "(no text)"));
+  line.title = label + ": show it";
+  line.setAttribute("aria-label", `Show the message this answers, from ${parent.from ?? "unknown sender"}: ${quote}`);
+  line.append("↳ ", el("span", "who", shortName(parent.from ?? "?")), " " + quote);
   line.addEventListener("click", () => showMessage(parent.sequence));
   return line;
 }
+
+let shownSequences = new Set<number>(); // the messages the type filter lets through, set by render
 
 // Scrolls to a message in the list and flashes it. One the type filter hides is not there.
 function showMessage(sequence: number): void {
@@ -384,7 +396,11 @@ function render(first = false): void {
   // thread view also frames each thread with replies as a card.
   const keys = threadKeys(messages);
   const sizes = new Map<string, number>();
-  for (const message of visible) sizes.set(keys.get(message) ?? "", (sizes.get(keys.get(message) ?? "") ?? 0) + 1);
+  for (const message of visible) {
+    const key = keys.get(message) ?? "";
+    sizes.set(key, (sizes.get(key) ?? 0) + 1);
+  }
+  shownSequences = new Set(visible.map((message) => message.sequence));
   let previous: ThreadRow | undefined;
   let container: HTMLElement = list;
   for (const row of rows) {

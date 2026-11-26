@@ -137,6 +137,11 @@ test("continuesGroup joins as the web page does", () => {
   const parent = message(1);
   assert.equal(continuesGroup(first, row({}, parent)), false);
   assert.equal(continuesGroup(row({}, parent), row({}, parent)), true);
+  // A reply to a message that is not loaded keeps its own header and "not shown here" line.
+  const answering = (id: string): ThreadRow => ({ ...row({}), replyTo: id });
+  assert.equal(continuesGroup(first, answering("x")), false);
+  assert.equal(continuesGroup(answering("x"), answering("y")), false);
+  assert.equal(continuesGroup(answering("x"), answering("x")), true);
 });
 
 test("describePresence says state, activity and how long; ago counts s, m and h", () => {

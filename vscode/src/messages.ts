@@ -27,9 +27,9 @@ export function unreadMessages(list: Message[], lastRead: number, agent: string)
 
 // Whether the row continues the previous one's group, as on the web page: the same sender wrote
 // it to the same place, with the same type and verification status, within five minutes, and
-// under the same parent in the thread view.
+// answering the same message (loaded or not).
 export function continuesGroup(previous: ThreadRow | undefined, row: ThreadRow): boolean {
-  if (!previous || !row.message.from || previous.parent !== row.parent) return false;
+  if (!previous || !row.message.from || previous.parent !== row.parent || previous.replyTo !== row.replyTo) return false;
   const [before, message] = [previous.message, row.message];
   return before.from === message.from && before.to === message.to && before.type === message.type && before.status === message.status
     && Date.parse(message.time ?? "") - Date.parse(before.time ?? "") < GROUP_WINDOW_MS;
