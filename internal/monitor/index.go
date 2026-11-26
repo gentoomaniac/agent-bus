@@ -88,6 +88,59 @@ func compareRowSequence(entry row, sequence uint64) int {
 	return cmp.Compare(entry.sequence, sequence)
 }
 
+// remove drops the row of the message at the sequence in the channel, and the channel with its
+// last row.
+func (index *index) remove(channel string, sequence uint64) {
+	rows := index.channels[channel]
+	at, found := slices.BinarySearchFunc(rows, sequence, compareRowSequence)
+	if !found {
+		return
+	}
+	index.forget(rows[at])
+	index.channels[channel] = slices.Delete(rows, at, at+1)
+	if len(index.channels[channel]) == 0 {
+		delete(index.channels, channel)
+	}
+}
+
+// dropBelow drops every row with a sequence below the first one, which is how retention deletes:
+// from the front of the log. It says how many it dropped.
+func (index *index) dropBelow(first uint64) (dropped int) {
+	for channel, rows := range index.channels {
+		cut, _ := slices.BinarySearchFunc(rows, first, compareRowSequence)
+		for _, entry := range rows[:cut] {
+			index.forget(entry)
+		}
+		dropped += cut
+		if cut == len(rows) {
+			delete(index.channels, channel)
+		} else if cut > 0 {
+			index.channels[channel] = slices.Delete(rows, 0, cut)
+		}
+	}
+	return dropped
+}
+
+// forget removes what a row has outside its channel's list: its ID and its reason.
+func (index *index) forget(entry row) {
+	if entry.id != [16]byte{} {
+		delete(index.byID, entry.id)
+	}
+	delete(index.reasons, entry.sequence)
+}
+
+// countThrough says how many rows have a sequence of at most last.
+func (index *index) countThrough(last uint64) (count int) {
+	for _, rows := range index.channels {
+		end, found := slices.BinarySearchFunc(rows, last, compareRowSequence)
+		if found {
+			end++
+		}
+		count += end
+	}
+	return count
+}
+
 // find returns the row of the message at the sequence in the channel.
 func (index *index) find(channel string, sequence uint64) (row, bool) {
 	rows := index.channels[channel]

@@ -329,7 +329,13 @@ Each step is one commit with its tests and docs, and passes `make check` on its 
 4. **`before` on `/messages`**, in `docs/api.md` and `docs/openapi.yaml`. *Built.* `after` and
    `before` together are a `400`; the newest page is `before=<last_sequence + 1>`.
 5. **Follow retention.** The `FirstSeq` tick, the `404` rule, the count check; integration test with
-   a short `MaxAge` or `MaxBytes` stream (`internal/itest/retention_test.go` has the setup).
+   a short `MaxAge` or `MaxBytes` stream (`internal/itest/retention_test.go` has the setup). *Built.*
+   `bus.Transport.LogState` (STREAM.INFO) gives the first and last sequence and the count. The
+   count check compares the log's count with the rows up to its last sequence, because the log may
+   hold more (subjects the monitor does not follow); a surplus of rows sweeps with one get per row.
+   A page that drops a gone row is refilled from the next row in its direction, so a page is short
+   only at the end of a channel. A read that finds a message gone also asks for the look at the log
+   at once.
 6. **Unread counts on the server** (`unread`, `targeted_unread` in `/channels`) and clients using
    them; the same step for both clients.
 7. **SQLite store.** The driver, the file, the `message` table, load at start and read from

@@ -61,9 +61,7 @@ func (cache *bodyCache) put(message Message) {
 func (cache *bodyCache) putLocked(message Message) {
 	cost := messageCost(message)
 	if element, found := cache.items[message.Sequence]; found {
-		cache.size -= element.Value.(*cached).cost
-		cache.order.Remove(element)
-		delete(cache.items, message.Sequence)
+		cache.remove(element)
 	}
 	if cost > cache.limit {
 		return
@@ -71,11 +69,15 @@ func (cache *bodyCache) putLocked(message Message) {
 	cache.items[message.Sequence] = cache.order.PushFront(&cached{message.Sequence, message, cost})
 	cache.size += cost
 	for cache.size > cache.limit {
-		oldest := cache.order.Back().Value.(*cached)
-		cache.order.Remove(cache.order.Back())
-		delete(cache.items, oldest.sequence)
-		cache.size -= oldest.cost
+		cache.remove(cache.order.Back())
 	}
+}
+
+func (cache *bodyCache) remove(element *list.Element) {
+	entry := element.Value.(*cached)
+	cache.size -= entry.cost
+	cache.order.Remove(element)
+	delete(cache.items, entry.sequence)
 }
 
 // forget drops the message of a sequence the stream no longer holds.
@@ -83,9 +85,18 @@ func (cache *bodyCache) forget(sequence uint64) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 	if element, found := cache.items[sequence]; found {
-		cache.size -= element.Value.(*cached).cost
-		cache.order.Remove(element)
-		delete(cache.items, sequence)
+		cache.remove(element)
+	}
+}
+
+// forgetBelow drops the messages with a sequence below the first one.
+func (cache *bodyCache) forgetBelow(first uint64) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	for sequence, element := range cache.items {
+		if sequence < first {
+			cache.remove(element)
+		}
 	}
 }
 

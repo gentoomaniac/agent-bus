@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"slices"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -74,16 +73,13 @@ func TestOlderBodiesAreReadFromTheStreamAndThenCached(t *testing.T) {
 	}
 }
 
-func TestAMessageTheStreamNoLongerHasIsLeftOutOfAPage(t *testing.T) {
+func TestAMessageTheStreamNoLongerHasIsDroppedAndTheNextTakesItsPlace(t *testing.T) {
 	monitor, stream := lazyMonitor(t, 8)
-	stream.fakeBus.mu.Lock()
-	records := stream.fakeBus.records[bus.GeneralChannel().String()]
-	stream.fakeBus.records[bus.GeneralChannel().String()] = slices.Delete(slices.Clone(records), 1, 2) // sequence 20 deleted
-	stream.fakeBus.mu.Unlock()
+	stream.remove(20)
 
 	page := messagesOf(t, monitor, "general", 0, 3)
-	if len(page) != 2 || page[0].Sequence != 10 || page[1].Sequence != 30 {
-		t.Errorf("page = %+v, want sequences 10 and 30", page)
+	if len(page) != 3 || page[0].Sequence != 10 || page[1].Sequence != 30 || page[2].Sequence != 40 {
+		t.Errorf("page = %+v, want sequences 10, 30 and 40, the gap filled from the next message", page)
 	}
 }
 

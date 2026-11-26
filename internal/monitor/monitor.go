@@ -138,9 +138,11 @@ type Monitor struct {
 	pendingAt    time.Time // when busd announced it
 
 	// headSeen asks Run for a round at once: a head named a new directory version.
-	headSeen    chan struct{}
-	directoryMu sync.Mutex
-	directory   DirectoryStatus
+	headSeen chan struct{}
+	// retentionDue asks followRetention for a look at the log at once: a read found a message gone.
+	retentionDue chan struct{}
+	directoryMu  sync.Mutex
+	directory    DirectoryStatus
 }
 
 // DirectoryStatus is how the monitor follows the directory, apart from presence: the last version
@@ -164,6 +166,7 @@ func New(config Config) *Monitor {
 		askedPresence: map[string]bool{},
 		prefs:         loadPrefs(config.PrefsPath, config.Report),
 		headSeen:      make(chan struct{}, 1),
+		retentionDue:  make(chan struct{}, 1),
 	}
 }
 
@@ -173,6 +176,7 @@ func (monitor *Monitor) Run(ctx context.Context) {
 	defer monitor.followers.Wait()
 	monitor.followers.Go(func() { monitor.followPresence(ctx) })
 	monitor.followers.Go(func() { monitor.followPendingEnrollments(ctx) })
+	monitor.followers.Go(func() { monitor.followRetention(ctx) })
 	if monitor.config.DirectoryHeads != nil {
 		monitor.followers.Go(func() { monitor.followDirectoryHeads(ctx) })
 	}
@@ -467,33 +471,52 @@ func (monitor *Monitor) hasGroup(name string) bool {
 }
 
 // Messages returns up to limit messages of the channel after the given sequence, oldest first. The
-// bodies come from the cache or the stream; a message the stream no longer has is left out.
+// bodies come from the cache or the stream.
 func (monitor *Monitor) Messages(ctx context.Context, id string, after uint64, limit int) ([]Message, error) {
-	return monitor.page(ctx, id, func(rows []row) []row {
-		start, found := slices.BinarySearchFunc(rows, after, compareRowSequence)
-		if found {
-			start++
-		}
-		return rows[start:min(len(rows), start+limit)]
-	})
+	return monitor.page(ctx, id, after, limit, false)
 }
 
 // MessagesBefore returns the limit messages of the channel before the given sequence, the last
 // of them being the one just before it, oldest first. It is exactly a page, however sparse the
 // channel is in sequence space.
 func (monitor *Monitor) MessagesBefore(ctx context.Context, id string, before uint64, limit int) ([]Message, error) {
-	return monitor.page(ctx, id, func(rows []row) []row {
-		end, _ := slices.BinarySearchFunc(rows, before, compareRowSequence)
-		return rows[max(0, end-limit):end]
-	})
+	return monitor.page(ctx, id, before, limit, true)
 }
 
-// page describes the rows pick chooses from the channel's index and reads their bodies.
-func (monitor *Monitor) page(ctx context.Context, id string, pick func(rows []row) []row) ([]Message, error) {
-	monitor.mu.Lock()
-	described := monitor.index.describeAll(id, pick(monitor.index.channels[id]))
-	monitor.mu.Unlock()
-	return monitor.withBodies(ctx, described)
+// page reads up to limit messages from the anchor on, backward or forward. A message the stream
+// no longer has is dropped from the index and the page is filled from the next one, so a page is
+// short only when the channel has run out.
+func (monitor *Monitor) page(ctx context.Context, id string, anchor uint64, limit int, backward bool) ([]Message, error) {
+	var page []Message
+	for len(page) < limit {
+		monitor.mu.Lock()
+		rows := monitor.index.channels[id]
+		at, found := slices.BinarySearchFunc(rows, anchor, compareRowSequence)
+		var chosen []row
+		if backward {
+			chosen = rows[max(0, at-(limit-len(page))):at]
+		} else {
+			if found {
+				at++
+			}
+			chosen = rows[at:min(len(rows), at+limit-len(page))]
+		}
+		described := monitor.index.describeAll(id, chosen)
+		monitor.mu.Unlock()
+		if len(described) == 0 {
+			break
+		}
+		messages, err := monitor.withBodies(ctx, described)
+		if err != nil {
+			return nil, err
+		}
+		if backward {
+			page, anchor = slices.Concat(messages, page), described[0].Sequence
+		} else {
+			page, anchor = append(page, messages...), described[len(described)-1].Sequence
+		}
+	}
+	return page, nil
 }
 
 // MessageByID returns the message with the envelope ID, whatever channel it is in.
@@ -537,6 +560,7 @@ func (monitor *Monitor) RawMessage(ctx context.Context, id string, sequence uint
 	}
 	record, err := monitor.config.History.Message(ctx, sequence)
 	if errors.Is(err, bus.ErrMessageGone) {
+		monitor.drop(described)
 		return Message{}, nil, ErrUnknownMessage
 	}
 	if err != nil {
@@ -549,8 +573,9 @@ func (monitor *Monitor) RawMessage(ctx context.Context, id string, sequence uint
 const maxConcurrentReads = 32
 
 // withBodies returns the described messages with their bodies, from the cache or read from the
-// stream, many at a time and in the same order. A message the stream no longer has is left out;
-// any other failed read fails the whole call, so a page is never silently short.
+// stream, many at a time and in the same order. A message the stream no longer has is dropped
+// from the index and left out; any other failed read fails the whole call, so a page is never
+// silently short.
 func (monitor *Monitor) withBodies(ctx context.Context, described []Message) ([]Message, error) {
 	full := make([]Message, len(described))
 	errs := make([]error, len(described))
@@ -572,16 +597,37 @@ func (monitor *Monitor) withBodies(ctx context.Context, described []Message) ([]
 	reads.Wait()
 
 	messages := full[:0]
+	var gone []Message
 	for i, message := range full {
 		switch {
 		case errors.Is(errs[i], bus.ErrMessageGone):
+			gone = append(gone, described[i])
 		case errs[i] != nil:
 			return nil, errs[i]
 		default:
 			messages = append(messages, message)
 		}
 	}
+	monitor.drop(gone)
 	return messages, nil
+}
+
+// drop removes messages the stream answered it does not have, and asks for a look at the front of
+// the log, since the rest of what retention deleted is likely to be next to them.
+func (monitor *Monitor) drop(gone []Message) {
+	if len(gone) == 0 {
+		return
+	}
+	monitor.mu.Lock()
+	for _, message := range gone {
+		monitor.index.remove(message.Channel, message.Sequence)
+		monitor.bodies.forget(message.Sequence)
+	}
+	monitor.mu.Unlock()
+	select {
+	case monitor.retentionDue <- struct{}{}:
+	default: // a look is due already
+	}
 }
 
 // withBody adds the body of the record to the message the index described. A record that is no

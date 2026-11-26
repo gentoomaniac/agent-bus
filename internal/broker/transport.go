@@ -158,6 +158,22 @@ func (transport *Transport) Message(ctx context.Context, sequence uint64) (bus.R
 	return bus.Record{Sequence: raw.Sequence, Payload: raw.Data}, nil
 }
 
+// LogState reads the stream's state with STREAM.INFO.
+func (transport *Transport) LogState(ctx context.Context) (bus.LogState, error) {
+	if err := transport.Unavailable(); err != nil {
+		return bus.LogState{}, err
+	}
+	log, err := transport.logHandle(ctx)
+	if err != nil {
+		return bus.LogState{}, fmt.Errorf("reading the state of the log: %w", transport.session.explain(err))
+	}
+	info, err := log.Info(ctx)
+	if err != nil {
+		return bus.LogState{}, fmt.Errorf("reading the state of the log: %w", transport.session.explain(err))
+	}
+	return bus.LogState{FirstSequence: info.State.FirstSeq, LastSequence: info.State.LastSeq, Messages: info.State.Msgs}, nil
+}
+
 // logHandle returns the handle on stream BUS. Making one asks the server for the stream's
 // configuration, which a handle keeps, so it is made once.
 func (transport *Transport) logHandle(ctx context.Context) (jetstream.Stream, error) {

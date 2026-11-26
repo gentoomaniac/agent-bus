@@ -537,6 +537,12 @@ SQLite FTS index can replace that scan later behind the same endpoint, query syn
   such a page with `503`. The monitor still reads the whole history when it starts, to build the
   index, and search reads bodies from the stream too, so it is slow on a history of millions of
   messages.
+- The monitor follows the stream's retention: every 30 seconds it reads the first sequence the
+  stream still holds and drops older messages from its index and cache, and a page read that finds
+  a message gone drops it at once. A message deleted from the middle of the stream (a purge by
+  hand) is found the same way, or by comparing the stream's message count with the index. A
+  message the monitor still has cached may be shown for up to those 30 seconds after the stream
+  deleted it.
 - The monitor reads the registry and the catalogue through busd with its read-only login (a config
   directory with only the admin logins reads the broker directly). It looks every five seconds,
   and at once when busd announces a change on `directory.head` (the head's CA signature is checked

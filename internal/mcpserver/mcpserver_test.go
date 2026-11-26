@@ -87,6 +87,10 @@ func (fakeTransport) Message(context.Context, uint64) (bus.Record, error) {
 	return bus.Record{}, nil
 }
 
+func (fakeTransport) LogState(context.Context) (bus.LogState, error) {
+	return bus.LogState{}, nil
+}
+
 func (transport fakeTransport) PublishPresence(record []byte) error {
 	transport.broker.mu.Lock()
 	defer transport.broker.mu.Unlock()

@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"cmp"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -121,6 +122,30 @@ func (fake *fakeBus) Message(_ context.Context, sequence uint64) (bus.Record, er
 		}
 	}
 	return bus.Record{}, fmt.Errorf("message %d: %w", sequence, bus.ErrMessageGone)
+}
+
+// LogState describes the stored records as the stream would.
+func (fake *fakeBus) LogState(context.Context) (bus.LogState, error) {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	var state bus.LogState
+	for _, records := range fake.records {
+		for _, record := range records {
+			state.FirstSequence = cmp.Or(min(state.FirstSequence, record.Sequence), record.Sequence)
+			state.LastSequence = max(state.LastSequence, record.Sequence)
+			state.Messages++
+		}
+	}
+	return state, nil
+}
+
+// remove deletes the records with the sequences, as the stream's retention or a purge does.
+func (fake *fakeBus) remove(sequences ...uint64) {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for channel, records := range fake.records {
+		fake.records[channel] = slices.DeleteFunc(records, func(record bus.Record) bool { return slices.Contains(sequences, record.Sequence) })
+	}
 }
 
 func (fake *fakeBus) store(channel bus.Channel, sequence uint64, payload []byte) {

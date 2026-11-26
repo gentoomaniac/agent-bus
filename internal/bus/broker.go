@@ -14,6 +14,14 @@ var ErrUnavailable = errors.New("bus unavailable, reconnecting")
 // or its sequence was never used.
 var ErrMessageGone = errors.New("message is gone")
 
+// LogState is what the broker says about the message log: the sequences it still holds and how
+// many records that is.
+type LogState struct {
+	FirstSequence uint64 // of the oldest record; retention removes from here
+	LastSequence  uint64
+	Messages      uint64
+}
+
 // Transport is one agent's message path to the broker (docs/design/architecture.md): publish to a channel,
 // consume channels with explicit acknowledgement, and read history without touching a read cursor.
 // It speaks in channels and agents, never in broker subjects or access rules.
@@ -33,6 +41,9 @@ type Transport interface {
 	// without touching any read cursor. It returns ErrMessageGone for one the broker does not have.
 	// Until busd exists, only the admin's and the monitor's connections may use it.
 	Message(ctx context.Context, sequence uint64) (Record, error)
+	// LogState says which part of the log the broker still holds, to follow its retention. Until
+	// busd exists, only the admin's and the monitor's connections may use it.
+	LogState(ctx context.Context) (LogState, error)
 	// PublishPresence replaces the agent's own presence record, which the broker keeps for
 	// readers (docs/design/delivery.md). An agent can write no one else's.
 	PublishPresence(record []byte) error

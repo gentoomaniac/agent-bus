@@ -93,6 +93,10 @@ func (transport *fakeTransport) Message(context.Context, uint64) (bus.Record, er
 	return bus.Record{}, errors.New("not needed")
 }
 
+func (transport *fakeTransport) LogState(context.Context) (bus.LogState, error) {
+	return bus.LogState{}, errors.New("not needed")
+}
+
 func (transport *fakeTransport) PublishPresence([]byte) error { return nil }
 
 func (transport *fakeTransport) Presence(context.Context, string) ([]byte, error) { return nil, nil }
