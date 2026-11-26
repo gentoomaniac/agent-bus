@@ -281,7 +281,7 @@ func refreshGrants(ctx context.Context, admin *broker.Admin) {
 		err := admin.RefreshGrants(attempt)
 		cancel()
 		if err == nil {
-			log.Info().Msgf("busd: agent and service grants are up to date")
+			log.Info().Msg("busd: agent and service grants are up to date")
 			return
 		}
 		if !hinted && time.Since(start) >= refreshHintAfter {
