@@ -9,8 +9,8 @@
 | Search on a SQLite FTS index | **proposed** (the monitor guide already names it as planned) |
 | Backward paging (`before`), server-side unread counts, infinite scroll in both clients | **proposed** |
 
-**Proposed.** The owner agreed to the direction; the numbers below are measured, the details are
-open for review. Nothing here is built.
+**Accepted, not built.** The owner agreed to the direction and to the decisions below; the
+numbers are measured.
 
 ## The problem
 
@@ -337,18 +337,18 @@ Each step is one commit with its tests and docs, and passes `make check` on its 
 
 Steps 1 to 3 give the memory win alone. Step 6 has to land before step 9, and 3 before 6.
 
-## Open questions for the owner
+## Decisions (owner, 2026-11-26)
 
-1. May `bus-monitor` carry a state file (`monitor-web/index.sqlite`, rebuilt when lost) and grow by
-   6.5 MB for the pure-Go SQLite?
-2. Is a first start of 16 s per 200 000 messages (about 80 s at the 1 GiB limit) acceptable, or
-   should agents publish sender, targets and type as NATS headers from now on (so a later rebuild
-   needs no body for new messages)?
-3. Default cache size: 64 MiB, or smaller for a small container?
-4. Should unread counts and notifications for channels the user never opened keep working across
-   a restart? Today the answer comes from the read markers in `prefs.json`; the plan keeps that.
-5. Turn `AllowDirect` on for `BUS` (0.3 ms instead of 0.9 ms per page), or stay with
-   `STREAM.MSG.GET` and no stream change?
+1. `bus-monitor` keeps a state file (`monitor-web/index.sqlite`, rebuilt when lost) and grows by
+   about 6.5 MB for the pure-Go SQLite.
+2. The first start reads the whole stream once (about 16 s per 200 000 messages); the monitor
+   serves the newest messages while it builds. Agents publish no extra NATS headers.
+3. The body cache defaults to 64 MiB.
+4. Unread counts and notifications keep working across a restart from the read markers in
+   `prefs.json`, as planned; the server computes the counts (`/channels`), because a client that
+   holds only a tail cannot.
+5. Pages are read with `STREAM.MSG.GET`; `BUS` keeps `AllowDirect` off. Direct get stays an option
+   if pages ever get slow.
 
 ## Appendix: the spike
 
