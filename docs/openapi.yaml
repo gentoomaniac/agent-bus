@@ -138,7 +138,7 @@ paths:
   /api/v1/messages:
     get:
       operationId: listMessages
-      summary: The messages of a channel after a stream sequence, oldest first.
+      summary: The messages of a channel after or before a stream sequence, oldest first.
       parameters:
         - name: channel
           in: query
@@ -148,6 +148,13 @@ paths:
           in: query
           description: Return messages with a higher sequence. To get the next page, pass the sequence of the last message.
           schema: { type: integer, minimum: 0, default: 0 }
+        - name: before
+          in: query
+          description: >-
+            Return the `limit` messages just before this sequence, oldest first within the page. A page
+            shorter than `limit` means the channel has no older message. Cannot be combined with `after`;
+            the newest page is `before` = the channel's `last_sequence` + 1.
+          schema: { type: integer, minimum: 0 }
         - name: limit
           in: query
           description: At most this many; larger values are cut to 1000.
@@ -163,6 +170,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /api/v1/messages/by-id:
     get:
       operationId: getMessageById
@@ -182,6 +190,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /api/v1/messages/raw:
     get:
       operationId: getRawMessage
@@ -215,6 +224,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /api/v1/search:
     get:
       operationId: searchMessages
@@ -246,6 +256,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /api/v1/send:
     post:
       operationId: sendMessage

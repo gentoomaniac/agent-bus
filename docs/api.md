@@ -185,6 +185,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | `GET /api/v1/presence`                                 | every agent's `state`, `since`, `activity`, `activity_since`, `workers`, `recent`, `pending` |
 | `GET /api/v1/members?channel=<id>`                     | agent IDs                                                    |
 | `GET /api/v1/messages?channel=<id>&after=<seq>&limit=<n>` | messages after a stream sequence, oldest first, at most 1000 (default 100) |
+| `GET /api/v1/messages?channel=<id>&before=<seq>&limit=<n>` | the `limit` messages before a stream sequence, oldest first within the page; a shorter page means there is no older one |
 | `GET /api/v1/messages/by-id?id=<message id>`           | one message by its envelope `id`, from any channel, shaped like the items above |
 | `GET /api/v1/messages/raw?channel=<id>&sequence=<n>`   | one message as stored, [below](#raw-message)                 |
 | `GET /api/v1/search?q=<query>&limit=<n>&cursor=<c>`    | matching messages, newest first, at most 200 (default 50); [Search](#search) |
@@ -212,7 +213,11 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 ### Messages
 
 Channel IDs are `general`, `group:<name>` and `dm:<agent>:<agent>` (the two agents sorted). To page
-through a channel, pass the `sequence` of the last message as `after`. A message the stream no
+forward through a channel, pass the `sequence` of the last message as `after`. To page back, pass
+the `sequence` of the first message you have as `before`: you get the messages just before it,
+exactly `limit` of them unless the channel has fewer, however sparse the channel's sequences are.
+The newest page is `before=<last_sequence + 1>` of the channel. `after` and `before` cannot be
+combined (`400`). A message the stream no
 longer has (retention) is left out of a page.
 
 A message has `sequence`, `channel`, `status` (`verified`, `unknown_sender`, `rejected`), `reason`

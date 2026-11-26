@@ -140,17 +140,29 @@ func (monitor *Monitor) serveMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, members)
 }
 
-// serveMessages pages by sequence: ?channel=<id>&after=<sequence>&limit=<n>. To get the next page,
-// pass the sequence of the last message as after.
+// serveMessages pages by sequence. ?channel=<id>&after=<sequence>&limit=<n> goes forward: for the
+// next page pass the sequence of the last message as after. ?channel=<id>&before=<sequence>&limit=<n>
+// goes back: for the page before pass the sequence of the first message as before.
 func (monitor *Monitor) serveMessages(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	after, afterErr := parseUint(query.Get("after"), 0)
+	before, beforeErr := parseUint(query.Get("before"), 0)
 	limit, limitErr := parseUint(query.Get("limit"), defaultMessageLimit)
-	if err := errors.Join(afterErr, limitErr); err != nil {
+	err := errors.Join(afterErr, beforeErr, limitErr)
+	if query.Has("after") && query.Has("before") {
+		err = errors.Join(err, errors.New("after and before cannot be combined"))
+	}
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	messages, err := monitor.Messages(r.Context(), query.Get("channel"), after, int(min(limit, maxMessageLimit)))
+	channel, count := query.Get("channel"), int(min(limit, maxMessageLimit))
+	var messages []Message
+	if query.Has("before") {
+		messages, err = monitor.MessagesBefore(r.Context(), channel, before, count)
+	} else {
+		messages, err = monitor.Messages(r.Context(), channel, after, count)
+	}
 	if err != nil {
 		writeReadError(w, err)
 		return

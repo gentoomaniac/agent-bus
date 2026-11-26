@@ -469,13 +469,29 @@ func (monitor *Monitor) hasGroup(name string) bool {
 // Messages returns up to limit messages of the channel after the given sequence, oldest first. The
 // bodies come from the cache or the stream; a message the stream no longer has is left out.
 func (monitor *Monitor) Messages(ctx context.Context, id string, after uint64, limit int) ([]Message, error) {
+	return monitor.page(ctx, id, func(rows []row) []row {
+		start, found := slices.BinarySearchFunc(rows, after, compareRowSequence)
+		if found {
+			start++
+		}
+		return rows[start:min(len(rows), start+limit)]
+	})
+}
+
+// MessagesBefore returns the limit messages of the channel before the given sequence, the last
+// of them being the one just before it, oldest first. It is exactly a page, however sparse the
+// channel is in sequence space.
+func (monitor *Monitor) MessagesBefore(ctx context.Context, id string, before uint64, limit int) ([]Message, error) {
+	return monitor.page(ctx, id, func(rows []row) []row {
+		end, _ := slices.BinarySearchFunc(rows, before, compareRowSequence)
+		return rows[max(0, end-limit):end]
+	})
+}
+
+// page describes the rows pick chooses from the channel's index and reads their bodies.
+func (monitor *Monitor) page(ctx context.Context, id string, pick func(rows []row) []row) ([]Message, error) {
 	monitor.mu.Lock()
-	rows := monitor.index.channels[id]
-	start, found := slices.BinarySearchFunc(rows, after, compareRowSequence)
-	if found {
-		start++
-	}
-	described := monitor.index.describeAll(id, rows[start:min(len(rows), start+limit)])
+	described := monitor.index.describeAll(id, pick(monitor.index.channels[id]))
 	monitor.mu.Unlock()
 	return monitor.withBodies(ctx, described)
 }

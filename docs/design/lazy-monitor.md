@@ -326,7 +326,8 @@ Each step is one commit with its tests and docs, and passes `make check` on its 
    per-channel `Message` slices are gone. Search still scans: it filters on the index and reads the
    bodies of the candidates newest first, which is slow on a big history until step 8. Memory test:
    heap per message.
-4. **`before` on `/messages`**, in `docs/api.md` and `docs/openapi.yaml`.
+4. **`before` on `/messages`**, in `docs/api.md` and `docs/openapi.yaml`. *Built.* `after` and
+   `before` together are a `400`; the newest page is `before=<last_sequence + 1>`.
 5. **Follow retention.** The `FirstSeq` tick, the `404` rule, the count check; integration test with
    a short `MaxAge` or `MaxBytes` stream (`internal/itest/retention_test.go` has the setup).
 6. **Unread counts on the server** (`unread`, `targeted_unread` in `/channels`) and clients using
