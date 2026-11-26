@@ -163,7 +163,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | 403    | `forbidden_host`         | the `Host` header is not one the monitor accepts           |
 | 403    | `read_only`              | `send` or a channel change, but the monitor has no identity (`note` in `status` says why) |
 | 404    | `unknown_channel`        | `members` of a channel that is not listed                  |
-| 404    | `unknown_message`        | `messages/raw` of a channel or sequence the monitor does not hold |
+| 404    | `unknown_message`        | `messages/by-id` of an ID, or `messages/raw` of a channel or sequence, the monitor does not hold |
 | 404    | `not_found`              | no such endpoint (this includes a wrong method)            |
 | 409    | `no_password_set`        | `login` on a monitor without a password                    |
 | 409    | `refused`                | busd refused a channel change; the message is busd's reason |
@@ -184,6 +184,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | `GET /api/v1/presence`                                 | every agent's `state`, `since`, `activity`, `activity_since`, `workers`, `recent`, `pending` |
 | `GET /api/v1/members?channel=<id>`                     | agent IDs                                                    |
 | `GET /api/v1/messages?channel=<id>&after=<seq>&limit=<n>` | messages after a stream sequence, oldest first, at most 1000 (default 100) |
+| `GET /api/v1/messages/by-id?id=<message id>`           | one message by its envelope `id`, from any channel, shaped like the items above |
 | `GET /api/v1/messages/raw?channel=<id>&sequence=<n>`   | one message as stored, [below](#raw-message)                 |
 | `GET /api/v1/search?q=<query>&limit=<n>&cursor=<c>`    | matching messages, newest first, at most 200 (default 50); [Search](#search) |
 | `POST /api/v1/send`                                    | `{"id": "<message id>"}`                                     |

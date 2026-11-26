@@ -78,6 +78,7 @@ func (monitor *Monitor) handler(access Access, now func() time.Time) (http.Handl
 	mux.HandleFunc("GET /api/v1/presence", read(func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, monitor.Presences()) }))
 	mux.HandleFunc("GET /api/v1/members", read(monitor.serveMembers))
 	mux.HandleFunc("GET /api/v1/messages", read(monitor.serveMessages))
+	mux.HandleFunc("GET /api/v1/messages/by-id", read(monitor.serveMessageByID))
 	mux.HandleFunc("GET /api/v1/messages/raw", read(monitor.serveRawMessage))
 	mux.HandleFunc("GET /api/v1/search", read(monitor.serveSearch))
 	mux.HandleFunc("GET /api/v1/events", read(func(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +145,16 @@ func (monitor *Monitor) serveMessages(w http.ResponseWriter, r *http.Request) {
 		messages = []Message{}
 	}
 	writeJSON(w, messages)
+}
+
+// serveMessageByID answers ?id=<message id> with the message, as /messages lists it, wherever it is.
+func (monitor *Monitor) serveMessageByID(w http.ResponseWriter, r *http.Request) {
+	message, err := monitor.MessageByID(r.URL.Query().Get("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "unknown_message", err.Error())
+		return
+	}
+	writeJSON(w, message)
 }
 
 // serveRawMessage answers ?channel=<id>&sequence=<n> with the record as stored, parsed as JSON,

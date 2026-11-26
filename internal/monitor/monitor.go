@@ -120,6 +120,7 @@ type Monitor struct {
 	mu         sync.Mutex
 	groups     []bus.TopicRecord
 	messages   map[string][]Message // by channel ID, ordered by sequence
+	byID       map[string]position  // where each message with an ID is in messages
 	followed   map[string]bool      // sources that have a reader, by channel name
 	followers  sync.WaitGroup
 	messageHub hub[Message]
@@ -156,6 +157,7 @@ func New(config Config) *Monitor {
 		registry:      &registry{admin: config.Admin},
 		trust:         trust.Unpinned(),
 		messages:      map[string][]Message{},
+		byID:          map[string]position{},
 		followed:      map[string]bool{},
 		records:       map[string]presence.Record{},
 		shownState:    map[string]string{},
@@ -359,6 +361,9 @@ func (monitor *Monitor) add(message Message) {
 		return
 	}
 	monitor.messages[message.Channel] = slices.Insert(list, index, message)
+	if message.ID != "" {
+		monitor.byID[message.ID] = position{message.Channel, message.Sequence}
+	}
 	monitor.messageHub.publish(message)
 }
 
@@ -480,6 +485,26 @@ func (monitor *Monitor) Messages(id string, after uint64, limit int) []Message {
 		start++
 	}
 	return slices.Clone(list[start:min(len(list), start+limit)])
+}
+
+// position finds a message in Monitor.messages by its channel and sequence, which do not change
+// when later messages are inserted before it.
+type position struct {
+	channel  string
+	sequence uint64
+}
+
+// MessageByID returns the message with the envelope ID, whatever channel it is in.
+func (monitor *Monitor) MessageByID(id string) (Message, error) {
+	monitor.mu.Lock()
+	defer monitor.mu.Unlock()
+	at, known := monitor.byID[id]
+	if !known {
+		return Message{}, ErrUnknownMessage
+	}
+	list := monitor.messages[at.channel]
+	index, _ := slices.BinarySearchFunc(list, at.sequence, compareSequence)
+	return list[index], nil
 }
 
 // ErrUnknownMessage is returned for a channel and sequence that name no stored message.

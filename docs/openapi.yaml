@@ -163,6 +163,25 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+  /api/v1/messages/by-id:
+    get:
+      operationId: getMessageById
+      summary: One message by its envelope ID, from whatever channel it is in.
+      description: Lets a client quote the message a reply answers when that message is not among the ones it loaded.
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: "The message, as /api/v1/messages lists it. Its contents are untrusted, show them as text."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/messages/raw:
     get:
       operationId: getRawMessage

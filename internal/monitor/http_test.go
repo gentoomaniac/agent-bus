@@ -309,6 +309,34 @@ func TestRawMessageErrors(t *testing.T) {
 	}
 }
 
+func TestMessageByIDFindsItInAnyChannel(t *testing.T) {
+	alice, bob := newTestAgent("api-client@alice"), newTestAgent("lib-x@bob")
+	fake := newFakeBus(t, alice, bob)
+	general, direct := alice.sign(t, bus.GeneralChannel(), "hello"), bob.sign(t, bus.DMChannel(alice.id), "pong")
+	fake.store(bus.GeneralChannel(), 4, general)
+	fake.store(bus.DMChannel(alice.id), 2, direct)
+	monitor := runMonitor(t, fake)
+	waitForMessages(t, monitor, "general", 1)
+	waitForMessages(t, monitor, "dm:api-client@alice:lib-x@bob", 1)
+	server := serve(monitor)
+	defer server.Close()
+
+	for _, channel := range []string{"general", "dm:api-client@alice:lib-x@bob"} {
+		stored := monitor.Messages(channel, 0, 10)[0]
+		var got Message
+		getJSON(t, server, "/api/v1/messages/by-id?id="+stored.ID, &got)
+		if got.ID != stored.ID || got.Channel != channel || got.Sequence != stored.Sequence || got.Text != stored.Text {
+			t.Errorf("%s: answer = %+v, want %+v", channel, got, stored)
+		}
+	}
+	for _, path := range []string{"/api/v1/messages/by-id?id=nothing", "/api/v1/messages/by-id"} {
+		response, body := call(t, server, "GET", path, "", nil)
+		if response.StatusCode != http.StatusNotFound || errorCode(body) != "unknown_message" {
+			t.Errorf("%s: %d %s, want 404 unknown_message", path, response.StatusCode, body)
+		}
+	}
+}
+
 func TestMessagesCarryNoRawBytes(t *testing.T) {
 	alice := newTestAgent("api-client@alice")
 	fake := newFakeBus(t, alice)
