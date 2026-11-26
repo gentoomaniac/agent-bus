@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { summarizeThreads, threadRows } from "../threads";
+import { flatRows, quoteOf, summarizeThreads, threadKeys, threadRows } from "../threads";
 import { Message } from "../types";
 
 const message = (sequence: number, id: string, extra: Partial<Message> = {}): Message => ({ sequence, id, channel: "general", status: "verified", ...extra });
@@ -54,4 +54,29 @@ test("summarizeThreads counts the whole subtree and finds unseen mail in it", ()
 test("a reference to a later or the same message does not make a cycle", () => {
   const messages = [message(1, "a", { reply_to: "b" }), message(2, "b", { reply_to: "b" })];
   assert.deepEqual(shape(messages), ["a:0:b", "b:0:b"]);
+});
+
+test("flatRows keeps the stream order and finds a parent the filter hides", () => {
+  const all = [message(1, "a", { type: "request" }), message(2, "b"), message(3, "a1", { reply_to: "a", thread: "a" }), message(4, "x1", { reply_to: "x", thread: "x" })];
+  const rows = flatRows(all.slice(1), all);
+  assert.deepEqual(rows.map((row) => [row.message.id, row.parent?.id, row.replyTo]), [["b", undefined, undefined], ["a1", "a", undefined], ["x1", undefined, "x"]]);
+});
+
+test("threadKeys puts a thread under its root, and replies to one missing message together", () => {
+  const messages = [
+    message(1, "a", { thread: "a" }),
+    message(2, "a1", { reply_to: "a", thread: "a" }),
+    message(3, "a2", { reply_to: "a1", thread: "a" }),
+    message(4, "b"),
+    message(5, "x1", { reply_to: "x", thread: "x" }),
+    message(6, "x2", { reply_to: "x", thread: "x" }),
+  ];
+  const keys = threadKeys(messages);
+  assert.deepEqual(messages.map((m) => keys.get(m)), ["a", "a", "a", "b", "x", "x"]);
+});
+
+test("quoteOf takes the title, else the first text line, and cuts it", () => {
+  assert.equal(quoteOf(message(1, "a", { title: "Release", text: "body" })), "Release");
+  assert.equal(quoteOf(message(1, "a", { text: "\n  first line \nsecond" })), "first line");
+  assert.equal(quoteOf(message(1, "a", { text: "x".repeat(100) }), 10), "x".repeat(9) + "…");
 });

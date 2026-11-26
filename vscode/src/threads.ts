@@ -61,3 +61,46 @@ export function threadRows(messages: Message[]): ThreadRow[] {
   roots.forEach(walk);
   return rows;
 }
+
+// The flat list's rows, in stream order: each reply knows its parent among `all` (every loaded
+// message of the channel, also those the type filter hides), or the ID of the one it answers.
+export function flatRows(messages: Message[], all: Message[]): ThreadRow[] {
+  const byId = new Map<string, Message>();
+  for (const message of all) if (message.id) byId.set(message.id, message);
+  return messages.map((message) => {
+    const parent = parentOf(message, byId);
+    return parent ? { message, depth: 0, parent } : { message, depth: 0, replyTo: message.reply_to || undefined };
+  });
+}
+
+// The thread of each loaded message: the top of its chain of loaded parents, or the message that
+// top answers when that one is not loaded. Messages with the same key belong to one conversation.
+export function threadKeys(messages: Message[]): Map<Message, string> {
+  const byId = new Map<string, Message>();
+  for (const message of messages) if (message.id) byId.set(message.id, message);
+  const keys = new Map<Message, string>();
+  const keyOf = (message: Message): string => {
+    const known = keys.get(message);
+    if (known !== undefined) return known;
+    const parent = parentOf(message, byId);
+    const thread = message.thread && message.thread !== message.id ? message.thread : "";
+    const key = parent ? keyOf(parent) : message.reply_to || thread || message.id || "#" + message.sequence;
+    keys.set(message, key);
+    return key;
+  };
+  for (const message of messages) keyOf(message);
+  return keys;
+}
+
+// A hue (0–359) for a thread key, so every message of a thread carries the same color.
+export function threadHue(key: string): number {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  return hash % 360;
+}
+
+// The first line of a message, cut to `max` characters: what a reply line quotes of its parent.
+export function quoteOf(message: Message, max = 80): string {
+  const line = (message.title || message.text || "").split("\n").find((part) => part.trim()) ?? "";
+  return line.length > max ? line.slice(0, max - 1).trimEnd() + "…" : line.trim();
+}

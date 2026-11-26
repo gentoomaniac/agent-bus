@@ -8,7 +8,7 @@ import { presenceClass } from "../presence";
 import { byOwner, groupBy, ownerOf, shortName } from "../names";
 import { shortTime } from "../time";
 import { isSeen } from "../viewport";
-import { ThreadRow, ThreadSummary, summarizeThreads, threadRows } from "../threads";
+import { ThreadRow, ThreadSummary, flatRows, quoteOf, summarizeThreads, threadHue, threadKeys, threadRows } from "../threads";
 import { shownMessages, toggleType, typeCounts } from "../typeFilter";
 import { ALL, DEFAULT_TYPE, MESSAGE_TYPES, Message } from "../types";
 
@@ -16,7 +16,6 @@ declare function acquireVsCodeApi(): { postMessage(message: FromWebview): void; 
 const host = acquireVsCodeApi();
 
 const STATUS_LABEL: Record<string, string> = { unknown_sender: "unknown sender", rejected: "rejected" };
-const ID_SUFFIX = 8; // characters of a message ID shown in "reply to": the end of a ULID tells IDs apart
 
 let state: ChatState | undefined;
 let presence = new Map<string, PresenceMark>(); // the page's checked copy of the state's presence
@@ -249,17 +248,42 @@ function renderBox(message: Message, continued: boolean): HTMLElement {
   return box;
 }
 
-// `row` carries the thread view's depth and the "reply to" line of a reply whose parent is missing.
-// A thread root whose subtree has unseen mail is `highlighted`.
-function renderMessage(row: ThreadRow, continued: boolean, isNew: boolean, highlighted: boolean): HTMLElement {
+// What a reply answers, above its header: the parent's sender and first line, which scrolls to the
+// parent on a click. A parent that is not loaded (older, or in another channel) is said so.
+function renderReplyLine(row: ThreadRow): HTMLElement | undefined {
+  const { parent } = row;
+  if (!parent) {
+    if (!row.replyTo) return undefined;
+    const line = el("div", "reply-to missing", "↳ answers a message not shown here (older, or in another channel)");
+    line.title = "reply to " + row.replyTo;
+    return line;
+  }
+  const line = el("button", "reply-to");
+  line.type = "button";
+  line.title = `reply to ${parent.from ?? "unknown sender"} (${parent.id ?? "no id"}): show it`;
+  line.append("↳ ", el("span", "who", shortName(parent.from ?? "?")), " " + (quoteOf(parent) || "(no text)"));
+  line.addEventListener("click", () => showMessage(parent.sequence));
+  return line;
+}
+
+// Scrolls to a message in the list and flashes it. One the type filter hides is not there.
+function showMessage(sequence: number): void {
+  const target = list.querySelector<HTMLElement>(`[data-sequence="${sequence}"]`);
+  if (!target) return;
+  target.scrollIntoView({ block: "center" });
+  target.classList.remove("flash");
+  void target.offsetWidth; // restarts the animation
+  target.classList.add("flash");
+}
+
+// `row` carries the thread view's depth and what a reply answers; `withReplyLine` is false where
+// the parent is the row right above. A thread root whose subtree has unseen mail is `highlighted`.
+function renderMessage(row: ThreadRow, continued: boolean, isNew: boolean, highlighted: boolean, withReplyLine: boolean): HTMLElement {
   const { message } = row;
   const item = el("div", (continued ? "message continued" : "message") + (row.depth > 0 ? " depth-" + row.depth : "") + (highlighted ? " has-new" : ""));
   item.dataset.sequence = String(message.sequence);
-  if (row.replyTo) {
-    const replyTo = el("div", "reply-to muted", "↳ reply to " + row.replyTo.slice(-ID_SUFFIX));
-    replyTo.title = row.replyTo;
-    item.append(replyTo);
-  }
+  const replyLine = withReplyLine ? renderReplyLine(row) : undefined;
+  if (replyLine) item.append(replyLine);
   if (!continued) item.append(renderHeader(message, isNew ? "New" : highlighted ? "new" : undefined));
   if (continued || message.title || message.text) item.append(renderBox(message, continued));
   if (message.reason && message.status !== "verified") item.append(el("div", "warning", message.reason));
@@ -354,21 +378,43 @@ function render(first = false): void {
   const visible = shown();
   if (visible.length === 0) list.append(el("div", "empty", messages.length > 0 ? "No message of these types." : "No messages yet."));
   const firstUnseen = visible.find(isUnseen);
-  const rows: ThreadRow[] = threaded ? threadRows(visible) : visible.map((message) => ({ message, depth: 0 }));
+  const rows: ThreadRow[] = threaded ? threadRows(visible) : flatRows(visible, messages);
   const summaries = threaded ? summarizeThreads(rows, isUnseen) : undefined;
+  // Every message of a conversation with more than one message carries its thread's color; the
+  // thread view also frames each thread with replies as a card.
+  const keys = threadKeys(messages);
+  const sizes = new Map<string, number>();
+  for (const message of visible) sizes.set(keys.get(message) ?? "", (sizes.get(keys.get(message) ?? "") ?? 0) + 1);
   let previous: ThreadRow | undefined;
+  let container: HTMLElement = list;
   for (const row of rows) {
     const isNew = row.message === firstUnseen;
     if (isNew && !threaded) {
       list.append(el("div", "divider", "New"));
     }
     const summary = summaries?.get(row.message);
+    const key = keys.get(row.message) ?? "";
+    const inThread = (sizes.get(key) ?? 0) > 1;
+    if (threaded && row.depth === 0) {
+      container = list;
+      if (summary?.replies) {
+        container = el("div", "thread");
+        container.style.setProperty("--thread-hue", String(threadHue(key)));
+        list.append(container);
+      }
+    }
     // A divider, or a thread with unseen mail (its "new" badge sits in the header), is not grouped.
     const grouped = state.groupMessages && !isNew && !summary?.unseen && continuesGroup(previous, row);
-    const item = renderMessage(row, grouped, isNew && threaded, summary?.unseen === true);
-    list.append(item);
+    // A follow-up of a group answers the same parent as the row above, which already says so.
+    const withReplyLine = !grouped && !(threaded && row.parent && previous?.message === row.parent);
+    const item = renderMessage(row, grouped, isNew && threaded, summary?.unseen === true, withReplyLine);
+    if (!threaded && inThread) {
+      item.classList.add("in-thread");
+      item.style.setProperty("--thread-hue", String(threadHue(key)));
+    }
+    container.append(item);
     seenObserver.observe(item);
-    if (summary?.replies) list.append(renderReplies(summary));
+    if (summary?.replies) container.append(renderReplies(summary));
     previous = row;
   }
   if (first) list.lastElementChild?.scrollIntoView({ block: "end" });

@@ -316,7 +316,15 @@ export class ChatPanels implements vscode.Disposable {
   h1 { font-size: 1.1em; margin: 0; white-space: nowrap; }
   header .link { color: var(--vscode-textLink-foreground); background: transparent; padding: 0 4px; font-size: 0.9em; }
   header .link[aria-pressed="true"] { color: var(--vscode-foreground); border-bottom: 1px solid var(--vscode-focusBorder); }
-  .reply-to { margin-left: var(--name-indent); font-size: 0.85em; font-family: var(--vscode-font-family); }
+  .reply-to { display: block; max-width: calc(100% - var(--name-indent)); margin-left: var(--name-indent); padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 0.85em; font-family: var(--vscode-font-family); color: var(--vscode-descriptionForeground); background: transparent; }
+  button.reply-to:hover:not(:disabled) { background: transparent; color: var(--vscode-textLink-foreground); }
+  .reply-to .who { font-weight: 600; }
+  .reply-to.missing { font-style: italic; }
+  .in-thread { box-shadow: inset 3px 0 0 hsl(var(--thread-hue) 60% 55%); }
+  .thread { margin: 6px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; box-shadow: inset 3px 0 0 hsl(var(--thread-hue) 60% 55%); }
+  .thread .depth-1, .thread .depth-2, .thread .depth-3, .thread .depth-4 { border-left-color: hsl(var(--thread-hue) 60% 55% / 0.5); }
+  .flash { animation: flash 1.5s ease-out; }
+  @keyframes flash { from { background: var(--vscode-editor-findMatchHighlightBackground); } to { background: transparent; } }
   .new { padding: 0 5px; border-radius: 3px; font-size: 0.8em; color: var(--vscode-errorForeground); border: 1px solid var(--vscode-errorForeground); }
   .depth-1, .depth-2, .depth-3, .depth-4 { margin-left: 12px; border-left: 2px solid var(--vscode-panel-border); }
   .depth-2 { margin-left: 24px; }
