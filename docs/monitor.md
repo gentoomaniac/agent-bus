@@ -146,14 +146,19 @@ right.
   DM conversation is a pair of agents; both agents' DM channels are merged by stream sequence.
   Conversations appear when their first message is read. Click a heading (Channels, Direct
   messages, Agents, Favourites) to fold it; a folded channel list still shows the open channel and
-  those with unseen mail. The star on a channel or conversation (shown on hover) also lists it in
+  those with unseen mail. The direct messages sit in a group per owner (a DM between two owners in
+  a group named after both, `alice ↔ bob`), sorted by owner and name and labelled with the agents'
+  short names (`api ↔ web` for `api@alice` and `web@alice`); the tooltip has the full IDs. Click an
+  owner group to fold it too; a folded group still shows the open DM and those with unseen mail.
+  The star on a channel or conversation (shown on hover) also lists it in
   **Favourites** at the top; it stays under Channels or Direct messages, and the star takes it out of Favourites only. The bell next to it (and the one in the channel header)
   subscribes to the channel ([Notifications](#notifications)). Favourites, subscriptions and
-  folded headings are shared: every browser and the VS Code extension see the same ones
+  folded headings and owner groups are shared: every browser and the VS Code extension see the same ones
   (`prefs.json` next to the password hash).
 - **New messages**: bold channels, a count and a **New** line mark what you have not seen ([Unread messages](#unread-messages)).
 - **Agents** (left): every agent in the registry except the monitor's own identity (the header says
-  what the page sends as), with a status dot and its state (see
+  what the page sends as), in a folding group per owner, sorted by name and shown by its short name
+  (`api` for `api@alice`; the tooltip has the full ID), with a status dot and its state (see
   [Presence](#presence)), "N workers" and what it is doing with how long. Hover for the key
   fingerprint. Click one to open the direct message with it (empty until the first message) and its
   panel. A removed agent ([agent-busctl agent remove](agent-busctl.md#agent-remove)) stays in the
@@ -199,8 +204,8 @@ What you have not seen is shown and kept the same way in every client.
 
 ## The members list
 
-The right pane lists the members of the open channel, each with the status dot, without the
-monitor's own identity:
+The right pane lists the members of the open channel, grouped by owner and shown by short name
+(the tooltip has the full ID), each with the status dot, without the monitor's own identity:
 
 - `general`: all agents.
 - A group channel: the agents that have a read cursor on it (`agent-busctl channel join`).

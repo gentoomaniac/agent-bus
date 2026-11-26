@@ -59,10 +59,14 @@
   li.item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   li.item .unread { flex: none; }
   /* Section headings fold their list; a folded list still shows the open channel and unread ones. */
-  button.section { all: unset; cursor: pointer; display: flex; align-items: center; gap: 4px; color: inherit; }
-  button.section::before { content: "\25be"; display: inline-block; width: 1em; transition: transform .1s; }
-  button.section[aria-expanded=false]::before { transform: rotate(-90deg); }
-  button.section:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.section, button.group-fold { all: unset; cursor: pointer; display: flex; align-items: center; gap: 4px; color: inherit; }
+  button.section::before, button.group-fold::before { content: "\25be"; display: inline-block; width: 1em; transition: transform .1s; }
+  button.section[aria-expanded=false]::before, button.group-fold[aria-expanded=false]::before { transform: rotate(-90deg); }
+  button.section:focus-visible, button.group-fold:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* An owner group of agents or direct messages folds like a section, below it. */
+  button.group-fold { padding: 4px 12px; font-size: var(--font-s); color: var(--side-muted); min-width: 0; }
+  button.group-fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li.owner { padding: 6px 12px 2px; font-size: var(--font-s); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   /* The star adds a channel to Favourites and removes it, the bell subscribes to it; they show on hover or focus, always when on or on a touch screen. */
   /* Hidden by opacity, not visibility, so the keyboard still reaches them; they take the row's text color. */
   button.star, button.bell { all: unset; cursor: pointer; flex: none; color: inherit; opacity: 0; padding: 0 2px; }
@@ -294,8 +298,8 @@
     /* Tap targets of 40px, and 16px inputs so iOS does not zoom in on focus. */
     button:not(.tag, .raw-button, .reply-to), select, input:not([type=checkbox], [type=radio], [type=color]), li.item, li.member, .choices label, .swatch { min-height: 40px; }
     select, input, textarea { font-size: max(16px, var(--font)); }
-    button.section, button.star, button.bell { min-height: 40px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
-    button.section { justify-content: flex-start; }
+    button.section, button.group-fold, button.star, button.bell { min-height: 40px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
+    button.section, button.group-fold { justify-content: flex-start; }
     .chip { flex: none; min-width: 40px; }
     #type-filter { flex-wrap: nowrap; overflow-x: auto; }
     li.item > .label { flex: 1 1 auto; }
@@ -1263,7 +1267,7 @@ function presenceOf(agentId) {
 // The agent's ID with its status dot and state.
 function agentLine(agentId, view) {
   return el("span", { class: "agent-line", title: agentId + ": " + view.state },
-    el("span", { class: "dot " + stateClass(view.state) }), avatarFor(agentId, true), el("span", { class: "label" }, agentId),
+    el("span", { class: "dot " + stateClass(view.state) }), avatarFor(agentId, true), el("span", { class: "label" }, shortName(agentId)),
     el("span", { class: "muted state" }, view.state));
 }
 
@@ -1298,8 +1302,9 @@ function renderDetail() {
 }
 
 // The two agents of a DM on a line each, so a long first name cannot hide the second.
-function pairLabel(agents) {
-  return el("span", { class: "label pair" }, el("span", { class: "cut" }, agents[0]), el("span", { class: "cut" }, "\u2194 " + agents[1]));
+function pairLabel(channel) {
+  const [first, second] = dmAgents(channel).map(shortName);
+  return el("span", { class: "label pair" }, el("span", { class: "cut" }, first), el("span", { class: "cut" }, "\u2194 " + second));
 }
 
 function toggleFavourite(channelId) {
@@ -1331,24 +1336,43 @@ function syncSection(section) {
   return folded;
 }
 
+// Sections and owner groups share one list of folded ids; the groups' ids ("agents@<owner>",
+// "dms@<owner>") are those of the VS Code extension.
+function toggleFolded(id) {
+  if (!state.collapsed.delete(id)) state.collapsed.add(id);
+  putPref("collapsed", state.collapsed);
+  renderSidebar();
+  // Owner groups were rebuilt: keep the keyboard on the one that moved.
+  document.querySelector(`button.group-fold[data-group="${CSS.escape(id)}"]`)?.focus();
+}
+
 for (const button of document.querySelectorAll("button.section")) {
-  button.addEventListener("click", () => {
-    const section = button.dataset.section;
-    if (!state.collapsed.delete(section)) state.collapsed.add(section);
-    putPref("collapsed", state.collapsed);
-    renderSidebar();
-  });
+  button.addEventListener("click", () => toggleFolded(button.dataset.section));
 }
 
 function isUnseen(channel) {
   return channel.id !== state.selected && Boolean(state.unread.get(channel.id) || (channel.last_sequence || 0) > readSequence(channel.id));
 }
 
-// A folded section keeps the open channel and the unread ones, as in Slack.
-function fillSection(section, channels, emptyText) {
+// A folded section or owner group keeps the open channel and the unread ones, as in Slack.
+const keptWhenFolded = (channel) => channel.id === state.selected || isUnseen(channel);
+
+// An owner group folds its rows, which a caller renders from what it lets through.
+function ownerGroup(id, label, items, render, keep) {
+  const folded = state.collapsed.has(id);
+  const shown = folded ? items.filter(keep) : items;
+  const button = el("button", { class: "group-fold", type: "button", "data-group": id, "aria-expanded": String(!folded), title: label, onclick: () => toggleFolded(id) }, el("span", {}, label));
+  return el("li", { class: "group" }, button, el("ul", {}, ...shown.map(render)));
+}
+
+function dmGroups(channels) {
+  return groupBy([...channels].sort(dmByOwner), dmOwners).map(({ key, items }) => ownerGroup("dms@" + key, key || "(no owner)", items, channelItem, keptWhenFolded));
+}
+
+function fillSection(section, channels, emptyText, render = (list) => list.map(channelItem)) {
   const folded = syncSection(section);
-  const shown = folded ? channels.filter((c) => c.id === state.selected || isUnseen(c)) : channels;
-  $(section).replaceChildren(...(shown.length ? shown.map(channelItem) : folded || !emptyText ? [] : [el("li", { class: "empty" }, emptyText)]));
+  const shown = folded ? channels.filter(keptWhenFolded) : channels;
+  $(section).replaceChildren(...(shown.length ? render(shown) : folded || !emptyText ? [] : [el("li", { class: "empty" }, emptyText)]));
 }
 
 const bellGlyph = (subscribed) => (subscribed ? "\u{1F514}" : "\u{1F515}");
@@ -1362,8 +1386,18 @@ function channelItem(channel) {
   const subscribed = state.subscribed.has(channel.id);
   const bell = el("button", { type: "button", class: "bell" + (subscribed ? " on" : ""), "data-channel": channel.id, title: bellTitle(subscribed), "aria-label": "Notifications", "aria-pressed": String(subscribed),
     onclick: (event) => { event.stopPropagation(); toggleSubscription(channel.id); } }, bellGlyph(subscribed));
-  return el("li", { class: "item" + (channel.id === state.selected ? " selected" : "") + (isUnseen(channel) ? " has-unread" : ""), title: describeChannel(channel) + (channel.description ? ": " + channel.description : ""), onclick: () => select(channel.id) },
-    channel.kind === "dm" ? pairLabel(channel.agents) : el("span", { class: "label" }, describeChannel(channel)), unread ? el("span", { class: "unread" }, String(unread)) : "", bell, star);
+  return el("li", { class: "item" + (channel.id === state.selected ? " selected" : "") + (isUnseen(channel) ? " has-unread" : ""), title: (channel.kind === "dm" ? dmAgents(channel).join(" \u2194 ") : describeChannel(channel)) + (channel.description ? ": " + channel.description : ""), onclick: () => select(channel.id) },
+    channel.kind === "dm" ? pairLabel(channel) : el("span", { class: "label" }, describeChannel(channel)), unread ? el("span", { class: "unread" }, String(unread)) : "", bell, star);
+}
+
+function agentItem(agent) {
+  if (agent.removed) {
+    return el("li", { class: "item removed", title: agent.fingerprint },
+      el("div", {}, el("span", { class: "agent-line", title: agent.id + " (removed)" }, el("span", { class: "dot" }), el("span", { class: "label" }, shortName(agent.id)), el("span", { class: "muted state" }, "removed"))));
+  }
+  const view = presenceOf(agent.id);
+  return el("li", { class: "item", title: agent.fingerprint, onclick: () => { showDetail(agent.id); openDirect(agent.id); } },
+    el("div", {}, agentLine(agent.id, view), agentSummary(view)));
 }
 
 function renderSidebar() {
@@ -1372,18 +1406,12 @@ function renderSidebar() {
   fillSection("favourites", favourites);
   // A favourite stays in its own section too.
   fillSection("channels", state.channels.filter((c) => c.kind !== "dm"));
-  fillSection("dms", state.channels.filter((c) => c.kind === "dm"), "none yet");
+  fillSection("dms", state.channels.filter((c) => c.kind === "dm"), "none yet", dmGroups);
   // The monitor's own identity is us: listing it says nothing.
   const agents = state.agents.filter((a) => a.id !== state.status.agent);
-  $("agents").replaceChildren(...(agents.length ? agents.map((agent) => {
-    if (agent.removed) {
-      return el("li", { class: "item removed", title: agent.fingerprint },
-        el("div", {}, el("span", { class: "agent-line", title: agent.id + " (removed)" }, el("span", { class: "dot" }), el("span", { class: "label" }, agent.id), el("span", { class: "muted state" }, "removed"))));
-    }
-    const view = presenceOf(agent.id);
-    return el("li", { class: "item", title: agent.fingerprint, onclick: () => { showDetail(agent.id); openDirect(agent.id); } },
-      el("div", {}, agentLine(agent.id, view), agentSummary(view)));
-  }) : [el("li", { class: "empty" }, "no agents registered")]));
+  const groups = groupBy(agents.sort((a, b) => byOwner(a.id, b.id)), (agent) => ownerOf(agent.id));
+  $("agents").replaceChildren(...(agents.length ? groups.map(({ key, items }) => ownerGroup("agents@" + key, key || "(no owner)", items, agentItem, () => false))
+    : [el("li", { class: "empty" }, "no agents registered")]));
   $("agents").hidden = syncSection("agents");
   renderDetail();
 }
@@ -1395,15 +1423,17 @@ function canManageMembers() {
 }
 
 function renderMembers() {
-  const members = state.members.filter((id) => id !== state.status.agent);
+  const members = state.members.filter((id) => id !== state.status.agent).sort(byOwner);
   const manage = canManageMembers();
-  $("members").replaceChildren(...(members.length ? members.map((id) => {
+  const memberRow = (id) => {
     const row = el("li", { class: "member", onclick: () => showDetail(id) }, agentLine(id, presenceOf(id)));
     if (manage) row.append(el("button", { class: "remove", type: "button", title: "Remove from channel", "aria-label": "Remove " + id + " from the channel",
       onclick: (event) => { event.stopPropagation(); removeMember(id); } }, "\u00d7"));
     return row;
-  }) : [el("li", { class: "empty" }, "none")]));
-  const invitable = state.agents.filter((agent) => !agent.removed && agent.id !== state.status.agent && !state.members.includes(agent.id)).map((agent) => agent.id);
+  };
+  $("members").replaceChildren(...(members.length ? groupBy(members, ownerOf).flatMap(({ key, items }) => [el("li", { class: "owner" }, key || "no owner"), ...items.map(memberRow)])
+    : [el("li", { class: "empty" }, "none")]));
+  const invitable = state.agents.filter((agent) => !agent.removed && agent.id !== state.status.agent && !state.members.includes(agent.id)).map((agent) => agent.id).sort(byOwner);
   const form = document.forms["member-invite"];
   form.hidden = !manage || invitable.length === 0;
   const picked = form.agent.value;
@@ -1585,8 +1615,57 @@ function quoteOf(message, max = 80) {
   return line.length > max ? line.slice(0, max - 1).trimEnd() + "\u2026" : line.trim();
 }
 
-// The part of an agent ID before the "@".
-const shortName = (agentId) => agentId.split("@")[0];
+// An agent ID is "<name>@<owner>". These mirror vscode/src/names.ts: both clients group and order
+// agents the same way.
+function splitId(agentId) {
+  const at = agentId.lastIndexOf("@");
+  return at < 0 ? { name: agentId, owner: "" } : { name: agentId.slice(0, at), owner: agentId.slice(at + 1) };
+}
+
+// The part before the "@", shown under its owner's group; the full ID is in the tooltip.
+const shortName = (agentId) => splitId(agentId).name;
+const ownerOf = (agentId) => splitId(agentId).owner;
+
+// Orders agent IDs by owner, then by name.
+function byOwner(a, b) {
+  const x = splitId(a);
+  const y = splitId(b);
+  return x.owner.localeCompare(y.owner) || x.name.localeCompare(y.name);
+}
+
+// A DM's two agents in owner order. The monitor sees every DM, so neither has to be its own agent.
+function dmAgents(channel) {
+  return [...(channel.agents || channel.name.split(" + "))].sort(byOwner);
+}
+
+// The group a DM is listed in: its owner, or both owners when the agents belong to two.
+function dmOwners(channel) {
+  return [...new Set(dmAgents(channel).map(ownerOf))].join(" \u2194 ");
+}
+
+// Orders DMs by their owner group, then by their agents.
+function dmByOwner(a, b) {
+  const group = dmOwners(a).localeCompare(dmOwners(b));
+  if (group !== 0) return group;
+  const x = dmAgents(a);
+  const y = dmAgents(b);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    const order = byOwner(x[i], y[i]);
+    if (order !== 0) return order;
+  }
+  return x.length - y.length;
+}
+
+// Splits an ordered list into runs with the same key, keeping the order.
+function groupBy(items, key) {
+  const groups = [];
+  for (const item of items) {
+    const k = key(item);
+    if (groups.length > 0 && groups[groups.length - 1].key === k) groups[groups.length - 1].items.push(item);
+    else groups.push({ key: k, items: [item] });
+  }
+  return groups;
+}
 
 // Parents that are not in the open channel, by message ID: the message, "gone" when the monitor does
 // not hold it (404), "failed" for any other error, and "loading" meanwhile. A message never changes, so
