@@ -106,7 +106,8 @@ export class ChatPanels implements vscode.Disposable {
       const message = await model.api.messageById(id);
       answer = { ...answer, message: message.channel === channelId ? message : { ...message, where: hitPlace(model.channels, message.channel) } };
     } catch (error) {
-      if (error instanceof ApiError && error.status === 404) answer = { ...answer, gone: true };
+      // Only unknown_message means gone: a monitor older than the lookup answers not_found.
+      if (error instanceof ApiError && error.code === "unknown_message") answer = { ...answer, gone: true };
       else if (error instanceof ApiError && error.unauthenticated) this.session.report(error);
     }
     void chat.panel.webview.postMessage(answer satisfies ToWebview);
