@@ -62,7 +62,7 @@ Where things stand on 2026-11-25. Details and exceptions are in the linked docum
 | Private channels, membership ledger | [private channels](private-channels.md) | planned |
 | busd | [busd](busd.md) | minimal busd implemented; signed API, ledger and the rest planned |
 | agent-busctl | [admin CLI](admin-cli.md) | partly: setup, register, channels, removal, directory, certificates, enrollment, service and monitor setup |
-| Lazy monitor: index in memory, bodies on demand, SQLite FTS search | [lazy monitor](lazy-monitor.md) | proposed |
+| Lazy monitor: index in memory, bodies on demand, SQLite FTS search | [lazy monitor](lazy-monitor.md) | accepted, not built |
 | Monitor and API | [monitor and API](monitor-and-api.md) | implemented; own logins and shared prefs; the special read-only `monitor@<owner>` role, durable consumer and `human@` planned |
 | VS Code extension (`vscode/`) | [monitor and API](monitor-and-api.md) | implemented, API client only (decision 44) |
 | MCP tools | [MCP tools](mcp-tools.md) | partly: 8 tools; the rest planned |
@@ -99,7 +99,7 @@ The old list of contradictions is replaced by the sections that now say it at th
 9. [agent-busctl](admin-cli.md), [monitor and API](monitor-and-api.md), [operations](operations.md).
 10. [Directory v2](directory-v2.md): versioned, announced, diff-only directory updates (built).
 11. [Trust between agents](trust.md): roles that limit what other agents can make an agent do (proposed).
-12. [Lazy monitor](lazy-monitor.md): a bounded-memory monitor with on-demand history and SQLite search (proposed).
+12. [Lazy monitor](lazy-monitor.md): a bounded-memory monitor with on-demand history and SQLite search (accepted, not built).
 12. [Channels requested by agents](agent-channels.md): agents create channels and invite others (public channels built, the rest planned).
 13. Reference: [MCP tools](mcp-tools.md), [milestones](milestones.md), [acceptance tests](acceptance-tests.md), [decisions log](decisions.md).
 
