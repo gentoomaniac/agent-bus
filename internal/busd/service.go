@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"golang.org/x/time/rate"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
@@ -151,14 +151,14 @@ func (service *Service) HandleRequest(ctx context.Context, data []byte) enroll.R
 	stored.Secret = ""
 	added := &entry{Request: stored, SubmittedAt: now, ExpiresAt: now.Add(requestLifetime), Status: enroll.StatusPending, verified: verified}
 	service.entries[id] = added
-	log.Printf("busd: enrollment request %s from %s for %s (%s), signing key %s", added.code(), verified.Hostname, verified.AgentID, identity, verified.SigningFingerprint)
+	log.Info().Msgf("busd: enrollment request %s from %s for %s (%s), signing key %s", added.code(), verified.Hostname, verified.AgentID, identity, verified.SigningFingerprint)
 
 	if identity != enroll.IdentityReplaces && service.autosignMatches(verified.Secret) {
 		_, err := service.approve(ctx, added, false, "autosigned")
 		// Saved first: the rebuild that the announcement starts reads whether it is still approving.
 		service.saveOrLog()
 		if err != nil {
-			log.Printf("busd: autosign of %s failed, it stays pending: %v", added.code(), err)
+			log.Error().Msgf("busd: autosign of %s failed, it stays pending: %v", added.code(), err)
 		} else {
 			service.directoryChanged()
 		}
@@ -267,7 +267,7 @@ func (service *Service) Reject(command enroll.RejectCommand) enroll.CommandReply
 	}
 	request.decide(enroll.StatusRejected, cleanReason(command.Reason), service.config.Now())
 	service.saveOrLog()
-	log.Printf("busd: rejected enrollment request %s for %s: %s", request.code(), request.Request.AgentID, request.Message)
+	log.Info().Msgf("busd: rejected enrollment request %s for %s: %s", request.code(), request.Request.AgentID, request.Message)
 	return enroll.CommandReply{Message: fmt.Sprintf("rejected %s (%s)", request.Request.AgentID, request.code())}
 }
 
@@ -341,7 +341,7 @@ func (service *Service) makeRoom(request enroll.Verified) (enroll.Reply, bool) {
 		}
 		if queued.Request.PublicKey == request.PublicKey {
 			delete(service.entries, queued.verified.ID())
-			log.Printf("busd: enrollment request %s superseded by a newer one of %s", queued.code(), request.AgentID)
+			log.Info().Msgf("busd: enrollment request %s superseded by a newer one of %s", queued.code(), request.AgentID)
 			continue
 		}
 		forAgent++
@@ -498,7 +498,7 @@ func (service *Service) approve(ctx context.Context, request *entry, replace boo
 
 	request.Certificate = string(certificate)
 	request.decide(enroll.StatusApproved, "", service.config.Now())
-	log.Printf("busd: %s enrollment request %s for %s (%s): certificate issued for %s, signing key %s",
+	log.Info().Msgf("busd: %s enrollment request %s for %s (%s): certificate issued for %s, signing key %s",
 		how, request.code(), agentID, identity, broker.WithCertID(broker.AgentCertIdentity(agentID), certID), request.verified.SigningFingerprint)
 	return fmt.Sprintf("approved %s (%s): certificate issued, the agent now logs in with it", agentID, request.code()), nil
 }
@@ -570,7 +570,7 @@ func (service *Service) load() error {
 			request.verified, err = enroll.Verify(raw)
 		}
 		if err != nil {
-			log.Printf("busd: dropping a stored enrollment request that no longer verifies: %v", err)
+			log.Warn().Msgf("busd: dropping a stored enrollment request that no longer verifies: %v", err)
 			continue
 		}
 		service.entries[request.verified.ID()] = request
@@ -621,6 +621,6 @@ func unfinishedApprovals(configDir string) ([]string, error) {
 // right, only a restart would lose it.
 func (service *Service) saveOrLog() {
 	if err := service.save(); err != nil {
-		log.Printf("busd: saving the enrollment state: %v", err)
+		log.Error().Msgf("busd: saving the enrollment state: %v", err)
 	}
 }

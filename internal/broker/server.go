@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"net/http"
 	"os"
@@ -17,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
@@ -257,7 +258,7 @@ func (server Server) updateAuthFile(ctx context.Context, name string, edit func(
 	// copy, so a failure only means agentAccounts lags until the next confirmed change.
 	if name == authFile {
 		if err := files.Write(server.path(authFile+confirmedSuffix), []byte(withGeneration(generation+1, newBody)), files.SecretMode, true); err != nil {
-			log.Printf("broker: keeping the copy of the confirmed %s: %v", authFile, err)
+			log.Warn().Msgf("broker: keeping the copy of the confirmed %s: %v", authFile, err)
 		}
 	}
 	return nil

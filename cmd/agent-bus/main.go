@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -25,11 +24,13 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enrollclient"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/hook"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/logging"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/mcpserver"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 	"github.com/alecthomas/kong"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/rs/zerolog/log"
 )
 
 // Set at release time by goreleaser: -ldflags "-X main.version=...".
@@ -42,6 +43,8 @@ var (
 )
 
 type CLI struct {
+	logging.LoggingConfig
+
 	Version gocli.VersionFlag `short:"V" help:"Display version."`
 
 	Agent      string        `help:"The identity to act as, <name>@<owner>. Required except for pending." aliases:"identity" env:"BUS_AGENT"`
@@ -173,14 +176,14 @@ func (cmd *MCPCmd) Run(ctx context.Context, cli *CLI, session *adapter.Adapter) 
 	}
 	go runDirectory(ctx, session, cli.DirectoryRefresh)
 	publisher := presence.NewPublisher(session, cli.PresenceHeartbeat, time.Now)
-	publisher.Log = func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) }
+	publisher.Log = logging.Infof("agent-bus: ")
 	publishing := make(chan struct{})
 	publishCtx, stopPublishing := context.WithCancel(ctx)
 	go func() { publisher.Run(publishCtx); close(publishing) }()
 	defer func() { stopPublishing(); <-publishing }()
 	// A failure here only costs the end-of-turn check and the owner's view.
 	if stop, err := hook.Listen(hook.Dir(), hookSession{session, publisher}); err != nil {
-		log.Printf("agent-bus: no hook socket: %v", err)
+		log.Warn().Msgf("agent-bus: no hook socket: %v", err)
 	} else {
 		defer stop()
 	}
@@ -210,7 +213,7 @@ func runDirectory(ctx context.Context, session *adapter.Adapter, fallback time.D
 			return
 		}
 		last = err.Error()
-		log.Printf("agent-bus: syncing the directory: %v", err)
+		log.Warn().Msgf("agent-bus: syncing the directory: %v", err)
 	})
 }
 
@@ -291,6 +294,7 @@ func (cmd *EventCmd) Run() error {
 func main() {
 	var cli CLI
 	kongCtx := kong.Parse(&cli, kong.Name("agent-bus"), kong.Vars{"version": version, "commit": commit, "binName": binName, "builtBy": builtBy, "date": date}, kong.Description("Adapter of the Agent Bus."))
+	logging.Setup(&cli.LoggingConfig)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -381,7 +385,7 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 		return nil, nil, err
 	}
 	if brokerNote != "" {
-		log.Printf("agent-bus: WARNING: %s", brokerNote)
+		log.Warn().Msgf("agent-bus: WARNING: %s", brokerNote)
 	}
 	connection, err := broker.UserConnection(dir, bus.AgentToken(cli.Agent), cli.Broker, cli.MappedPort, caCert)
 	if err != nil {
@@ -392,9 +396,9 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 		return nil, nil, err
 	}
 	if longRunning {
-		log.Printf("agent-bus: connecting to %s as %s (broker from %s)", connection.Address, cli.Agent, brokerSource)
+		log.Info().Msgf("agent-bus: connecting to %s as %s (broker from %s)", connection.Address, cli.Agent, brokerSource)
 		connection.Reconnect = &broker.Backoff{Initial: cli.ReconnectInitial, Max: cli.ReconnectMax}
-		connection.Log = func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) }
+		connection.Log = logging.Infof("agent-bus: ")
 	}
 	transport, err := broker.NewTransport(connection, cli.Agent)
 	if err != nil {
@@ -402,7 +406,7 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 	}
 	session, err = adapter.Open(adapter.Config{
 		AgentID: cli.Agent, Dir: dir, Transport: transport, BrokerAddress: connection.Address, BrokerNote: brokerNote, Directory: trust.DirectoryPath(cli.ConfigDir),
-		DirectoryLink: transport, ChannelLink: transport, CACert: caPEM, Log: func(format string, args ...any) { log.Printf("agent-bus: "+format, args...) },
+		DirectoryLink: transport, ChannelLink: transport, CACert: caPEM, Log: logging.Infof("agent-bus: "),
 		Groups: cli.Groups, Deliver: cli.Deliver, AutoAccept: cli.AutoAccept,
 	})
 	if err != nil {
@@ -419,7 +423,7 @@ func (cli *CLI) open(longRunning bool) (session *adapter.Adapter, closeSession f
 	}
 	// A command or session starts with the revocations the directory has now.
 	if err := session.RefreshDirectory(context.Background()); err != nil {
-		log.Printf("agent-bus: reading the directory: %v", err)
+		log.Warn().Msgf("agent-bus: reading the directory: %v", err)
 	}
 	return session, func() { session.Close(); transport.Close() }, nil
 }

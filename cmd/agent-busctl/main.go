@@ -14,6 +14,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	gocli "git.srv.gentoomaniac.net/marco/agent-messenger/internal/cli"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/logging"
 	"github.com/alecthomas/kong"
 )
 
@@ -27,6 +28,8 @@ var (
 )
 
 type CLI struct {
+	logging.LoggingConfig
+
 	Version gocli.VersionFlag `short:"V" help:"Display version."`
 
 	ConfigDir  string        `help:"Directory for keys, certificates and credentials." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
@@ -145,6 +148,7 @@ func (cli *CLI) brokerAdmin() (*broker.Admin, error) {
 func main() {
 	var cli CLI
 	kongCtx := kong.Parse(&cli, kong.Name("agent-busctl"), kong.Vars{"version": version, "commit": commit, "binName": binName, "builtBy": builtBy, "date": date}, kong.Description("Admin CLI of the Agent Bus."))
+	logging.Setup(&cli.LoggingConfig)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

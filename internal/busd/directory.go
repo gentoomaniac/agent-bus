@@ -7,12 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
@@ -90,7 +91,7 @@ func NewDirectory(config DirectoryConfig) *Directory {
 		err = errors.New("its content does not match its state hash")
 	}
 	if err != nil {
-		log.Printf("busd: the directory state %s is unusable, a new epoch starts: %v", path, err)
+		log.Warn().Msgf("busd: the directory state %s is unusable, a new epoch starts: %v", path, err)
 		published.current = revision{}
 	}
 	return published
@@ -155,7 +156,7 @@ func (published *Directory) Reconcile(ctx context.Context) ([]directory.Change, 
 	published.current = next
 	changes := directory.Changes(previous.Projection, projection)
 	published.head = published.signHead(changes)
-	log.Printf("busd: directory %s: %d changes", next.Version, len(changes))
+	log.Info().Msgf("busd: directory %s: %d changes", next.Version, len(changes))
 	return changes, nil
 }
 
@@ -175,7 +176,7 @@ func (published *Directory) Head() []byte {
 func (published *Directory) signHead(changes []directory.Change) []byte {
 	head, err := directory.SignHead(published.config.CA, published.current.Version, changes)
 	if err != nil {
-		log.Printf("busd: signing the directory head: %v", err)
+		log.Error().Msgf("busd: signing the directory head: %v", err)
 		return nil
 	}
 	return head
@@ -197,7 +198,7 @@ func (published *Directory) HandleSync(caller string, request []byte) []byte {
 	}
 	signed, err := directory.SignSyncReply(published.config.CA, reply)
 	if err != nil {
-		log.Printf("busd: signing a directory reply: %v", err)
+		log.Error().Msgf("busd: signing a directory reply: %v", err)
 		return directory.Unsigned("busd cannot sign the directory")
 	}
 	return signed

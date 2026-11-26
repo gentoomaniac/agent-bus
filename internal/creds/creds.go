@@ -11,12 +11,12 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/files"
@@ -304,7 +304,7 @@ func ReadMonitorPasswordHash(configDir string) ([]byte, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		oldPath := filepath.Join(configDir, oldMonitorPasswordFile)
 		if data, err = os.ReadFile(oldPath); err == nil {
-			log.Printf("the monitor password moved from %s to %s: it is read from the old place until "+
+			log.Warn().Msgf("the monitor password moved from %s to %s: it is read from the old place until "+
 				"`agent-busctl monitor password` writes the new file", oldPath, MonitorPasswordPath(configDir))
 		}
 	}

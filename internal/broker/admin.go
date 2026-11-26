@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/rs/zerolog/log"
 )
 
 // The fixed configuration of every agent consumer (docs/design/jetstream-binding.md). The agent cannot change it.
@@ -556,12 +556,12 @@ func serve(session *session, subject, allowed string, allows func(subject, reply
 		}
 		if !allows(message.Subject, message.Reply) {
 			if dropped.Add(1) == 1 {
-				log.Printf("busd: dropping a request on %s whose reply subject %q is outside %s (further ones are not logged)", message.Subject, message.Reply, allowed)
+				log.Warn().Msgf("busd: dropping a request on %s whose reply subject %q is outside %s (further ones are not logged)", message.Subject, message.Reply, allowed)
 			}
 			return
 		}
 		if err := message.Respond(handle(message.Subject, message.Data)); err != nil {
-			log.Printf("busd: answering a request on %s: %v", message.Subject, err)
+			log.Error().Msgf("busd: answering a request on %s: %v", message.Subject, err)
 		}
 	})
 	if err == nil {

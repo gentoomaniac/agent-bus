@@ -23,4 +23,4 @@ podman run -d --name agent-bus-monitor $U --network container:agent-bus \
   -v "${BASE_PATH}/monitor-config:/config" --entrypoint bus-monitor \
   -e BUS_WEB_LISTEN=0.0.0.0:8080 -e BUS_WEB_BEHIND_PROXY=true \
   -e BUS_AGENT="$MONITOR_AGENT" ${PUBLIC_URL:+-e BUS_WEB_PUBLIC_URL=$PUBLIC_URL} \
-  $IMG
+  $IMG -vv

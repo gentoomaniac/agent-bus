@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/channelapi"
@@ -107,7 +108,7 @@ func (channels *Channels) HandleRequest(caller string, message []byte) []byte {
 	}
 	signed, err := channelapi.SignReply(channels.config.CA, reply)
 	if err != nil {
-		log.Printf("busd: signing a channel reply: %v", err)
+		log.Error().Msgf("busd: signing a channel reply: %v", err)
 		return directory.Unsigned("busd cannot sign its answer")
 	}
 	return signed

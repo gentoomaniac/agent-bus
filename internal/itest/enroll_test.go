@@ -73,7 +73,7 @@ func (h *harness) launchBusd(t *testing.T) *lockedBuffer {
 	binary := filepath.Join(t.TempDir(), "busd")
 	h.run(t, "go", "build", "-o", binary, "../../cmd/busd")
 	output := &lockedBuffer{}
-	cmd := exec.Command(binary)
+	cmd := exec.Command(binary, "-vv")
 	cmd.Env = h.env
 	cmd.Stdout, cmd.Stderr = output, output
 	if err := cmd.Start(); err != nil {

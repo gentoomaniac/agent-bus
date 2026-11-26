@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -23,9 +22,11 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
 	gocli "git.srv.gentoomaniac.net/marco/agent-messenger/internal/cli"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/logging"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/monitor"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/trust"
 	"github.com/alecthomas/kong"
+	"github.com/rs/zerolog/log"
 )
 
 // Set at release time by goreleaser: -ldflags "-X main.version=...".
@@ -40,6 +41,8 @@ var (
 const shutdownTimeout = 5 * time.Second
 
 type CLI struct {
+	logging.LoggingConfig
+
 	Version gocli.VersionFlag `short:"V" help:"Display version."`
 
 	Listen     string `help:"Address of the web interface. It shows all traffic and speaks plain HTTP: it must be a loopback address unless --behind-proxy is set." default:"127.0.0.1:8080" env:"BUS_WEB_LISTEN"`
@@ -63,7 +66,7 @@ type CLI struct {
 func (cli *CLI) connection(caCert, user, dir string) (broker.Connection, error) {
 	connection, err := broker.UserConnection(dir, user, cli.Broker, cli.MappedPort, caCert)
 	connection.Reconnect = &broker.Backoff{Initial: cli.ReconnectInitial, Max: cli.ReconnectMax}
-	connection.Log = func(format string, args ...any) { log.Printf("bus-monitor: "+format, args...) }
+	connection.Log = logging.Infof("bus-monitor: ")
 	return connection, err
 }
 
@@ -94,7 +97,7 @@ func (cli *CLI) readingUsers() (busUser, controlUser string) {
 	if _, err := creds.ReadPassword(creds.AdminDir(cli.ConfigDir, broker.MonitorBusUser)); err == nil {
 		return broker.MonitorBusUser, broker.MonitorControlUser
 	}
-	log.Printf("bus-monitor: no read-only login in %s, so it uses the admin logins; "+
+	log.Warn().Msgf("bus-monitor: no read-only login in %s, so it uses the admin logins; "+
 		"`agent-busctl monitor init` makes a config directory without them (docs/monitor.md)", cli.ConfigDir)
 	return broker.BusAdminUser, broker.ControlAdminUser
 }
@@ -150,7 +153,7 @@ func (cli *CLI) Run() error {
 	}
 	defer closeSender()
 	web := monitor.New(monitor.Config{
-		Admin: registry, History: history, Sender: sender, ReadOnlyNote: readOnlyNote, Report: func(err error) { log.Print(err) },
+		Admin: registry, History: history, Sender: sender, ReadOnlyNote: readOnlyNote, Report: func(err error) { log.Error().Msg(err.Error()) },
 		PrefsPath: creds.MonitorPrefsPath(cli.ConfigDir), DirectoryHeads: admin.WatchDirectoryHeads, CACert: caPEM,
 	})
 	go web.Run(ctx)
@@ -171,9 +174,9 @@ func (cli *CLI) Run() error {
 		defer cancel()
 		server.Shutdown(shutdownCtx)
 	}()
-	log.Printf("bus-monitor %s: http://%s", version, listener.Addr())
+	log.Info().Msgf("bus-monitor %s: http://%s", version, listener.Addr())
 	if len(access.PasswordHash) == 0 {
-		log.Print("no password set: anyone who can reach the page sees all traffic (agent-busctl monitor password)")
+		log.Warn().Msg("no password set: anyone who can reach the page sees all traffic (agent-busctl monitor password)")
 	}
 	if err := server.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -217,5 +220,6 @@ func (cli *CLI) openSender(caCert string, caPEM []byte) (sender monitor.Sender, 
 func main() {
 	var cli CLI
 	kongCtx := kong.Parse(&cli, kong.Name("bus-monitor"), kong.Vars{"version": version, "commit": commit, "binName": binName, "builtBy": builtBy, "date": date}, kong.Description("Web interface of the Agent Bus."))
+	logging.Setup(&cli.LoggingConfig)
 	kongCtx.FatalIfErrorf(kongCtx.Run())
 }

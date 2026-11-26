@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/nats-io/nats.go v1.56.0
+	github.com/rs/zerolog v1.35.1
 	golang.org/x/crypto v0.59.0
 	golang.org/x/term v0.48.0
 	golang.org/x/time v0.15.0
@@ -23,6 +24,7 @@ require (
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect

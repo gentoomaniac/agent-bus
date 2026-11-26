@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
+	"github.com/rs/zerolog/log"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/broker"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
@@ -27,6 +27,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/creds"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/directory"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/enroll"
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/logging"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/tlsinit"
 )
 
@@ -50,6 +51,8 @@ const (
 )
 
 type CLI struct {
+	logging.LoggingConfig
+
 	Version gocli.VersionFlag `short:"V" help:"Display version."`
 
 	ConfigDir    string        `help:"Directory with the CA key, the admin credentials and the server's files." type:"path" default:"~/.config/agent-bus" env:"BUS_CONFIG_DIR"`
@@ -68,7 +71,7 @@ type CLI struct {
 // A broker set up before it existed has none; busd then runs as the control admin, as it used to.
 func (cli *CLI) controlUser() string {
 	if _, err := creds.ReadPassword(creds.AdminDir(cli.ConfigDir, broker.BusdUser)); errors.Is(err, os.ErrNotExist) {
-		log.Printf("busd: no login of its own in %s, so it runs with the rights of %s; "+
+		log.Warn().Msgf("busd: no login of its own in %s, so it runs with the rights of %s; "+
 			"`agent-busctl service init` and a restart of the broker give it one (docs/podman.md)", cli.ConfigDir, broker.ControlAdminUser)
 		return broker.ControlAdminUser
 	}
@@ -105,7 +108,7 @@ func (cli *CLI) Run() error {
 	connection := func(user string) (broker.Connection, error) {
 		conn, err := broker.UserConnection(creds.AdminDir(cli.ConfigDir, user), user, cli.Broker, cli.MappedPort, caCertPath)
 		backoff := broker.DefaultBackoff
-		conn.Reconnect, conn.Log = &backoff, log.Printf
+		conn.Reconnect, conn.Log = &backoff, logging.Infof("")
 		return conn, err
 	}
 	busConn, err := connection(broker.BusAdminUser)
@@ -204,9 +207,9 @@ func (cli *CLI) Run() error {
 		return fmt.Errorf("serving %s.*: %w", channelapi.SubjectRequest, err)
 	}
 	defer stopChannels()
-	log.Printf("busd %s: serving enrollment, approval, the directory and channel requests on the bus", version)
+	log.Info().Msgf("busd %s: serving enrollment, approval, the directory and channel requests on the bus", version)
 	if len(cli.BusOwner) == 0 {
-		log.Print("busd: no --bus-owner, so only the channel owners manage the channels agents create")
+		log.Warn().Msg("busd: no --bus-owner, so only the channel owners manage the channels agents create")
 	}
 
 	reconcile := directoryReconciler(ctx, published, admin)
@@ -247,7 +250,7 @@ func directoryReconciler(ctx context.Context, published *busd.Directory, admin *
 			message = err.Error()
 		}
 		if message != "" && message != lastErr && ctx.Err() == nil {
-			log.Printf("busd: rebuilding the directory: %v", err)
+			log.Error().Msgf("busd: rebuilding the directory: %v", err)
 		}
 		lastErr = message
 		if head := published.Head(); head != nil {
@@ -259,6 +262,7 @@ func directoryReconciler(ctx context.Context, published *busd.Directory, admin *
 func main() {
 	var cli CLI
 	kongCtx := kong.Parse(&cli, kong.Name("busd"), kong.Vars{"version": version, "commit": commit, "binName": binName, "builtBy": builtBy, "date": date}, kong.Description("Control service of the Agent Bus."))
+	logging.Setup(&cli.LoggingConfig)
 	kongCtx.FatalIfErrorf(cli.Run())
 }
 
@@ -277,11 +281,11 @@ func refreshGrants(ctx context.Context, admin *broker.Admin) {
 		err := admin.RefreshGrants(attempt)
 		cancel()
 		if err == nil {
-			log.Printf("busd: agent and service grants are up to date")
+			log.Info().Msgf("busd: agent and service grants are up to date")
 			return
 		}
 		if !hinted && time.Since(start) >= refreshHintAfter {
-			log.Printf("busd: the grants of this release are still not applied, trying on; "+
+			log.Warn().Msgf("busd: the grants of this release are still not applied, trying on; "+
 				"`agent-busctl --direct init` with your --max-age and --max-bytes applies them too: %v", err)
 			hinted = true
 		}

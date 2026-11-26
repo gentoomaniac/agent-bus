@@ -305,7 +305,7 @@ func TestMonitor(t *testing.T) {
 		binary := filepath.Join(t.TempDir(), "bus-monitor")
 		h.run(t, "go", "build", "-o", binary, "../../cmd/bus-monitor")
 		listen := fmt.Sprintf("127.0.0.1:%d", freePort(t))
-		cmd := exec.Command(binary, "--listen", listen, "--config-dir", monitorDir, "--agent", monitorAgent)
+		cmd := exec.Command(binary, "-vv", "--listen", listen, "--config-dir", monitorDir, "--agent", monitorAgent)
 		cmd.Env = h.env
 		output := &lockedBuffer{}
 		cmd.Stdout, cmd.Stderr = output, output

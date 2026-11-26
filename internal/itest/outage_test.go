@@ -49,7 +49,7 @@ func (h *harness) startMonitor(t *testing.T, busMonitor string) *httptest.Server
 	t.Helper()
 	h.startBusdForMonitor(t)
 	address := fmt.Sprintf("127.0.0.1:%d", freePort(t))
-	cmd := exec.Command(busMonitor, "--listen", address)
+	cmd := exec.Command(busMonitor, "-vv", "--listen", address)
 	cmd.Env = h.env
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {

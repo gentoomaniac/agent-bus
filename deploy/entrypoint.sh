@@ -33,7 +33,7 @@ nats-server -t -c "$conf" >/dev/null
 if [ -f "$BUS_CONFIG_DIR/ca.key" ] && [ "${BUS_BUSD:-on}" != "off" ]; then
   (
     while :; do
-      busd --broker "localhost:$BUS_NATS_PORT" --mapped-port "$BUS_MAPPED_PORT" \
+      busd -vv --broker "localhost:$BUS_NATS_PORT" --mapped-port "$BUS_MAPPED_PORT" \
         --monitor-url "http://127.0.0.1:$BUS_MONITOR_PORT" || true
       sleep 2
     done

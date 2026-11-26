@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/adapter"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
@@ -97,7 +98,7 @@ func Listen(dir string, session Session) (stop func(), err error) {
 		return nil, err
 	}
 	harness := harnessPID(os.Getppid(), readProcess)
-	log.Printf("agent-bus: hook socket named after harness PID %d (parent %d)", harness, os.Getppid())
+	log.Info().Msgf("agent-bus: hook socket named after harness PID %d (parent %d)", harness, os.Getppid())
 	path := socketPath(dir, harness)
 	os.Remove(path)
 	listener, err := net.Listen("unix", path)
@@ -105,7 +106,7 @@ func Listen(dir string, session Session) (stop func(), err error) {
 		return nil, err
 	}
 	if err := markSession(dir, harness); err != nil {
-		log.Printf("agent-bus: no session marker, a lost server will go unreported: %v", err)
+		log.Warn().Msgf("agent-bus: no session marker, a lost server will go unreported: %v", err)
 	}
 	var waiter currentWaiter
 	var brokerOutage outage
@@ -127,7 +128,7 @@ func acceptLoop(listener net.Listener, serveConnection func(net.Conn)) {
 			return
 		}
 		if err != nil {
-			log.Printf("agent-bus: accepting on the hook socket: %v", err)
+			log.Error().Msgf("agent-bus: accepting on the hook socket: %v", err)
 			time.Sleep(acceptRetryDelay)
 			continue
 		}

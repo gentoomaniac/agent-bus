@@ -32,6 +32,7 @@ services:
   monitor:
     image: ${AGENT_BUS_IMAGE:-ghcr.io/gentoomaniac/agent-messenger:latest}
     entrypoint: ["bus-monitor"]
+    command: ["-vv"]
     restart: unless-stopped
     network_mode: "service:agent-bus"
     depends_on:

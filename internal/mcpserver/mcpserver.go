@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"slices"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/presence"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -71,7 +71,7 @@ func Serve(ctx context.Context, session *adapter.Adapter, transport mcp.Transpor
 		defer close(readerDone)
 		// A session that lost the identity lock has no reader; its tools report why.
 		if err := session.Run(readerCtx, reportOnce()); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("agent-bus: the background reader stopped: %v", err)
+			log.Error().Msgf("agent-bus: the background reader stopped: %v", err)
 		}
 	}()
 	err := runUntilCancelled(ctx, New(session), transport)
@@ -108,7 +108,7 @@ func reportOnce() func(error) {
 	return func(err error) {
 		if err.Error() != last {
 			last = err.Error()
-			log.Printf("agent-bus: %v", err)
+			log.Warn().Msgf("agent-bus: %v", err)
 		}
 	}
 }
