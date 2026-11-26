@@ -585,13 +585,15 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 			limit++
 		}
 		if inherited.hops >= limit {
-			// Say why a send without reply_to counts as a reply, and the way out for a new topic.
-			how := "it answers " + inherited.id
+			// Say why the send counts as a reply, and the way out for a new topic: a new thread name
+			// skips the inferred parent, an explicit reply_to has to go too.
+			how, newTopic := "it answers "+inherited.id, "drop reply_to and send it with a new thread name"
 			if message.ReplyTo == "" {
-				how = fmt.Sprintf("without reply_to it continues %s, the message you read last here within %s", inherited.id, recentParentWindow)
+				how = fmt.Sprintf("without reply_to it continues %s, the message you last read in this channel or DM within %s", inherited.id, recentParentWindow)
+				newTopic = "send it again with a new thread name"
 			}
 			return "", fmt.Errorf("not sent: the conversation is %d replies deep, the limit is %d (%s). "+
-				"A new topic: send it again with a new thread name. The same topic: wait for a human", inherited.hops, limit, how)
+				"A new topic: %s. The same topic: wait for a human", inherited.hops, limit, how, newTopic)
 		}
 		hops = inherited.hops + 1
 		replyTo = &inherited.id

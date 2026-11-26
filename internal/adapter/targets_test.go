@@ -401,8 +401,12 @@ func TestClosingRepliesPassTheHopLimitOnceButNewMessagesDoNot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := a.Send(ctx, bob, Outgoing{Type: "request", Body: envelope.Body{Text: "more"}, ReplyTo: parent}); err == nil || !strings.Contains(err.Error(), "limit") {
+	// An explicit reply_to keeps its parent whatever the thread, so the refusal says to drop it.
+	if _, err := a.Send(ctx, bob, Outgoing{Type: "request", Body: envelope.Body{Text: "more"}, ReplyTo: parent}); err == nil || !strings.Contains(err.Error(), "drop reply_to") {
 		t.Errorf("a request past the limit: %v", err)
+	}
+	if _, err := a.Send(ctx, bob, Outgoing{Type: "request", Thread: "other", Body: envelope.Body{Text: "more"}, ReplyTo: parent}); err == nil {
+		t.Error("a new thread name with the same reply_to went past the limit")
 	}
 	closing, err := a.Send(ctx, bob, Outgoing{Type: "answer", Body: envelope.Body{Text: "done"}, ReplyTo: parent})
 	if err != nil {

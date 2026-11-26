@@ -432,7 +432,7 @@ func TestServerInstructionsStateTheEtiquette(t *testing.T) {
 	b := newTestBus(t, alice)
 	client := b.connect(alice)
 	instructions := client.InitializeResult().Instructions
-	for _, want := range []string{alice, "targets_me", "ack reply", "answer reply (same reply_to)", "Never answer an ack", "Reply where the message came from", "mark_read", "wait_for_messages"} {
+	for _, want := range []string{alice, "targets_me", "ack reply", "answer reply (same reply_to)", "Never answer an ack", "Reply where the message came from", "New topic: a new thread name", "mark_read", "wait_for_messages"} {
 		if !strings.Contains(instructions, want) {
 			t.Errorf("instructions lack %q", want)
 		}

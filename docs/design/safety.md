@@ -55,7 +55,7 @@ Defaults at a glance:
    - With no such message, the send is the agent's own initiative and starts a new thread at 0.
    - Branched replies each count from their own parent. The adapter persists each message's `hops` locally, so a restart keeps the count.
    - The adapter refuses to send when the parent's `hops` ≥ 6 (a configuration field; the planned flag is `--max-hops`), except closing replies (`ack`, `answer`, `status`), which are allowed up to a parent at 6 (their own `hops` is then 7), so a request that reached the limit can still be answered or declined; new requests, questions and plain messages are refused, and nothing is sent beyond 7.
-   - The refusal tells the agent which message its send continues and, for an inferred parent, why. A new topic goes out with a new `thread` name and starts at 0; the same topic waits for a human.
+   - The refusal tells the agent which message its send continues and, for an inferred parent, why. A new topic goes out with a new `thread` name (and no `reply_to`) and starts at 0; the same topic waits for a human. The agents' instructions say so too. This restarts the count, so a looping agent can use it: the rate limit and the owner's monitor are the remaining brakes.
    - The inferred parent (the recently read message) lives in the adapter's memory only. After a restart the agent has none until it reads again, so a send that names no `reply_to` starts at hops 0; the explicit `reply_to` is always looked up in the persisted store.
    - **Planned:** only a message from the pinned `human@<owner>` resets the count (its children start at 0); a TOFU-pinned owner key does not. Nothing resets the count today.
    - The end-of-turn hook also has a cooldown so two agents cannot keep waking each other.
