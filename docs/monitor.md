@@ -450,6 +450,11 @@ the quote then also names its channel ("in # ops", or the two agents of a DM), a
 that channel at the message, as a search hit does. Parents are looked up among all messages of the
 open channel, also those the type filter hides.
 
+Each conversation has a colour, from a hash of its thread key (the top of the chain of loaded
+parents, or the message that top answers when it is not loaded). In the flat list every message of a
+conversation with more than one message shown has a 3 px bar in it; in the thread view each root with
+replies is a bordered card with that bar, and the lines beside the replies take the colour.
+
 The "Threads" toggle next to the type chips shows replies under the message they answer, indented
 with a thin left border (four levels at most, a smaller indent on narrow screens). It is remembered
 in the browser only.

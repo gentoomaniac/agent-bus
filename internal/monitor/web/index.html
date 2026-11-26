@@ -134,6 +134,10 @@
   .message[data-depth="2"] { margin-left: calc(var(--thread-indent) * 2); }
   .message[data-depth="3"] { margin-left: calc(var(--thread-indent) * 3); }
   .message[data-depth="4"] { margin-left: calc(var(--thread-indent) * 4); }
+  /* Each conversation has a hue from its thread key: a bar in the flat list, a bordered card in the thread view. */
+  .in-thread { box-shadow: inset 3px 0 0 hsl(var(--thread-hue) 60% 55%); }
+  .thread { margin: 6px 0; padding: 0 8px 0 10px; border: 1px solid var(--border); border-radius: 4px; box-shadow: inset 3px 0 0 hsl(var(--thread-hue) 60% 55%); }
+  .thread .message[data-depth] { border-left-color: hsl(var(--thread-hue) 60% 55% / .5); }
   .fresh-thread { box-shadow: inset 3px 0 0 var(--mention); }
   .reply-count { margin-left: var(--time-indent); padding: 2px 0 var(--message-pad); font-size: var(--font-s); color: var(--muted); }
   .reply-count .pill { margin-left: 6px; }
@@ -1516,6 +1520,30 @@ function flatOrder(messages, all) {
   });
 }
 
+// The thread of each message: the top of its chain of loaded parents, or the message that top
+// answers when that one is not loaded. Messages with the same key belong to one conversation.
+function threadKeys(messages) {
+  const byId = messagesById(messages);
+  const keys = new Map();
+  const keyOf = (message) => {
+    if (keys.has(message)) return keys.get(message);
+    const parent = parentOf(message, byId);
+    const thread = message.thread !== message.id ? message.thread : "";
+    const key = parent ? keyOf(parent) : message.reply_to || thread || message.id || "#" + message.sequence;
+    keys.set(message, key);
+    return key;
+  };
+  for (const message of messages) keyOf(message);
+  return keys;
+}
+
+// A hue (0-359) for a thread key, so every message of a thread carries the same color.
+function threadHue(key) {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  return hash % 360;
+}
+
 // Per root message of threadOrder rows: how many replies its thread holds, and whether one of
 // its messages is unseen (after the marker, not the monitor's own agent's). A root is the entry of
 // depth 0; the rows after it down to the next root are its replies.
@@ -1739,21 +1767,42 @@ function renderMessages(scrollToEnd) {
   const summaries = state.threads ? threadSummaries(entries, state.marker, state.status.agent) : new Map();
   const shownSequences = new Set(shown.map((message) => message.sequence));
   const markerAt = state.marker === null ? -1 : entries.findIndex(({ message: m }) => m.sequence > state.marker && m.from !== state.status.agent);
-  const rows = entries.flatMap((entry, i) => {
+  // Every message of a conversation with more than one message shown carries its thread's color;
+  // the thread view also frames each thread with replies as a card.
+  const keys = threadKeys(list);
+  const sizes = new Map();
+  for (const message of shown) sizes.set(keys.get(message), (sizes.get(keys.get(message)) || 0) + 1);
+  const rows = [];
+  let card = null; // the card of the thread being drawn, which takes its rows
+  entries.forEach((entry, i) => {
     const { message, depth, parent, replyTo } = entry;
     const previous = entries[i - 1];
+    const thread = summaries.get(message);
+    const key = keys.get(message);
+    if (state.threads && depth === 0) {
+      card = thread.replies ? el("div", { class: "thread" }) : null;
+      if (card) {
+        card.style.setProperty("--thread-hue", threadHue(key));
+        rows.push(card);
+      }
+    }
     // A thread with unseen mail is not grouped: its "new" badge sits in the header, which a grouped row hides.
-    const grouped = settings.grouping && i !== markerAt && !(summaries.get(message) || {}).unseen && previous
+    const grouped = settings.grouping && i !== markerAt && !(thread || {}).unseen && previous
       && previous.parent === parent && previous.replyTo === replyTo && continues(previous.message, message);
     // A follow-up of a group answers what the row above does; in the thread view a reply right under its parent needs no line.
     const reply = grouped || (state.threads && parent && previous.message === parent) ? null : replyLine(entry, shownSequences);
-    const thread = summaries.get(message);
     const row = renderMessage(message, grouped, depth, reply, thread);
-    return [
+    if (!state.threads && sizes.get(key) > 1) {
+      row.classList.add("in-thread");
+      row.style.setProperty("--thread-hue", threadHue(key));
+    }
+    const nodes = [
       ...(i === markerAt ? [el("div", { class: "new-marker", role: "separator" }, "New")] : []),
       row,
       ...(thread && thread.replies ? [repliesLine(thread)] : []),
     ];
+    if (card) card.append(...nodes);
+    else rows.push(...nodes);
   });
   box.replaceChildren(...(shown.length ? rows : [el("div", { class: "empty" }, none)]));
   observeRows(box);
