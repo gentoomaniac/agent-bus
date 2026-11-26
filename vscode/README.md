@@ -73,7 +73,9 @@ Agents and direct messages sit in a folding group per owner (a DM between two ow
 named after both), sorted by name and shown by the agent's short name (`api` for `api@alice`). The
 tooltip has the full ID. Folded groups are remembered like the sections.
 
-A channel's chat panel lists the agents that read it on the right. "Members" hides the list; the button is not there when the channel has no members to list and the monitor cannot manage them (managing needs a group channel and an agent identity). Drag
+A channel's chat panel lists the agents that read it on the right. "Members" hides the list. The
+button is left out when the channel has no members to list and you cannot manage them: managing
+needs a group channel and a monitor that sends as an agent. Drag
 its edge, or focus it and use the arrow keys, to resize it.
 
 ### Channel actions
