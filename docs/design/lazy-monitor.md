@@ -4,13 +4,13 @@
 
 | Part | Status |
 |---|---|
-| Today: the monitor reads all of stream `BUS` into memory and never drops a message | implemented (MVP) |
-| Index in memory, bodies read from the stream on demand, retention followed | **proposed** |
-| Search on a SQLite FTS index | **proposed** (the monitor guide already names it as planned) |
-| Backward paging (`before`), server-side unread counts, infinite scroll in both clients | **proposed** |
+| Index in memory, bodies read from the stream on demand, retention followed | **built** (phase A, steps 1 to 5): 235 bytes of heap per message, from 3166 |
+| Backward paging (`before`), server-side unread counts, infinite scroll in both clients | **built** (phase A, steps 4, 6 and 9) |
+| The first start still reads the whole stream; search still scans, reading bodies from the stream | as before, until phase B |
+| Search on a SQLite FTS index, the state file that spares the first read | **proposed** (phase B, steps 7 and 8) |
 
-**Accepted, not built.** The owner agreed to the direction and to the decisions below; the
-numbers are measured.
+**Accepted; phase A is built, phase B is not.** The owner agreed to the direction and to the
+decisions below; the numbers are measured. Phase B and the final docs (step 10) follow.
 
 ## The problem
 
@@ -87,10 +87,12 @@ not needed for paging.
 
 Which API to call is a rollout detail, not a design one: `jetstream.Stream.GetMsg` in `nats.go`
 uses direct get when the stream has `AllowDirect` and `STREAM.MSG.GET` otherwise. `BUS` does not
-set `AllowDirect` today and the monitor's `monitor-bus` login may use neither; the grants
-(`monitorBusPermissions` in `internal/broker/authconf.go`) get `$JS.API.STREAM.MSG.GET.BUS` and
-`$JS.API.DIRECT.GET.BUS.>`, and `AllowDirect` is turned on later by `agent-busctl init` if the
-extra 0.6 ms matters (it does not for paging).
+set `AllowDirect` today and the monitor's `monitor-bus` login may use neither. Built as decided on
+2026-11-26: the grants (`monitorBusPermissions` in `internal/broker/authconf.go`) got only
+`$JS.API.STREAM.MSG.GET.BUS`, no direct get, and `AllowDirect` stays off; it can be turned on and
+the direct-get subject granted if pages ever get slow. busd's `RefreshGrants` renders the whole
+authorization file, `monitor-bus` included, at every start, so a release that adds a grant needs no
+`agent-busctl init`.
 
 A message the stream has deleted answers `404`; the monitor treats it as retention (below).
 
@@ -285,8 +287,9 @@ a release is a rebuild, not a migration.
   Later starts take seconds.
 - The two grants in `monitorBusPermissions` need a regenerated authorization file and a reload,
   which `agent-busctl` and the deploy already do (the monitor reconnects; the grants are additive).
-  Order: ship the grants first, then the monitor; a new monitor without the grants falls back to
-  reading pages with path A (slower, correct) and reports it once.
+  Order: ship the grants first, then the monitor. Built without the fallback to path A: a monitor
+  without the grant answers `503` for every page it has to read from the stream until busd has
+  restarted with the release (messages still in the cache show).
 - The data directory of the monitor needs room for the file: about 0.7 times the text plus 40 bytes
   of row per message, so roughly 130 MiB per 200 000 messages. The container volume that holds
   `prefs.json` already persists; on a read-only root filesystem the path must be writable.

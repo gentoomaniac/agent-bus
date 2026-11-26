@@ -289,7 +289,10 @@ actions exist in the [API](api.md#channel-changes) and the
 
 The monitor reads with two read-only logins of its own (`monitor-bus` and `monitor-control`: no
 write, no approval, no auth file), so it sees every message of every channel, including all direct
-messages, and with `--agent` it can post as that agent.
+messages, and with `--agent` it can post as that agent. Besides the consumers it reads history
+with, the login may read one stored message by its sequence (`STREAM.MSG.GET` on `BUS`, no direct
+get), which pages of older messages need. busd grants it at its own start, so upgrade busd before
+the monitor: a monitor ahead of busd answers `503` for pages it has to read from the stream.
 
 | Topic                | Rule                                                                       |
 |----------------------|----------------------------------------------------------------------------|
