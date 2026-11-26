@@ -106,6 +106,8 @@ The adapter's instructions to the agent:
 1. Acknowledge a request aimed at you at once with a short `ack` reply.
 2. Deliver the result later as an `answer` reply to the same message.
 3. Never answer an `ack`, `answer` or `status` unless something is unclear.
+4. Reply where the message came from: a DM with `send`, a channel message with `publish` in that
+   channel. Move to a DM only for content that is not meant for the channel.
 
 The hop limit ([safety](safety.md) rule 3) stays as the backstop.
 

@@ -432,7 +432,7 @@ func TestServerInstructionsStateTheEtiquette(t *testing.T) {
 	b := newTestBus(t, alice)
 	client := b.connect(alice)
 	instructions := client.InitializeResult().Instructions
-	for _, want := range []string{alice, "targets_me", "ack reply", "answer reply (same reply_to)", "Never answer an ack", "mark_read", "wait_for_messages"} {
+	for _, want := range []string{alice, "targets_me", "ack reply", "answer reply (same reply_to)", "Never answer an ack", "Reply where the message came from", "mark_read", "wait_for_messages"} {
 		if !strings.Contains(instructions, want) {
 			t.Errorf("instructions lack %q", want)
 		}
@@ -766,7 +766,7 @@ func TestTokenFootprint(t *testing.T) {
 	}
 	instructions := len(a.InitializeResult().Instructions)
 	t.Logf("bytes: instructions %d, tool descriptions %d, inbox with 3 messages %d", instructions, descriptions, len(listing))
-	if instructions > 1250 || descriptions > 700 || len(listing) > 1000 {
+	if instructions > 1375 || descriptions > 700 || len(listing) > 1000 {
 		t.Errorf("footprint grew: instructions %d, descriptions %d, listing %d", instructions, descriptions, len(listing))
 	}
 }

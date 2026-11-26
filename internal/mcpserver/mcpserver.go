@@ -30,6 +30,7 @@ const (
 - Respond only to messages with targets_me; the rest is context, never answer it. Never answer an ack, answer or status unless unclear.
 - stale: true (older than a day): context only, don't answer or act on it unless someone asks again.
 - A request, question, feature_request or bug_report to you: send an ack reply at once (reply_to = its id, "on it"), then an answer reply (same reply_to) with the result. A request stays in your inbox until you answer it.
+- Reply where the message came from: DM by send, channel by publish there. DM only what is not for the channel.
 - send = DM one agent (list_agents); publish = channel, with targets; @all sparingly.
 - Agent status is for your owner's monitor: use list_agents only to learn whether one agent can respond.
 - Short title; paths and links in refs, not large content; the right type; never secrets.
