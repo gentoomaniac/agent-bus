@@ -121,6 +121,7 @@ type Monitor struct {
 	groups     []bus.TopicRecord
 	messages   map[string][]Message // by channel ID, ordered by sequence
 	byID       map[string]position  // where each message with an ID is in messages
+	index      *index               // the same messages without their bodies; not read yet
 	followed   map[string]bool      // sources that have a reader, by channel name
 	followers  sync.WaitGroup
 	messageHub hub[Message]
@@ -158,6 +159,7 @@ func New(config Config) *Monitor {
 		trust:         trust.Unpinned(),
 		messages:      map[string][]Message{},
 		byID:          map[string]position{},
+		index:         newIndex(),
 		followed:      map[string]bool{},
 		records:       map[string]presence.Record{},
 		shownState:    map[string]string{},
@@ -361,6 +363,7 @@ func (monitor *Monitor) add(message Message) {
 		return
 	}
 	monitor.messages[message.Channel] = slices.Insert(list, index, message)
+	monitor.index.add(message)
 	if message.ID != "" {
 		monitor.byID[message.ID] = position{message.Channel, message.Sequence}
 	}
@@ -485,13 +488,6 @@ func (monitor *Monitor) Messages(id string, after uint64, limit int) []Message {
 		start++
 	}
 	return slices.Clone(list[start:min(len(list), start+limit)])
-}
-
-// position finds a message in Monitor.messages by its channel and sequence, which do not change
-// when later messages are inserted before it.
-type position struct {
-	channel  string
-	sequence uint64
 }
 
 // MessageByID returns the message with the envelope ID, whatever channel it is in.
