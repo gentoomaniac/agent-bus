@@ -552,6 +552,8 @@ const layout = { sidebar: PANELS.sidebar.fallback, members: PANELS.members.fallb
 Object.assign(layout, loadSetting(LAYOUT_KEY, {}));
 
 function isHidden(name) {
+  // With no members to show or manage the panel is only there for an agent's details.
+  if (name === "members" && $("toggle-members").hidden && !state.detailAgent) return true;
   return layout[name + "Hidden"] ?? innerWidth < PANELS[name].hideBelowPx;
 }
 
@@ -1287,6 +1289,7 @@ function showDetail(agentId) {
 
 function renderDetail() {
   const box = $("agent-detail");
+  applyLayout();
   if (!state.detailAgent) { box.replaceChildren(); return; }
   const view = presenceOf(state.detailAgent);
   const since = view.since ? " for " + ago(view.since) : "";
@@ -1422,9 +1425,16 @@ function canManageMembers() {
   return state.status.can_send && Boolean(state.selected) && state.selected.startsWith("group:");
 }
 
+// The list is of a channel's readers: a direct message has none, its two agents are in the title.
+// As in the extension, the toggle goes when there is nothing to show and nothing to manage.
 function renderMembers() {
-  const members = state.members.filter((id) => id !== state.status.agent).sort(byOwner);
+  const channel = channelById(state.selected);
+  const members = channel && channel.kind !== "dm" ? state.members.filter((id) => id !== state.status.agent).sort(byOwner) : [];
   const manage = canManageMembers();
+  const nothing = members.length === 0 && !manage;
+  $("toggle-members").hidden = nothing;
+  if (nothing) $("app").classList.remove("members-open");
+  applyLayout();
   const memberRow = (id) => {
     const row = el("li", { class: "member", onclick: () => showDetail(id) }, agentLine(id, presenceOf(id)));
     if (manage) row.append(el("button", { class: "remove", type: "button", title: "Remove from channel", "aria-label": "Remove " + id + " from the channel",
@@ -1432,7 +1442,7 @@ function renderMembers() {
     return row;
   };
   $("members").replaceChildren(...(members.length ? groupBy(members, ownerOf).flatMap(({ key, items }) => [el("li", { class: "owner" }, key || "no owner"), ...items.map(memberRow)])
-    : [el("li", { class: "empty" }, "none")]));
+    : nothing ? [] : [el("li", { class: "empty" }, "none")]));
   const invitable = state.agents.filter((agent) => !agent.removed && agent.id !== state.status.agent && !state.members.includes(agent.id)).map((agent) => agent.id).sort(byOwner);
   const form = document.forms["member-invite"];
   form.hidden = !manage || invitable.length === 0;

@@ -209,7 +209,10 @@ The right pane lists the members of the open channel, grouped by owner and shown
 
 - `general`: all agents.
 - A group channel: the agents that have a read cursor on it (`agent-busctl channel join`).
-- A DM: its two agents.
+- A DM: none, its two agents are in the title.
+
+The "Members" button is hidden when the open channel has no members to list and the monitor cannot
+manage them (managing needs `--agent` and a group channel).
 
 Click an agent: below the list its panel shows the state and since when, unread targeted mail, the
 running workers and the recent activity, newest first.
