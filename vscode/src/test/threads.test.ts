@@ -28,6 +28,10 @@ test("a reply whose parent and root are not loaded is a root that says what it a
   assert.deepEqual(shape(messages), ["x:0:01JABCDEFG", "y:0:01JROOT"]);
 });
 
+test("a root whose thread is its own ID answers nothing", () => {
+  assert.deepEqual(shape([message(1, "a", { thread: "a" })]), ["a:0"]);
+});
+
 test("the indent stops at four levels", () => {
   const chain = [message(1, "m0")];
   for (let i = 1; i <= 6; i++) chain.push(message(i + 1, "m" + i, { reply_to: "m" + (i - 1), thread: "m0" }));

@@ -49,7 +49,8 @@ export function threadRows(messages: Message[]): ThreadRow[] {
   const roots: ThreadRow[] = [];
   for (const message of [...messages].sort((a, b) => a.sequence - b.sequence)) {
     const parent = parentOf(message, byId);
-    if (!parent) roots.push({ message, depth: 0, replyTo: message.reply_to || message.thread || undefined });
+    // A root's thread is often its own ID, which is no message it answers.
+    if (!parent) roots.push({ message, depth: 0, replyTo: message.reply_to || (message.thread !== message.id ? message.thread : "") || undefined });
     else children.set(parent, [...(children.get(parent) ?? []), message]);
   }
 
