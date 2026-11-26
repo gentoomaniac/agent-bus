@@ -10,7 +10,7 @@ const RECENT_TOOLTIP = 10; // and in its tooltip
 
 // A row of a view. An owner group's id is the name the monitor's prefs use for it when it is folded.
 export type Node =
-  | { kind: "section"; id: string; label: string; children: Node[] }
+  | { kind: "group"; id: string; label: string; children: Node[] }
   | { kind: "channel"; channel: Channel }
   | { kind: "agent"; agent: Agent }
   | { kind: "agentDetail"; id: string; label: string; description: string; icon: string }; // a worker or a recent activity
@@ -32,13 +32,13 @@ function stateIcon(state: string): vscode.ThemeIcon {
 function agentGroups(agents: Agent[]): Node[] {
   const sorted = [...agents].sort((a, b) => byOwner(a.id, b.id));
   return groupBy(sorted, (agent) => ownerOf(agent.id)).map(({ key, items }) => ({
-    kind: "section", id: "agents@" + key, label: key || "(no owner)", children: items.map((agent): Node => ({ kind: "agent", agent })),
+    kind: "group", id: "agents@" + key, label: key || "(no owner)", children: items.map((agent): Node => ({ kind: "agent", agent })),
   }));
 }
 
 function dmGroups(channels: Channel[]): Node[] {
   return groupBy([...channels].sort(dmByOwner), dmOwners).map(({ key, items }) => ({
-    kind: "section", id: "dms@" + key, label: key || "(no owner)", children: items.map((channel): Node => ({ kind: "channel", channel })),
+    kind: "group", id: "dms@" + key, label: key || "(no owner)", children: items.map((channel): Node => ({ kind: "channel", channel })),
   }));
 }
 
@@ -64,7 +64,7 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
 
   getChildren(node?: Node): Node[] {
     if (node?.kind === "agent") return this.agentChildren(node.agent);
-    if (node) return node.kind === "section" ? node.children : [];
+    if (node) return node.kind === "group" ? node.children : [];
     const { channels, agents } = this.model;
     const categories = categorize(channels, this.session.prefs.favourites);
     const channelNodes = (list: Channel[]): Node[] => list.map((channel) => ({ kind: "channel", channel }));
@@ -87,13 +87,13 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     }
     const collapsed = this.session.prefs.collapsed.has(node.id);
     const item = new vscode.TreeItem(node.label, collapsed ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded);
-    item.id = "category:" + node.id;
+    item.id = "group:" + node.id;
     return item;
   }
 
   // Remembers an owner group the user folded or unfolded, so it stays so after a refresh or restart.
   setCollapsed(node: Node, collapsed: boolean): void {
-    if (node.kind === "section") this.session.prefs.setCollapsed(node.id, collapsed);
+    if (node.kind === "group") this.session.prefs.setCollapsed(node.id, collapsed);
   }
 
   private channelItem(channel: Channel): vscode.TreeItem {

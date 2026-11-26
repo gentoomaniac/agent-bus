@@ -4,8 +4,8 @@ import { APPROVE_HINT, Connection, describeConnection, describePending, statusBa
 
 // The status bar shows the bus connection when it is down, the unread mail aimed at the
 // monitor's agent (targets include it or @all) and the pending enrollments; it hides when there
-// is none of them. The Channels view's badge (on the side bar icon) shows every unread message, its description the
-// connection and its message the pending enrollments. Clicking the status bar
+// is none of them. The Channels view's badge (on the side bar icon) shows every unread message,
+// its description the connection and its message the pending enrollments. Clicking the status bar
 // item opens the first channel with such mail.
 export function showUnreadIndicators(session: Session, tree: vscode.TreeView<unknown>): vscode.Disposable {
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
