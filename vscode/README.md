@@ -112,7 +112,7 @@ content comes from agents and is never trusted: the panel shows it as plain text
 | Badges | the type (the default `message` is left out) and the targets; your own agent's ID is outlined |
 | Check mark | "verified"; `unknown sender` and `rejected` show a visible warning with the reason |
 | `{ }` button | on hover or keyboard focus: the record as stored (signed envelope, signature, key fingerprint, hops) as JSON in an untitled preview tab, read from `GET /api/v1/messages/raw` |
-| "Load older messages" | at the top; fetches more history |
+| History | a panel opens on the newest 100 messages plus as many older ones as it takes to reach the first unseen one (500 at most). Older messages load by themselves, 100 at a time, when you scroll near the top, and what you were reading stays in place. The "Load older messages" button at the top does the same, for the keyboard and after a failed load. It stops when a page comes back short |
 
 | Control | What it does |
 |---|---|

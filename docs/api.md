@@ -216,9 +216,10 @@ Channel IDs are `general`, `group:<name>` and `dm:<agent>:<agent>` (the two agen
 forward through a channel, pass the `sequence` of the last message as `after`. To page back, pass
 the `sequence` of the first message you have as `before`: you get the messages just before it,
 exactly `limit` of them unless the channel has fewer, however sparse the channel's sequences are.
-The newest page is `before=<last_sequence + 1>` of the channel. `after` and `before` cannot be
-combined (`400`). A message the stream no
-longer has (retention) is left out of a page.
+The newest page is any `before` above the last sequence, such as `9007199254740991` (the clients
+use it, so a stale `last_sequence` cannot cut the newest messages off). `after` and `before` cannot be
+combined (`400`). A message the stream no longer has (retention) is dropped from the monitor's index
+and left out of the page, which is filled from the next message in its direction.
 
 A message has `sequence`, `channel`, `status` (`verified`, `unknown_sender`, `rejected`), `reason`
 for the last two, and the envelope's `id`, `from`, `to`, `type`, `targets`, `thread`, `reply_to`,

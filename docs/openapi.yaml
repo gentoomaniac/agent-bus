@@ -153,7 +153,7 @@ paths:
           description: >-
             Return the `limit` messages just before this sequence, oldest first within the page. A page
             shorter than `limit` means the channel has no older message. Cannot be combined with `after`;
-            the newest page is `before` = the channel's `last_sequence` + 1.
+            the newest page is any `before` above the last sequence, such as 9007199254740991.
           schema: { type: integer, minimum: 0 }
         - name: limit
           in: query

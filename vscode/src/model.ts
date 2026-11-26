@@ -10,8 +10,9 @@ export interface ReadStore {
 }
 
 const TAIL_LIMIT = 1000; // the most the API returns at once
-const OLDER_WINDOW = 500; // sequences covered by one step back in history
-const OLDER_STEPS = 10; // steps for one request for history, so a sparse channel cannot loop for long
+const PAGE = 100; // messages in one request for older history
+const NEWEST = Number.MAX_SAFE_INTEGER; // as `before`, it asks for the channel's newest page
+const UNREAD_PRELOAD = 500; // at most this many messages are loaded on opening to reach the unseen ones
 
 // What the monitor knows, as seen by this extension: the snapshot, plus the events since.
 export class Model {
@@ -24,7 +25,8 @@ export class Model {
   private snapshot = ""; // what the last read of the state returned, as JSON
   private pollTimer: ReturnType<typeof setInterval> | undefined;
   private messages = new Map<string, Message[]>();
-  private covered = new Map<string, number>(); // channel -> every message after this sequence is loaded
+  private exhausted = new Set<string>(); // channels whose oldest message is loaded
+  private olderLoads = new Map<string, Promise<void>>(); // reads of older history under way, one per channel
   private listeners = new Set<() => void>();
 
   constructor(readonly api: Api, private readonly lastReads: ReadStore) {}
@@ -79,7 +81,8 @@ export class Model {
   // Reads the whole state again, after every (re)connect. At the first refresh a channel without a
   // stored last-read sequence counts as read up to now, so the first start does not report the whole
   // history as unread. A channel that appears later starts unread: its first message is news. Then
-  // every channel's messages are brought up to its last sequence.
+  // every channel that has messages loaded gets those it missed. The others load their history when
+  // a panel opens: the unread counts come from the monitor.
   async refresh(): Promise<void> {
     await this.readState();
     await Promise.all(this.channels.map((channel) => this.loadNewer(channel)));
@@ -121,34 +124,49 @@ export class Model {
     this.presence = new Map((presence ?? []).map((view) => [view.agent, view]));
     for (const channel of this.channels) {
       if (!this.seen && this.lastReads.get(channel.id) === undefined) this.lastReads.set(channel.id, channel.last_sequence);
-      if (!this.covered.has(channel.id)) this.covered.set(channel.id, this.lastRead(channel.id));
     }
     return true;
   }
 
   private async loadNewer(channel: Channel): Promise<void> {
     const list = this.messagesOf(channel.id);
-    const have = list.length > 0 ? list[list.length - 1].sequence : this.lastRead(channel.id);
-    if (channel.last_sequence <= have) return;
-    this.insert(channel.id, await this.api.messages(channel.id, have, TAIL_LIMIT));
+    if (list.length === 0 || channel.last_sequence <= list[list.length - 1].sequence) return;
+    this.insert(channel.id, await this.api.messages(channel.id, list[list.length - 1].sequence, TAIL_LIMIT));
   }
 
   // Makes sure at least `wanted` messages of the channel are loaded, if it has that many.
   async loadHistory(channelId: string, wanted: number): Promise<void> {
-    for (let step = 0; step < OLDER_STEPS && this.messagesOf(channelId).length < wanted && this.hasOlder(channelId); step++) {
-      await this.loadOlder(channelId);
-    }
+    while (this.messagesOf(channelId).length < wanted && this.hasOlder(channelId)) await this.loadOlder(channelId);
   }
 
-  async loadOlder(channelId: string): Promise<void> {
-    const after = Math.max(0, (this.covered.get(channelId) ?? 0) - OLDER_WINDOW);
-    this.insert(channelId, await this.api.messages(channelId, after, TAIL_LIMIT));
-    this.covered.set(channelId, after);
+  // Loads older pages until the messages after the last-read sequence are held, up to UNREAD_PRELOAD
+  // messages, so that the "New" divider sits above the first unseen one.
+  async loadUnread(channelId: string): Promise<void> {
+    while (this.hasOlder(channelId) && this.messagesOf(channelId).length < UNREAD_PRELOAD
+      && (this.messagesOf(channelId)[0]?.sequence ?? Infinity) > this.lastRead(channelId)) await this.loadOlder(channelId);
+  }
+
+  // Loads the page of messages before the oldest one held, or the newest page when none is held.
+  // Asking again while a page is on its way waits for that page.
+  loadOlder(channelId: string): Promise<void> {
+    let load = this.olderLoads.get(channelId);
+    if (!load) {
+      load = this.readOlder(channelId).finally(() => this.olderLoads.delete(channelId));
+      this.olderLoads.set(channelId, load);
+    }
+    return load;
+  }
+
+  private async readOlder(channelId: string): Promise<void> {
+    const page = await this.api.messagesBefore(channelId, this.messagesOf(channelId)[0]?.sequence ?? NEWEST, PAGE);
+    this.insert(channelId, page);
+    if (page.length < PAGE) this.exhausted.add(channelId);
     this.changed();
   }
 
+  // Whether the monitor may hold messages older than the oldest loaded: until a page comes back short.
   hasOlder(channelId: string): boolean {
-    return (this.covered.get(channelId) ?? 1) > 0;
+    return this.channels.some((channel) => channel.id === channelId) && !this.exhausted.has(channelId);
   }
 
   private insert(channelId: string, incoming: Message[]): Message[] {

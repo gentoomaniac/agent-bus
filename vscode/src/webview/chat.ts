@@ -402,7 +402,7 @@ function render(first = false): void {
   list.replaceChildren();
   if (state.hasOlder) {
     const older = el("button", "older", "Load older messages");
-    older.addEventListener("click", () => host.postMessage({ type: "older" }));
+    older.addEventListener("click", askForOlder);
     list.append(older);
   }
   // The divider, the thread tree and the groups go by the messages the type filter lets through.
@@ -457,6 +457,23 @@ function render(first = false): void {
   else list.scrollTop = list.scrollHeight - fromBottom;
   markVisibleRows();
 }
+
+// Older messages load by themselves when the top of the list comes near: the host answers with the
+// state again, which draws them above and keeps what the reader looks at in place (render). The
+// button stays for a failed load and for the keyboard.
+const NEAR_TOP_PX = 200;
+let olderAskedAt: number | undefined; // how many messages the list held when older ones were asked for, until the answer
+
+function askForOlder(): void {
+  olderAskedAt = messages.length;
+  host.postMessage({ type: "older" });
+}
+
+function askForOlderIfNearTop(): void {
+  if (state?.hasOlder && !list.hidden && olderAskedAt === undefined && list.scrollTop < NEAR_TOP_PX) askForOlder();
+}
+
+list.addEventListener("scroll", askForOlderIfNearTop);
 
 // The chosen targets, as chips before the input. With none, the @mentions in the text count.
 let targets: string[] = [];
@@ -588,8 +605,13 @@ function showState(next: ChatState): void {
   renderTargets();
   renderMembers();
   messages.length = 0;
+  const grew = olderAskedAt !== undefined && next.messages.length > olderAskedAt;
+  olderAskedAt = undefined;
   for (const message of next.messages) insertMessage(messages, message);
   render(first);
+  // A list that does not fill the view, or one whose new page left the top in view (the type filter
+  // hid it), asks again: no scroll will. A failed load grows nothing and does not loop.
+  if (first || grew) askForOlderIfNearTop();
 }
 
 // The CSS max-height stops the growth at about ten lines; the text scrolls from there.

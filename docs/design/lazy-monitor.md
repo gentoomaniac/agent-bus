@@ -327,7 +327,8 @@ Each step is one commit with its tests and docs, and passes `make check` on its 
    bodies of the candidates newest first, which is slow on a big history until step 8. Memory test:
    heap per message.
 4. **`before` on `/messages`**, in `docs/api.md` and `docs/openapi.yaml`. *Built.* `after` and
-   `before` together are a `400`; the newest page is `before=<last_sequence + 1>`.
+   `before` together are a `400`; the newest page is any `before` above the last sequence (the clients send
+   2^53 - 1, which a stale `last_sequence` cannot undercut).
 5. **Follow retention.** The `FirstSeq` tick, the `404` rule, the count check; integration test with
    a short `MaxAge` or `MaxBytes` stream (`internal/itest/retention_test.go` has the setup). *Built.*
    `bus.Transport.LogState` (STREAM.INFO) gives the first and last sequence and the count. The
@@ -348,7 +349,13 @@ Each step is one commit with its tests and docs, and passes `make check` on its 
 8. **FTS and search.** `message_fts`, the writer, the query path behind the existing endpoint, the
    deletions with retention, rebuild with the `indexing` status; the scan in `search.go` is removed.
 9. **Infinite scroll**, web page and extension in one change (or two adjacent commits that land
-   together), using `before`.
+   together), using `before`. *Built*, in one commit. Both clients open a channel on its newest 100
+   messages and load older pages (100) by themselves near the top, keeping the scroll position (the
+   distance from the bottom) and the button as the fallback; a page shorter than asked ends the
+   history. Neither client loads a whole channel or the unread tail of every channel at start any
+   more: a channel's history loads when it is opened, back to the first unseen message (500 at
+   most). Jumping to an older message (reply quote, search hit, notification) loads pages until it
+   is there. The extension's `covered` window and `OLDER_STEPS` loop are gone.
 10. **Docs and cleanup.** `docs/monitor.md` (limits of the MVP, search), the status tables in this
     index and in [monitor and API](monitor-and-api.md); this document moves from proposed to
     implemented.

@@ -56,6 +56,10 @@ export class Api {
   messages(channel: string, after: number, limit: number): Promise<Message[]> {
     return this.json(`/api/v1/messages?channel=${encodeURIComponent(channel)}&after=${after}&limit=${limit}`);
   }
+  // The `limit` messages before the sequence, oldest first.
+  messagesBefore(channel: string, before: number, limit: number): Promise<Message[]> {
+    return this.json(`/api/v1/messages?channel=${encodeURIComponent(channel)}&before=${before}&limit=${limit}`);
+  }
   messageById(id: string): Promise<Message> {
     return this.json(`/api/v1/messages/by-id?id=${encodeURIComponent(id)}`);
   }

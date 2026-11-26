@@ -32,8 +32,15 @@ class FakeApi {
   agents = async () => [];
   presenceList: Presence[] = [];
   presence = async () => this.presenceList;
-  messages = async (channel: string, after: number, limit: number) =>
-    this.store.filter((m) => m.channel === channel && m.sequence > after).slice(0, limit);
+  requests: string[] = [];
+  messages = async (channel: string, after: number, limit: number) => {
+    this.requests.push(`after ${after}`);
+    return this.store.filter((m) => m.channel === channel && m.sequence > after).slice(0, limit);
+  };
+  messagesBefore = async (channel: string, before: number, limit: number) => {
+    this.requests.push(`before ${before}`);
+    return this.store.filter((m) => m.channel === channel && m.sequence < before).slice(-limit);
+  };
 }
 
 function memoryStore(initial: Record<string, number> = {}): ReadStore & { values: Record<string, number> } {
@@ -88,14 +95,16 @@ test("a marker at the newest message means nothing unread, also one the monitor 
 test("markRead moves the last-read sequence to the newest loaded message", async () => {
   const { model, reads } = newModel([message("general", 1), message("general", 2), message("general", 3)], memoryStore({ general: 1 }));
   await model.refresh();
+  await model.loadHistory("general", 10);
   model.markRead("general");
   assert.equal(reads.values["general"], 3);
   assert.equal(model.unreadCount("general"), 0);
 });
 
-test("an event for a message that a refresh already loaded is a duplicate", async () => {
+test("an event for a message that is loaded already is a duplicate", async () => {
   const { model } = newModel([message("general", 1), message("general", 2)], memoryStore({ general: 0 }));
   await model.refresh();
+  await model.loadHistory("general", 10);
   const duplicate = await model.apply({ event: "message", data: JSON.stringify(message("general", 2)) });
   assert.equal(duplicate, undefined);
   const added = await model.apply({ event: "message", data: JSON.stringify(message("general", 3)) });
@@ -113,13 +122,68 @@ test("the first message of a channel the model did not know is new, though the r
   assert.equal(await model.apply({ event: "message", data: JSON.stringify(message("group:new", 1)) }), undefined);
 });
 
-test("loadHistory walks back through older messages until there are enough", async () => {
-  const all = [1, 2, 3, 900, 1400].map((sequence) => message("general", sequence));
-  const { model } = newModel(all);
+test("loadHistory walks back page by page through older messages until there are enough", async () => {
+  const sequences = Array.from({ length: 250 }, (_, i) => 10 * (i + 1)); // a sparse channel
+  const api = new FakeApi(sequences.map((sequence) => message("general", sequence)));
+  const model = new Model(api as unknown as Api, memoryStore());
   await model.refresh();
-  await model.loadHistory("general", 5);
-  assert.deepEqual(model.messagesOf("general").map((m) => m.sequence), [1, 2, 3, 900, 1400].slice(0, 5));
+  assert.deepEqual(api.requests, [], "a refresh loads no history of a channel nobody opened");
+
+  await model.loadHistory("general", 150);
+  assert.deepEqual(api.requests, [`before ${Number.MAX_SAFE_INTEGER}`, "before 1510"]);
+  assert.deepEqual(model.messagesOf("general").map((m) => m.sequence), sequences.slice(-200));
+  assert.equal(model.hasOlder("general"), true);
+
+  await model.loadOlder("general"); // 50 are left: a short page ends the history
+  assert.equal(model.messagesOf("general").length, 250);
   assert.equal(model.hasOlder("general"), false);
+});
+
+test("asking for older messages while a page is on its way makes one request", async () => {
+  const api = new FakeApi([1, 2, 3].map((sequence) => message("general", sequence)));
+  const model = new Model(api as unknown as Api, memoryStore());
+  await model.refresh();
+  await Promise.all([model.loadOlder("general"), model.loadOlder("general")]);
+  assert.deepEqual(api.requests, [`before ${Number.MAX_SAFE_INTEGER}`]);
+});
+
+test("loadUnread loads pages until the last-read sequence is held, and stops at the cap", async () => {
+  const sequences = Array.from({ length: 700 }, (_, i) => 10 * (i + 1));
+  const make = (read: number) => {
+    const reads = memoryStore({ general: read });
+    const model = new Model(new FakeApi(sequences.map((sequence) => message("general", sequence)), reads) as unknown as Api, reads);
+    return model;
+  };
+  const fresh = make(6500); // 50 unseen: the newest page holds them
+  await fresh.refresh();
+  await fresh.loadUnread("general");
+  assert.equal(fresh.messagesOf("general").length, 100);
+
+  const backlog = make(5500); // 150 unseen
+  await backlog.refresh();
+  await backlog.loadUnread("general");
+  assert.equal(backlog.messagesOf("general").length, 200);
+  assert.ok(backlog.messagesOf("general")[0].sequence <= 5500);
+
+  const never = make(0); // never read: all 700 are unseen, so the preload stops at its cap
+  await never.refresh();
+  await never.loadUnread("general");
+  assert.equal(never.messagesOf("general").length, 500);
+});
+
+test("a refresh brings the channels that have messages loaded up to date, and only those", async () => {
+  const store = [message("general", 1), message("group:ops", 2)];
+  const api = new FakeApi(store);
+  const model = new Model(api as unknown as Api, memoryStore());
+  await model.refresh();
+  await model.loadHistory("general", 10);
+  api.requests.length = 0;
+  store.push(message("general", 3), message("group:ops", 4));
+  api.channelList = new FakeApi(store).channelList;
+  await model.refresh();
+  assert.deepEqual(api.requests, ["after 1"]);
+  assert.deepEqual(model.messagesOf("general").map((m) => m.sequence), [1, 3]);
+  assert.deepEqual(model.messagesOf("group:ops"), []);
 });
 
 test("a channel that appears after the first refresh starts unread, its message targeted", async () => {

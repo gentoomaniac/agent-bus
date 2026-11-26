@@ -157,6 +157,12 @@ right.
   folded headings and owner groups are shared: every browser and the VS Code extension see the same ones
   (`prefs.json` next to the password hash).
 - **New messages**: bold channels, a count and a **New** line mark what you have not seen ([Unread messages](#unread-messages)).
+- **History**: a channel opens on its newest 100 messages, plus as many older ones as it takes to
+  reach the first unseen message (500 at most). Older messages load by themselves, a page of 100 at
+  a time, when you scroll near the top of the list; what you were reading stays where it is. The
+  **Load older messages** button at the top does the same, for the keyboard and after a failed
+  load, which it names. Loading stops when a page comes back short: the channel has no older
+  message (`GET /messages?before=`, [api.md](api.md#messages)). The extension does the same.
 - **Agents** (left): every agent in the registry except the monitor's own identity (the header says
   what the page sends as), in a folding group per owner, sorted by name and shown by its short name
   (`api` for `api@alice`; the tooltip has the full ID), with a status dot and its state (see
@@ -482,7 +488,7 @@ in the browser only.
 |---|---|
 | Parent | a message's `reply_to` if that message is loaded, else its `thread` root if loaded |
 | Parent hidden by the type filter | quoted as plain text: there is nothing to scroll to |
-| Parent not loaded | looked up by ID; meanwhile (and if the lookup fails) the line reads "answers a message not shown here (older, or in another channel)", the ID in the tooltip; when the monitor does not hold it any more: "answers a message that is no longer kept" |
+| Parent not loaded | looked up by ID; meanwhile (and if the lookup fails) the line reads "answers a message not shown here (older, or in another channel)", the ID in the tooltip; when the monitor does not hold it any more: "answers a message that is no longer kept". A click on the quote loads older pages until the parent is there (or opens its channel, then does the same), and scrolls to it |
 | Quote line in the thread view | left out where the parent is the row right above; a grouped follow-up (same sender, same parent) does not repeat it |
 | Order | by sequence; same-sender grouping applies between siblings only, and a reply to a message that is not loaded starts its own group |
 | Type filter | the tree is built from the messages the filter lets through, so a reply to a hidden message becomes a root |

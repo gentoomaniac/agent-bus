@@ -266,6 +266,7 @@ export class ChatPanels implements vscode.Disposable {
     if (model.channels.some((channel) => channel.id === channelId)) {
       await this.guarded(async () => {
         await model.loadHistory(channelId, HISTORY);
+        await model.loadUnread(channelId);
         chat.members = await model.api.members(channelId);
       });
     } else {
