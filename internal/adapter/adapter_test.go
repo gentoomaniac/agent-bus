@@ -504,6 +504,41 @@ func TestHopLimitStopsTwoAutoRepliers(t *testing.T) {
 	}
 }
 
+// A send without reply_to that the limit stops says why it counts as a reply, and a new thread
+// name starts a new topic at hops 0.
+func TestHopLimitNamesTheWayOutAndANewThreadStartsOver(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob)
+	if _, err := a.Send(context.Background(), bob, text("start")); err != nil {
+		t.Fatal(err)
+	}
+	var stopped error
+	var replier *Adapter
+	var to string
+	for turn := 0; turn < 20 && stopped == nil; turn++ {
+		replier, to = bobAdapter, alice
+		if turn%2 == 1 {
+			replier, to = a, bob
+		}
+		stopped = reply(t, replier, to, false)
+	}
+	for _, want := range []string{"without reply_to it continues", "new thread name"} {
+		if stopped == nil || !strings.Contains(stopped.Error(), want) {
+			t.Fatalf("error %v does not say %q", stopped, want)
+		}
+	}
+	// The one that was stopped tries again as a new topic.
+	if _, err := replier.Send(context.Background(), to, Outgoing{Type: "message", Thread: "new-topic", Body: envelope.Body{Text: "new"}}); err != nil {
+		t.Fatalf("a new thread is still refused: %v", err)
+	}
+	if env := lastEnvelope(t, b); env.Hops != 0 || env.Thread != "new-topic" {
+		t.Errorf("the new topic has hops %d, thread %q; want 0, new-topic", env.Hops, env.Thread)
+	}
+}
+
 func TestReplyToUnknownMessageIsRefusedAndExplicitReplyCountsHops(t *testing.T) {
 	b := newTestBus(t)
 	b.register(alice)

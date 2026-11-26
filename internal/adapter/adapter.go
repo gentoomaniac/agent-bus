@@ -585,7 +585,13 @@ func (adapter *Adapter) post(ctx context.Context, to bus.Channel, message Outgoi
 			limit++
 		}
 		if inherited.hops >= limit {
-			return "", fmt.Errorf("not sent: the conversation is %d replies deep, the limit is %d; wait for a human", inherited.hops, limit)
+			// Say why a send without reply_to counts as a reply, and the way out for a new topic.
+			how := "it answers " + inherited.id
+			if message.ReplyTo == "" {
+				how = fmt.Sprintf("without reply_to it continues %s, the message you read last here within %s", inherited.id, recentParentWindow)
+			}
+			return "", fmt.Errorf("not sent: the conversation is %d replies deep, the limit is %d (%s). "+
+				"A new topic: send it again with a new thread name. The same topic: wait for a human", inherited.hops, limit, how)
 		}
 		hops = inherited.hops + 1
 		replyTo = &inherited.id
