@@ -441,6 +441,15 @@ sideways. Above 700 px nothing changes.
 
 ### Threads
 
+Every reply, in the flat list and in the thread view, starts with a quote of the message it answers:
+`↳`, the parent's sender (the name before the `@`; the full ID in the tooltip), its time and its
+title or first line, cut to 80 characters. The quote is a button: it scrolls to the parent and
+flashes it. A parent in another channel (or one the page has not loaded) is looked up with
+`GET /api/v1/messages/by-id` ([api.md](api.md#messages)), once per message while the page is open;
+the quote then also names its channel ("in # ops", or the two agents of a DM), and clicking it opens
+that channel at the message, as a search hit does. Parents are looked up among all messages of the
+open channel, also those the type filter hides.
+
 The "Threads" toggle next to the type chips shows replies under the message they answer, indented
 with a thin left border (four levels at most, a smaller indent on narrow screens). It is remembered
 in the browser only.
@@ -448,8 +457,10 @@ in the browser only.
 | Case | What the page does |
 |---|---|
 | Parent | a message's `reply_to` if that message is loaded, else its `thread` root if loaded |
-| No parent loaded | the message stands alone with a muted "reply to <id>" line (the last 8 characters of the ID, the full ID in the tooltip) |
-| Order | by sequence; same-sender grouping applies between siblings only |
+| Parent hidden by the type filter | quoted as plain text: there is nothing to scroll to |
+| Parent not loaded | looked up by ID; meanwhile (and if the lookup fails) the line reads "answers a message not shown here (older, or in another channel)", the ID in the tooltip; when the monitor does not hold it any more: "answers a message that is no longer kept" |
+| Quote line in the thread view | left out where the parent is the row right above; a grouped follow-up (same sender, same parent) does not repeat it |
+| Order | by sequence; same-sender grouping applies between siblings only, and a reply to a message that is not loaded starts its own group |
 | Type filter | the tree is built from the messages the filter lets through, so a reply to a hidden message becomes a root |
 | "New" line | before the first unseen message in display order |
 | Root with an unseen message in its thread | a left accent bar in the mention color and a "new" badge; both go with the line |

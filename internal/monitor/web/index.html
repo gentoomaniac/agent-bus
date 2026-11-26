@@ -139,7 +139,13 @@
   .reply-count .pill { margin-left: 6px; }
   :root[data-avatars=on] .reply-count { margin-left: calc(var(--avatar) + 10px + var(--time-indent)); }
   .pill.new-thread { background: var(--mention); color: var(--mention-text); border-color: var(--mention); font-weight: 600; }
-  .reply-to { font-size: var(--font-xs); color: var(--muted); }
+  /* What a reply answers: a quote of the parent, set in like the text. */
+  .reply-to { display: block; max-width: calc(100% - var(--time-indent)); margin: 2px 0 2px var(--time-indent); padding: 0 0 0 6px; border: 0 solid var(--border); border-left-width: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; font-size: var(--font-s); text-align: left; color: var(--muted); background: transparent; }
+  button.reply-to { cursor: pointer; }
+  button.reply-to:hover { color: var(--accent); }
+  button.reply-to:focus-visible { outline: 2px solid var(--accent); }
+  .reply-to .who { font-weight: 600; }
+  .reply-to.missing { font-style: italic; }
   #messages { flex: 1; overflow-y: auto; padding: 0 16px; min-height: 0; }
   .message { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 10px; padding: var(--message-pad) 0; border-top: 1px solid var(--border); }
   .message:first-child { border-top: 0; }
@@ -282,7 +288,7 @@
     .panel-head h2 { margin: 16px 0 6px; }
     .panel-head .toggle { margin-top: 8px; }
     /* Tap targets of 40px, and 16px inputs so iOS does not zoom in on focus. */
-    button:not(.tag, .raw-button), select, input:not([type=checkbox], [type=radio], [type=color]), li.item, li.member, .choices label, .swatch { min-height: 40px; }
+    button:not(.tag, .raw-button, .reply-to), select, input:not([type=checkbox], [type=radio], [type=color]), li.item, li.member, .choices label, .swatch { min-height: 40px; }
     select, input, textarea { font-size: max(16px, var(--font)); }
     button.section, button.star, button.bell { min-height: 40px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
     button.section { justify-content: flex-start; }
@@ -509,7 +515,7 @@ async function api(path, options) {
   if (response.status === 401) showLogin();
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || response.statusText);
+    throw Object.assign(new Error(body.error || response.statusText), { status: response.status });
   }
   return response.json();
 }
@@ -1462,55 +1468,61 @@ function continues(previous, message) {
     && new Date(message.time) - new Date(previous.time) < GROUP_MS);
 }
 
-// Arranges messages (ordered by sequence) as a forest of replies, flattened in display order.
-// The parent is the message's reply_to if loaded, else its thread root if loaded; a message with
-// neither is a root, and orphanOf is the reply_to it could not find. A cycle is broken at its
-// first member in sequence order, which becomes a root. depth stops at MAX_THREAD_DEPTH; parent is the message
-// the entry hangs under, or null.
+const messagesById = (messages) => new Map(messages.filter((message) => message.id).map((message) => [message.id, message]));
+
+// The parent of a message among the loaded ones: its reply_to, else its thread root. A parent must
+// come earlier in the stream, which also rules out cycles in bad data.
+function parentOf(message, byId) {
+  for (const id of [message.reply_to, message.thread]) {
+    const parent = id ? byId.get(id) : undefined;
+    if (parent && parent.sequence < message.sequence) return parent;
+  }
+  return null;
+}
+
+// Arranges messages (ordered by sequence) as a forest of replies, flattened in display order:
+// roots by sequence, each followed by its replies (depth first, siblings by sequence). A row is
+// { message, depth, parent, replyTo }: depth stops at MAX_THREAD_DEPTH; parent is the message the
+// row answers; replyTo is the ID of the message a root answers that is not loaded. A thread
+// root's own ID as its thread does not count as an answer.
 function threadOrder(messages) {
-  const byId = new Map();
-  for (const message of messages) if (message.id && !byId.has(message.id)) byId.set(message.id, message);
-  const parentOf = (message) => {
-    for (const id of [message.reply_to, message.thread]) {
-      const parent = byId.get(id);
-      if (parent && parent !== message) return parent;
-    }
-    return null;
-  };
+  const byId = messagesById(messages);
   const children = new Map();
-  const roots = [];
+  const stack = [];
   for (const message of messages) {
-    const parent = parentOf(message);
-    if (!parent) roots.push(message);
+    const parent = parentOf(message, byId);
+    if (!parent) stack.push({ message, depth: 0, parent: null, replyTo: message.reply_to || (message.thread !== message.id && message.thread) || undefined });
     else if (children.has(parent)) children.get(parent).push(message);
     else children.set(parent, [message]);
   }
-  const entries = [];
-  const placed = new Set();
-  const place = (root, orphanOf) => {
-    const stack = [{ message: root, level: 0, parent: null, orphanOf }];
-    while (stack.length) {
-      const { message, level, parent, orphanOf } = stack.pop();
-      if (placed.has(message)) continue; // the way back into a cycle
-      placed.add(message);
-      entries.push({ message, depth: Math.min(level, MAX_THREAD_DEPTH), orphanOf, parent });
-      const replies = children.get(message) || [];
-      for (let i = replies.length - 1; i >= 0; i--) stack.push({ message: replies[i], level: level + 1, parent: message, orphanOf: null });
-    }
-  };
-  for (const root of roots) place(root, root.reply_to && !byId.has(root.reply_to) ? root.reply_to : null);
-  // What is left sits in or below a cycle.
-  for (const message of messages) if (!placed.has(message)) place(message, null);
-  return entries;
+  stack.reverse();
+  const rows = [];
+  while (stack.length) {
+    const row = stack.pop();
+    rows.push(row);
+    const replies = children.get(row.message) || [];
+    for (let i = replies.length - 1; i >= 0; i--) stack.push({ message: replies[i], depth: Math.min(row.depth + 1, MAX_THREAD_DEPTH), parent: row.message });
+  }
+  return rows;
 }
 
-// Per root message of threadOrder entries: how many replies its thread holds, and whether one of
+// The flat list's rows, in stream order: each reply knows its parent among `all` (every loaded
+// message of the channel, also those the type filter hides), or the ID of the one it answers.
+function flatOrder(messages, all) {
+  const byId = messagesById(all);
+  return messages.map((message) => {
+    const parent = parentOf(message, byId);
+    return { message, depth: 0, parent, replyTo: parent ? undefined : message.reply_to || undefined };
+  });
+}
+
+// Per root message of threadOrder rows: how many replies its thread holds, and whether one of
 // its messages is unseen (after the marker, not the monitor's own agent's). A root is the entry of
-// depth 0; the entries after it down to the next root are its replies.
-function threadSummaries(entries, marker, agent) {
+// depth 0; the rows after it down to the next root are its replies.
+function threadSummaries(rows, marker, agent) {
   const summaries = new Map();
   let summary = null;
-  for (const { message, depth } of entries) {
+  for (const { message, depth } of rows) {
     if (depth === 0) {
       summary = { replies: 0, unseen: false };
       summaries.set(message, summary);
@@ -1539,7 +1551,61 @@ function tagButton(className, key, value, text) {
   return el("button", { class: className + " tag", type: "button", title, onclick: () => addSearchTerm(term) }, text);
 }
 
-function renderMessage(message, grouped, depth, orphanOf, thread) {
+// The first line of a message, cut to `max` characters: what a reply quotes of its parent.
+function quoteOf(message, max = 80) {
+  const line = (message.title || message.text || "").split("\n").find((part) => part.trim()) || "";
+  return line.length > max ? line.slice(0, max - 1).trimEnd() + "\u2026" : line.trim();
+}
+
+// The part of an agent ID before the "@".
+const shortName = (agentId) => agentId.split("@")[0];
+
+// Parents that are not in the open channel, by message ID: the message, "gone" when the monitor does
+// not hold it (404), "failed" for any other error, and "loading" meanwhile. A message never changes, so
+// an answer is kept; one request per ID.
+const parents = new Map();
+
+async function fetchParent(id) {
+  parents.set(id, "loading");
+  try {
+    parents.set(id, await api("/api/v1/messages/by-id?id=" + encodeURIComponent(id)));
+  } catch (error) {
+    parents.set(id, error.status === 404 ? "gone" : "failed");
+  }
+  if (state.selected) renderMessages(false);
+}
+
+// A quote of the message a reply answers: its sender, where it was when that is another channel,
+// its time, and its first line. With `onclick` it is a button that shows the message.
+function quoteBlock(parent, onclick, title, withChannel) {
+  const quote = quoteOf(parent) || "(no text)";
+  const channel = withChannel ? channelById(parent.channel) : null;
+  const children = [
+    "\u21b3 ", el("span", { class: "who" }, shortName(parent.from || "?")),
+    ...(withChannel ? [el("span", { class: "muted" }, " in " + (channel ? describeChannel(channel) : parent.channel))] : []),
+    " ", timeSpan(parent.time), " " + quote];
+  if (!onclick) return el("div", { class: "reply-to", title }, ...children);
+  return el("button", { type: "button", class: "reply-to", title, onclick,
+    "aria-label": `Show the message this answers, from ${parent.from || "unknown sender"}: ${quote}` }, ...children);
+}
+
+// What a reply answers, above its header: a quote of the parent that opens it on a click. A parent that
+// is not loaded is looked up on the monitor (it may be older or in another channel), and said so meanwhile.
+// `shown` holds the sequences the type filter lets through: a hidden parent is quoted but there is nothing to scroll to.
+function replyLine({ parent, replyTo }, shown) {
+  const label = (message) => `reply to ${message.from || "unknown sender"} (${message.id || "no id"})`;
+  if (parent && shown.has(parent.sequence)) return quoteBlock(parent, () => showMessage(parent.sequence), label(parent) + ": show it", false);
+  if (parent) return quoteBlock(parent, null, label(parent) + ", hidden by the type filter", false);
+  if (!replyTo) return null;
+  if (!parents.has(replyTo)) fetchParent(replyTo);
+  const found = parents.get(replyTo);
+  if (typeof found === "object") return quoteBlock(found, () => openMessage(found), label(found) + ": show it", found.channel !== state.selected);
+  const text = found === "gone" ? "answers a message that is no longer kept" : "answers a message not shown here (older, or in another channel)";
+  return el("div", { class: "reply-to missing", title: "reply to " + replyTo }, "\u21b3 " + text);
+}
+
+// `reply` is the line saying what the message answers, if any.
+function renderMessage(message, grouped, depth, reply, thread) {
   const sequence = el("span", { class: "muted seq" }, "#" + message.sequence);
   const header = grouped
     ? el("div", { class: "meta slim" }, timeSpan(message.time))
@@ -1562,7 +1628,7 @@ function renderMessage(message, grouped, depth, orphanOf, thread) {
     grouped ? el("span", { class: "avatar-gap" }) : avatarFor(message.from),
     el("div", { class: "body" },
       el("button", { class: "raw-button", type: "button", title: "Raw message", "aria-label": "Raw message", "aria-haspopup": "dialog", onclick: () => showRawMessage(message) }, "{ }"),
-      ...(orphanOf ? [el("div", { class: "reply-to", title: orphanOf }, "\u21b3 reply to " + orphanOf.slice(-8))] : []),
+      ...(reply ? [reply] : []),
       header,
       ...(targets.length ? [el("div", { class: "targets-row" }, ...targets)] : []),
       ...(message.title ? [el("div", { class: "title" }, message.title)] : []),
@@ -1669,15 +1735,20 @@ function renderMessages(scrollToEnd) {
   const none = list.length ? "No message of these types." : "No messages yet.";
   // A type filter that hides every unseen message hides the line too.
   // In thread mode a reply to a hidden message becomes a root: the tree is built from what is shown.
-  const entries = state.threads ? threadOrder(shown) : shown.map((message) => ({ message, depth: 0, orphanOf: null, parent: null }));
+  const entries = state.threads ? threadOrder(shown) : flatOrder(shown, list);
   const summaries = state.threads ? threadSummaries(entries, state.marker, state.status.agent) : new Map();
+  const shownSequences = new Set(shown.map((message) => message.sequence));
   const markerAt = state.marker === null ? -1 : entries.findIndex(({ message: m }) => m.sequence > state.marker && m.from !== state.status.agent);
-  const rows = entries.flatMap(({ message, depth, orphanOf, parent }, i) => {
+  const rows = entries.flatMap((entry, i) => {
+    const { message, depth, parent, replyTo } = entry;
     const previous = entries[i - 1];
     // A thread with unseen mail is not grouped: its "new" badge sits in the header, which a grouped row hides.
-    const grouped = settings.grouping && i !== markerAt && !(summaries.get(message) || {}).unseen && previous && previous.parent === parent && continues(previous.message, message);
+    const grouped = settings.grouping && i !== markerAt && !(summaries.get(message) || {}).unseen && previous
+      && previous.parent === parent && previous.replyTo === replyTo && continues(previous.message, message);
+    // A follow-up of a group answers what the row above does; in the thread view a reply right under its parent needs no line.
+    const reply = grouped || (state.threads && parent && previous.message === parent) ? null : replyLine(entry, shownSequences);
     const thread = summaries.get(message);
-    const row = renderMessage(message, grouped, depth, orphanOf, thread);
+    const row = renderMessage(message, grouped, depth, reply, thread);
     return [
       ...(i === markerAt ? [el("div", { class: "new-marker", role: "separator" }, "New")] : []),
       row,
@@ -1907,7 +1978,7 @@ function highlighted(snippet) {
 function renderHit(hit) {
   const channel = state.channels.find((c) => c.id === hit.channel);
   const where = channel ? describeChannel(channel) : hit.channel;
-  return el("div", { class: "hit", onclick: () => openHit(hit) },
+  return el("div", { class: "hit", onclick: () => openMessage(hit) },
     el("div", { class: "meta" },
       el("span", { class: "cut", title: where }, where),
       el("span", { class: "from cut", title: hit.from || "" }, hit.from || ""),
@@ -1957,15 +2028,23 @@ async function runSearch(cursor) {
   if (result.next_cursor) box.append(el("div", { class: "more empty" }, el("button", { type: "button", onclick: () => runSearch(result.next_cursor) }, "Load more")));
 }
 
-// Opens the hit's channel, makes sure its type is not filtered out and shows the message.
-async function openHit(hit) {
-  if (state.shownTypes.size && !state.shownTypes.has(hit.type)) { state.shownTypes.clear(); saveSetting(TYPES_KEY, []); }
-  closeSearch();
-  await select(hit.channel);
-  const row = $("messages").querySelector(`[data-sequence="${hit.sequence}"]`);
+// Scrolls to a message of the open channel and flashes it.
+function showMessage(sequence) {
+  const row = $("messages").querySelector(`[data-sequence="${sequence}"]`);
   if (!row) return;
   row.scrollIntoView({ block: "center" });
+  row.classList.remove("flash");
+  void row.offsetWidth; // restarts the animation
   row.classList.add("flash");
+}
+
+// Opens the message's channel (a search hit, or a reply's parent in another channel), makes sure its
+// type is not filtered out and shows the message.
+async function openMessage(message) {
+  if (state.shownTypes.size && !state.shownTypes.has(message.type)) { state.shownTypes.clear(); saveSetting(TYPES_KEY, []); }
+  closeSearch();
+  await select(message.channel);
+  showMessage(message.sequence);
 }
 
 $("search").addEventListener("input", () => {
@@ -2107,7 +2186,7 @@ function showDesktopNotification(batch) {
     notification.onclick = () => {
       window.focus();
       notification.close();
-      openHit(first);
+      openMessage(first);
     };
   } catch (error) {
     for (const message of batch) countNotified(message.channel); // a browser that only notifies through a service worker
