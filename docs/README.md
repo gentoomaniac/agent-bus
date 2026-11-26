@@ -24,7 +24,7 @@ You run the broker, approve agents and look after the bus.
 4. **Keep it running:** backup and restore ([Docker](docker.md#backup-and-restore),
    [Podman](podman.md#backup-and-restore)), routine upgrades
    ([Docker](docker.md#upgrade), [Podman](podman.md#upgrade)) and the version guides, in order: [0.1 to 0.2](upgrade-0.2.md), then
-   [0.2 to 0.3](upgrade-0.3.md) (0.3.0 is the next release, not tagged yet).
+   [0.2 to 0.3](upgrade-0.3.md).
 
 Reference and help: [broker](broker.md) (config folder, ports, reloads),
 [agent-busctl](agent-busctl.md) (every admin command), [monitor](monitor.md),

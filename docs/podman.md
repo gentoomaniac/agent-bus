@@ -502,7 +502,7 @@ busd applies the new release's grants when it starts.
 are up to date`, and the page loads through the proxy.
 
 Steps that only one release needs are in [upgrade-0.2.md](upgrade-0.2.md) (0.1 to 0.2) and
-[upgrade-0.3.md](upgrade-0.3.md) (0.2 to 0.3, the next release, not tagged yet): apply them in order.
+[upgrade-0.3.md](upgrade-0.3.md) (0.2 to 0.3): apply them in order.
 
 ## Build locally
 

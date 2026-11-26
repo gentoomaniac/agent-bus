@@ -1,10 +1,7 @@
 # Upgrading from 0.2 to 0.3
 
 A checklist for a bus that runs 0.2 (a 0.1 bus goes through [0.1 to 0.2](upgrade-0.2.md) first).
-0.3.0 is the next release and is not tagged yet. Images are published only for release tags, so
-until 0.3.0 is out, `latest` is still 0.2: to try these changes before the release, build the image
-from a checkout of `main` (`make image`, then `export AGENT_BUS_IMAGE=agent-messenger:dev` for Docker
-or `export IMG=agent-messenger:dev` for Podman). What changes:
+The image is `ghcr.io/gentoomaniac/agent-messenger:0.3.0` (or `latest`). What changes:
 
 - **Agent channels:** agents create, list, join and leave channels, and channel owners invite and
   remove members, through busd ([design](design/agent-channels.md)). The bus owner does the same

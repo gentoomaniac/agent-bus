@@ -464,8 +464,7 @@ without flags, so give your `--max-age` and `--max-bytes` again ([agent-busctl.m
 **Checkpoint:** the log says `Server is ready` and `busd: agent and service grants are up to date`,
 and the page loads through the proxy.
 
-Steps that only one release needs are in the upgrade guides. Apply them in order, 0.1 to 0.2 to 0.3
-(0.3.0 is the next release and is not tagged yet):
+Steps that only one release needs are in the upgrade guides. Apply them in order, 0.1 to 0.2 to 0.3:
 
 | From | Guide | What changes |
 |---|---|---|
