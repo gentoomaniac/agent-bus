@@ -6,18 +6,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 )
-
-// Search scans the index for the messages that fit the filters and reads their bodies, newest
-// first, until a page of them also holds the words. That reads many bodies from the stream on a
-// big history and is slow there; a SQLite FTS index replaces the scan without changing the
-// endpoint (docs/design/lazy-monitor.md). The scan holds the monitor's lock only to read the
-// index, never while it reads bodies, and keeps those bodies out of the cache.
 
 const (
 	defaultSearchLimit = 50
@@ -189,67 +184,46 @@ type SearchResult struct {
 // ErrBadCursor is returned for a cursor this monitor did not hand out.
 var ErrBadCursor = errors.New("bad cursor")
 
-// searchBatch is how many candidates Search reads the bodies of at once.
-const searchBatch = 100
-
-// place is where a message stands in the newest-first order of a search.
-type place struct {
-	time     int64 // Unix nanoseconds
-	channel  string
-	sequence uint64
+// ErrIndexing is returned by Search while the monitor reads the whole stream into a new state
+// file: the words of the messages not read yet cannot be found.
+type ErrIndexing struct {
+	Indexed, Total int // messages read, and in the stream when that is known
 }
 
-func placeOf(message Message) place {
-	return place{message.Time.UnixNano(), message.Channel, message.Sequence}
+func (err ErrIndexing) Error() string {
+	return fmt.Sprintf("search is not ready, the monitor is indexing the stream (%d of %d messages)", err.Indexed, err.Total)
 }
 
-// Search returns up to limit messages matching the query, newest first, after the cursor.
+// Search returns up to limit messages matching the query, newest first (by sequence, which is the
+// order the bus took them in), below the cursor. Words go to the FTS index of the state file,
+// which names the messages; the filters are checked against the index rows. A query with no words
+// walks the rows and never touches the file. Bodies are read only for the page's hits.
 func (monitor *Monitor) Search(ctx context.Context, query Query, limit int, cursor string) (SearchResult, error) {
-	after, err := parseCursor(cursor)
+	below, err := parseCursor(cursor)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	type candidate struct {
-		channel string
-		entry   row
+	if monitor.indexing.Load() {
+		return SearchResult{}, monitor.indexingProgress(ctx)
 	}
-	var candidates []candidate
-	monitor.mu.Lock()
-	for channel, rows := range monitor.index.channels {
-		for _, entry := range rows {
-			meta := monitor.index.describe(channel, entry)
-			if query.matchesFilters(meta) && (cursor == "" || newerFirst(placeOf(meta), after) > 0) {
-				candidates = append(candidates, candidate{channel, entry})
-			}
-		}
-	}
-	monitor.mu.Unlock()
-	slices.SortFunc(candidates, func(a, b candidate) int {
-		return newerFirst(place{a.entry.time, a.channel, a.entry.sequence}, place{b.entry.time, b.channel, b.entry.sequence})
-	})
 
-	result := SearchResult{Hits: []SearchHit{}}
-	var hits []Message
-	for start := 0; start < len(candidates) && len(hits) <= limit; start += searchBatch {
-		monitor.mu.Lock()
-		var described []Message
-		for _, c := range candidates[start:min(len(candidates), start+searchBatch)] {
-			described = append(described, monitor.index.describe(c.channel, c.entry))
-		}
-		monitor.mu.Unlock()
-		messages, err := monitor.withBodies(ctx, described, false)
-		if err != nil {
-			return SearchResult{}, err
-		}
-		for _, message := range messages {
-			if query.matchesWords(message) {
-				hits = append(hits, message)
-			}
-		}
+	var candidates []Message
+	if len(query.terms) > 0 {
+		candidates, err = monitor.searchWords(ctx, query, limit+1, below)
+	} else {
+		candidates = monitor.searchRows(query, limit+1, below)
 	}
-	if len(hits) > limit {
-		hits = hits[:limit]
-		result.NextCursor = cursorAfter(hits[limit-1])
+	if err != nil {
+		return SearchResult{}, err
+	}
+	result := SearchResult{Hits: []SearchHit{}}
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+		result.NextCursor = cursorAfter(candidates[limit-1].Sequence)
+	}
+	hits, err := monitor.withBodies(ctx, candidates, false)
+	if err != nil {
+		return SearchResult{}, err
 	}
 	for _, message := range hits {
 		result.Hits = append(result.Hits, SearchHit{
@@ -260,39 +234,94 @@ func (monitor *Monitor) Search(ctx context.Context, query Query, limit int, curs
 	return result, nil
 }
 
-// newerFirst orders places newest first; it is negative when a comes before b. The time decides,
-// then the channel and sequence make the order total.
-func newerFirst(a, b place) int {
-	return cmp.Or(cmp.Compare(b.time, a.time), cmp.Compare(a.channel, b.channel), cmp.Compare(b.sequence, a.sequence))
+// searchWords takes the matches of the words from the newest down, until n of them pass the
+// filters. Messages the index no longer has (retention is ahead of the file) are skipped.
+func (monitor *Monitor) searchWords(ctx context.Context, query Query, n int, below uint64) ([]Message, error) {
+	expression, searchable := query.matchExpression()
+	if !searchable {
+		return nil, nil
+	}
+	var found []Message
+	err := monitor.store.eachMatch(ctx, expression, below, func(channel string, sequence uint64) bool {
+		monitor.mu.Lock()
+		defer monitor.mu.Unlock()
+		if entry, known := monitor.index.find(channel, sequence); known {
+			if meta := monitor.index.describe(channel, entry); query.matchesFilters(meta) {
+				found = append(found, meta)
+			}
+		}
+		return len(found) < n
+	})
+	return found, err
 }
 
-// The cursor is the last message of a page; the next page starts after it in the order.
-func cursorAfter(last Message) string {
-	text := fmt.Sprintf("%d|%d|%s", last.Time.UnixNano(), last.Sequence, last.Channel)
-	return base64.RawURLEncoding.EncodeToString([]byte(text))
+// searchRows takes the n newest rows below the sequence that pass the filters. The n newest of
+// all channels are among the n newest of each, so each channel is walked from its end only as far
+// as it takes to find n.
+func (monitor *Monitor) searchRows(query Query, n int, below uint64) []Message {
+	var found []Message
+	monitor.mu.Lock()
+	for channel, rows := range monitor.index.channels {
+		end, _ := slices.BinarySearchFunc(rows, below, compareRowSequence)
+		taken := 0
+		for at := end - 1; at >= 0 && taken < n; at-- {
+			if meta := monitor.index.describe(channel, rows[at]); query.matchesFilters(meta) {
+				found = append(found, meta)
+				taken++
+			}
+		}
+	}
+	monitor.mu.Unlock()
+	slices.SortFunc(found, func(a, b Message) int { return cmp.Compare(b.Sequence, a.Sequence) })
+	return found[:min(n, len(found))]
 }
 
-func parseCursor(cursor string) (place, error) {
+// indexingProgress says how far the first read of the stream is.
+func (monitor *Monitor) indexingProgress(ctx context.Context) ErrIndexing {
+	monitor.mu.Lock()
+	progress := ErrIndexing{Indexed: monitor.index.countThrough(math.MaxUint64)}
+	monitor.mu.Unlock()
+	if state, err := monitor.config.History.LogState(ctx); err == nil {
+		progress.Total = int(state.Messages)
+	}
+	return progress
+}
+
+// matchExpression is the query's words as an FTS5 MATCH expression over the title and the text.
+// Each word or phrase becomes the phrase of its tokens with the last one a prefix, which is how
+// "ack" finds "ack it" and not "back", and "lib-x" finds "lib x". It says false for a word with no
+// letter or digit, which the index has no token for.
+func (query Query) matchExpression() (string, bool) {
+	var phrases []string
+	for _, term := range query.terms {
+		tokens := strings.FieldsFunc(string(term), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+		if len(tokens) == 0 {
+			return "", false
+		}
+		phrases = append(phrases, `"`+strings.Join(tokens, " ")+`" *`)
+	}
+	return "{title text} : (" + strings.Join(phrases, " AND ") + ")", true
+}
+
+// The cursor is the sequence of the last message of a page; the next page is below it.
+func cursorAfter(sequence uint64) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatUint(sequence, 10)))
+}
+
+// parseCursor returns the sequence the page lies below; the first page lies below all of them.
+func parseCursor(cursor string) (uint64, error) {
 	if cursor == "" {
-		return place{}, nil
+		return math.MaxInt64, nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return place{}, ErrBadCursor
+		return 0, ErrBadCursor
 	}
-	nanos, rest, _ := strings.Cut(string(raw), "|")
-	sequence, channel, _ := strings.Cut(rest, "|")
-	unixNano, nanosErr := strconv.ParseInt(nanos, 10, 64)
-	number, sequenceErr := strconv.ParseUint(sequence, 10, 64)
-	if err := errors.Join(nanosErr, sequenceErr); err != nil || channel == "" {
-		return place{}, ErrBadCursor
+	sequence, err := strconv.ParseUint(string(raw), 10, 63)
+	if err != nil {
+		return 0, ErrBadCursor
 	}
-	return place{unixNano, channel, number}, nil
-}
-
-// matches says whether the message satisfies the whole query.
-func (query Query) matches(message Message) bool {
-	return query.matchesFilters(message) && query.matchesWords(message)
+	return sequence, nil
 }
 
 // matchesFilters checks what the index knows of a message: its sender, recipient, type, targets and time.
@@ -317,17 +346,6 @@ func (query Query) matchesFilters(message Message) bool {
 	}
 	for _, agent := range query.targets {
 		if !slices.ContainsFunc(message.Targets, func(target string) bool { return isAgent(target, agent) }) {
-			return false
-		}
-	}
-	return true
-}
-
-// matchesWords checks that every word and phrase of the query is in the title or text.
-func (query Query) matchesWords(message Message) bool {
-	title, text := lowerRunes(message.Title), lowerRunes(message.Text)
-	for _, term := range query.terms {
-		if len(findTerm(title, term)) == 0 && len(findTerm(text, term)) == 0 {
 			return false
 		}
 	}
@@ -378,16 +396,23 @@ func isWordRune(r rune) bool {
 }
 
 // snippet shows the text around the first match, or the title when only that matched, or the
-// start of the text when the query has no words.
+// start of the text when the query has no words or the index matched what the snippet cannot
+// find, such as "uber" for "Über" (the index folds diacritics).
 func (query Query) snippet(message Message) Snippet {
-	for _, field := range []struct{ name, content string }{{"text", message.Text}, {"title", message.Title}} {
+	fields := []struct{ name, content string }{{"text", message.Text}, {"title", message.Title}}
+	for _, field := range fields {
 		runes, lowered := []rune(field.content), lowerRunes(field.content)
 		var spans [][2]int
 		for _, term := range query.terms {
 			spans = append(spans, findTerm(lowered, term)...)
 		}
-		if len(spans) > 0 || len(query.terms) == 0 && field.content != "" {
+		if len(spans) > 0 {
 			return cutSnippet(field.name, runes, spans)
+		}
+	}
+	for _, field := range fields {
+		if field.content != "" {
+			return cutSnippet(field.name, []rune(field.content), nil)
 		}
 	}
 	return Snippet{Field: "text"}

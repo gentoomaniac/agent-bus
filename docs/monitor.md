@@ -545,19 +545,49 @@ type-filter chips and the thread view are separate from this and work as before.
 | `to:#ops after:2026-11-20 before:2026-11-25` | messages in `#ops` from 20 to 24 November (UTC) |
 | `type:bug_report type:feature_request has:target` | requests of either type that name a target |
 
-The endpoint scans the index on every request and reads the bodies of the messages that pass the
-filters through the same cache and stream reads as a page, newest first, until a page of hits is
-full. A word that is rare or absent reads the whole history, which is slow on a big stream. A
-SQLite FTS index can replace that scan later behind the same endpoint, query syntax and cursor.
+Words are looked up in a full-text index in the [state file](#state-file); it answers in a few
+milliseconds on a history of 200 000 messages, whatever the word. The filters are checked on the
+index of messages in memory, and a query of filters only never touches the file. Only the bodies
+of the hits on the page are read, for their snippets, through the same cache and stream reads as a
+page. Hits come newest first by stream sequence. The search is case-insensitive and ignores
+accents (`uber` finds "Über"); a word is split at everything that is not a letter or a digit
+(`lib-x` is `lib` and `x`), so a word made of punctuation finds nothing. While the monitor reads
+the whole stream into a new state file, search answers `503` `indexing` with how far it is, and
+the page shows that as a failed search; try again in a moment.
+
+## State file
+
+The monitor keeps one SQLite file, `monitor-web/index.sqlite` in its config directory, next to
+`prefs.json` (and `index.sqlite-wal` and `-shm` beside it while it runs). It holds a row per
+message without its body (channel, sender, time, type, targets, verification and the reason a
+message was not verified), the words of the titles and texts for search, and how far each channel
+has been read. It is a cache: the stream is the source of truth, and nothing in it is needed to
+restore anything.
+
+- **Start.** The monitor loads the rows (0.6 s for 200 000 messages) and reads only what the
+  stream holds after the last record it stored. Without the file it reads the whole stream once
+  (about 24 s and 136 MiB of file for 200 000 messages of about 1 KiB, on a desktop; search waits
+  for it, the channels and the newest messages are served meanwhile) and writes the file as it goes.
+- **While it runs.** New messages are written in batches (every half second or 1000 messages) and
+  the messages the stream's retention removes are deleted from the file with the same 30-second
+  look at the stream. The file stays about as large as the text of the messages the stream holds.
+- **Lost or damaged.** Delete it any time (stop the monitor first), or lose it with its volume: the
+  next start reads the stream again. A file that is unreadable, from another version's layout, or
+  fails a check is deleted and rebuilt by the monitor itself, with a line in its log; so is one
+  that is ahead of the stream (the stream was recreated or restored). A file the monitor cannot
+  write to leaves it working without one, with a log line and a full read at every start.
+- **Where.** It needs the config directory to be writable and persistent, as `prefs.json` does
+  ([docker.md](docker.md), [podman.md](podman.md)); nothing else has to be set up.
 
 ## Limits of the MVP
 
-- The monitor keeps an index of every message in memory (about 200 bytes each) and the bodies of
+- The monitor keeps an index of every message in memory (about 235 bytes each) and the bodies of
   the most recent ones in a cache (`--cache-size`, 64 MiB). A page of older messages is read from
   the stream, which takes a fraction of a millisecond per message; the broker being down answers
-  such a page with `503`. The monitor still reads the whole history when it starts, to build the
-  index, and search reads bodies from the stream too, so it is slow on a history of millions of
-  messages.
+  such a page with `503`. The index is kept in the [state file](#state-file), so a start reads the
+  whole history only the first time, or after the file was lost. Only the index of messages
+  lives in memory: at the stream's default limit (1 GiB, about a million messages) that is about
+  235 MiB.
 - The monitor follows the stream's retention: every 30 seconds it reads the first sequence the
   stream still holds and drops older messages from its index and cache, and a page read that finds
   a message gone drops it at once. A message deleted from the middle of the stream (a purge by

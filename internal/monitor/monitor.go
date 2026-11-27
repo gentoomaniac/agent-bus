@@ -130,9 +130,13 @@ type Monitor struct {
 
 	mu         sync.Mutex
 	groups     []bus.TopicRecord
-	index      *index          // every message without its body
-	store      *store          // the same rows on disk, with what the index leaves out
-	generation atomic.Uint64   // counts the times the index was thrown away; the followers start over
+	index      *index        // every message without its body
+	store      *store        // the same rows on disk, with what the index leaves out
+	generation atomic.Uint64 // counts the times the index was thrown away; the followers start over
+	// indexing is true while the monitor reads the whole stream into an empty state file: search
+	// cannot find what is not read yet. It ends when every source has been read to its end once.
+	indexing   atomic.Bool
+	caughtUp   map[string]bool // the sources read to their end since indexing began, under mu
 	bodies     *bodyCache      // the bodies read recently
 	followed   map[string]bool // sources that have a reader, by channel name
 	followers  sync.WaitGroup
@@ -179,6 +183,7 @@ func New(config Config) *Monitor {
 		store:         store,
 		bodies:        newBodyCache(cmp.Or(config.CacheBytes, DefaultCacheBytes)),
 		followed:      map[string]bool{},
+		caughtUp:      map[string]bool{},
 		records:       map[string]presence.Record{},
 		shownState:    map[string]string{},
 		askedPresence: map[string]bool{},
@@ -192,6 +197,7 @@ func New(config Config) *Monitor {
 // agent's DM channel, started as they appear.
 func (monitor *Monitor) Run(ctx context.Context) {
 	defer monitor.store.close() // after the followers, which still queue messages
+	monitor.indexing.Store(monitor.store.fresh)
 	defer monitor.followers.Wait()
 	monitor.followers.Go(func() { monitor.store.run(ctx) })
 	monitor.followers.Go(func() { monitor.followPresence(ctx) })
@@ -316,10 +322,25 @@ func (monitor *Monitor) follow(ctx context.Context, source bus.Channel) {
 			after = record.Sequence
 		}
 		if len(records) == 0 {
+			monitor.markCaughtUp(source)
 			sleep(ctx, emptyReadPause)
 		} else {
 			monitor.store.advance(source.String(), after)
 		}
+	}
+}
+
+// markCaughtUp notes that the source has been read to its end, and ends the indexing when all
+// sources have.
+func (monitor *Monitor) markCaughtUp(source bus.Channel) {
+	if !monitor.indexing.Load() {
+		return
+	}
+	monitor.mu.Lock()
+	defer monitor.mu.Unlock()
+	monitor.caughtUp[source.String()] = true
+	if len(monitor.caughtUp) >= len(monitor.followed) {
+		monitor.indexing.Store(false)
 	}
 }
 
@@ -405,6 +426,10 @@ func (monitor *Monitor) startOver() {
 	monitor.mu.Unlock()
 	monitor.bodies.forgetBelow(math.MaxUint64)
 	monitor.store.wipe()
+	monitor.mu.Lock()
+	monitor.caughtUp = map[string]bool{}
+	monitor.mu.Unlock()
+	monitor.indexing.Store(true)
 	monitor.generation.Add(1)
 }
 

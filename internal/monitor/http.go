@@ -119,6 +119,10 @@ func writeReadError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "unknown_message", err.Error())
 		return
 	}
+	if errors.As(err, new(ErrIndexing)) {
+		writeError(w, http.StatusServiceUnavailable, "indexing", err.Error())
+		return
+	}
 	writeError(w, http.StatusServiceUnavailable, "bus_unavailable", err.Error())
 }
 

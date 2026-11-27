@@ -231,7 +231,8 @@ paths:
       summary: Find messages in all channels, newest first.
       description: |
         Words and "quoted phrases" must all appear (case-insensitive, at word starts) in the title or
-        text. Filters: `from:<agent>`, `to:<agent>` or `to:#<channel>`, `type:<type>` (repeatable),
+        text. Newest first by sequence. Answers `503` with the code `indexing` while the monitor reads
+        the whole stream into a new state file. Filters: `from:<agent>`, `to:<agent>` or `to:#<channel>`, `type:<type>` (repeatable),
         `has:target`, `targets:<agent>`, `after:<day>` and `before:<day>` (`YYYY-MM-DD` or RFC 3339).
         See api.md for the details.
       parameters:

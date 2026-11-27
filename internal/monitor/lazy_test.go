@@ -49,7 +49,7 @@ func lazyMonitor(t *testing.T, count int) (*Monitor, *streamReads) {
 	t.Cleanup(func() { cancel(); <-done })
 
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-		if channels := monitor.Channels(); channels[0].Messages == count {
+		if channels := monitor.Channels(); channels[0].Messages == count && !monitor.indexing.Load() {
 			return monitor, stream
 		}
 		if time.Now().After(deadline) {

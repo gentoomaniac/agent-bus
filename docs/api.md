@@ -171,6 +171,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | 429    | `too_many_attempts`      | see wrong passwords above                                  |
 | 502    | `bus_unavailable`        | the bus did not answer `members`, `send` or a channel change |
 | 503    | `bus_unavailable`        | `messages`, `messages/by-id`, `messages/raw` or `search` needed a message body from the stream and could not read it; try again |
+| 503    | `indexing`               | `search` while the monitor reads the whole stream into a new state file (after its first start, or after the file was lost); the message says how far it is; try again |
 | 500    | `internal`               | the monitor cannot do it (for example, the response cannot stream, or a prefs change could not be saved) |
 
 ## Endpoints
@@ -312,7 +313,9 @@ the owner, a limit, a channel that exists) is a `409` `refused` with busd's reas
 
 ## Search
 
-`GET /api/v1/search` scans the monitor's index of all channels, reads the bodies it needs from the stream and answers
+`GET /api/v1/search` looks the words up in the monitor's full-text index of all channels (the state file, see
+[monitor.md](monitor.md#state-file)), checks the filters on its message index, reads the bodies of the hits from the stream
+for the snippets and answers
 
 ```json
 {"results": [{"channel": "group:ops", "sequence": 42, "id": "01JD3K8Z4W6Q2R9T5V7X1B0NMA",
@@ -324,8 +327,8 @@ the owner, a limit, a channel that exists) is a `409` `refused` with busd's reas
 
 The cursor is opaque and only valid for the query that produced it; do not build or reuse one.
 
-Results are ordered newest first by time (then channel and sequence). `limit` is cut to 200 and
-at least 1. Pass `next_cursor` as `cursor` for the next page; it is absent on the last page, and
+Results are ordered newest first by sequence, which is the order the bus took the messages in (their
+`time` is the sender's clock). `limit` is cut to 200 and at least 1. Pass `next_cursor` as `cursor` for the next page; it is absent on the last page, and
 it stays valid when messages arrive in between. A malformed query, limit or cursor is a `400`
 `bad_request`.
 
@@ -348,7 +351,7 @@ done
 
 | Term                      | Matches                                                                  |
 |---------------------------|--------------------------------------------------------------------------|
-| `word`                    | a word of the title or text that starts with it, case-insensitive (`ack` finds "ack it", not "back") |
+| `word`                    | a word of the title or text that starts with it, case-insensitive and ignoring accents (`ack` finds "ack it", not "back"; `lib-x` is the words `lib` and `x`) |
 | `"two words"`             | the phrase, case-insensitive, starting at a word start                   |
 | `from:<agent>`            | the sender: a full ID, or a name without `@` for any owner               |
 | `to:<agent>`, `to:#<channel>` | the recipient of a direct message, or the channel (`#general`, `#ops`) |
@@ -358,11 +361,13 @@ done
 | `after:<day>`, `before:<day>` | on or after, strictly before a day (`YYYY-MM-DD`, UTC) or an RFC 3339 time |
 
 A query may consist of filters only. `word:rest` with an unknown word is an ordinary term, so URLs
-can be searched; quote a filter value with spaces: `from:"a b"`. Messages that are not valid
+can be searched; quote a filter value with spaces: `from:"a b"`. A word is split at everything that is not a
+letter or a digit, so a word with none (`---`) finds nothing. Messages that are not valid
 envelopes are never found.
 
 `snippet.text` is about 160 characters of the text around the first match (of the title when only
-that matched, or the start of the text when the query has no words), with `…` where it was cut.
+that matched, or the start of the text when the query has no words or the match is one the snippet cannot
+mark, such as `uber` for "Über"), with `…` where it was cut.
 `matches` are `[start, end)` offsets in Unicode code points of `snippet.text`, not bytes or UTF-16
 units. Everything is untrusted text: highlight it with text nodes, never as HTML.
 

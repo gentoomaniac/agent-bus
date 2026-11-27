@@ -50,7 +50,7 @@ func TestParseQueryRejects(t *testing.T) {
 	}
 }
 
-func TestMatches(t *testing.T) {
+func TestMatchesFilters(t *testing.T) {
 	deploy := Message{
 		Channel: "group:ops", From: "Watcher-Sandbox@gentoomaniac", To: "ops", Type: "question", Targets: []string{"bob@home"},
 		Title: "Deploy lib-x?", Text: "Can anyone deploy Überlib today? @bob@home", Time: time.Date(2026, 11, 20, 15, 0, 0, 0, time.UTC),
@@ -61,16 +61,6 @@ func TestMatches(t *testing.T) {
 		message Message
 		want    bool
 	}{
-		{"DEPLOY", deploy, true},
-		{"deploy anyone", deploy, true},
-		{"deploy nobody", deploy, false},
-		{"lib-x", deploy, true},
-		{`"anyone deploy"`, deploy, true},
-		{`"deploy anyone"`, deploy, false},
-		{"überlib", deploy, true},   // case folding beyond ASCII
-		{"@bob@home", deploy, true}, // a term that starts with punctuation needs no word start
-		{"ack", direct, false},      // matches at word starts only, not inside "back"
-		{"back", direct, true},
 		{"from:watcher-sandbox", deploy, true}, // a bare name matches the part before the @
 		{"from:watcher-sandbox@gentoomaniac", deploy, true},
 		{"from:watcher-sandbox@other", deploy, false},
@@ -91,14 +81,14 @@ func TestMatches(t *testing.T) {
 		{"before:2026-11-20", deploy, false},
 		{"before:2026-11-21", deploy, true},
 		{"after:2026-11-20t16:00:00z", deploy, false},
-		{"deploy from:watcher-sandbox type:question before:2026-12-01", deploy, true},
+		{"from:watcher-sandbox type:question before:2026-12-01", deploy, true},
 	}
 	for _, test := range tests {
-		if got := mustParse(t, test.query).matches(test.message); got != test.want {
+		if got := mustParse(t, test.query).matchesFilters(test.message); got != test.want {
 			t.Errorf("%q matches %s: %v, want %v", test.query, test.message.Channel, got, test.want)
 		}
 	}
-	if mustParse(t, "x").matches(Message{Channel: "general", Text: "x", Reason: "x"}) {
+	if mustParse(t, "type:x").matchesFilters(Message{Channel: "general", Type: "x", Reason: "x"}) {
 		t.Error("a message that is no envelope has nothing to find")
 	}
 }

@@ -27,7 +27,7 @@ import (
 const (
 	// storeSchema is bumped by a release that changes the tables below; the file is then rebuilt,
 	// not migrated.
-	storeSchema = "1"
+	storeSchema = "2"
 	// storeBatchRows and storeBatchInterval bound how long a message waits in memory before it is
 	// written: a batch is one transaction.
 	storeBatchRows     = 1000
@@ -37,6 +37,10 @@ const (
 	storeDeleteRows = 5000
 )
 
+// message_fts has the words of the messages, rowid = message.seq. It keeps no text: a hit is a
+// sequence, and the body comes from the cache or the stream. The refs are not in it; a search finds
+// words of the title and the text.
+//
 // The cursor table holds, per source (channel subject), the last sequence read from it. A message
 // row cannot tell it: a DM channel merges two sources, and one source may be behind another when
 // the monitor stops, so a single "last sequence" would skip the records of the slower one.
@@ -47,6 +51,9 @@ CREATE TABLE message (
   to_name TEXT NOT NULL, targets TEXT NOT NULL, ts INTEGER NOT NULL, type TEXT NOT NULL, status TEXT NOT NULL,
   reason TEXT NOT NULL
 ) WITHOUT ROWID;
+CREATE VIRTUAL TABLE message_fts USING fts5(
+  title, text, content = '', contentless_delete = 1, tokenize = 'unicode61 remove_diacritics 2'
+);
 CREATE TABLE cursor (source TEXT PRIMARY KEY, seq INTEGER NOT NULL) WITHOUT ROWID;
 `
 
@@ -63,6 +70,7 @@ type store struct {
 	cursors  map[string]uint64 // by source: the last sequence read, written or not
 	dirty    map[string]uint64 // the cursors the next flush writes
 	failed   bool              // a write failed: nothing more is written until the next start
+	fresh    bool              // the file held nothing when it was opened
 }
 
 // openStore opens the file at path, which may not exist yet, and loads its rows into a new index.
@@ -121,6 +129,7 @@ func newStore(writeDSN, readDSN string, report func(error)) (*store, *index, err
 		s.closeDatabases()
 		return nil, nil, err
 	}
+	s.fresh = len(s.cursors) == 0
 	return s, loaded, nil
 }
 
@@ -144,8 +153,10 @@ func (s *store) prepare() (*index, error) {
 	if schema != storeSchema {
 		return nil, fmt.Errorf("schema %s, this version writes %s", schema, storeSchema)
 	}
+	// Only the message table: checking the FTS index as well takes a second per 100 000 messages.
+	// A damaged index shows as a failed search, and deleting the file repairs it.
 	var verdict string
-	if err := s.write.QueryRow(`PRAGMA quick_check(1)`).Scan(&verdict); err != nil || verdict != "ok" {
+	if err := s.write.QueryRow(`PRAGMA quick_check(message)`).Scan(&verdict); err != nil || verdict != "ok" {
 		return nil, fmt.Errorf("integrity check says %q: %v", verdict, err)
 	}
 	return s.load()
@@ -293,6 +304,11 @@ func (s *store) writeBatch(messages []Message, cursors map[string]uint64) error 
 		return err
 	}
 	defer insert.Close()
+	insertWords, err := tx.Prepare(`INSERT INTO message_fts (rowid, title, text) VALUES (?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer insertWords.Close()
 	for _, message := range messages {
 		var id []byte
 		if raw, ok := envelope.ParseID(message.ID); ok {
@@ -310,6 +326,12 @@ func (s *store) writeBatch(messages []Message, cursors map[string]uint64) error 
 		_, err := insert.Exec(message.Sequence, message.Channel, id, message.Thread, message.From, message.To, targets, nanos,
 			message.Type, string(message.Status), message.Reason)
 		if err != nil {
+			return err
+		}
+		if message.Title == "" && message.Text == "" {
+			continue
+		}
+		if _, err := insertWords.Exec(message.Sequence, message.Title, message.Text); err != nil {
 			return err
 		}
 	}
@@ -341,14 +363,40 @@ func (s *store) reason(sequence uint64) string {
 	return reason
 }
 
+// eachMatch calls visit with the channel and sequence of the messages that match the FTS
+// expression, newest first, below the sequence, until it says false. It writes what is queued
+// first, so a message that has just arrived is found.
+func (s *store) eachMatch(ctx context.Context, expression string, below uint64, visit func(channel string, sequence uint64) bool) error {
+	s.flush()
+	rows, err := s.read.QueryContext(ctx, `SELECT message.seq, message.channel FROM message_fts JOIN message ON message.seq = message_fts.rowid
+		WHERE message_fts MATCH ? AND message_fts.rowid < ? ORDER BY message_fts.rowid DESC`, expression, below)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var channel string
+		var sequence uint64
+		if err := rows.Scan(&sequence, &channel); err != nil {
+			return err
+		}
+		if !visit(channel, sequence) {
+			break
+		}
+	}
+	return rows.Err()
+}
+
 // remove deletes the messages with the sequences, which the stream no longer has.
 func (s *store) remove(sequences []uint64) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	s.dropQueued(func(sequence uint64) bool { return slices.Contains(sequences, sequence) })
 	for _, sequence := range sequences {
-		if _, err := s.write.Exec(`DELETE FROM message WHERE seq = ?`, sequence); err != nil {
-			s.report(err)
+		for _, table := range []string{"message_fts WHERE rowid", "message WHERE seq"} {
+			if _, err := s.write.Exec(`DELETE FROM `+table+` = ?`, sequence); err != nil {
+				s.report(err)
+			}
 		}
 	}
 }
@@ -359,16 +407,38 @@ func (s *store) removeBelow(first uint64) {
 	s.writeMu.Lock()
 	s.dropQueued(func(sequence uint64) bool { return sequence < first })
 	s.writeMu.Unlock()
-	for deleted := int64(storeDeleteRows); deleted == storeDeleteRows; {
+	for more := true; more; {
 		s.writeMu.Lock()
-		result, err := s.write.Exec(`DELETE FROM message WHERE seq IN (SELECT seq FROM message WHERE seq < ? LIMIT ?)`, first, storeDeleteRows)
+		deleted, err := s.removeBatchBelow(first)
 		s.writeMu.Unlock()
 		if err != nil {
 			s.report(err)
 			return
 		}
-		deleted, _ = result.RowsAffected()
+		more = deleted == storeDeleteRows
 	}
+}
+
+// removeBatchBelow deletes the oldest storeDeleteRows messages below the first sequence, or the
+// rest if there are fewer, and says how many.
+func (s *store) removeBatchBelow(first uint64) (deleted int64, err error) {
+	tx, err := s.write.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	const oldest = `(SELECT seq FROM message WHERE seq < ? ORDER BY seq LIMIT ?)`
+	if _, err := tx.Exec(`DELETE FROM message_fts WHERE rowid IN `+oldest, first, storeDeleteRows); err != nil {
+		return 0, err
+	}
+	result, err := tx.Exec(`DELETE FROM message WHERE seq IN `+oldest, first, storeDeleteRows)
+	if err != nil {
+		return 0, err
+	}
+	if deleted, err = result.RowsAffected(); err != nil {
+		return 0, err
+	}
+	return deleted, tx.Commit()
 }
 
 // dropQueued forgets the queued messages that isGone names. The caller holds writeMu, so none is
@@ -386,7 +456,7 @@ func (s *store) wipe() {
 	s.mu.Lock()
 	s.pending, s.cursors, s.dirty, s.failed = nil, map[string]uint64{}, map[string]uint64{}, false
 	s.mu.Unlock()
-	for _, table := range []string{"message", "cursor"} {
+	for _, table := range []string{"message_fts", "message", "cursor"} {
 		if _, err := s.write.Exec(`DELETE FROM ` + table); err != nil {
 			s.report(err)
 		}

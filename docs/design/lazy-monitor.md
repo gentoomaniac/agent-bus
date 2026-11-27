@@ -359,8 +359,20 @@ Each step is one commit with its tests and docs, and passes `make check` on its 
    read, and from the write queue while the row is not written yet. A log whose last sequence is
    below the index's (a stream recreated) empties the index and the file and reads from the
    start; this is checked with the retention tick.
-8. **FTS and search.** `message_fts`, the writer, the query path behind the existing endpoint, the
-   deletions with retention, rebuild with the `indexing` status; the scan in `search.go` is removed.
+8. **FTS and search.** *Built.* `message_fts`, the writer, the query path behind the existing
+   endpoint, the deletions with retention, rebuild with the `indexing` status; the scan in
+   `search.go` is gone. Differences from the sketch: the results are newest first **by sequence**,
+   not by time (the order is the FTS rowid's, which is what makes a page cost milliseconds, and
+   the two differ only when a sender's clock is wrong); the index holds the title and the text,
+   not the refs, which a search never looked at; a word or phrase becomes the phrase of its
+   tokens with the last one a prefix (`lib-x` is `"lib x" *`), so it matches at token starts as
+   before, but a word with no letter or digit finds nothing and `uber` finds "Über" (the index
+   folds diacritics; the snippet then shows the start of the text, unmarked). The filters are
+   checked on the index rows after the FTS hit, as planned. A search first writes the queued
+   rows, so a message that has just arrived is found. `indexing` lasts from the start with an
+   empty file (or a start over) until every source has been read to its end once. The start's
+   `quick_check` covers the `message` table only: on the FTS tables it took a second per 100 000
+   messages.
 9. **Infinite scroll**, web page and extension in one change (or two adjacent commits that land
    together), using `before`. *Built*, in one commit. Both clients open a channel on its newest 100
    messages and load older pages (100) by themselves near the top, keeping the scroll position (the
