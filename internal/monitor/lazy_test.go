@@ -37,7 +37,7 @@ func lazyMonitor(t *testing.T, count int) (*Monitor, *streamReads) {
 		fake.store(bus.GeneralChannel(), uint64(i*10), alice.sign(t, bus.GeneralChannel(), "m"+strconv.Itoa(i)))
 	}
 	stream := &streamReads{fakeBus: fake}
-	monitor := New(Config{Admin: fake, History: stream, Report: func(err error) { t.Error(err) }, CacheBytes: 3 * messageCost(Message{Text: "m1"})})
+	monitor := New(Config{Admin: fake, History: stream, Report: func(err error) { t.Error(err) }, CacheBytes: 4 * messageCost(Message{Text: "m1"})})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { monitor.Run(ctx); close(done) }()
@@ -64,11 +64,13 @@ func TestOlderBodiesAreReadFromTheStreamAndThenCached(t *testing.T) {
 		t.Fatalf("page = %+v", page)
 	}
 	if stream.reads.Load() == 0 {
-		t.Error("the page came without a stream read although the cache holds three messages")
+		t.Error("the page came without a stream read although the cache holds the newest four")
 	}
 	reads := stream.reads.Load()
 	messagesOf(t, monitor, "general", 0, 4)
-	if stream.reads.Load() > reads+1 { // at most the one the three-message cache could not keep
+	// The cache holds a whole page: a smaller one would make the result depend on the order of
+	// the parallel reads, which evict each other.
+	if stream.reads.Load() != reads {
 		t.Errorf("the same page read %d more messages, want its tail cached", stream.reads.Load()-reads)
 	}
 }
