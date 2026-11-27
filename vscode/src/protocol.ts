@@ -17,6 +17,7 @@ export interface ChatState {
   messages: Message[];
   dividerAfter: number; // the "New" divider goes before the first message after this sequence
   hasOlder: boolean;
+  olderError?: string; // why the last read of older messages failed; until the next success or reconnect
   members: string[]; // agents the target picker offers, besides @all
   canManageMembers: boolean; // the pane offers to invite and remove: a group channel, and the monitor can send
   defaultTarget: string; // @all in a channel, the recipient in a direct message

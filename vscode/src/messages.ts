@@ -29,3 +29,9 @@ export function continuesGroup(previous: ThreadRow | undefined, row: ThreadRow):
   return before.from === message.from && before.to === message.to && before.type === message.type && before.status === message.status
     && Date.parse(message.time ?? "") - Date.parse(before.time ?? "") < GROUP_WINDOW_MS;
 }
+
+// The text of the button that loads older messages; after a failed load it says why, and the page
+// stops loading by itself until the button is pressed.
+export function olderButtonText(error: string | undefined): string {
+  return error ? `Load older messages (the last try failed: ${error})` : "Load older messages";
+}

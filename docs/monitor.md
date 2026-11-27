@@ -161,8 +161,11 @@ right.
   reach the first unseen message (500 at most). Older messages load by themselves, a page of 100 at
   a time, when you scroll near the top of the list; what you were reading stays where it is. The
   **Load older messages** button at the top does the same, for the keyboard and after a failed
-  load, which it names. Loading stops when a page comes back short: the channel has no older
-  message (`GET /messages?before=`, [api.md](api.md#messages)). The extension does the same.
+  load. A failed load shows its error on the button and stops the automatic ones, so a monitor
+  that cannot read the stream is not asked again at every scroll: press the button to try again
+  (a reconnect also clears the error). Loading stops when a page comes back short: the channel has
+  no older message (`GET /messages?before=`, [api.md](api.md#messages)). The extension does the
+  same.
 - **Agents** (left): every agent in the registry except the monitor's own identity (the header says
   what the page sends as), in a folding group per owner, sorted by name and shown by its short name
   (`api` for `api@alice`; the tooltip has the full ID), with a status dot and its state (see

@@ -23,6 +23,7 @@ interface Chat {
   ready: boolean; // the page has asked for its state
   subscribed: boolean; // what the page shows on its bell
   reveal?: number; // a message to scroll to once the page has it
+  olderError?: string; // why the last read of older messages failed; the page shows it on its button
 }
 
 // One chat panel per channel. The page only draws; the monitor is read and written from here.
@@ -204,7 +205,15 @@ export class ChatPanels implements vscode.Disposable {
     } else if (message.type === "jump") {
       await this.jumpTo(message.channel, message.sequence);
     } else if (message.type === "older") {
-      await this.guarded(() => model.loadOlder(channelId));
+      // No toast: the page asks again whenever the reader scrolls near the top, which would stack
+      // them while the monitor answers with errors. Its button shows the error instead.
+      try {
+        await model.loadOlder(channelId);
+        chat.olderError = undefined;
+      } catch (error) {
+        if (error instanceof ApiError && error.unauthenticated) this.session.report(error);
+        chat.olderError = (error as Error).message;
+      }
       this.post(channelId, chat);
     } else if (message.type === "raw") {
       await this.guarded(async () => {
@@ -260,9 +269,11 @@ export class ChatPanels implements vscode.Disposable {
   }
 
   // Loads the history, remembers where the "New" divider goes, shows the channel and marks it read.
-  // A visible panel keeps its divider across a reconnect: its messages were read already.
+  // A visible panel keeps its divider across a reconnect: its messages were read already. Showing
+  // clears the older-messages error, so the page tries again.
   private async show(channelId: string, chat: Chat, keepDivider = false): Promise<void> {
     const model = this.session.model;
+    chat.olderError = undefined;
     if (model.channels.some((channel) => channel.id === channelId)) {
       await this.guarded(async () => {
         await model.loadHistory(channelId, HISTORY);
@@ -304,6 +315,7 @@ export class ChatPanels implements vscode.Disposable {
       messages: model.messagesOf(channelId),
       dividerAfter: chat.dividerAfter,
       hasOlder: model.hasOlder(channelId),
+      olderError: chat.olderError,
       members: chat.members,
       canManageMembers: model.status.can_send && channel.kind === "group",
       subscribed: chat.subscribed,

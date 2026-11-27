@@ -514,7 +514,7 @@ const state = {
   messages: new Map(),            // channel ID -> messages ordered by sequence, once loaded: a tail, older pages load on demand
   exhausted: new Set(),           // channel IDs whose oldest message is loaded
   olderLoads: new Map(),          // channel ID -> the read of an older page under way
-  olderError: "",                 // why the last read of an older page failed
+  olderError: "",                 // why the last read of an older page of the open channel failed
   notified: new Map(),            // channel ID -> notifying messages counted in the tab title, when desktop notifications are not available
   // The next four are the server's shared prefs (/api/v1/prefs).
   read: null,                     // channel ID -> sequence read up to; null on a first visit
@@ -1098,9 +1098,11 @@ async function showOlder() {
   if (grew) loadOlderIfNearTop();
 }
 
+// A failed load stops the automatic ones, or every scroll near the top would ask a monitor that
+// answers with errors again: the reader retries with the button, which says what failed.
 function loadOlderIfNearTop() {
   const box = $("messages");
-  if (!box.hidden && box.scrollTop < NEAR_TOP_PX) showOlder();
+  if (!box.hidden && !state.olderError && box.scrollTop < NEAR_TOP_PX) showOlder();
 }
 
 function insertMessage(list, message) {
@@ -1281,7 +1283,7 @@ async function select(channelId) {
   const reopened = channelId === state.selected;
   state.selected = channelId;
   history.replaceState(null, "", "#" + encodeURIComponent(channelId));
-  if (!reopened) { state.marker = null; state.seen.clear(); $("member-note").hidden = true; }
+  if (!reopened) { state.marker = null; state.seen.clear(); state.olderError = ""; $("member-note").hidden = true; }
   if (state.emptyDirects.has(channelId)) {
     state.messages.set(channelId, []);
     state.exhausted.add(channelId);

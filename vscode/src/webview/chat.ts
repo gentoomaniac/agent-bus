@@ -1,6 +1,6 @@
 // The chat panel's page. Messages are untrusted: everything goes in with textContent, never as HTML.
 import { matchTargets, mentionBefore, mentionText, resolveTarget } from "../completion";
-import { continuesGroup, insertMessage } from "../messages";
+import { continuesGroup, insertMessage, olderButtonText } from "../messages";
 import { parsePresenceMarks } from "../protocol";
 import { Chip, chipTerm, snippetParts, withChip } from "../search";
 import type { ChatState, FromWebview, ParentView, PresenceMark, SearchHitView, ToWebview } from "../protocol";
@@ -401,7 +401,7 @@ function render(first = false): void {
   seenObserver.disconnect();
   list.replaceChildren();
   if (state.hasOlder) {
-    const older = el("button", "older", "Load older messages");
+    const older = el("button", "older", olderButtonText(state.olderError));
     older.addEventListener("click", askForOlder);
     list.append(older);
   }
@@ -460,7 +460,8 @@ function render(first = false): void {
 
 // Older messages load by themselves when the top of the list comes near: the host answers with the
 // state again, which draws them above and keeps what the reader looks at in place (render). The
-// button stays for a failed load and for the keyboard.
+// button stays for a failed load, which stops the automatic ones until it is pressed, and for the
+// keyboard.
 const NEAR_TOP_PX = 200;
 let olderAskedAt: number | undefined; // how many messages the list held when older ones were asked for, until the answer
 
@@ -470,7 +471,7 @@ function askForOlder(): void {
 }
 
 function askForOlderIfNearTop(): void {
-  if (state?.hasOlder && !list.hidden && olderAskedAt === undefined && list.scrollTop < NEAR_TOP_PX) askForOlder();
+  if (state?.hasOlder && !state.olderError && !list.hidden && olderAskedAt === undefined && list.scrollTop < NEAR_TOP_PX) askForOlder();
 }
 
 list.addEventListener("scroll", askForOlderIfNearTop);

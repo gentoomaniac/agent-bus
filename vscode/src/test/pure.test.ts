@@ -6,7 +6,7 @@ import { categorize, channelNameProblem, describeChannel, destinationOf, dmChann
 import { byOwner, dmAgents, dmByOwner, dmOwners, groupBy, ownerOf, shortName } from "../names";
 import { parseFromWebview, parsePresenceMarks } from "../protocol";
 import { nextBackoff } from "../events";
-import { continuesGroup, insertMessage, isTargeted } from "../messages";
+import { continuesGroup, insertMessage, isTargeted, olderButtonText } from "../messages";
 import { SseParser } from "../sse";
 import { ThreadRow } from "../threads";
 import { Channel, Message } from "../types";
@@ -30,6 +30,11 @@ test("SseParser defaults the event name to message and ignores events without da
     { id: undefined, event: "message", data: "" },
     { id: undefined, event: "message", data: "z" },
   ]);
+});
+
+test("the older-messages button names the error of a failed load", () => {
+  assert.equal(olderButtonText(undefined), "Load older messages");
+  assert.equal(olderButtonText("bus unavailable"), "Load older messages (the last try failed: bus unavailable)");
 });
 
 test("insertMessage keeps sequence order and drops duplicates", () => {
