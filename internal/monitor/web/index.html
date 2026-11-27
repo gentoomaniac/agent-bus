@@ -516,7 +516,7 @@ const state = {
   exhausted: new Set(),           // channel IDs whose oldest message is loaded
   olderLoads: new Map(),          // channel ID -> the read of an older page under way
   generation: 0,                  // counts logouts: the answer of a read that started before one is dropped
-  olderError: "",                 // why the last read of an older page of the open channel failed
+  olderErrors: new Map(),         // channel ID -> why its last read of an older page failed, as the extension keeps it per panel
   notified: new Map(),            // channel ID -> notifying messages counted in the tab title, when desktop notifications are not available
   // The next four are the server's shared prefs (/api/v1/prefs).
   read: null,                     // channel ID -> sequence read up to; null on a first visit
@@ -1092,7 +1092,7 @@ async function loadUntil(channelId, sequence) {
   try {
     for (; !holds() && !state.exhausted.has(channelId); loaded = true) await loadOlder(channelId);
   } catch (error) {
-    state.olderError = error.message;
+    state.olderErrors.set(channelId, error.message); // on this channel's button, even if another one is open now
   }
   if (loaded && state.selected === channelId) renderMessages(false);
 }
@@ -1105,9 +1105,9 @@ async function showOlder() {
   const before = (state.messages.get(channelId) || []).length;
   try {
     await loadOlder(channelId);
-    state.olderError = "";
+    state.olderErrors.delete(channelId);
   } catch (error) {
-    state.olderError = error.message;
+    state.olderErrors.set(channelId, error.message);
   }
   if (state.selected !== channelId) return;
   const grew = (state.messages.get(channelId) || []).length > before;
@@ -1121,7 +1121,7 @@ async function showOlder() {
 // answers with errors again: the reader retries with the button, which says what failed.
 function loadOlderIfNearTop() {
   const box = $("messages");
-  if (!box.hidden && !state.olderError && box.scrollTop < NEAR_TOP_PX) showOlder();
+  if (!box.hidden && !state.olderErrors.has(state.selected) && box.scrollTop < NEAR_TOP_PX) showOlder();
 }
 
 function insertMessage(list, message) {
@@ -1302,7 +1302,7 @@ async function select(channelId) {
   const reopened = channelId === state.selected;
   state.selected = channelId;
   history.replaceState(null, "", "#" + encodeURIComponent(channelId));
-  if (!reopened) { state.marker = null; state.seen.clear(); state.olderError = ""; $("member-note").hidden = true; }
+  if (!reopened) { state.marker = null; state.seen.clear(); $("member-note").hidden = true; }
   if (state.emptyDirects.has(channelId)) {
     state.messages.set(channelId, []);
     state.exhausted.add(channelId);
@@ -2091,7 +2091,7 @@ function renderMessages(scrollToEnd) {
     else rows.push(...nodes);
   });
   const older = state.exhausted.has(state.selected) ? [] : [el("div", { class: "more empty" },
-    el("button", { type: "button", onclick: showOlder }, state.olderError ? "Load older messages (the last try failed: " + state.olderError + ")" : "Load older messages"))];
+    el("button", { type: "button", onclick: showOlder }, state.olderErrors.has(state.selected) ? "Load older messages (the last try failed: " + state.olderErrors.get(state.selected) + ")" : "Load older messages"))];
   box.replaceChildren(...older, ...(shown.length ? rows : [el("div", { class: "empty" }, none)]));
   observeRows(box);
   // Opening a channel always shows the latest message; the "New" line stays above it.
@@ -2567,7 +2567,7 @@ function connectEvents() {
       setTimeout(() => { if (state.source === source) connectEvents(); }, REFRESH_MS);
       return;
     }
-    state.olderError = ""; // the monitor answers again: let the next scroll try
+    state.olderErrors.clear(); // the monitor answers again: let the next scroll try
     await refresh();
     if (state.selected && looking()) markRead(state.selected);
     else if (state.selected) noteUnseen(state.selected);
