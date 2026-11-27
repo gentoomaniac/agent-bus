@@ -12,8 +12,9 @@ import (
 // (docs/design/lazy-monitor.md): where it is, who sent it, to whom, when and with what
 // verification. Bodies are read from the stream when a client asks for them.
 
-// row is one message of the index, about 90 bytes. Strings are interned: the ID of one is a
-// number into the index's name table.
+// row is one message of the index, 56 bytes; with the by-id map and the name table a message costs
+// about 190 bytes of heap (memory_test.go). Strings are interned: the ID of one is a number into the
+// index's name table.
 type row struct {
 	sequence  uint64
 	time      int64    // Unix nanoseconds; zero for a record that is no envelope
