@@ -95,15 +95,21 @@ func (query Query) hasFilter() bool {
 		query.hasTarget || !query.after.IsZero() || !query.before.IsZero()
 }
 
-// parseSearchTime reads a day (YYYY-MM-DD, midnight UTC) or an RFC 3339 time.
+// parseSearchTime reads a day (YYYY-MM-DD, midnight UTC) or an RFC 3339 time. The zero time
+// (0001-01-01) is refused: Query uses it for "no filter", so before:0001-01-01 would match
+// everything instead of nothing.
 func parseSearchTime(text string) (time.Time, error) {
-	if day, err := time.Parse(time.DateOnly, text); err == nil {
-		return day, nil
+	moment, err := time.Parse(time.DateOnly, text)
+	if err != nil {
+		moment, err = time.Parse(time.RFC3339, strings.ToUpper(text))
 	}
-	if moment, err := time.Parse(time.RFC3339, strings.ToUpper(text)); err == nil {
-		return moment, nil
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%q is neither YYYY-MM-DD nor an RFC 3339 time", text)
 	}
-	return time.Time{}, fmt.Errorf("%q is neither YYYY-MM-DD nor an RFC 3339 time", text)
+	if moment.IsZero() {
+		return time.Time{}, fmt.Errorf("%q is not a usable time", text)
+	}
+	return moment, nil
 }
 
 type token struct {

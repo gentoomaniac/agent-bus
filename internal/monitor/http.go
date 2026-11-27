@@ -152,6 +152,11 @@ func (monitor *Monitor) serveMessages(w http.ResponseWriter, r *http.Request) {
 	if query.Has("after") && query.Has("before") {
 		err = errors.Join(err, errors.New("after and before cannot be combined"))
 	}
+	// An empty before is a client that lost its cursor; paging back from sequence 0 would answer
+	// "no older message" and hide that.
+	if query.Has("before") && query.Get("before") == "" {
+		err = errors.Join(err, errors.New("before needs a sequence"))
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return

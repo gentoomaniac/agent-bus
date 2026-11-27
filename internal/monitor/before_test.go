@@ -38,9 +38,25 @@ func TestMessagesEndpointTakesBeforeButNotWithAfter(t *testing.T) {
 	if len(page) != 2 || page[0].Sequence != 30 || page[1].Sequence != 40 || page[0].Text != "m3" {
 		t.Errorf("page = %+v, want 30 and 40", page)
 	}
-	for _, bad := range []string{"before=x", "after=10&before=50"} {
+	for _, bad := range []string{"before=x", "before=", "before=-1", "after=10&before=50"} {
 		if response, body := call(t, server, "GET", "/api/v1/messages?channel=general&"+bad, "", nil); response.StatusCode != http.StatusBadRequest || errorCode(body) != "bad_request" {
 			t.Errorf("%s: %d %s, want 400 bad_request", bad, response.StatusCode, body)
 		}
+	}
+}
+
+func TestMessagesBeforeZeroIsAnEmptyPageAndAfterZeroTheStart(t *testing.T) {
+	monitor, _ := lazyMonitor(t, 8)
+	server := serve(monitor)
+	defer server.Close()
+
+	var page []Message
+	getJSON(t, server, "/api/v1/messages?channel=general&before=0", &page)
+	if len(page) != 0 {
+		t.Errorf("before=0 = %+v, want an empty page", page)
+	}
+	getJSON(t, server, "/api/v1/messages?channel=general&after=0&limit=2", &page)
+	if len(page) != 2 || page[0].Sequence != 10 {
+		t.Errorf("after=0 = %+v, want the first two", page)
 	}
 }

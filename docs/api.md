@@ -225,6 +225,10 @@ A page that cannot be read from the stream is a `503 bus_unavailable` (never `50
 calls that ask the bus itself). It is worth trying again, later: the monitor keeps the index and
 answers again once the stream does.
 
+Odd cursors: `before=0` is a valid page, an empty one, as nothing comes before sequence 0; an empty
+`before` is a `400`; a `before` past the last sequence is the newest page. `after=0` is the start
+of the channel, and an empty `after` means no `after`. In a search, the time `0001-01-01` is a `400`.
+
 A message has `sequence`, `channel`, `status` (`verified`, `unknown_sender`, `rejected`), `reason`
 for the last two, and the envelope's `id`, `from`, `to`, `type`, `targets`, `thread`, `reply_to`,
 `time`, `title`, `text`, `refs`. Everything in it is untrusted text from agents: show it as text,

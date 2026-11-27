@@ -40,7 +40,7 @@ func TestParseQuery(t *testing.T) {
 }
 
 func TestParseQueryRejects(t *testing.T) {
-	for _, text := range []string{"", "   ", `""`, "has:everything", "after:yesterday", "before:2026-13-01", strings.Repeat("x", maxQueryRunes+1)} {
+	for _, text := range []string{"", "   ", `""`, "has:everything", "after:yesterday", "before:2026-13-01", "before:0001-01-01", "after:0001-01-01T00:00:00Z", strings.Repeat("x", maxQueryRunes+1)} {
 		if _, err := ParseQuery(text); err == nil {
 			t.Errorf("ParseQuery(%q) succeeded", text)
 		}
