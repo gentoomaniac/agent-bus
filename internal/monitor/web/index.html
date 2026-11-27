@@ -491,6 +491,7 @@ const ALL = "@all";
 const MESSAGE_TYPES = ["message", "request", "question", "answer", "feedback", "bug_report", "feature_request", "status", "ack"];
 const REFRESH_MS = 5000;
 const PAGE_SIZE = 100;                     // messages in one request for history
+const MAX_PAGE_SIZE = 1000;                // the most the API returns at once
 const NEWEST = Number.MAX_SAFE_INTEGER;   // as `before`, it asks for the channel's newest page
 const NEAR_TOP_PX = 200;                  // this close to the top of the list, older messages load by themselves
 const UNREAD_PRELOAD = 500;               // at most this many messages are loaded on opening to reach the unseen ones
@@ -514,6 +515,7 @@ const state = {
   messages: new Map(),            // channel ID -> messages ordered by sequence, once loaded: a tail, older pages load on demand
   exhausted: new Set(),           // channel IDs whose oldest message is loaded
   olderLoads: new Map(),          // channel ID -> the read of an older page under way
+  generation: 0,                  // counts logouts: the answer of a read that started before one is dropped
   olderError: "",                 // why the last read of an older page of the open channel failed
   notified: new Map(),            // channel ID -> notifying messages counted in the tab title, when desktop notifications are not available
   // The next four are the server's shared prefs (/api/v1/prefs).
@@ -1028,6 +1030,7 @@ $("logout").addEventListener("click", async () => {
   await fetch("/api/v1/logout", { method: "POST" });
   state.messages.clear();
   state.exhausted.clear();
+  state.generation++; // an older page still on its way is not for the next login
   showLogin();
 });
 
@@ -1040,6 +1043,20 @@ async function loadMessages(channelId) {
   await loadOlder(channelId);
 }
 
+// Loads what a channel with messages loaded missed since its newest one: after a reconnect, whose
+// event stream replays nothing. The older messages already loaded stay, so the reader keeps their
+// place; a channel nobody opened has nothing loaded and loads its history when it is opened.
+async function loadNewer(channelId) {
+  const list = state.messages.get(channelId);
+  if (!list || !list.length) return;
+  let page;
+  do {
+    const after = list[list.length - 1].sequence;
+    page = await api(`/api/v1/messages?channel=${encodeURIComponent(channelId)}&after=${after}&limit=${MAX_PAGE_SIZE}`);
+    for (const message of page) insertMessage(list, message);
+  } while (page.length === MAX_PAGE_SIZE);
+}
+
 // Loads the page of messages before the oldest one held, or the newest page when none is held. A
 // page shorter than asked for means there is no older one. Asking again while a page is on its way
 // waits for that page.
@@ -1048,7 +1065,9 @@ function loadOlder(channelId) {
   const load = (async () => {
     const held = state.messages.get(channelId) || [];
     const before = held.length ? held[0].sequence : NEWEST;
+    const generation = state.generation;
     const page = await api(`/api/v1/messages?channel=${encodeURIComponent(channelId)}&before=${before}&limit=${PAGE_SIZE}`);
+    if (generation !== state.generation) return;
     // Messages that arrived by event meanwhile are in the list already.
     const list = state.messages.get(channelId) || [];
     for (const message of page) insertMessage(list, message);
@@ -2537,8 +2556,18 @@ function connectEvents() {
     showLive();
     // Catch up on what was missed while disconnected, prefs included.
     await loadPrefs();
-    state.messages.delete(state.selected);
-    if (state.selected) await loadMessages(state.selected);
+    try {
+      await Promise.all([...state.messages.keys()].map(loadNewer));
+    } catch (error) {
+      // A list that missed messages and is not made whole would keep a gap: connect again, in a
+      // moment, which catches up again.
+      source.close();
+      state.feedOpen = false;
+      showLive();
+      setTimeout(() => { if (state.source === source) connectEvents(); }, REFRESH_MS);
+      return;
+    }
+    state.olderError = ""; // the monitor answers again: let the next scroll try
     await refresh();
     if (state.selected && looking()) markRead(state.selected);
     else if (state.selected) noteUnseen(state.selected);

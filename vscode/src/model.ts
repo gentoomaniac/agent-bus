@@ -130,8 +130,11 @@ export class Model {
 
   private async loadNewer(channel: Channel): Promise<void> {
     const list = this.messagesOf(channel.id);
-    if (list.length === 0 || channel.last_sequence <= list[list.length - 1].sequence) return;
-    this.insert(channel.id, await this.api.messages(channel.id, list[list.length - 1].sequence, TAIL_LIMIT));
+    while (list.length > 0 && channel.last_sequence > list[list.length - 1].sequence) {
+      const page = await this.api.messages(channel.id, list[list.length - 1].sequence, TAIL_LIMIT);
+      this.insert(channel.id, page);
+      if (page.length < TAIL_LIMIT) return;
+    }
   }
 
   // Makes sure at least `wanted` messages of the channel are loaded, if it has that many.

@@ -164,8 +164,10 @@ right.
   load. A failed load shows its error on the button and stops the automatic ones, so a monitor
   that cannot read the stream is not asked again at every scroll: press the button to try again
   (a reconnect also clears the error). Loading stops when a page comes back short: the channel has
-  no older message (`GET /messages?before=`, [api.md](api.md#messages)). The extension does the
-  same.
+  no older message (`GET /messages?before=`, [api.md](api.md#messages)). After a reconnect every
+  channel with messages loaded fetches the ones it missed and keeps the older ones it had, so the
+  list does not jump. A channel nobody opened has nothing loaded and loads on opening. The
+  extension does the same.
 - **Agents** (left): every agent in the registry except the monitor's own identity (the header says
   what the page sends as), in a folding group per owner, sorted by name and shown by its short name
   (`api` for `api@alice`; the tooltip has the full ID), with a status dot and its state (see

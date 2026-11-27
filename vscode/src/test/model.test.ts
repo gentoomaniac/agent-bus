@@ -186,6 +186,18 @@ test("a refresh brings the channels that have messages loaded up to date, and on
   assert.deepEqual(model.messagesOf("group:ops"), []);
 });
 
+test("a refresh keeps the older messages that were loaded, and fetches everything missed, however much", async () => {
+  const store = Array.from({ length: 150 }, (_, i) => message("general", i + 1));
+  const api = new FakeApi(store);
+  const model = new Model(api as unknown as Api, memoryStore());
+  await model.refresh();
+  await model.loadHistory("general", 150); // two pages of older messages
+  store.push(...Array.from({ length: 2300 }, (_, i) => message("general", 151 + i)));
+  api.channelList = new FakeApi(store).channelList;
+  await model.refresh();
+  assert.deepEqual(model.messagesOf("general").map((m) => m.sequence), store.map((m) => m.sequence));
+});
+
 test("a channel that appears after the first refresh starts unread, its message targeted", async () => {
   const store = [message("general", 1)];
   const reads = memoryStore();
