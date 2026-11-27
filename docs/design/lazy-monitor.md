@@ -348,8 +348,17 @@ Each step is one commit with its tests and docs, and passes `make check` on its 
    unread" was). The clients show `unread` unless the marker is at the channel's newest message, and
    keep it up with the message events (a sequence above the channel's `last_sequence` is not in the
    count yet). The web page has no targeted count to show and does not keep one.
-7. **SQLite store.** The driver, the file, the `message` table, load at start and read from
-   `last_seq + 1`; rebuild on a missing or bad file.
+7. **SQLite store.** *Built.* `modernc.org/sqlite`, `monitor-web/index.sqlite`, the `message` table,
+   load at start, rebuild on a missing, bad or other-schema file (`internal/monitor/store.go`). It
+   differs from the sketch above in three ways. The restart does not read from one `last_seq + 1`
+   but from a cursor per source (the `cursor` table, written in the transaction of the rows read
+   before it): the readers of the sources run side by side, so one can be behind another when the
+   monitor stops, and a single sequence would skip its records. `ts` is in Unix nanoseconds, as
+   the index row has it, and the table has no `reply_to` column, as the row has none. The `reason`
+   of an unverified message moved from the small map into the table; it is read when a body is
+   read, and from the write queue while the row is not written yet. A log whose last sequence is
+   below the index's (a stream recreated) empties the index and the file and reads from the
+   start; this is checked with the retention tick.
 8. **FTS and search.** `message_fts`, the writer, the query path behind the existing endpoint, the
    deletions with retention, rebuild with the `indexing` status; the scan in `search.go` is removed.
 9. **Infinite scroll**, web page and extension in one change (or two adjacent commits that land

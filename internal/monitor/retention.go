@@ -39,10 +39,20 @@ func (monitor *Monitor) followLog(ctx context.Context) error {
 		return err
 	}
 	monitor.mu.Lock()
-	monitor.index.dropBelow(state.FirstSequence)
+	ahead := monitor.index.lastSequence() > state.LastSequence
+	monitor.mu.Unlock()
+	if ahead {
+		monitor.startOver()
+		return nil
+	}
+	monitor.mu.Lock()
+	dropped := monitor.index.dropBelow(state.FirstSequence)
 	held := monitor.index.countThrough(state.LastSequence)
 	monitor.mu.Unlock()
 	monitor.bodies.forgetBelow(state.FirstSequence)
+	if dropped > 0 {
+		monitor.store.removeBelow(state.FirstSequence)
+	}
 
 	// The log may hold more records than the index has rows (subjects the monitor does not follow,
 	// records not read yet), never fewer unless something was deleted.

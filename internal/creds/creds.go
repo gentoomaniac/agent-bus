@@ -30,6 +30,7 @@ const (
 	passwordBytes       = 32
 	monitorPasswordFile = "monitor-web/password.bcrypt"
 	monitorPrefsFile    = "prefs.json"
+	monitorIndexFile    = "index.sqlite"
 	// oldMonitorPasswordFile was easily confused with the monitor@<owner> agent folder.
 	oldMonitorPasswordFile = "monitor/password.bcrypt"
 	// MinMonitorPasswordBytes keeps out the passwords that are guessed in a few tries.
@@ -282,6 +283,11 @@ func MonitorPrefsPath(configDir string) string {
 		}
 	}
 	return filepath.Join(folder, monitorPrefsFile)
+}
+
+// MonitorIndexPath is the web monitor's state file, in the folder of the preferences.
+func MonitorIndexPath(configDir string) string {
+	return filepath.Join(filepath.Dir(MonitorPrefsPath(configDir)), monitorIndexFile)
 }
 
 // WriteMonitorPassword stores the bcrypt hash of the web monitor's password, replacing the old one.

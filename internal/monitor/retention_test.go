@@ -36,8 +36,8 @@ func TestIndexDropsFromTheFrontAndByRow(t *testing.T) {
 	}
 	index.remove("general", 30) // again: nothing
 	index.dropBelow(1000)
-	if len(index.channels) != 0 || len(index.byID) != 0 || len(index.reasons) != 0 {
-		t.Errorf("an empty index still holds %d channels, %d IDs, %d reasons", len(index.channels), len(index.byID), len(index.reasons))
+	if len(index.channels) != 0 || len(index.byID) != 0 {
+		t.Errorf("an empty index still holds %d channels, %d IDs", len(index.channels), len(index.byID))
 	}
 }
 

@@ -159,10 +159,12 @@ func (cli *CLI) Run() error {
 	defer closeSender()
 	web := monitor.New(monitor.Config{
 		Admin: registry, History: history, Sender: sender, ReadOnlyNote: readOnlyNote, Report: func(err error) { log.Error().Msg(err.Error()) },
-		PrefsPath: creds.MonitorPrefsPath(cli.ConfigDir), DirectoryHeads: admin.WatchDirectoryHeads, CACert: caPEM,
+		PrefsPath: creds.MonitorPrefsPath(cli.ConfigDir), IndexPath: creds.MonitorIndexPath(cli.ConfigDir), DirectoryHeads: admin.WatchDirectoryHeads, CACert: caPEM,
 		CacheBytes: cli.CacheSize << 20,
 	})
-	go web.Run(ctx)
+	running := make(chan struct{})
+	go func() { web.Run(ctx); close(running) }()
+	defer func() { stop(); <-running }() // Run writes the state file once more as it ends
 
 	handler, err := web.Handler(access)
 	if err != nil {

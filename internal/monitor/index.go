@@ -41,7 +41,6 @@ type index struct {
 	names    names
 	channels map[string][]row // by channel ID, ordered by sequence
 	byID     map[[16]byte]position
-	reasons  map[uint64]string // why a message is not verified, by sequence; few messages have one
 }
 
 // position finds a row by its channel and sequence, which do not change when later messages are
@@ -52,7 +51,7 @@ type position struct {
 }
 
 func newIndex() *index {
-	return &index{names: newNames(), channels: map[string][]row{}, byID: map[[16]byte]position{}, reasons: map[uint64]string{}}
+	return &index{names: newNames(), channels: map[string][]row{}, byID: map[[16]byte]position{}}
 }
 
 // add inserts the message in its channel's order. It says false for one that is there already.
@@ -77,9 +76,6 @@ func (index *index) add(message Message) bool {
 	if id, ok := envelope.ParseID(message.ID); ok {
 		entry.id = id
 		index.byID[id] = position{message.Channel, message.Sequence}
-	}
-	if message.Reason != "" {
-		index.reasons[message.Sequence] = message.Reason
 	}
 	index.channels[message.Channel] = slices.Insert(rows, at, entry)
 	return true
@@ -153,12 +149,19 @@ func (index *index) dropBelow(first uint64) (dropped int) {
 	return dropped
 }
 
-// forget removes what a row has outside its channel's list: its ID and its reason.
+// forget removes what a row has outside its channel's list: its ID.
 func (index *index) forget(entry row) {
 	if entry.id != [16]byte{} {
 		delete(index.byID, entry.id)
 	}
-	delete(index.reasons, entry.sequence)
+}
+
+// lastSequence is the highest sequence of any row, 0 for an empty index.
+func (index *index) lastSequence() (last uint64) {
+	for _, rows := range index.channels {
+		last = max(last, rows[len(rows)-1].sequence)
+	}
+	return last
 }
 
 // countThrough says how many rows have a sequence of at most last.
@@ -193,8 +196,8 @@ func (index *index) lookup(id string) (position, bool) {
 	return at, known
 }
 
-// describeAll returns the messages as far as the index knows them: everything but the body and
-// the ID each replies to.
+// describeAll returns the messages as far as the index knows them: everything but the body, the
+// ID each replies to and the reason it is not verified.
 func (index *index) describeAll(channel string, rows []row) []Message {
 	messages := make([]Message, len(rows))
 	for i, entry := range rows {
@@ -205,7 +208,7 @@ func (index *index) describeAll(channel string, rows []row) []Message {
 
 func (index *index) describe(channel string, entry row) Message {
 	message := Message{
-		Sequence: entry.sequence, Channel: channel, Status: verifications[entry.status], Reason: index.reasons[entry.sequence],
+		Sequence: entry.sequence, Channel: channel, Status: verifications[entry.status],
 		From: index.names.str(entry.from), To: index.names.str(entry.to), Type: index.names.str(entry.kind),
 		Thread: index.names.str(entry.thread), Targets: index.names.list(entry.targetsAt, entry.targetsN),
 	}

@@ -12,9 +12,11 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"math"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/bus"
@@ -112,6 +114,10 @@ type Config struct {
 	// against.
 	DirectoryHeads func(handler func(head []byte)) (stop func(), err error)
 	CACert         []byte
+	// IndexPath is the state file (docs/design/lazy-monitor.md) that keeps the index between starts;
+	// it is made if missing and rebuilt from the stream if unusable. Empty keeps the index in
+	// memory only.
+	IndexPath string
 	// CacheBytes bounds the cache of message bodies; zero means DefaultCacheBytes.
 	CacheBytes int64
 }
@@ -125,6 +131,8 @@ type Monitor struct {
 	mu         sync.Mutex
 	groups     []bus.TopicRecord
 	index      *index          // every message without its body
+	store      *store          // the same rows on disk, with what the index leaves out
+	generation atomic.Uint64   // counts the times the index was thrown away; the followers start over
 	bodies     *bodyCache      // the bodies read recently
 	followed   map[string]bool // sources that have a reader, by channel name
 	followers  sync.WaitGroup
@@ -159,11 +167,16 @@ type DirectoryStatus struct {
 }
 
 func New(config Config) *Monitor {
+	if config.Report == nil {
+		config.Report = func(error) {}
+	}
+	store, index := openStore(config.IndexPath, config.Report)
 	return &Monitor{
 		config:        config,
 		registry:      &registry{admin: config.Admin},
 		trust:         trust.Unpinned(),
-		index:         newIndex(),
+		index:         index,
+		store:         store,
 		bodies:        newBodyCache(cmp.Or(config.CacheBytes, DefaultCacheBytes)),
 		followed:      map[string]bool{},
 		records:       map[string]presence.Record{},
@@ -178,7 +191,9 @@ func New(config Config) *Monitor {
 // Run follows the bus until the context ends: one reader for general, each group channel and each
 // agent's DM channel, started as they appear.
 func (monitor *Monitor) Run(ctx context.Context) {
+	defer monitor.store.close() // after the followers, which still queue messages
 	defer monitor.followers.Wait()
+	monitor.followers.Go(func() { monitor.store.run(ctx) })
 	monitor.followers.Go(func() { monitor.followPresence(ctx) })
 	monitor.followers.Go(func() { monitor.followPendingEnrollments(ctx) })
 	monitor.followers.Go(func() { monitor.followRetention(ctx) })
@@ -279,10 +294,15 @@ func (monitor *Monitor) discover(ctx context.Context) error {
 	return errors.Join(registryErr, groupsErr)
 }
 
-// follow reads the history of one source from its beginning and then waits for new records.
+// follow reads the history of one source, from where the state file says it was read before, and
+// then waits for new records.
 func (monitor *Monitor) follow(ctx context.Context, source bus.Channel) {
-	var after uint64
+	after := monitor.store.cursor(source.String())
+	started := monitor.generation.Load()
 	for ctx.Err() == nil {
+		if generation := monitor.generation.Load(); generation != started {
+			started, after = generation, 0
+		}
 		records, err := monitor.config.History.History(ctx, source, after, historyPageSize)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -297,6 +317,8 @@ func (monitor *Monitor) follow(ctx context.Context, source bus.Channel) {
 		}
 		if len(records) == 0 {
 			sleep(ctx, emptyReadPause)
+		} else {
+			monitor.store.advance(source.String(), after)
 		}
 	}
 }
@@ -360,15 +382,30 @@ func channelID(source bus.Channel, sender string) string {
 	}
 }
 
-// add indexes a message, keeps its body in the cache and tells the subscribers.
+// add indexes a message, keeps its body in the cache, queues it for the state file and tells the
+// subscribers.
 func (monitor *Monitor) add(message Message) {
 	monitor.mu.Lock()
-	defer monitor.mu.Unlock()
 	if !monitor.index.add(message) {
+		monitor.mu.Unlock()
 		return
 	}
 	monitor.bodies.put(message)
 	monitor.messageHub.publish(message)
+	monitor.mu.Unlock()
+	monitor.store.enqueue(message) // outside the lock: a full queue makes it write a batch
+}
+
+// startOver throws the index away, for a log that has fewer records than the index holds: the
+// stream was recreated or restored, and the state file describes another one. The followers read
+// it again from the beginning.
+func (monitor *Monitor) startOver() {
+	monitor.mu.Lock()
+	monitor.index = newIndex()
+	monitor.mu.Unlock()
+	monitor.bodies.forgetBelow(math.MaxUint64)
+	monitor.store.wipe()
+	monitor.generation.Add(1)
 }
 
 // Subscribe returns the messages added from now on. The channel is closed when the subscriber
@@ -579,7 +616,7 @@ func (monitor *Monitor) RawMessage(ctx context.Context, id string, sequence uint
 	if err != nil {
 		return Message{}, nil, err
 	}
-	return withBody(described[0], record.Payload), record.Payload, nil
+	return monitor.withReason(withBody(described[0], record.Payload)), record.Payload, nil
 }
 
 // maxConcurrentReads bounds the stream reads one request makes at once.
@@ -603,7 +640,7 @@ func (monitor *Monitor) withBodies(ctx context.Context, described []Message, kee
 				if err != nil {
 					return Message{}, err
 				}
-				return withBody(meta, record.Payload), nil
+				return monitor.withReason(withBody(meta, record.Payload)), nil
 			}
 			if keep {
 				full[i], errs[i] = monitor.bodies.get(ctx, meta.Sequence, read)
@@ -637,15 +674,26 @@ func (monitor *Monitor) drop(gone []Message) {
 		return
 	}
 	monitor.mu.Lock()
-	for _, message := range gone {
+	sequences := make([]uint64, len(gone))
+	for i, message := range gone {
 		monitor.index.remove(message.Channel, message.Sequence)
 		monitor.bodies.forget(message.Sequence)
+		sequences[i] = message.Sequence
 	}
 	monitor.mu.Unlock()
+	monitor.store.remove(sequences)
 	select {
 	case monitor.retentionDue <- struct{}{}:
 	default: // a look is due already
 	}
+}
+
+// withReason adds why a message is not verified, which the index and the stream do not hold.
+func (monitor *Monitor) withReason(message Message) Message {
+	if message.Status != Verified {
+		message.Reason = monitor.store.reason(message.Sequence)
+	}
+	return message
 }
 
 // withBody adds the body of the record to the message the index described. A record that is no

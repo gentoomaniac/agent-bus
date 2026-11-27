@@ -50,9 +50,9 @@ func TestIndexDescribesTheMessagesItWasGiven(t *testing.T) {
 			t.Fatalf("%s: %d rows for %d messages", channel, len(described), len(messages))
 		}
 		for i, message := range messages {
-			// The index keeps no body and no reply.
+			// The index keeps no body, no reply and no reason.
 			want := message
-			want.Title, want.Text, want.Refs, want.ReplyTo = "", "", nil, nil
+			want.Title, want.Text, want.Refs, want.ReplyTo, want.Reason = "", "", nil, nil, ""
 			got := described[i]
 			if !got.Time.Equal(want.Time) {
 				t.Errorf("%s #%d: time %v, want %v", channel, message.Sequence, got.Time, want.Time)
