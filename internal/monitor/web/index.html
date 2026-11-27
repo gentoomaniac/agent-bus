@@ -1031,6 +1031,7 @@ $("logout").addEventListener("click", async () => {
   state.messages.clear();
   state.exhausted.clear();
   state.generation++; // an older page still on its way is not for the next login
+  state.olderErrors.clear();
   showLogin();
 });
 
@@ -1302,7 +1303,7 @@ async function select(channelId) {
   const reopened = channelId === state.selected;
   state.selected = channelId;
   history.replaceState(null, "", "#" + encodeURIComponent(channelId));
-  if (!reopened) { state.marker = null; state.seen.clear(); $("member-note").hidden = true; }
+  if (!reopened) { state.marker = null; state.seen.clear(); state.olderErrors.delete(channelId); $("member-note").hidden = true; }
   if (state.emptyDirects.has(channelId)) {
     state.messages.set(channelId, []);
     state.exhausted.add(channelId);
