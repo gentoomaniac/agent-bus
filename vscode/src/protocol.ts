@@ -46,6 +46,7 @@ export type ToWebview =
   | { type: "presence"; presence: Record<string, PresenceMark> } // a presence event: only the dots change
   | { type: "subscribed"; value: boolean } // the subscription changed, here or in another client
   | { type: "sendResult"; error?: string }
+  | { type: "olderDone" } // the host has finished the older-messages request, whether or not a state came with it
   | { type: "focusComposer" }
   | { type: "searchResults"; run: number; hits: SearchHitView[]; next?: string; error?: string } // the answer to the search with the same run
   | { type: "parent"; id: string; message?: ParentView; gone?: boolean } // the answer to the lookup of `id`; neither field: it failed

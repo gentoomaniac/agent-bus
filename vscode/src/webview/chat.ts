@@ -463,7 +463,9 @@ function render(first = false): void {
 // button stays for a failed load, which stops the automatic ones until it is pressed, and for the
 // keyboard.
 const NEAR_TOP_PX = 200;
-let olderAskedAt: number | undefined; // how many messages the list held when older ones were asked for, until the answer
+// How many messages the list held when older ones were asked for, until the answer: a state (see
+// showState) or, when the host has none to send, olderDone. While it is set no other request goes out.
+let olderAskedAt: number | undefined;
 
 function askForOlder(): void {
   olderAskedAt = messages.length;
@@ -801,6 +803,7 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
     parents.set(data.id, data.message ?? (data.gone ? "gone" : "failed"));
     render();
   }
+  else if (data.type === "olderDone") olderAskedAt = undefined;
   else if (data.type === "focusComposer") textInput.focus();
   else if (data.type === "activated") activate();
   else if (data.type === "subscribed") showSubscribed(data.value);

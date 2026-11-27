@@ -214,7 +214,8 @@ export class ChatPanels implements vscode.Disposable {
         if (error instanceof ApiError && error.unauthenticated) this.session.report(error);
         chat.olderError = (error as Error).message;
       }
-      this.post(channelId, chat);
+      this.post(channelId, chat); // does nothing for a channel the monitor lost, hence the answer below
+      void chat.panel.webview.postMessage({ type: "olderDone" } satisfies ToWebview);
     } else if (message.type === "raw") {
       await this.guarded(async () => {
         const { raw, raw_text } = await model.api.rawMessage(channelId, message.sequence);
