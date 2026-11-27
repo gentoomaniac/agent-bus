@@ -69,7 +69,7 @@ type store struct {
 	inflight []Message         // in the transaction being written
 	cursors  map[string]uint64 // by source: the last sequence read, written or not
 	dirty    map[string]uint64 // the cursors the next flush writes
-	failed   bool              // a write failed: nothing more is written until the next start
+	failed   error             // the write that failed: nothing more is written until the next start
 	fresh    bool              // the file held nothing when it was opened
 }
 
@@ -238,7 +238,7 @@ func (s *store) advance(source string, sequence uint64) {
 // itself, which holds the caller back: the in-memory index is never behind, the file may be.
 func (s *store) enqueue(message Message) {
 	s.mu.Lock()
-	if s.failed {
+	if s.failed != nil {
 		s.mu.Unlock()
 		return
 	}
@@ -285,7 +285,7 @@ func (s *store) flush() {
 	s.mu.Lock()
 	s.inflight = nil
 	if err != nil {
-		s.failed, s.pending = true, nil
+		s.failed, s.pending = err, nil
 	}
 	s.mu.Unlock()
 	if err != nil {
@@ -341,6 +341,14 @@ func (s *store) writeBatch(messages []Message, cursors map[string]uint64) error 
 		}
 	}
 	return tx.Commit()
+}
+
+// failure is the error of the write that stopped all writing, or nil: the file, and so the word
+// search, is behind the monitor from then on.
+func (s *store) failure() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.failed
 }
 
 // reason is why the message at the sequence is not verified; the index does not keep it. A message
@@ -454,7 +462,7 @@ func (s *store) wipe() {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	s.mu.Lock()
-	s.pending, s.cursors, s.dirty, s.failed = nil, map[string]uint64{}, map[string]uint64{}, false
+	s.pending, s.cursors, s.dirty, s.failed = nil, map[string]uint64{}, map[string]uint64{}, nil
 	s.mu.Unlock()
 	for _, table := range []string{"message_fts", "message", "cursor"} {
 		if _, err := s.write.Exec(`DELETE FROM ` + table); err != nil {

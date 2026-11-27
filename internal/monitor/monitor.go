@@ -496,6 +496,17 @@ func dmAgents(id string) ([]string, bool) {
 
 // Status says what the monitor can do besides reading.
 func (monitor *Monitor) Status() Status {
+	status := monitor.sendStatus()
+	switch {
+	case monitor.store.failure() != nil:
+		status.Search = "index_failed"
+	case monitor.indexing.Load():
+		status.Search = "indexing"
+	}
+	return status
+}
+
+func (monitor *Monitor) sendStatus() Status {
 	busState := BusLive
 	if monitor.config.History.Unavailable() != nil {
 		busState = BusReconnecting

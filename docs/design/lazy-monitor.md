@@ -381,7 +381,10 @@ Each step is one commit with its tests and docs, and passes `make check` on its 
    empty file (or a start over) until one discovery has listed every source (registry and
    catalogue both read) and each has been read to its end. It also comes back for a source the
    file has no cursor for, such as a new agent's DM channel, until that source is read to its end;
-   a source with no message at all is read to its end at once, so that is a moment. The start's
+   a source with no message at all is read to its end at once, so that is a moment. After a failed write
+   (`store.failure`) a search for words answers `503` `index_failed` and the status's `search`
+   says so, since the index of words would silently miss every message since; a restart reads from
+   the last good cursor. The start's
    `quick_check` covers the `message` table only: on the FTS tables it took a second per 100 000
    messages.
 9. **Infinite scroll**, web page and extension in one change (or two adjacent commits that land

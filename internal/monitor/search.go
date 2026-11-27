@@ -194,6 +194,10 @@ func (err ErrIndexing) Error() string {
 	return fmt.Sprintf("search is not ready, the monitor is indexing the stream (%d of %d messages)", err.Indexed, err.Total)
 }
 
+// ErrIndexFailed is returned by a search for words after writing the state file failed: the
+// index of words misses every message since, and only a restart catches up.
+var ErrIndexFailed = errors.New("search for words is unavailable, the search index could not be written; restart the monitor to rebuild it")
+
 // Search returns up to limit messages matching the query, newest first (by sequence, which is the
 // order the bus took them in), below the cursor. Words go to the FTS index of the state file,
 // which names the messages; the filters are checked against the index rows. A query with no words
@@ -209,6 +213,9 @@ func (monitor *Monitor) Search(ctx context.Context, query Query, limit int, curs
 
 	var candidates []Message
 	if len(query.terms) > 0 {
+		if failure := monitor.store.failure(); failure != nil {
+			return SearchResult{}, fmt.Errorf("%w (%v)", ErrIndexFailed, failure)
+		}
 		candidates, err = monitor.searchWords(ctx, query, limit+1, below)
 	} else {
 		candidates = monitor.searchRows(query, limit+1, below)

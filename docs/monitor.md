@@ -577,6 +577,10 @@ restore anything.
   fails a check is deleted and rebuilt by the monitor itself, with a line in its log; so is one
   that is ahead of the stream (the stream was recreated or restored). A file the monitor cannot
   write to leaves it working without one, with a log line and a full read at every start.
+  If writing fails while the monitor runs (the disk is full or gone), it stops writing and says
+  so in its log, in `search` of the status, and in every search for words (`503` `index_failed`,
+  [api.md](api.md#search)); channels, pages and searches by filters alone keep working from memory.
+  Fix the disk and restart the monitor: it reads the stream from the last good write.
 - **Where.** It needs the config directory to be writable and persistent, as `prefs.json` does
   ([docker.md](docker.md), [podman.md](podman.md)); nothing else has to be set up. Leave room for
   about 700 bytes per message the stream holds (136 MiB for 200 000 messages; at the stream's

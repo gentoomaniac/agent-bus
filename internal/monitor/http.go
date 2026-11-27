@@ -46,6 +46,9 @@ type Status struct {
 	// Directory is how the monitor follows the directory (docs/design/directory-v2.md): busd's
 	// last announced version and a failure to read the registry or the catalogue.
 	Directory DirectoryStatus `json:"directory"`
+	// Search is "indexing" while the word search is not ready, "index_failed" when writing the
+	// state file failed so that it misses new messages; absent when it works.
+	Search string `json:"search,omitempty"`
 }
 
 // Handler serves the page and the JSON API under /api/v1. Everything but the page and the login
@@ -117,6 +120,10 @@ func writeError(w http.ResponseWriter, status int, code string, message string) 
 func writeReadError(w http.ResponseWriter, err error) {
 	if errors.Is(err, ErrUnknownMessage) {
 		writeError(w, http.StatusNotFound, "unknown_message", err.Error())
+		return
+	}
+	if errors.Is(err, ErrIndexFailed) {
+		writeError(w, http.StatusServiceUnavailable, "index_failed", err.Error())
 		return
 	}
 	if errors.As(err, new(ErrIndexing)) {

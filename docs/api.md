@@ -172,6 +172,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | 502    | `bus_unavailable`        | the bus did not answer `members`, `send` or a channel change |
 | 503    | `bus_unavailable`        | `messages`, `messages/by-id`, `messages/raw` or `search` needed a message body from the stream and could not read it; try again |
 | 503    | `indexing`               | `search` while the monitor reads the whole stream into a new state file (after its first start, or after the file was lost), or reads a channel it has nothing of yet (a new agent: a moment); the message says how far it is; try again |
+| 503    | `index_failed`           | `search` for words after writing the state file failed: the index of words misses the messages since, and only restarting the monitor catches up (filters-only searches still work) |
 | 500    | `internal`               | the monitor cannot do it (for example, the response cannot stream, or a prefs change could not be saved) |
 
 ## Endpoints
@@ -209,6 +210,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | `note`                | why `can_send` is false                                                    |
 | `password_set`        | whether a password is required                                             |
 | `pending_enrollments` | how many enrollment requests wait for the owner; only when some wait (the monitor never approves) |
+| `search`              | absent when the search works; `indexing` while the monitor reads the stream into a state file (search answers `503` `indexing`), `index_failed` when writing the file failed (word searches answer `503` `index_failed` until a restart) |
 | `directory`           | `version` (the directory version busd last announced, as `<epoch prefix>/<revision>`, for example `3f9a1c2e/41`), `head_at`, and `error` while the registry or the catalogue cannot be read (presence apart) |
 
 ### Messages

@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"errors"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"sync/atomic"
@@ -102,5 +103,38 @@ func TestASourceTheFileKnowsNothingOfIsFilledBeforeSearchAnswers(t *testing.T) {
 	waitUntil(t, "the end of indexing", func() bool { return !isIndexing(monitor) })
 	if got := sequencesFound(t, monitor, "cake"); !slices.Equal(got, []uint64{20, 10}) {
 		t.Errorf("found %v, want the group's message too", got)
+	}
+}
+
+func TestSearchSaysSoWhenTheStateFileCannotBeWritten(t *testing.T) {
+	var reported atomic.Int32
+	monitor := New(Config{History: newFakeBus(t), Report: func(error) { reported.Add(1) }})
+	server := serve(monitor)
+	defer server.Close()
+	monitor.add(Message{Sequence: 1, Channel: "general", Status: Verified, From: "alice@home", Text: "cake"})
+	if got := sequencesFound(t, monitor, "cake"); !slices.Equal(got, []uint64{1}) {
+		t.Fatalf("setup: found %v", got)
+	}
+
+	monitor.store.write.Close() // the disk goes away
+	monitor.add(Message{Sequence: 2, Channel: "general", Status: Verified, From: "alice@home", Text: "cake again"})
+	monitor.store.flush()
+	if reported.Load() == 0 {
+		t.Error("the failed write was not reported")
+	}
+
+	query, _ := ParseQuery("cake")
+	if _, err := monitor.Search(context.Background(), query, 10, ""); !errors.Is(err, ErrIndexFailed) {
+		t.Errorf("a search for words: %v, want ErrIndexFailed", err)
+	}
+	response, body := call(t, server, "GET", "/api/v1/search?q=cake", "", nil)
+	if response.StatusCode != http.StatusServiceUnavailable || errorCode(body) != "index_failed" {
+		t.Errorf("answer %d %s, want 503 index_failed", response.StatusCode, body)
+	}
+	if got := sequencesFound(t, monitor, "from:alice"); !slices.Equal(got, []uint64{2, 1}) {
+		t.Errorf("a search by filters found %v, want both messages: it does not need the file", got)
+	}
+	if status := monitor.Status(); status.Search != "index_failed" {
+		t.Errorf("status.search = %q, want index_failed", status.Search)
 	}
 }
