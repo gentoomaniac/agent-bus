@@ -146,7 +146,7 @@ you replace the mounts, but their files are hidden inside Docker's storage.
 |---|---|---|---|---|---|
 | `/config` | `config/` | `agent-bus` | read-write | CA and broker certificates, admin and service logins, agent keys, `nats/` auth files, `directory/`, `enroll/` | yes: `ca.key`, every `key` and `password` |
 | `/data` | `data/` | `agent-bus` | read-write | JetStream storage: the messages | the messages themselves |
-| `/config` | `monitor-config/` | `monitor` | read-write | the monitor's own config: `ca.pem`, its two read-only logins, the web password hash, `prefs.json`, the key of the agent it sends as | yes, but no CA key and no admin login |
+| `/config` | `monitor-config/` | `monitor` | read-write | the monitor's own config: `ca.pem`, its two read-only logins, the web password hash, `prefs.json`, `index.sqlite` (its search index and message index, a cache the monitor rebuilds from the stream if the file is lost; room for about 700 bytes per message), the key of the agent it sends as | yes, but no CA key and no admin login |
 | `/config` (`:ro`) and `/monitor-config` | `config/` and `monitor-config/` | `monitor-init` | read-only and read-write | refreshes `monitor-config/` from `config/` | |
 
 All three host folders belong to uid 10001 (a bind mount keeps the host owner), so reading them
@@ -361,7 +361,7 @@ while the containers are stopped is a consistent backup of everything:
 |---|---|---|
 | `config/` | `$AGENT_BUS_HOME` | the CA, every identity and login, the registry: the bus is gone |
 | `data/` | `$AGENT_BUS_HOME` | the messages (JetStream storage) |
-| `monitor-config/` | `$AGENT_BUS_HOME` | the monitor's logins, its web password hash and `monitor-web/prefs.json` (favourites, subscriptions, folded headings) |
+| `monitor-config/` | `$AGENT_BUS_HOME` | the monitor's logins, its web password hash, `monitor-web/prefs.json` (favourites, subscriptions, folded headings) and `monitor-web/index.sqlite` (a cache: a backup may leave it out, the monitor rebuilds it) |
 | `compose.env` | `$AGENT_BUS_HOME` | your settings: the image, `BUS_AGENT`, the profiles, the proxy's URL |
 | `tls/` (or `BUS_TLS_DIR`) | nginx and Traefik | the proxy's certificate and key |
 | the `caddy-data` volume | Caddy | its CA and certificates (`docker volume ls`) |

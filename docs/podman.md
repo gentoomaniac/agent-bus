@@ -44,7 +44,7 @@ mkdir -p $AGENT_BUS_HOME/{config,data,monitor-config}
 |---|---|---|---|
 | `/config` | `config/` | certificates, admin and service logins, agent keys, `nats/` auth files, `directory/`, `enroll/` | yes: `ca.key`, every `key` and `password` |
 | `/data` | `data/` | JetStream storage: the messages | the messages |
-| `/config` of the monitor | `monitor-config/` | the monitor's own, smaller config: `ca.pem`, two read-only logins, web password hash, `prefs.json`, the sending agent's key | yes, but no CA key, no admin login |
+| `/config` of the monitor | `monitor-config/` | the monitor's own, smaller config: `ca.pem`, two read-only logins, web password hash, `prefs.json`, `index.sqlite` (its search and message index, a cache rebuilt from the stream if lost; about 700 bytes per message), the sending agent's key | yes, but no CA key, no admin login |
 
 The folders belong to you (through `$U`); the secret files inside are mode 0600 and their folders
 0700. Named volumes (`podman volume create
@@ -417,7 +417,7 @@ copy taken while the containers are stopped is a consistent backup of everything
 |---|---|---|
 | `config/` | `$AGENT_BUS_HOME` | the CA, every identity and login, the registry: the bus is gone |
 | `data/` | `$AGENT_BUS_HOME` | the messages (JetStream storage) |
-| `monitor-config/` | `$AGENT_BUS_HOME` | the monitor's logins, its web password hash and `monitor-web/prefs.json` (favourites, subscriptions, folded headings) |
+| `monitor-config/` | `$AGENT_BUS_HOME` | the monitor's logins, its web password hash, `monitor-web/prefs.json` (favourites, subscriptions, folded headings) and `monitor-web/index.sqlite` (a cache: a backup may leave it out, the monitor rebuilds it) |
 | `env` and the three scripts | `$AGENT_BUS_HOME` | your settings: image, retention, proxy port and URL |
 | `tls/`, `proxy/` | `$AGENT_BUS_HOME` | the proxy's certificate and key, and the copies of its configs |
 

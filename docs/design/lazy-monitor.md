@@ -6,11 +6,19 @@
 |---|---|
 | Index in memory, bodies read from the stream on demand, retention followed | **built** (phase A, steps 1 to 5): 235 bytes of heap per message, from 3166 |
 | Backward paging (`before`), server-side unread counts, infinite scroll in both clients | **built** (phase A, steps 4, 6 and 9) |
-| The first start still reads the whole stream; search still scans, reading bodies from the stream | as before, until phase B |
-| Search on a SQLite FTS index, the state file that spares the first read | **proposed** (phase B, steps 7 and 8) |
+| The state file `monitor-web/index.sqlite`: restarts read only the stream's tail | **built** (phase B, step 7): 0.6 s to load 200 000 messages, from 24 s to read them |
+| Search on a SQLite FTS index behind the same endpoint | **built** (phase B, step 8): 3 ms for a common word on 200 000 messages, from 91 ms and more |
 
-**Accepted; phase A is built, phase B is not.** The owner agreed to the direction and to the
-decisions below; the numbers are measured. Phase B and the final docs (step 10) follow.
+**Built.** The owner agreed to the direction and to the decisions below; the numbers are measured.
+Where the sections below describe a sketch and the steps say "Built", the step is what was built.
+The measurements of phase B (200 000 messages of about 1 KiB over general and 9 groups, a fake
+transport that serves bodies from memory, so the stream's read time is not in them): the first
+start with an empty file, 24 s until all are indexed and searchable, with the file 136 MiB; a
+start from the file, 0.6 s, and 0.03 s more for 1000 messages that arrived meanwhile; a search of
+50 hits, 0.4 ms for a rare word to 3 to 5 ms for common words and phrases, from 91 ms to 3.1 s
+with the scan; a query of filters alone, 0.6 ms. The stripped `bus-monitor` grew by 4.1 MB (13.2
+to 17.3), under the 6.5 MB the owner accepted. Heap per message is unchanged, 236 bytes
+(`TestHeapPerMessage`): the file's pages are not in the Go heap.
 
 ## The problem
 
@@ -138,7 +146,7 @@ already stored. So the **first** build needs one full pass (16 s for 200 000 mes
 is the signature checks; about 80 s at the 1 GiB limit).
 
 That pass happens once. The SQLite file (below) keeps the rows: a restart loads them (0.16 s for
-200 000 rows measured) and reads only the stream after its last sequence.
+200 000 rows measured in the spike, 0.6 s as built) and reads only the stream after its last sequence.
 
 ## The cache
 
@@ -199,7 +207,7 @@ Clients, both in step (web `internal/monitor/web/index.html`, extension `vscode/
 
 ## Search on SQLite FTS
 
-The endpoint scans messages in memory today. The text must come from the bodies, which the server
+The endpoint scanned the messages in memory before step 8. The text must come from the bodies, which the server
 no longer keeps, so search moves to an index on disk.
 
 ### The driver
@@ -302,11 +310,11 @@ a release is a rebuild, not a migration.
 
 | Risk | Answer |
 |---|---|
-| The index and the stream disagree (a purge, a restore, a stream recreated with lower sequences) | `Msgs` check and the `404` rule; if the stream's last sequence is below `meta.last_seq`, drop the file and rebuild |
+| The index and the stream disagree (a purge, a restore, a stream recreated with lower sequences) | `Msgs` check and the `404` rule; if the stream's last sequence is below the highest one in the index, throw the index and the file away and read again (step 7) |
 | A restore into a stream with new sequence numbers | same: detected by last sequence going back; the rebuild is the repair |
 | First start on a large stream is long | as today; the view works while it reads; progress in `status` |
 | Cold random reads on a large stream are slower than 0.3 ms (0.55 ms measured on a warm machine; a cold disk costs more) | one page is one batch of parallel gets; the cache hides repeats |
-| The pure-Go SQLite is slower or has its own bugs | the file is a cache, rebuilt on any failure; `quick_check` at start; the in-memory path for non-text queries does not depend on it |
+| The pure-Go SQLite is slower or has its own bugs | the file is a cache, rebuilt on any failure; `quick_check` of the message table at start; the in-memory path for non-text queries does not depend on it |
 | Binary and dependency growth (+6.5 MB, nine small modules, all BSD or MIT) | accepted for the sake of a single static binary |
 | Grants: `STREAM.MSG.GET.BUS` and `DIRECT.GET.BUS.>` let the monitor read any message of `BUS` by sequence | it already reads every message (`CONSUMER.CREATE` on `BUS`); nothing new is exposed. Both are read-only subjects |
 | Live messages and a page read racing (a message arrives while a page is built) | the page is cut at a sequence taken under the lock; live messages above it come through the event stream, as now |
@@ -381,9 +389,13 @@ Each step is one commit with its tests and docs, and passes `make check` on its 
    more: a channel's history loads when it is opened, back to the first unseen message (500 at
    most). Jumping to an older message (reply quote, search hit, notification) loads pages until it
    is there. The extension's `covered` window and `OLDER_STEPS` loop are gone.
-10. **Docs and cleanup.** `docs/monitor.md` (limits of the MVP, search), the status tables in this
-    index and in [monitor and API](monitor-and-api.md); this document moves from proposed to
-    implemented.
+10. **Docs and cleanup.** *Built.* `docs/monitor.md` (state file, search, limits), `docs/api.md` and
+    `docs/openapi.yaml` (search order, the `indexing` answer), the volume notes in `docs/docker.md`
+    and `docs/podman.md`, the status tables here, in the design index and in
+    [monitor and API](monitor-and-api.md). Nobody has to do anything when upgrading: the first
+    start creates the file. Phase A's notes above were checked against the code, and corrected
+    where they differed (the 200 000-row load took 0.16 s in the spike and takes 0.6 s as built,
+    with the index rows and their strings made one by one).
 
 Steps 1 to 3 give the memory win alone. Step 6 has to land before step 9, and 3 before 6.
 

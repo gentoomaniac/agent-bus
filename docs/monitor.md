@@ -325,7 +325,7 @@ Every flag has an environment variable, like the other commands.
 | `--public-url` | `BUS_WEB_PUBLIC_URL` | none              | `https://bus.example.com`: how clients reach the proxy; needs `--behind-proxy` |
 | `--allowed-host` | `BUS_WEB_ALLOWED_HOST` | none            | a `Host` value to accept; repeatable; no port means any port |
 | `--agent`      | `BUS_AGENT`       | none: read-only          | identity messages are sent as                            |
-| `--config-dir` | `BUS_CONFIG_DIR`  | `~/.config/agent-bus`    | the monitor's own config directory (from `agent-busctl monitor init`): CA certificate, read-only logins, web password, agent key |
+| `--config-dir` | `BUS_CONFIG_DIR`  | `~/.config/agent-bus`    | the monitor's own config directory (from `agent-busctl monitor init`): CA certificate, read-only logins, web password, agent key; the [state file](#state-file) goes in its `monitor-web/` folder |
 | `--broker`     | `BUS_BROKER`      | `localhost:4222`         | broker address; the host must be in the broker certificate |
 | `--mapped-port` | `BUS_MAPPED_PORT` | `4223`                  | the certificate listener, used when `--agent`'s folder has `client.pem` and `client.key` |
 | `--ca-cert`    | `BUS_CA_CERT`     | `ca.pem` in config dir   | CA certificate                                           |
@@ -577,7 +577,11 @@ restore anything.
   that is ahead of the stream (the stream was recreated or restored). A file the monitor cannot
   write to leaves it working without one, with a log line and a full read at every start.
 - **Where.** It needs the config directory to be writable and persistent, as `prefs.json` does
-  ([docker.md](docker.md), [podman.md](podman.md)); nothing else has to be set up.
+  ([docker.md](docker.md), [podman.md](podman.md)); nothing else has to be set up. Leave room for
+  about 700 bytes per message the stream holds (136 MiB for 200 000 messages; at the stream's
+  default limit of 1 GiB, a few hundred MiB).
+- **Upgrading** from a version without it needs nothing: the first start creates the file and
+  reads the stream once.
 
 ## Limits of the MVP
 

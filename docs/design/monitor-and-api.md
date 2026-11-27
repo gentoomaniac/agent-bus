@@ -14,6 +14,7 @@ presence. User documentation: [docs/monitor.md](../monitor.md); the HTTP API:
 | Sending | implemented **as one registered agent identity** (`--agent`, through an adapter session); `human@<owner>` is refused |
 | Own read-only logins `monitor-bus` and `monitor-control` and a config directory of its own (`agent-busctl monitor init`); registry and catalogue through busd (`busd.monitor.*`) | implemented (decision 42) |
 | Special read-only signing role `monitor@<owner>`, durable consumer `bus-monitor` created by busd, signed read-only busd methods | **planned**; today the monitor uses ordered consumers and unsigned busd replies |
+| State file `monitor-web/index.sqlite`: the index of messages and the full-text search, a cache rebuilt from the stream when lost ([lazy monitor](lazy-monitor.md)) | implemented |
 | Shared prefs `/api/v1/prefs` (read markers, favourites, folded sections), stored in `monitor-web/prefs.json` | implemented (decision 43); "read-only" refers to the broker, the monitor writes this one file |
 | VS Code extension (`vscode/`) | implemented, API client only (decision 44) |
 | `human@<owner>` key (Argon2id, master password), delivering the owner's messages as user commands | **planned** (milestone 9) |
