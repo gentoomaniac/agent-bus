@@ -552,8 +552,9 @@ of the hits on the page are read, for their snippets, through the same cache and
 page. Hits come newest first by stream sequence. The search is case-insensitive and ignores
 accents (`uber` finds "Über"); a word is split at everything that is not a letter or a digit
 (`lib-x` is `lib` and `x`), so a word made of punctuation finds nothing. While the monitor reads
-the whole stream into a new state file, search answers `503` `indexing` with how far it is, and
-the page shows that as a failed search; try again in a moment.
+the whole stream into a new state file, and for a moment whenever it meets a channel the file
+knows nothing of (a new agent), search answers `503` `indexing` with how far it is, and the page
+shows that as a failed search; try again in a moment.
 
 ## State file
 

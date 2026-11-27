@@ -133,10 +133,13 @@ type Monitor struct {
 	index      *index        // every message without its body
 	store      *store        // the same rows on disk, with what the index leaves out
 	generation atomic.Uint64 // counts the times the index was thrown away; the followers start over
-	// indexing is true while the monitor reads the whole stream into an empty state file: search
-	// cannot find what is not read yet. It ends when every source has been read to its end once.
+	// indexing is true while sources are being read that the state file has nothing of: search
+	// cannot find what is not read yet. That is every source of an empty file, and later any
+	// source without a stored cursor (a new agent); it ends when each has been read to its end.
+	// An empty file also waits for one complete discovery, so no source is still unknown.
 	indexing   atomic.Bool
-	caughtUp   map[string]bool // the sources read to their end since indexing began, under mu
+	filling    map[string]bool // the sources still read from their start, under mu
+	unlisted   bool            // the sources of an empty file are not all known yet, under mu
 	bodies     *bodyCache      // the bodies read recently
 	followed   map[string]bool // sources that have a reader, by channel name
 	followers  sync.WaitGroup
@@ -183,7 +186,7 @@ func New(config Config) *Monitor {
 		store:         store,
 		bodies:        newBodyCache(cmp.Or(config.CacheBytes, DefaultCacheBytes)),
 		followed:      map[string]bool{},
-		caughtUp:      map[string]bool{},
+		filling:       map[string]bool{},
 		records:       map[string]presence.Record{},
 		shownState:    map[string]string{},
 		askedPresence: map[string]bool{},
@@ -197,7 +200,10 @@ func New(config Config) *Monitor {
 // agent's DM channel, started as they appear.
 func (monitor *Monitor) Run(ctx context.Context) {
 	defer monitor.store.close() // after the followers, which still queue messages
-	monitor.indexing.Store(monitor.store.fresh)
+	monitor.mu.Lock()
+	monitor.unlisted = monitor.store.fresh
+	monitor.updateIndexing()
+	monitor.mu.Unlock()
 	defer monitor.followers.Wait()
 	monitor.followers.Go(func() { monitor.store.run(ctx) })
 	monitor.followers.Go(func() { monitor.followPresence(ctx) })
@@ -295,8 +301,15 @@ func (monitor *Monitor) discover(ctx context.Context) error {
 			continue
 		}
 		monitor.followed[source.String()] = true
+		if monitor.store.cursor(source.String()) == 0 {
+			monitor.filling[source.String()] = true
+		}
 		monitor.followers.Go(func() { monitor.follow(ctx, source) })
 	}
+	if registryErr == nil && groupsErr == nil {
+		monitor.unlisted = false
+	}
+	monitor.updateIndexing()
 	return errors.Join(registryErr, groupsErr)
 }
 
@@ -330,18 +343,20 @@ func (monitor *Monitor) follow(ctx context.Context, source bus.Channel) {
 	}
 }
 
-// markCaughtUp notes that the source has been read to its end, and ends the indexing when all
-// sources have.
+// markCaughtUp notes that the source has been read to its end.
 func (monitor *Monitor) markCaughtUp(source bus.Channel) {
 	if !monitor.indexing.Load() {
 		return
 	}
 	monitor.mu.Lock()
 	defer monitor.mu.Unlock()
-	monitor.caughtUp[source.String()] = true
-	if len(monitor.caughtUp) >= len(monitor.followed) {
-		monitor.indexing.Store(false)
-	}
+	delete(monitor.filling, source.String())
+	monitor.updateIndexing()
+}
+
+// updateIndexing sets indexing from what is still being read. The caller holds mu.
+func (monitor *Monitor) updateIndexing() {
+	monitor.indexing.Store(monitor.unlisted || len(monitor.filling) > 0)
 }
 
 func sleep(ctx context.Context, duration time.Duration) {
@@ -427,9 +442,9 @@ func (monitor *Monitor) startOver() {
 	monitor.bodies.forgetBelow(math.MaxUint64)
 	monitor.store.wipe()
 	monitor.mu.Lock()
-	monitor.caughtUp = map[string]bool{}
+	monitor.filling = maps.Clone(monitor.followed)
+	monitor.updateIndexing()
 	monitor.mu.Unlock()
-	monitor.indexing.Store(true)
 	monitor.generation.Add(1)
 }
 

@@ -171,7 +171,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | 429    | `too_many_attempts`      | see wrong passwords above                                  |
 | 502    | `bus_unavailable`        | the bus did not answer `members`, `send` or a channel change |
 | 503    | `bus_unavailable`        | `messages`, `messages/by-id`, `messages/raw` or `search` needed a message body from the stream and could not read it; try again |
-| 503    | `indexing`               | `search` while the monitor reads the whole stream into a new state file (after its first start, or after the file was lost); the message says how far it is; try again |
+| 503    | `indexing`               | `search` while the monitor reads the whole stream into a new state file (after its first start, or after the file was lost), or reads a channel it has nothing of yet (a new agent: a moment); the message says how far it is; try again |
 | 500    | `internal`               | the monitor cannot do it (for example, the response cannot stream, or a prefs change could not be saved) |
 
 ## Endpoints

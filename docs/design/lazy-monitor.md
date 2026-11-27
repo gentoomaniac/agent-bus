@@ -378,7 +378,10 @@ Each step is one commit with its tests and docs, and passes `make check` on its 
    folds diacritics; the snippet then shows the start of the text, unmarked). The filters are
    checked on the index rows after the FTS hit, as planned. A search first writes the queued
    rows, so a message that has just arrived is found. `indexing` lasts from the start with an
-   empty file (or a start over) until every source has been read to its end once. The start's
+   empty file (or a start over) until one discovery has listed every source (registry and
+   catalogue both read) and each has been read to its end. It also comes back for a source the
+   file has no cursor for, such as a new agent's DM channel, until that source is read to its end;
+   a source with no message at all is read to its end at once, so that is a moment. The start's
    `quick_check` covers the `message` table only: on the FTS tables it took a second per 100 000
    messages.
 9. **Infinite scroll**, web page and extension in one change (or two adjacent commits that land
