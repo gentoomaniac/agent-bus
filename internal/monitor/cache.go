@@ -103,9 +103,22 @@ func (cache *bodyCache) forgetBelow(first uint64) {
 // get returns the message from the cache, or reads it with read and keeps it. Requests for the
 // same sequence at the same time share one read. A failed read keeps and evicts nothing.
 func (cache *bodyCache) get(ctx context.Context, sequence uint64, read func(context.Context) (Message, error)) (Message, error) {
+	return cache.fetch(ctx, sequence, read, true)
+}
+
+// getWithoutKeeping is get for a reader that touches many messages once, a search: what it reads is
+// not kept and what it finds cached is not made more recently used, so it cannot push out the
+// messages clients are looking at.
+func (cache *bodyCache) getWithoutKeeping(ctx context.Context, sequence uint64, read func(context.Context) (Message, error)) (Message, error) {
+	return cache.fetch(ctx, sequence, read, false)
+}
+
+func (cache *bodyCache) fetch(ctx context.Context, sequence uint64, read func(context.Context) (Message, error), keep bool) (Message, error) {
 	cache.mu.Lock()
 	if element, found := cache.items[sequence]; found {
-		cache.order.MoveToFront(element)
+		if keep {
+			cache.order.MoveToFront(element)
+		}
 		message := element.Value.(*cached).message
 		cache.mu.Unlock()
 		return message, nil
@@ -129,7 +142,7 @@ func (cache *bodyCache) get(ctx context.Context, sequence uint64, read func(cont
 	pending.message, pending.err = read(context.WithoutCancel(ctx))
 	cache.mu.Lock()
 	delete(cache.loading, sequence)
-	if pending.err == nil {
+	if pending.err == nil && keep {
 		cache.putLocked(pending.message)
 	}
 	cache.mu.Unlock()

@@ -16,7 +16,8 @@ import (
 // Search scans the index for the messages that fit the filters and reads their bodies, newest
 // first, until a page of them also holds the words. That reads many bodies from the stream on a
 // big history and is slow there; a SQLite FTS index replaces the scan without changing the
-// endpoint (docs/design/lazy-monitor.md).
+// endpoint (docs/design/lazy-monitor.md). The scan holds the monitor's lock only to read the
+// index, never while it reads bodies, and keeps those bodies out of the cache.
 
 const (
 	defaultSearchLimit = 50
@@ -222,10 +223,10 @@ func (monitor *Monitor) Search(ctx context.Context, query Query, limit int, curs
 			}
 		}
 	}
+	monitor.mu.Unlock()
 	slices.SortFunc(candidates, func(a, b candidate) int {
 		return newerFirst(place{a.entry.time, a.channel, a.entry.sequence}, place{b.entry.time, b.channel, b.entry.sequence})
 	})
-	monitor.mu.Unlock()
 
 	result := SearchResult{Hits: []SearchHit{}}
 	var hits []Message
@@ -236,7 +237,7 @@ func (monitor *Monitor) Search(ctx context.Context, query Query, limit int, curs
 			described = append(described, monitor.index.describe(c.channel, c.entry))
 		}
 		monitor.mu.Unlock()
-		messages, err := monitor.withBodies(ctx, described)
+		messages, err := monitor.withBodies(ctx, described, false)
 		if err != nil {
 			return SearchResult{}, err
 		}

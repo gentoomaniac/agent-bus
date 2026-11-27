@@ -17,10 +17,15 @@ type streamReads struct {
 	*fakeBus
 	reads atomic.Int64
 	fail  atomic.Pointer[error]
+	// beforeRead, when set, runs at the start of every read, so a test can stop one half way.
+	beforeRead atomic.Pointer[func()]
 }
 
 func (stream *streamReads) Message(ctx context.Context, sequence uint64) (bus.Record, error) {
 	stream.reads.Add(1)
+	if hook := stream.beforeRead.Load(); hook != nil {
+		(*hook)()
+	}
 	if failure := stream.fail.Load(); failure != nil {
 		return bus.Record{}, *failure
 	}
@@ -109,7 +114,7 @@ func TestAFailedStreamReadFailsThePageAndKeepsTheCache(t *testing.T) {
 	}
 }
 
-func TestSearchReadsBodiesThroughTheCache(t *testing.T) {
+func TestSearchReadsEvictedBodiesWithoutPushingOutTheCachedTail(t *testing.T) {
 	monitor, stream := lazyMonitor(t, 8)
 	query, err := ParseQuery("m2")
 	if err != nil {
@@ -121,5 +126,36 @@ func TestSearchReadsBodiesThroughTheCache(t *testing.T) {
 	}
 	if stream.reads.Load() == 0 {
 		t.Error("the search matched an evicted body without reading it")
+	}
+	reads := stream.reads.Load()
+	if newest := messagesOf(t, monitor, "general", 40, 10); len(newest) != 4 || stream.reads.Load() != reads {
+		t.Errorf("the newest four cost %d stream reads after a search, want none", stream.reads.Load()-reads)
+	}
+}
+
+func TestSearchDoesNotHoldTheMonitorWhileItReadsBodies(t *testing.T) {
+	monitor, stream := lazyMonitor(t, 8)
+	query, err := ParseQuery("m2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reading, release := make(chan struct{}, 100), make(chan struct{})
+	hold := func() { reading <- struct{}{}; <-release }
+	stream.beforeRead.Store(&hold)
+	searched := make(chan error, 1)
+	go func() { _, err := monitor.Search(context.Background(), query, 10, ""); searched <- err }()
+	<-reading
+
+	locked := make(chan struct{})
+	go func() { monitor.Channels(); close(locked) }()
+	select {
+	case <-locked:
+	case <-time.After(5 * time.Second):
+		t.Error("the monitor is locked while a search reads bodies")
+	}
+	stream.beforeRead.Store(nil)
+	close(release)
+	if err := <-searched; err != nil {
+		t.Error(err)
 	}
 }

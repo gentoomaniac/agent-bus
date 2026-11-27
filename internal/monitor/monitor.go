@@ -519,7 +519,7 @@ func (monitor *Monitor) page(ctx context.Context, id string, anchor uint64, limi
 		if len(described) == 0 {
 			break
 		}
-		messages, err := monitor.withBodies(ctx, described)
+		messages, err := monitor.withBodies(ctx, described, true)
 		if err != nil {
 			return nil, err
 		}
@@ -545,7 +545,7 @@ func (monitor *Monitor) MessageByID(ctx context.Context, id string) (Message, er
 	if !known {
 		return Message{}, ErrUnknownMessage
 	}
-	messages, err := monitor.withBodies(ctx, described)
+	messages, err := monitor.withBodies(ctx, described, true)
 	if err != nil {
 		return Message{}, err
 	}
@@ -588,8 +588,8 @@ const maxConcurrentReads = 32
 // withBodies returns the described messages with their bodies, from the cache or read from the
 // stream, many at a time and in the same order. A message the stream no longer has is dropped
 // from the index and left out; any other failed read fails the whole call, so a page is never
-// silently short.
-func (monitor *Monitor) withBodies(ctx context.Context, described []Message) ([]Message, error) {
+// silently short. With keep false the bodies read do not go into the cache (see getWithoutKeeping).
+func (monitor *Monitor) withBodies(ctx context.Context, described []Message, keep bool) ([]Message, error) {
 	full := make([]Message, len(described))
 	errs := make([]error, len(described))
 	limiter := make(chan struct{}, maxConcurrentReads)
@@ -598,13 +598,18 @@ func (monitor *Monitor) withBodies(ctx context.Context, described []Message) ([]
 		reads.Go(func() {
 			limiter <- struct{}{}
 			defer func() { <-limiter }()
-			full[i], errs[i] = monitor.bodies.get(ctx, meta.Sequence, func(ctx context.Context) (Message, error) {
+			read := func(ctx context.Context) (Message, error) {
 				record, err := monitor.config.History.Message(ctx, meta.Sequence)
 				if err != nil {
 					return Message{}, err
 				}
 				return withBody(meta, record.Payload), nil
-			})
+			}
+			if keep {
+				full[i], errs[i] = monitor.bodies.get(ctx, meta.Sequence, read)
+			} else {
+				full[i], errs[i] = monitor.bodies.getWithoutKeeping(ctx, meta.Sequence, read)
+			}
 		})
 	}
 	reads.Wait()
