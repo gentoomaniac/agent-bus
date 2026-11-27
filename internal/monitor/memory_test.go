@@ -10,8 +10,8 @@ import (
 	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 )
 
-// maxHeapPerMessage is the bound the lazy monitor keeps (docs/design/lazy-monitor.md measured
-// about 190 bytes per message; the monitor held about 2100 before the index).
+// maxHeapPerMessage is the bound the lazy monitor keeps (it measures about 235 bytes per message,
+// docs/design/lazy-monitor.md; the monitor held about 2100 before the index).
 const maxHeapPerMessage = 300
 
 // TestHeapPerMessage fills a monitor with messages of about 1 KiB and checks that what it keeps

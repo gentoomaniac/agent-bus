@@ -118,9 +118,10 @@ not revisited; that does not change.
 Not in the index: title, text, refs (the body), `reason` of a rejected message (kept in the SQLite
 table, read when a message is shown), `raw` (read from the stream).
 
-Built over the same 200 000 messages: **192 bytes per message, 36 MiB** (row 72 bytes, the rest
-is the by-id map, the per-channel position lists and the interning tables), against 2100 bytes
-today. A by-id lookup in the map takes 86 ns. At the 1 GiB limit (about a million messages) that
+The spike, over the same 200 000 messages: **192 bytes per message, 36 MiB** (row 72 bytes, the
+rest is the by-id map, the per-channel position lists and the interning tables), against 2100
+bytes before. Phase A as built has a 56-byte row and measures 235 bytes of heap per message in the
+monitor (`TestHeapPerMessage`, every message in a thread of its own). A by-id lookup in the map takes 86 ns. At the 1 GiB limit (about a million messages) that
 is about 190 MiB. The figure is an upper bound: the spike gave every message its own thread, so
 the thread table is larger than in real traffic.
 
