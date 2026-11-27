@@ -63,6 +63,9 @@ type Event struct {
 	Detail string `json:"detail,omitempty"`
 	// AgentID identifies a subagent in worker events.
 	AgentID string `json:"agent_id,omitempty"`
+	// Transcript is the session's transcript file, which the context size is read from. It
+	// travels only over the session's local socket, never onto the bus.
+	Transcript string `json:"transcript,omitempty"`
 }
 
 // Worker is a subagent that is running.
@@ -70,6 +73,7 @@ type Worker struct {
 	ID          string    `json:"id,omitempty"`
 	Description string    `json:"description"`
 	Since       time.Time `json:"since"`
+	Context     *Context  `json:"context,omitempty"`
 }
 
 // Entry is one item of the recent activity.
@@ -88,6 +92,7 @@ type Record struct {
 	Workers       []Worker  `json:"workers,omitempty"`
 	Recent        []Entry   `json:"recent,omitempty"`  // oldest first
 	Pending       int       `json:"pending,omitempty"` // targeted mail the agent has not marked read
+	Context       *Context  `json:"context,omitempty"` // of the session's latest model reply
 }
 
 // StateAt is the state a reader shows: offline when the record says so or its last heartbeat is
@@ -115,6 +120,7 @@ type Tracker struct {
 	unclaimed     []string // descriptions of subagent launches no subagent has claimed yet
 	recent        []Entry
 	lastEventAt   time.Time
+	transcript    string // the session's transcript file, as the latest hook named it
 }
 
 // NewTracker starts idle: the session is waiting for its first prompt.
@@ -124,6 +130,9 @@ func NewTracker(now time.Time) *Tracker { return &Tracker{state: Idle, since: no
 func (tracker *Tracker) Apply(event Event, now time.Time) {
 	tracker.lastEventAt = now
 	tracker.dropStaleWorkers(now)
+	if validTranscript(event.Transcript) {
+		tracker.transcript = event.Transcript
+	}
 	switch event.Kind {
 	case EventPrompt:
 		tracker.enter(Working, now)
@@ -181,6 +190,7 @@ func (tracker *Tracker) Apply(event Event, now time.Time) {
 	case EventSessionEnd:
 		tracker.enter(Offline, now)
 		tracker.clearRunning()
+		tracker.transcript = ""
 		tracker.note(Offline, now)
 	}
 }

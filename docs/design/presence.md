@@ -8,6 +8,7 @@ the model spending tokens. Each adapter publishes the state, fed by the harness'
 | Part | Status |
 |---|---|
 | Record, hook events (`agent-bus event`), stream `PRESENCE`, `list_agents` state, `warning` on sends to unavailable agents, monitor display | implemented (Claude Code hooks, OpenCode plugin) |
+| Context size of the session and its workers, from the transcript | implemented (Claude Code only) |
 
 ## State diagram
 
@@ -54,6 +55,7 @@ Each adapter that holds its identity publishes one record:
 | `activity_since` | When the current activity began |
 | `recent` | The last ten activity entries, oldest first |
 | `pending` | The number of targeted messages not yet marked read |
+| `context` | The context size: `tokens` (input plus cache reads and writes of the latest model reply), `model`, `at`. Each worker has its own. |
 
 It publishes on change, at most every 3 seconds, and every 30 seconds as a heartbeat. On a clean end
 it publishes `offline`.
@@ -78,6 +80,24 @@ timeout, and always exits 0.
 Whether a plan usage limit arrives as `StopFailure` with `rate_limit` is not documented; the
 `quota_auto_resume_*` notifications cover the pause Claude Code announces itself. The OpenCode plugin
 sends the same events from its session, error and tool events.
+
+### Context size
+
+**Decision: the context size is shown in tokens, without a percentage** (owner, 2026-11-27). Every
+Claude Code hook names the session's `transcript_path`; the event passes it to the adapter over
+the local socket, and only an absolute `.jsonl` path is taken. At each publish the adapter reads the
+end of that file again if its size or time changed (256 KiB, doubling up to 8 MiB past long tool
+results) and takes the latest assistant line's `message.usage`: `input_tokens`,
+`cache_read_input_tokens` and `cache_creation_input_tokens` add up to the context, `message.model`
+names the model. It decodes nothing else of the line. A reply Claude Code wrote itself (model
+`<synthetic>`) is skipped; a `compact_boundary` after the latest reply means no context until the
+next one, since the size before the compaction would mislead. A running worker's transcript is
+`<session>/subagents/agent-<agent_id>.jsonl` beside the session's `<session>.jsonl`.
+
+The transcript does not say the window's size: a session with a 1M window records the same model
+name as one with 200k. A percentage would need a per-model setting or the status line's input, so
+it is left out until one of them is chosen. The OpenCode plugin sends no transcript: its agents
+show no context.
 
 ### Derived states
 

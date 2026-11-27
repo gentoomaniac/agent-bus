@@ -30,13 +30,14 @@ type Publisher struct {
 
 	mu          sync.Mutex
 	tracker     *Tracker
+	contexts    *contextCache
 	lastContent string // of the last record published, without its Updated time
 	lastAt      time.Time
 	failingFrom time.Time // when the current run of failed publishes began; zero while they work
 }
 
 func NewPublisher(sink Sink, heartbeat time.Duration, now func() time.Time) *Publisher {
-	return &Publisher{sink: sink, heartbeat: heartbeat, now: now, tracker: NewTracker(now())}
+	return &Publisher{sink: sink, heartbeat: heartbeat, now: now, tracker: NewTracker(now()), contexts: newContextCache()}
 }
 
 // Event records what a hook reported. It publishes nothing itself: the next Step does.
@@ -53,12 +54,39 @@ func (publisher *Publisher) Step(ctx context.Context) bool {
 	defer publisher.mu.Unlock()
 	now := publisher.now()
 	record := publisher.tracker.Record(now, publisher.sink.MailWaiting())
+	publisher.addContexts(&record)
 	changed := contentOf(record) != publisher.lastContent
 	sinceLast := now.Sub(publisher.lastAt)
 	if !(changed && sinceLast >= MinPublishInterval) && sinceLast < publisher.heartbeat {
 		return false
 	}
 	return publisher.publish(ctx, record)
+}
+
+// addContexts reads the context sizes of the session and its running workers from their
+// transcripts. The caller holds mu.
+func (publisher *Publisher) addContexts(record *Record) {
+	session := publisher.tracker.transcript
+	inUse := map[string]bool{}
+	if session == "" || record.State == Offline {
+		publisher.contexts.keepOnly(inUse)
+		return
+	}
+	inUse[session] = true
+	if context, ok := publisher.contexts.of(session); ok {
+		record.Context = &context
+	}
+	for i, worker := range record.Workers {
+		path, ok := WorkerTranscript(session, worker.ID)
+		if !ok {
+			continue
+		}
+		inUse[path] = true
+		if context, ok := publisher.contexts.of(path); ok {
+			record.Workers[i].Context = &context
+		}
+	}
+	publisher.contexts.keepOnly(inUse)
 }
 
 // publish the record. The caller holds mu.

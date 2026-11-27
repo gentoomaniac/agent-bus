@@ -20,6 +20,7 @@ type Presence struct {
 	Workers       []presence.Worker `json:"workers,omitempty"`
 	Recent        []presence.Entry  `json:"recent,omitempty"`
 	Pending       int               `json:"pending,omitempty"`
+	Context       *presence.Context `json:"context,omitempty"`
 }
 
 // ownState is the state of the monitor's own identity: it publishes no presence, and is there as
@@ -39,7 +40,7 @@ func (monitor *Monitor) presenceOf(agent string, record presence.Record, now tim
 		}
 		return view
 	}
-	view.Activity, view.ActivitySince, view.Workers = record.Activity, record.ActivitySince, record.Workers
+	view.Activity, view.ActivitySince, view.Workers, view.Context = record.Activity, record.ActivitySince, record.Workers, record.Context
 	return view
 }
 

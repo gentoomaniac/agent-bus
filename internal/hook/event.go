@@ -33,6 +33,7 @@ type hookInput struct {
 	AgentType        string `json:"agent_type"`
 	Error            string `json:"error"`
 	NotificationType string `json:"notification_type"`
+	TranscriptPath   string `json:"transcript_path"`
 }
 
 // EventFor turns the JSON a hook of the given kind received into a presence event. It says false
@@ -41,6 +42,14 @@ type hookInput struct {
 func EventFor(kind string, input []byte) (presence.Event, bool) {
 	var parsed hookInput
 	_ = json.Unmarshal(input, &parsed) // a malformed input leaves the fields empty
+	event, ok := eventOf(kind, parsed)
+	if ok {
+		event.Transcript = parsed.TranscriptPath // every hook names it: the context size is read there
+	}
+	return event, ok
+}
+
+func eventOf(kind string, parsed hookInput) (presence.Event, bool) {
 	switch kind {
 	case "user-prompt":
 		return presence.Event{Kind: presence.EventPrompt}, true

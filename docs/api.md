@@ -182,7 +182,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | `GET /api/v1/status`                                   | the monitor's state, [below](#status)                        |
 | `GET /api/v1/channels`                                 | channels: `id`, `kind` (`general`, `group`, `dm`), `name`, `description`, `owner` (a group channel an agent owns; absent: the bus owner's), `agents` (DM), `messages`, `last_sequence`, `unread`, `targeted_unread` ([counts](#unread-counts)) |
 | `GET /api/v1/agents`                                   | registered agents: `id`, `fingerprint`, `registered_at`, `removed` |
-| `GET /api/v1/presence`                                 | every agent's `state`, `since`, `activity`, `activity_since`, `workers`, `recent`, `pending` |
+| `GET /api/v1/presence`                                 | every agent's `state`, `since`, `activity`, `activity_since`, `workers` (each with its `context`), `recent`, `pending`, `context` (`tokens`, `model`, `at` of the latest model reply) |
 | `GET /api/v1/members?channel=<id>`                     | agent IDs                                                    |
 | `GET /api/v1/messages?channel=<id>&after=<seq>&limit=<n>` | messages after a stream sequence, oldest first, at most 1000 (default 100) |
 | `GET /api/v1/messages?channel=<id>&before=<seq>&limit=<n>` | the `limit` messages before a stream sequence, oldest first within the page; a shorter page means there is no older one |

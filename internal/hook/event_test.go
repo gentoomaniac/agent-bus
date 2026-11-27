@@ -48,6 +48,9 @@ func TestEventForMapsHooksToPresenceEvents(t *testing.T) {
 		{"session-end", `{"reason":"logout"}`, presence.Event{Kind: presence.EventSessionEnd}, true},
 		{"pre-tool", `not json at all`, presence.Event{Kind: presence.EventTool}, true},
 		{"unknown", `{}`, presence.Event{}, false},
+		{"stop", `{"transcript_path":"/home/me/.claude/projects/p/s.jsonl"}`, presence.Event{Kind: presence.EventStop, Transcript: "/home/me/.claude/projects/p/s.jsonl"}, true},
+		{"post-tool", `{"tool_name":"Edit","transcript_path":"/t/s.jsonl"}`, presence.Event{Kind: presence.EventToolDone, Transcript: "/t/s.jsonl"}, true},
+		{"notification", `{"notification_type":"idle_prompt","transcript_path":"/t/s.jsonl"}`, presence.Event{}, false},
 	}
 	for _, test := range tests {
 		got, ok := EventFor(test.kind, []byte(test.input))

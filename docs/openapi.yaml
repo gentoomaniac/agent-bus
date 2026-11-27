@@ -568,6 +568,7 @@ components:
               id: { type: string }
               description: { type: string }
               since: { type: string, format: date-time }
+              context: { $ref: "#/components/schemas/Context" }
         recent:
           type: array
           items:
@@ -577,6 +578,18 @@ components:
               at: { type: string, format: date-time }
               text: { type: string }
         pending: { type: integer, description: Unread targeted messages. }
+        context: { $ref: "#/components/schemas/Context" }
+    Context:
+      type: object
+      description: >-
+        The tokens the session's latest model reply was given (input plus cache reads and writes).
+        The window's size is not known. Absent before the first reply, after a compaction until the
+        next one, and for harnesses that keep no transcript.
+      required: [tokens]
+      properties:
+        tokens: { type: integer }
+        model: { type: string }
+        at: { type: string, format: date-time, description: When the reply was written. }
     Message:
       type: object
       required: [sequence, channel, status]
