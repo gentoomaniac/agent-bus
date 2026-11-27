@@ -169,7 +169,7 @@ Every error is JSON, `{"error": "<message for people>", "code": "<stable code>"}
 | 409    | `refused`                | busd refused a channel change; the message is busd's reason |
 | 415    | `unsupported_media_type` | `login`, `send`, a channel change or a `prefs` change without `Content-Type: application/json` |
 | 429    | `too_many_attempts`      | see wrong passwords above                                  |
-| 502    | `bus_unavailable`        | the bus did not answer                                     |
+| 502    | `bus_unavailable`        | the bus did not answer `members`, `send` or a channel change |
 | 503    | `bus_unavailable`        | `messages`, `messages/by-id`, `messages/raw` or `search` needed a message body from the stream and could not read it; try again |
 | 500    | `internal`               | the monitor cannot do it (for example, the response cannot stream, or a prefs change could not be saved) |
 
@@ -220,6 +220,10 @@ The newest page is any `before` above the last sequence, such as `90071992547409
 use it, so a stale `last_sequence` cannot cut the newest messages off). `after` and `before` cannot be
 combined (`400`). A message the stream no longer has (retention) is dropped from the monitor's index
 and left out of the page, which is filled from the next message in its direction.
+
+A page that cannot be read from the stream is a `503 bus_unavailable` (never `502`, which is for the
+calls that ask the bus itself). It is worth trying again, later: the monitor keeps the index and
+answers again once the stream does.
 
 A message has `sequence`, `channel`, `status` (`verified`, `unknown_sender`, `rejected`), `reason`
 for the last two, and the envelope's `id`, `from`, `to`, `type`, `targets`, `thread`, `reply_to`,
