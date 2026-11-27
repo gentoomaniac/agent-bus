@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { categorize, describeChannel } from "./channels";
 import { byOwner, dmAgents, dmByOwner, dmOwners, groupBy, ownerOf, shortName } from "./names";
-import { ago, describePresence, recentActivity } from "./presence";
+import { ago, contextLong, contextShort, describePresence, recentActivity } from "./presence";
 import { Session } from "./session";
 import { Agent, Channel, Presence } from "./types";
 
@@ -120,7 +120,8 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     if (agent.removed || !view) return [];
     const now = Date.now();
     const workers = (view.workers ?? []).map((worker, index): Node => ({
-      kind: "agentDetail", id: `worker:${agent.id}:${worker.id ?? index}`, label: worker.description, description: ago(worker.since, now), icon: "person",
+      kind: "agentDetail", id: `worker:${agent.id}:${worker.id ?? index}`, label: worker.description,
+      description: [ago(worker.since, now), contextShort(worker.context)].filter(Boolean).join(" · "), icon: "person",
     }));
     const recent = recentActivity(view, RECENT_CHILDREN).map((entry, index): Node => ({
       kind: "agentDetail", id: `recent:${agent.id}:${index}:${entry.at}`, label: entry.text, description: ago(entry.at, now) + " ago", icon: "history",
@@ -159,11 +160,15 @@ export class AgentMessengerTree implements vscode.TreeDataProvider<Node> {
     const tip = new vscode.MarkdownString();
     const since = ago(view?.since, now);
     tip.appendMarkdown("**").appendText(agent.id).appendMarkdown("**\n\n").appendText((view?.state ?? "offline") + (since ? ` for ${since}` : ""));
+    if (view?.context) tip.appendMarkdown("\n\n**Context** ").appendText(contextLong(view.context, now));
     if (view?.activity) tip.appendMarkdown("\n\n").appendText(`${view.activity} (${ago(view.activity_since, now)})`);
     if (view?.pending) tip.appendMarkdown("\n\n").appendText(`${view.pending} unread targeted`);
     if (view?.workers?.length) {
       tip.appendMarkdown("\n\n**Workers**");
-      for (const worker of view.workers) tip.appendMarkdown("\n\n").appendText(`${worker.description} (${ago(worker.since, now)})`);
+      for (const worker of view.workers) {
+        const context = worker.context ? `, ${contextShort(worker.context)}` : "";
+        tip.appendMarkdown("\n\n").appendText(`${worker.description} (${ago(worker.since, now)}${context})`);
+      }
     }
     const recent = recentActivity(view, RECENT_TOOLTIP);
     if (recent.length) {

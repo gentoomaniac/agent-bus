@@ -166,10 +166,11 @@ right.
 - **Agents** (left): every agent in the registry except the monitor's own identity (the header says
   what the page sends as), in a folding group per owner, sorted by name and shown by its short name
   (`api` for `api@alice`; the tooltip has the full ID), with a status dot and its state (see
-  [Presence](#presence)), "N workers" and what it is doing with how long. Hover for the key
-  fingerprint. Click one to open the direct message with it (empty until the first message) and its
-  panel. A removed agent ([agent-busctl agent remove](agent-busctl.md#agent-remove)) stays in the
-  list greyed, marked "removed", and cannot be picked as a recipient.
+  [Presence](#presence)), its context size ("context 97k"), "N workers" and what it is doing with
+  how long. Hover for the key fingerprint. Click one to open the direct message with it (empty until
+  the first message) and its panel. A removed agent ([agent-busctl agent
+  remove](agent-busctl.md#agent-remove)) stays in the list greyed, marked "removed", and cannot be
+  picked as a recipient.
 - **Messages** (middle): one header line with the sender, `→` and the destination (the other agent
   for a DM, `#channel` otherwise; long IDs are cut, the tooltip has the full one), time, type, the
   targets as tags (`@all` highlighted, and the monitor's own `--agent` in a stronger colour), then
@@ -407,14 +408,19 @@ The monitor shows whether each agent can respond and what it is doing, gathered 
 | `unresponsive`      | idle, with targeted mail that no tool call has listed for 10 minutes       |
 | `offline`           | the session ended, or no heartbeat for 90 seconds (process dead or closed) |
 
-Each `agent-bus mcp` publishes a record for its agent: state, since when, the current activity
-(tool name and file name or first word of the command, never contents or whole commands), the
-running workers (subagents, with their short descriptions), the last ten activity entries and the
-number of unread targeted messages. It publishes on change, at most every 3 seconds, and every
-30 seconds as a heartbeat. The monitor shows an agent offline when its heartbeat is more than
-90 seconds old. The events come from the harness's hooks, see [claude-code.md](claude-code.md#3-add-the-presence-hooks)
-and [opencode.md](opencode.md). Without hooks the record has only the heartbeat, `offline` and
-`unresponsive`: an agent without hooks shows as `idle` while alive.
+Each `agent-bus mcp` publishes a record for its agent: state, since when, the current activity (tool
+name and file name or first word of the command, never contents or whole commands), the running
+workers (subagents, with their short descriptions), the last ten activity entries and the number of
+unread targeted messages. With Claude Code it adds the context size: the tokens the session's latest
+model reply was given (input plus cache reads and writes), with the model, read from the session's
+transcript; each running worker gets its own from its transcript. Only those numbers leave the
+machine. The window's size is not in the transcript, so the monitor shows tokens, not a percentage;
+after a compaction the size is gone until the next reply. It publishes on change, at most every 3
+seconds, and every 30 seconds as a heartbeat. The monitor shows an agent offline when its heartbeat
+is more than 90 seconds old. The events come from the harness's hooks, see
+[claude-code.md](claude-code.md#3-add-the-presence-hooks) and [opencode.md](opencode.md). Without
+hooks the record has only the heartbeat, `offline` and `unresponsive`: an agent without hooks shows
+as `idle` while alive.
 
 The records live in stream `PRESENCE` (one message per agent, the last), which an agent can only
 write for itself; agents read each other's through `list_agents`

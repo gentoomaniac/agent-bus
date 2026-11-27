@@ -27,9 +27,17 @@ export interface Presence {
   since?: string;
   activity?: string;
   activity_since?: string;
-  workers?: { id?: string; description: string; since: string }[];
+  workers?: { id?: string; description: string; since: string; context?: Context }[];
   recent?: { at: string; text: string }[]; // oldest first
   pending?: number; // unread mail targeted at the agent
+  context?: Context; // of the session's latest model reply
+}
+
+// How many tokens the latest model reply was given; the window's size is not known.
+export interface Context {
+  tokens: number;
+  model?: string;
+  at?: string;
 }
 
 export interface Status {

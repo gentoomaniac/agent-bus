@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ago, describePresence, presenceClass, recentActivity } from "../presence";
+import { ago, contextLong, contextShort, describePresence, presenceClass, recentActivity, shortTokens } from "../presence";
 import { matchTargets, mentionBefore, mentionText, resolveTarget } from "../completion";
 import { categorize, channelNameProblem, describeChannel, destinationOf, dmChannelId, groupName, invitableAgents } from "../channels";
 import { byOwner, dmAgents, dmByOwner, dmOwners, groupBy, ownerOf, shortName } from "../names";
@@ -150,6 +150,17 @@ test("describePresence says state, activity and how long; ago counts s, m and h"
   const workers = [{ description: "tests", since: "2026-11-24T12:00:00Z" }];
   assert.equal(describePresence({ agent: "a", state: "idle", workers }, now), "idle · 1 worker");
   assert.equal(describePresence({ agent: "a", state: "working", activity: "Bash npm", workers: [...workers, ...workers] }, now), "working · 2 workers · Bash npm");
+});
+
+test("the context size reads short in a row and exact in a tooltip", () => {
+  const now = Date.parse("2026-11-24T12:10:00Z");
+  assert.deepEqual([850, 96_761, 999_499, 1_240_000].map(shortTokens), ["850", "97k", "999k", "1.2M"]);
+  const context = { tokens: 96_761, model: "claude-opus-5-5", at: "2026-11-24T12:09:40Z" };
+  assert.equal(contextShort(context), "context 97k");
+  assert.equal(contextShort(undefined), "");
+  assert.equal(contextLong(context, now), "96,761 tokens · claude-opus-5-5 · 20s ago");
+  assert.equal(contextLong({ tokens: 12 }, now), "12 tokens");
+  assert.equal(describePresence({ agent: "a", state: "working", context, activity: "Read a.go" }, now), "working · context 97k · Read a.go");
 });
 
 test("recentActivity is newest first and limited", () => {

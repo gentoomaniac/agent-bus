@@ -1345,6 +1345,24 @@ function ago(time) {
   return Math.floor(seconds / 3600) + "h";
 }
 
+// A token count at a glance, as the extension says it: "850", "97k", "1.2M".
+function shortTokens(tokens) {
+  if (tokens < 1000) return String(tokens);
+  if (tokens < 999500) return Math.round(tokens / 1000) + "k"; // not "1000k"
+  return (Math.round(tokens / 100000) / 10) + "M";
+}
+
+// "context 97k" for a row; empty without a context.
+function contextShort(context) {
+  return context ? "context " + shortTokens(context.tokens) : "";
+}
+
+// "96,761 tokens · claude-opus-5-5 · 20s ago" for the agent panel.
+function contextLong(context) {
+  const since = context.at ? ago(context.at) + " ago" : "";
+  return [context.tokens.toLocaleString("en-US") + " tokens", context.model, since].filter(Boolean).join(" \u00b7 ");
+}
+
 function presenceOf(agentId) {
   return state.presence.get(agentId) || { agent: agentId, state: "offline" };
 }
@@ -1356,9 +1374,10 @@ function agentLine(agentId, view) {
     el("span", { class: "muted state" }, view.state));
 }
 
-// "N workers" and what the agent is doing, with how long.
+// The context size, "N workers" and what the agent is doing, with how long.
 function agentSummary(view) {
   const parts = [];
+  if (view.context) parts.push(contextShort(view.context));
   if (view.workers && view.workers.length) parts.push(view.workers.length + (view.workers.length === 1 ? " worker" : " workers"));
   if (view.activity) parts.push(view.activity + " (" + ago(view.activity_since) + ")");
   const text = parts.join(" \u00b7 ");
@@ -1376,12 +1395,13 @@ function renderDetail() {
   if (!state.detailAgent) { box.replaceChildren(); return; }
   const view = presenceOf(state.detailAgent);
   const since = view.since ? " for " + ago(view.since) : "";
-  const workers = (view.workers || []).map((w) => el("div", { class: "entry" }, w.description + " (" + ago(w.since) + ")"));
+  const workers = (view.workers || []).map((w) => el("div", { class: "entry" }, w.description + " (" + ago(w.since) + (w.context ? ", " + contextShort(w.context) : "") + ")"));
   const recent = (view.recent || []).slice().reverse().map((e) => el("div", { class: "entry" }, el("span", { class: "muted" }, ago(e.at) + " ago "), e.text));
   box.replaceChildren(
     el("button", { class: "phone-only toggle", type: "button", onclick: closeTopOverlay }, "Back"),
     el("h2", { class: "cut", title: state.detailAgent }, state.detailAgent),
     el("div", { class: "entry" }, el("span", { class: "dot " + stateClass(view.state) }), view.state + since),
+    ...(view.context ? [el("div", { class: "entry" }, "Context: " + contextLong(view.context))] : []),
     ...(view.pending ? [el("div", { class: "entry" }, view.pending + " unread targeted")] : []),
     ...(workers.length ? [el("h2", {}, "Workers"), ...workers] : []),
     el("h2", {}, "Recent activity"), ...(recent.length ? recent : [el("div", { class: "entry muted" }, "none")]));

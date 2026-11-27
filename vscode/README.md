@@ -230,10 +230,12 @@ workers part only when the agent has some).
 | `offline`                       | grey circle         |
 | removed                         | struck circle       |
 
-Hover an agent for its state and how long, its activity, its workers, the mail waiting for it and
-its recent activity. An agent with workers or recent activity unfolds into its workers and its
-last three activities. The state comes from the monitor's presence, read at every connect and
-updated by the live `presence` events.
+An agent's row shows its context size ("context 97k", the tokens of its latest model reply, see the
+[monitor's presence](../docs/monitor.md#presence)); each worker row shows its own. Hover an agent
+for its state and how long, the exact context size with the model, its activity, its workers, the
+mail waiting for it and its recent activity. An agent with workers or recent activity unfolds into
+its workers and its last three activities. The state comes from the monitor's presence, read at
+every connect and updated by the live `presence` events.
 
 Besides the stream, the extension reads the channels, agents, status and presence again every 5
 seconds, as the web page does, and updates the view only when something changed. So a new empty
