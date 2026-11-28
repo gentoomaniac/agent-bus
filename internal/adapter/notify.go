@@ -108,8 +108,12 @@ func (adapter *Adapter) UnreadSummary() ([]Message, error) {
 	return adapter.markNotified(true, true), nil
 }
 
+// asksNothing says whether the message is an ack: it needs no reaction, the answer that follows it
+// does. The hooks never announce it and it never makes the agent look unresponsive; `inbox` lists it.
+func asksNothing(message *Message) bool { return message.Envelope.Type == "ack" }
+
 // markNotified marks the buffered messages that target the agent and are not stale told and returns the new ones, or
-// all of them when includeTold is set. The caller holds mu.
+// all of them when includeTold is set. An ack is never announced (asksNothing). The caller holds mu.
 func (adapter *Adapter) markNotified(includeTold, mark bool) []Message {
 	if adapter.notifications.notified == nil {
 		adapter.notifications.notified = map[string]bool{}
@@ -118,7 +122,7 @@ func (adapter *Adapter) markNotified(includeTold, mark bool) []Message {
 	var listed []Message
 	for _, message := range adapter.inbox.messages {
 		// A stale message is never announced: the agent would act on old news. `inbox` lists it.
-		if !message.TargetsMe || message.Age(now) > StaleAfter {
+		if !message.TargetsMe || message.Age(now) > StaleAfter || asksNothing(message) {
 			continue
 		}
 		id := message.Envelope.ID

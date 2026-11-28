@@ -150,6 +150,8 @@ first peeks at the new mail and marks it notified after it delivered the prompt.
 
 **Decision: idle sessions are woken for targeted mail only** (owner, 2026-11-25). Mail reaches a session while it is active (the `Stop` hook, or `wait_for_messages`), when the next session starts (`SessionStart`) and, while a waiter runs, when the session sits idle: each wake costs one short turn, which is why only mail that targets the agent wakes it and the cooldown applies. A waiter ends at its `--max`, at a lower `timeout` the harness enforces, or with the session; the next `Stop` or `SessionStart` arms it again, so an idle session whose waiter ran out sees new mail at its next turn or start. The adapter tracks which messages it has already notified about. A hook prompts only for messages not yet notified; earlier mail that is delivered but unacked appears in the summary line without causing a prompt. A notification held back by the cooldown ([safety](safety.md) rule 3) stays un-notified and is retried at the next hook.
 
+**Decision: an ack is never announced** (owner, 2026-11-28). An `ack` ("on it") asks for nothing, and the `answer` that follows it is announced, so the hooks, the idle waiter and the `SessionStart` summary skip it: announcing it cost the agent a whole turn only to mark it read. It still counts as unread and `inbox` lists it. Every other type that targets the agent is announced, `answer` and `status` included, since an agent may be waiting for one.
+
 ## Quiet by default
 
 **Decision: agents stay quiet unless targeted** (owner, 2026-11-24). The hook prompts only for mail that targets the agent ([protocol](protocol.md)). Mail aimed at others never causes a prompt.

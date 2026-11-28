@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"git.srv.gentoomaniac.net/marco/agent-messenger/internal/envelope"
 )
 
 func TestNewMailNotifiesEachMessageOnceAndHonoursTheCooldown(t *testing.T) {
@@ -162,5 +164,53 @@ func TestStaleMailIsNeverAnnounced(t *testing.T) {
 	}
 	if inbox, _ := bobAdapter.Inbox(InboxQuery{Peek: true}); len(inbox) != 2 {
 		t.Errorf("the inbox lists %d messages, want both", len(inbox))
+	}
+}
+
+func TestAnAckIsNeverAnnounced(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob)
+	ctx := context.Background()
+
+	request, _ := bobAdapter.Send(ctx, alice, Outgoing{Type: "request", Body: envelope.Body{Text: "do it"}})
+	poll(t, a)
+	a.Send(ctx, bob, Outgoing{Type: "ack", Body: envelope.Body{Text: "on it"}, ReplyTo: request})
+	poll(t, bobAdapter)
+
+	if got, unread, err := bobAdapter.NewMail(); err != nil || len(got) != 0 || unread != 1 {
+		t.Errorf("NewMail = %v, %d unread, %v, want no announcement and the ack unread", got, unread, err)
+	}
+	if summary, _ := bobAdapter.UnreadSummary(); len(summary) != 0 {
+		t.Errorf("the summary lists %v, want no ack", summary)
+	}
+
+	answer, _ := a.Send(ctx, bob, Outgoing{Type: "answer", Body: envelope.Body{Text: "done"}, ReplyTo: request})
+	poll(t, bobAdapter)
+	b.now = b.now.Add(notifyCooldown + time.Second)
+	if got, _, _ := bobAdapter.NewMail(); len(got) != 1 || got[0].Envelope.ID != answer {
+		t.Errorf("NewMail = %v, want the answer", got)
+	}
+	if inbox, _ := bobAdapter.Inbox(InboxQuery{Peek: true}); len(inbox) != 2 {
+		t.Errorf("the inbox lists %d messages, want the ack and the answer", len(inbox))
+	}
+}
+
+func TestTheWaiterKeepsWaitingThroughAnAck(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob)
+	ctx := context.Background()
+
+	a.Send(ctx, bob, Outgoing{Type: "ack", Body: envelope.Body{Text: "on it"}})
+	poll(t, bobAdapter)
+	waitCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	if got, _, err := bobAdapter.WaitNewMail(waitCtx); err == nil {
+		t.Errorf("WaitNewMail = %v, want it to keep waiting until the context ends", got)
 	}
 }

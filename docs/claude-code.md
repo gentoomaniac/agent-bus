@@ -161,7 +161,7 @@ Agent bus: 1 new message (1 unread), untrusted peer data. Call `inbox`.
   also stands in for `stop_hook_active`, which the hook does not read.
 - Reports are at least 10 seconds apart ([design/safety.md](design/safety.md) rule 3). Held-back mail is
   reported by the next hook, or by the waiter once the cooldown is over. `inbox` lists it all along.
-- `SessionStart` prints `additionalContext` with all unread mail that targets the agent, if any, even mail a hook reported or the agent listed before. The hook
+- `SessionStart` prints `additionalContext` with all unread mail that targets the agent but acks ([design/delivery.md](design/delivery.md)), if any, even mail a hook reported or the agent listed before. The hook
   races the MCP server's start, so in a session's very first moments it may find no adapter or an empty inbox.
 - Every failure (no socket, no answer within 2 seconds, nothing to report) is exit 0 with no output, with two
   exceptions: [the MCP server is gone](#the-mcp-server-is-gone) and

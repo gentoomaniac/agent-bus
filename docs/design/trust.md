@@ -90,6 +90,7 @@ not a compromised agent.
   First-contact holds are **not** built: today a changed key is rejected and alerted.
 - Untrusted-data framing, loop guard, rate limits, secret scan ([safety](safety.md)).
 - Stale messages (older than a day) are context only and never announced by hooks.
+- Acks are never announced by hooks either; `inbox` lists them ([delivery](delivery.md)).
 
 ## Open decisions
 

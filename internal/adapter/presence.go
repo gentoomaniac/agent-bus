@@ -30,7 +30,8 @@ func (adapter *Adapter) Presence(ctx context.Context, agentID string) (record pr
 }
 
 // MailWaiting tells the presence publisher how much targeted mail waits and since when the oldest
-// piece has gone unseen: no tool call has listed it, so the agent has not reacted to it.
+// piece has gone unseen: no tool call has listed it, so the agent has not reacted to it. An ack
+// counts as waiting but never as unseen: no hook announces it, so nothing would make the agent look.
 func (adapter *Adapter) MailWaiting() presence.Mail {
 	adapter.mu.Lock()
 	defer adapter.mu.Unlock()
@@ -40,7 +41,7 @@ func (adapter *Adapter) MailWaiting() presence.Mail {
 			continue
 		}
 		mail.Pending++
-		if !message.returned && (mail.OldestUnseen.IsZero() || message.ArrivedAt.Before(mail.OldestUnseen)) {
+		if !message.returned && !asksNothing(message) && (mail.OldestUnseen.IsZero() || message.ArrivedAt.Before(mail.OldestUnseen)) {
 			mail.OldestUnseen = message.ArrivedAt
 		}
 	}

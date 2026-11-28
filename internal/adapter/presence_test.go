@@ -59,3 +59,18 @@ func TestInboxNewOnlySkipsWhatWasListedBefore(t *testing.T) {
 		t.Errorf("a plain listing must still show everything: %v", all)
 	}
 }
+
+func TestAnAckIsNeverUnseen(t *testing.T) {
+	b := newTestBus(t)
+	b.register(alice)
+	b.register(bob)
+	a, _ := b.open(alice)
+	bobAdapter, _ := b.open(bob)
+	ctx := context.Background()
+
+	a.Send(ctx, bob, Outgoing{Type: "ack", Body: text("on it").Body})
+	poll(t, bobAdapter)
+	if mail := bobAdapter.MailWaiting(); mail.Pending != 1 || !mail.OldestUnseen.IsZero() {
+		t.Errorf("an unread ack: %+v, want it waiting but not unseen", mail)
+	}
+}
